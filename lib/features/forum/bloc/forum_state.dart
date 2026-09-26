@@ -12,7 +12,8 @@ enum ForumStatus {
   success,
 
   /// Failed to load.
-  failure;
+  failure
+  ;
 
   /// Is loading data.
   bool isLoading() => this == initial || this == loading;
@@ -41,7 +42,11 @@ class ForumState with ForumStateMappable {
     this.filterSpecialTypeList = const [],
     this.filterOrderList = const [],
     this.filterDatelineList = const [],
+    this.pollOfferUid,
   });
+
+  /// Account the latest loaded page offered a poll creation link to; cleared while loading or on failure.
+  final int? pollOfferUid;
 
   /// Page status.
   final ForumStatus status;

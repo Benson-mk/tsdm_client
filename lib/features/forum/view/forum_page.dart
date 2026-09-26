@@ -7,6 +7,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/list.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/favorite/utils/forum_favorite_action.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_bloc.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
@@ -396,13 +397,33 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
       return null;
     }
 
-    return FloatingActionButton(
+    // Offer poll creation only when this page linked to it for the account still in use.
+    final pollOfferUid = state.pollOfferUid;
+    final canCreatePoll =
+        pollOfferUid != null && pollOfferUid == context.read<AuthenticationRepository>().effectiveCurrentUid;
+    final newThread = FloatingActionButton(
       onPressed: () async => context.pushNamed(
         ScreenPaths.editPost,
         pathParameters: {'editType': '${PostEditType.newThread.index}', 'fid': widget.fid},
+        queryParameters: {if (canCreatePoll) 'poll': '1'},
       ),
       tooltip: context.t.forumPage.tooltip.fab,
       child: const Icon(Icons.add_outlined),
+    );
+    if (!canCreatePoll) return newThread;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        FloatingActionButton.small(
+          heroTag: 'forum_create_poll_fab',
+          onPressed: () async => context.pushNamed(ScreenPaths.createPoll, pathParameters: {'fid': widget.fid}),
+          tooltip: context.t.pollCreate.entry,
+          child: const Icon(Icons.poll_outlined),
+        ),
+        sizedBoxW12H12,
+        newThread,
+      ],
     );
   }
 

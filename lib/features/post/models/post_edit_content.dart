@@ -107,6 +107,22 @@ final class PostEditContent with PostEditContentMappable {
   /// info are not generated until we post the thread to server.
   static PostEditContent? fromDocument(uh.Document document, {bool requireThreadInfo = true}) {
     if (!supportsDocument(document)) return null;
+    return _parse(document, requireThreadInfo: requireThreadInfo);
+  }
+
+  /// Ordinary fields (subject, body, tokens, bool options) of a poll creation form.
+  ///
+  /// Only for a form already validated by `PollCreateForm.parse`; the poll fields themselves are parsed there and
+  /// never stored in [options].
+  static PostEditContent? fromPollCreateDocument(uh.Document document) {
+    final form = document.querySelector('#postform');
+    if (form == null || !_supportsGenericFields(form)) return null;
+    String value(String name) => form.querySelector('[name="$name"]')?.attributes['value'] ?? '';
+    if (value('specialextra').isNotEmpty || (value('sortid').isNotEmpty && value('sortid') != '0')) return null;
+    return _parse(document, requireThreadInfo: false);
+  }
+
+  static PostEditContent? _parse(uh.Document document, {required bool requireThreadInfo}) {
     final rootNode = document.querySelector('div#ct');
     final postBoxNode = document.querySelector('div#postbox');
 
@@ -287,7 +303,13 @@ final class PostEditContent with PostEditContentMappable {
             ((value('special').isEmpty || value('special') == '0') &&
                 value('specialextra').isEmpty &&
                 (value('sortid').isEmpty || value('sortid') == '0'))) &&
-        value('contentType') != 'json' &&
+        _supportsGenericFields(form);
+  }
+
+  /// Editor formats and scheduled/credit extras no in-app editor can preserve, whatever the thread type.
+  static bool _supportsGenericFields(uh.Element form) {
+    String value(String name) => form.querySelector('[name="$name"]')?.attributes['value'] ?? '';
+    return value('contentType') != 'json' &&
         value('contentEditor') != 'jsonEditor' &&
         form.querySelector('input[name="cronpublish"][checked]') == null &&
         form.querySelector('input[name="rushreply"][checked]') == null &&

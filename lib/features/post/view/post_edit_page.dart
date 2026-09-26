@@ -20,6 +20,7 @@ import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/editor/widgets/toolbar.dart';
 import 'package:tsdm_client/features/post/bloc/post_edit_bloc.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
+import 'package:tsdm_client/features/post/models/poll_create.dart';
 import 'package:tsdm_client/features/post/repository/post_edit_repository.dart';
 import 'package:tsdm_client/features/post/widgets/input_price_dialog.dart';
 import 'package:tsdm_client/features/post/widgets/select_perm_dialog.dart';
@@ -108,7 +109,23 @@ enum _BottomPanelType { none, keyboard, toolbar }
 /// lost".
 class PostEditPage extends StatefulWidget {
   /// Constructor.
-  const PostEditPage({required this.editType, required this.fid, required this.tid, required this.pid, super.key});
+  const PostEditPage({
+    required this.editType,
+    required this.fid,
+    required this.tid,
+    required this.pid,
+    this.pollOffered = false,
+    this.transfer,
+    super.key,
+  });
+
+  /// The forum page offered a poll creation link to the current account; only used for new threads.
+  ///
+  /// The poll page still validates the forum's own form before offering any input.
+  final bool pollOffered;
+
+  /// Subject and body carried over from the poll editor.
+  final ThreadModeTransfer? transfer;
 
   /// Reason to enter [PostEditPage].
   ///
@@ -196,6 +213,9 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
 
   bool initialized = false;
   bool _confirming = false;
+
+  /// Content switched in from the poll editor by the same account, dropped on any identity change.
+  ThreadModeTransfer? _transfer;
 
   // BBCode text attribute status.
   Color? foregroundColor;
@@ -755,7 +775,7 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
     }
 
     if (!initialized) {
-      final data = state.content?.data;
+      final data = _transfer?.body ?? state.content?.data;
       if (data != null) {
         if (context.read<SettingsBloc>().state.settingsMap.enableEditorBBCodeParser) {
           final delta = parseBBCodeTextToDelta(normalizeBlockMarkerNesting(data));
@@ -812,6 +832,7 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
 
   Future<void> _onListen(BuildContext context, PostEditState state) async {
     if (state.status == PostEditStatus.identityChanged) {
+      _transfer = null;
       threadTitleController.clear();
       threadTypeController.clear();
       bbcodeController.setDocumentFromRawText('');
@@ -882,7 +903,7 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
       }
     } else if (state.status == PostEditStatus.editing && !init) {
       threadTypeController.text = state.content?.threadType?.name ?? '  ';
-      threadTitleController.text = state.content?.threadTitle ?? '';
+      threadTitleController.text = _transfer?.subject ?? state.content?.threadTitle ?? '';
       // Update the length of chars user can still input.
       // Bytes of chars for title in utf-8 encoding.
       threadTitleRestLength =
@@ -923,6 +944,32 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
     );
     bbcodeController = buildBBCodeEditorController();
     fullScreen = isDesktop;
+    final transfer = widget.transfer;
+    if (widget.editType == PostEditType.newThread &&
+        transfer != null &&
+        transfer.appliesTo(uid: context.read<AuthenticationRepository>().effectiveCurrentUid, fid: widget.fid)) {
+      _transfer = transfer;
+    }
+  }
+
+  /// Intentional mode switch: subject and body go to the poll page, which fetches its own form; nothing is posted.
+  void _switchToPoll(BuildContext context) {
+    if (!mounted || ModalRoute.of(context)?.isActive == false || !context.read<PostEditRepository>().isCurrent) {
+      return;
+    }
+    final uid = context.read<AuthenticationRepository>().effectiveCurrentUid;
+    context.pushReplacementNamed(
+      ScreenPaths.createPoll,
+      pathParameters: {'fid': widget.fid},
+      extra: uid == null || !initialized
+          ? null
+          : ThreadModeTransfer(
+              uid: uid,
+              fid: widget.fid,
+              subject: threadTitleController.text,
+              body: bbcodeController.toForumBBCode(),
+            ),
+    );
   }
 
   @override
@@ -990,6 +1037,17 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
               appBar: AppBar(
                 title: Text(title),
                 actions: [
+                  if (widget.editType == PostEditType.newThread &&
+                      widget.pollOffered &&
+                      state.status != PostEditStatus.uploading &&
+                      state.status != PostEditStatus.success &&
+                      state.status != PostEditStatus.draftUnconfirmed &&
+                      state.status != PostEditStatus.identityChanged)
+                    IconButton(
+                      tooltip: context.t.pollCreate.switchToPoll,
+                      icon: const Icon(Icons.poll_outlined),
+                      onPressed: _confirming ? null : () => _switchToPoll(context),
+                    ),
                   if (widget.editType.isEditingDraft && (state.content?.canSaveDraft ?? false)) ...[
                     IconButton(
                       onPressed: _confirming || !context.read<PostEditBloc>().canSubmit

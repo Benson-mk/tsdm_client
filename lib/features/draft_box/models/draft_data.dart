@@ -12,6 +12,8 @@ Uri? draftForumUri(String? value) {
   try {
     final uri = Uri.tryParse(baseUrl)?.resolve(value);
     if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        !uri.hasAuthority ||
         uri.origin != Uri.parse(baseUrl).origin ||
         uri.userInfo.isNotEmpty ||
         uri.queryParametersAll.values.any((values) => values.length != 1)) {
