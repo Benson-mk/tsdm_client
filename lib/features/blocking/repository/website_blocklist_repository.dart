@@ -445,9 +445,9 @@ WebsiteBlocklistQuota? _parseQuota(uh.Element page) {
 
 /// Parse a website blacklist page [raw] of account [expectedUid]; with [lookupUid], also the member lookup of it.
 ///
-/// Only the observed `blockuser` plugin page is understood: one `div#bu_page` holding `table#bu_list`, optionally the
+/// Only the observed `blockuser` plugin page is understood: one `div#bu_page` holding the list or its empty marker, optionally the
 /// lookup form `form#bu_qform`, the quota `#bu_quota` and the lookup result `#bu_confirm`. Fails closed: a page that
-/// is not a normal forum page of [expectedUid], a page without the list table (never read as an empty list), a row
+/// is not a normal forum page of [expectedUid], a page without the table or verified empty-list marker, a row
 /// that does not name exactly one user, the account itself or a user listed twice give an error instead of a list.
 /// The list is only complete when the page prints a count that matches its rows and is not split into pages.
 ///
@@ -484,12 +484,34 @@ WebsiteBlocklistDocument _parsePage(String raw, {required int expectedUid, int? 
     _unsupported('lookup form not understood');
   }
   final tables = doc.querySelectorAll('#bu_list');
-  if (tables.length != 1 || tables.single.localName != 'table' || !_inside(tables.single, page)) {
-    _unsupported('list table not found');
-  }
-  final (:rows, :removers) = _parseRows(tables.single, expectedUid: expectedUid);
-
+  final empty = doc.querySelectorAll('#bu_empty');
   final quota = _parseQuota(page);
+  if (tables.isEmpty) {
+    // The live plugin omits the table for an empty list, including on a UID lookup page. Require its explicit
+    // empty marker and matching zero quota; a missing/truncated/changed list must never imply successful removal.
+    final headings = page.querySelectorAll('h3#bu_listtitle');
+    if (empty.length != 1 ||
+        empty.single.localName != 'p' ||
+        !_hasClass(empty.single, 'bu-empty') ||
+        !_inside(empty.single, page) ||
+        empty.single.children.isNotEmpty ||
+        _textOf(empty.single).isEmpty ||
+        headings.length != 1 ||
+        !identical(headings.single.nextElementSibling, empty.single) ||
+        quota?.used != 0 ||
+        page.querySelector('table, [id^="bu_row_"], form.bu-delform, .pg') != null) {
+      _unsupported('empty list not understood');
+    }
+  } else if (tables.length != 1 ||
+      tables.single.localName != 'table' ||
+      !_inside(tables.single, page) ||
+      empty.isNotEmpty) {
+    _unsupported('list table not understood');
+  }
+  final (:rows, :removers) = tables.isEmpty
+      ? (rows: <WebsiteBlockedUser>[], removers: <int, _PluginForm>{})
+      : _parseRows(tables.single, expectedUid: expectedUid);
+
   final paginated = page.querySelector('.pg') != null;
   final counted = quota?.used != null && quota!.used == rows.length;
   final list = WebsiteBlocklist(ownerUid: expectedUid, rows: rows, complete: !paginated && counted, quota: quota);

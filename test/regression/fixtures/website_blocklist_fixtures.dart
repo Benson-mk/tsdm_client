@@ -89,6 +89,18 @@ String blocklistTable(List<String> rows) =>
 ${rows.join('\n')}
 </tbody></table>''';
 
+/// Empty-list fragment observed with an empty test account, both before and after a UID lookup.
+const blocklistEmptyList =
+    '<h3 class="bu-h" id="bu_listtitle">我的黑名單</h3>'
+    '<p class="bu-empty" id="bu_empty">名單是空的。</p>';
+
+/// The actual table-free empty layout, with synthetic identity and form values.
+String blocklistEmptyPage({String confirmation = '', String? quota = '已屏蔽 0／10 人'}) => blocklistPage(
+  quota: quota,
+  confirmation: confirmation,
+  lookupForm: blocklistDesktopLookupForm,
+).replaceFirst(blocklistTable(const []), blocklistEmptyList);
+
 /// A POST form of the plugin with every field as given; blank arguments print the field with an empty value.
 String blocklistForm({
   required String attributes,
@@ -161,7 +173,11 @@ ${withForm ? blocklistForm(attributes: 'id="bu_addform"', flagName: flagName, fl
 /// Writes change [listed] unless told otherwise; every request is recorded.
 class BlocklistForum implements HttpClientAdapter {
   /// Constructor.
-  BlocklistForum({Map<int, String>? listed, this.limit = 10, this.desktopLayout = false}) : listed = listed ?? {};
+  BlocklistForum({Map<int, String>? listed, this.limit = 10, this.desktopLayout = false, this.emptyMarker = false})
+    : listed = listed ?? {};
+
+  /// Use the observed table-free empty state when no users are blocked.
+  final bool emptyMarker;
 
   /// Serve the observed desktop GET hidden field and POST action query.
   final bool desktopLayout;
@@ -221,16 +237,22 @@ class BlocklistForum implements HttpClientAdapter {
 
   String get _quota => blocklistQuota(listed.length, limit);
 
-  String listPage() => blocklistPage(rows: _rows, quota: _quota, lookupForm: _lookupForm, uid: pageUid);
+  String _withEmptyLayout(String html) =>
+      emptyMarker && listed.isEmpty ? html.replaceFirst(blocklistTable(const []), blocklistEmptyList) : html;
+
+  String listPage() =>
+      _withEmptyLayout(blocklistPage(rows: _rows, quota: _quota, lookupForm: _lookupForm, uid: pageUid));
 
   String lookupPage(int uid) {
     final name = members[uid];
-    return blocklistPage(
-      rows: _rows,
-      quota: _quota,
-      lookupForm: _lookupForm,
-      confirmation: name == null || listed.containsKey(uid) ? '' : blocklistConfirmation(uid, name, action: _action),
-      uid: pageUid,
+    return _withEmptyLayout(
+      blocklistPage(
+        rows: _rows,
+        quota: _quota,
+        lookupForm: _lookupForm,
+        confirmation: name == null || listed.containsKey(uid) ? '' : blocklistConfirmation(uid, name, action: _action),
+        uid: pageUid,
+      ),
     );
   }
 

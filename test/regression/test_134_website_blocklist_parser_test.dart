@@ -31,6 +31,38 @@ void main() {
   setUpAll(() => talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false)));
 
   group('list', () {
+    test('the observed table-free empty list remains readable during UID lookup', () {
+      final empty = _parse(blocklistEmptyPage());
+      expect(empty.list.rows, isEmpty);
+      expect(empty.list.complete, isTrue);
+      final lookup = _parse(
+        blocklistEmptyPage(confirmation: blocklistConfirmation(2003, 'Charlie', action: blocklistDesktopAction)),
+        lookup: 2003,
+      );
+      expect(lookup.lookup?.username, 'Charlie');
+      expect(lookup.lookup?.canAdd, isTrue);
+      expect(lookup.addPayload(2003)?['buid'], '2003');
+    });
+
+    test('missing, ambiguous or contradictory empty-list evidence is rejected', () {
+      final empty = blocklistEmptyPage();
+      for (final page in [
+        empty.replaceFirst(blocklistEmptyList, ''),
+        empty.replaceFirst(blocklistEmptyList, '$blocklistEmptyList$blocklistEmptyList'),
+        empty.replaceFirst('id="bu_empty"', 'id="other"'),
+        empty.replaceFirst('class="bu-empty"', 'class="other"'),
+        empty.replaceFirst('<p class="bu-empty"', '<div class="bu-empty"').replaceFirst('名單是空的。</p>', '名單是空的。</div>'),
+        empty.replaceFirst('名單是空的。', '<span>名單是空的。</span>'),
+        empty.replaceFirst('已屏蔽 0／10 人', '已屏蔽 1／10 人'),
+        blocklistEmptyPage(quota: null),
+        empty.replaceFirst(blocklistEmptyList, '$blocklistEmptyList${blocklistTable(const [])}'),
+        empty.replaceFirst(blocklistEmptyList, '$blocklistEmptyList<table id="other"></table>'),
+        empty.replaceFirst(blocklistEmptyList, '').replaceFirst('<div id="ft">', '$blocklistEmptyList<div id="ft">'),
+      ]) {
+        expect(_failureOf(page), WebsiteBlocklistFailure.unsupported);
+      }
+    });
+
     test('every row, its name and its remove form are read; layout links are not rows', () {
       final page = _parse(_listPage([blocklistRow(2001, 'Alpha'), blocklistRow(2002, 'Bravo')]));
       expect(page.list.rows.map((e) => (e.uid, e.username, e.removable)), [
@@ -61,7 +93,7 @@ void main() {
       expect(empty.list.complete, isFalse, reason: 'no rows and no count is not an empty list');
     });
 
-    test('an empty list is only reported for the plugin page with its list table', () {
+    test('a missing list without explicit empty evidence is rejected', () {
       final empty = _parse(_listPage([]));
       expect(empty.list.rows, isEmpty);
       expect(empty.list.complete, isTrue);

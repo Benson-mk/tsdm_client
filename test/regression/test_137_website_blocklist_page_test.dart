@@ -209,6 +209,20 @@ void main() {
     await settle(tester);
   }
 
+  for (final localPage in [false, true]) {
+    testWidgets('${localPage ? 'local' : 'website'} blocking content avoids landscape side insets', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(960, 440);
+      tester.view.padding = const FakeViewPadding(left: 44, right: 36, bottom: 24);
+      addTearDown(tester.view.reset);
+      await pump(tester, page: localPage ? const UserBlockPage(clientFactory: _client) : null);
+      final bounds = tester.getRect(find.byType(ListView).first);
+      expect(bounds.left, greaterThanOrEqualTo(44));
+      expect(bounds.right, lessThanOrEqualTo(924));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('nothing is shown as empty before an explicit load; rows are labelled against the local list', (
     tester,
   ) async {

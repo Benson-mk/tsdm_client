@@ -291,32 +291,36 @@ class _UserBlockPageState extends State<UserBlockPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: edgeInsetsL12T4R12.add(context.safePadding()),
-        children: [
-          Card(
-            child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.localHint)),
-          ),
-          BlocBuilder<UserBlockCubit, UserBlockList>(builder: _buildLocalList),
-          const Divider(),
-          // The forum's blacklist has its own page: it lives in the forum account, unlike the list above.
-          ListTile(
-            key: const ValueKey('website-blocklist-entry'),
-            leading: const Icon(Icons.public_outlined),
-            title: Text(tr.website.entry, style: Theme.of(context).textTheme.titleMedium),
-            subtitle: Text(tr.website.entryHint),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async => context.pushNamed(ScreenPaths.websiteBlocklist),
-          ),
-          const Divider(),
-          ListTile(
-            title: Text(tr.serverRules.title, style: Theme.of(context).textTheme.titleMedium),
-            subtitle: Text(tr.serverRules.hint),
-            trailing: _busy ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator()) : null,
-            onTap: _busy ? null : _loadRules,
-          ),
-          _buildRules(context),
-        ],
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: ListView(
+          padding: edgeInsetsL12T4R12.add(context.safePadding()),
+          children: [
+            Card(
+              child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.localHint)),
+            ),
+            BlocBuilder<UserBlockCubit, UserBlockList>(builder: _buildLocalList),
+            const Divider(),
+            // The forum's blacklist has its own page: it lives in the forum account, unlike the list above.
+            ListTile(
+              key: const ValueKey('website-blocklist-entry'),
+              leading: const Icon(Icons.public_outlined),
+              title: Text(tr.website.entry, style: Theme.of(context).textTheme.titleMedium),
+              subtitle: Text(tr.website.entryHint),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async => context.pushNamed(ScreenPaths.websiteBlocklist),
+            ),
+            const Divider(),
+            ListTile(
+              title: Text(tr.serverRules.title, style: Theme.of(context).textTheme.titleMedium),
+              subtitle: Text(tr.serverRules.hint),
+              trailing: _busy ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator()) : null,
+              onTap: _busy ? null : _loadRules,
+            ),
+            _buildRules(context),
+          ],
+        ),
       ),
     );
   }

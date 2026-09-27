@@ -488,21 +488,25 @@ class _WebsiteBlocklistViewState extends State<_WebsiteBlocklistView> {
         key: _messenger,
         child: Scaffold(
           appBar: AppBar(title: Text(tr.title)),
-          body: BlocBuilder<WebsiteBlocklistCubit, WebsiteBlocklistState>(
-            builder: (context, state) => BlocBuilder<UserBlockCubit, UserBlockList>(
-              builder: (context, local) => ListView(
-                padding: edgeInsetsL12T4R12.add(context.safePadding()),
-                children: [
-                  Card(
-                    child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.hint)),
-                  ),
-                  if (state.owner == null)
-                    ListTile(title: Text(context.t.userBlock.invalid))
-                  else ...[
-                    _buildAddSection(context, state),
-                    ..._buildList(context, state, local),
+          body: SafeArea(
+            top: false,
+            bottom: false,
+            child: BlocBuilder<WebsiteBlocklistCubit, WebsiteBlocklistState>(
+              builder: (context, state) => BlocBuilder<UserBlockCubit, UserBlockList>(
+                builder: (context, local) => ListView(
+                  padding: edgeInsetsL12T4R12.add(context.safePadding()),
+                  children: [
+                    Card(
+                      child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.hint)),
+                    ),
+                    if (state.owner == null)
+                      ListTile(title: Text(context.t.userBlock.invalid))
+                    else ...[
+                      _buildAddSection(context, state),
+                      ..._buildList(context, state, local),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

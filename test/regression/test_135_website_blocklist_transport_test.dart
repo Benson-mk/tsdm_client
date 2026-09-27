@@ -32,6 +32,27 @@ void main() {
 
   const repo = WebsiteBlocklistRepository();
 
+  test('empty live layout supports lookup, first add and last removal without duplicate writes', () async {
+    final forum = BlocklistForum(desktopLayout: true, emptyMarker: true);
+    final client = _clientOf(forum);
+    final list = (await repo.fetchList(client, uid: blocklistOwner)).getOrElse((error) => fail('$error'));
+    expect(list.complete, isTrue);
+    expect(list.rows, isEmpty);
+    final found = (await repo.lookup(client, uid: blocklistOwner, target: 2003)).getOrElse((error) => fail('$error'));
+    expect(found.canAdd, isTrue);
+    expect(forum.posts, isEmpty);
+    final added = await repo.add(client, uid: blocklistOwner, target: 2003, expectedName: 'Charlie');
+    expect(added.isSuccess, isTrue);
+    expect(added.list!.contains(2003), isTrue);
+    final removed = await repo.remove(client, uid: blocklistOwner, target: 2003);
+    expect(removed.isSuccess, isTrue);
+    expect(removed.list!.complete, isTrue);
+    expect(removed.list!.rows, isEmpty);
+    expect(forum.posts, hasLength(2));
+    expect(forum.posts.first.form['blockuseradd'], blocklistAddFlag);
+    expect(forum.posts.last.form['blockuserdel'], blocklistRemoveFlag);
+  });
+
   group('reads', () {
     test('the list is read from the plugin page', () async {
       final forum = BlocklistForum(listed: {2001: 'Alpha'});

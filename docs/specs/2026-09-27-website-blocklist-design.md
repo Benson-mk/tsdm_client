@@ -32,6 +32,7 @@ served. Test fixtures use this structure with made-up values (`test/regression/f
 | Lookup result | `div#bu_confirm` > `div.bu-member` > `span.bu-name > b#bu_confirmname` (name) and `span.bu-uid` (`UID n`) |
 | Add form | `form#bu_addform` POST to the plugin page, optionally with `mobile=no` in its action: hidden `formhash`, `blockuseradd`, `buid`; unnamed submit |
 | List | `table#bu_list.bu-list`, `thead` (會員 / 加入時間 / 操作), `tbody > tr#bu_row_n` |
+| Empty list | No table; `h3#bu_listtitle` immediately followed by `p#bu_empty.bu-empty` containing `名單是空的。`, with zero used quota |
 | Row | 1st cell `span.bu-name > a[href=home.php?mod=space&uid=n]` and `span.bu-uid`; 2nd date; 3rd `form.bu-delform` |
 | Remove form | `form.bu-delform` POST to the plugin page, optionally with `mobile=no` in its action: hidden `formhash`, `blockuserdel`, `buid`; unnamed submit |
 
@@ -39,7 +40,9 @@ served. Test fixtures use this structure with made-up values (`test/regression/f
 
 * **Reads**: GET the plugin page (list) and the same page with `&bu_q=<uid>` (lookup, read-only: it only opens the
   confirmation). Both must be a normal forum page of the expected account (`checkForumPage` with identity), complete
-  (`</html>`), with exactly one `#bu_page` holding `table#bu_list`. A page without the list table is an error, never
+  (`</html>`), with exactly one `#bu_page` holding `table#bu_list` or the observed explicit empty-list marker.
+  The empty variant must have one plain-text `p#bu_empty.bu-empty` immediately after `h3#bu_listtitle`, zero used
+  quota, and no table, list rows, remove forms or pagination. Missing or contradictory evidence is an error, never
   an empty list. A `#bu_qform` present must be the observed GET form: routing only in its hidden fields, each once
   (a GET form replaces the action's query, so routing in the action as well is refused). The desktop variant may
   additionally contain exactly one hidden `mobile=no`; another value, duplicate or unknown hidden field is refused.
@@ -96,9 +99,9 @@ and name) is taken from the list current at import time, not from the row tapped
 
 * Structure and field names follow the read-only observation above; hidden values (token, flag values, `buid`) were
   not visible there, so the tests use synthetic values and only prove that served values are preserved.
-* No live add/remove was performed: the POST round trip, the forum's answer to it, its "not found" lookup page and
-  its empty-list page were not observed. An empty list is accepted only as an empty `table#bu_list` with a matching
-  count; any other empty or error layout is shown as unsupported with the website fallback.
+* No live add/remove was performed: the POST round trip, the forum's answer to it and its "not found" lookup page
+  were not observed. The empty-list page and its successful UID lookup were verified read-only with an authorized
+  test account. Unobserved empty or error layouts remain unsupported with the website fallback.
 
 ## Desktop query form correction (2026-09-27)
 
@@ -115,3 +118,17 @@ binding retain their checks. Synthetic parser tests cover list and lookup with t
 unsupported values, duplicates, unknown parameters and foreign actions. Transport tests verify reads do not send
 any POST and that adding or removing through a fake adapter sends once, retains the served body, sends only one
 layout parameter and reloads the list once for confirmation. No real add/remove was performed for this correction.
+
+## Empty-list and landscape correction (2026-09-27)
+
+Preview build 101 still failed with `list table not found` for accounts with no blocked users. Read-only inspection
+confirmed that the plugin omits `table#bu_list` and instead serves the explicit empty marker documented above,
+including on a successful UID lookup page. The production parser now accepts that verified shape with a matching
+zero quota while retaining all identity, target and form checks. Both full live HTML responses passed local parser
+verification; private HTML and tokens are not committed. Synthetic regressions reject missing, duplicate, misplaced
+or contradictory markers and exercise lookup, first addition and last removal with an in-memory server, including
+single-submit behavior. No live blacklist was changed.
+
+Website blacklist, local blocking, activities and my titles each apply SafeArea to their own body. Existing bottom
+padding is retained on the blocking pages; the shared padding helper is unchanged. Landscape widget tests exercise
+nonzero left/right insets and bottom padding. Android device retesting is still required.
