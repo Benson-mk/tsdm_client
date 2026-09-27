@@ -116,7 +116,7 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
                 ),
               ],
             ),
-            body: body,
+            body: SafeArea(top: false, child: body),
           );
         },
       ),

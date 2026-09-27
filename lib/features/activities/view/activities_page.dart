@@ -84,30 +84,33 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
           ),
         ],
       ),
-      body: _loading
-          ? const CenteredCircularIndicator()
-          : _failed
-          ? buildRetryButton(context, _load, message: context.t.general.failedToLoad)
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                children: [
-                  Padding(padding: const EdgeInsets.all(12), child: Text(tr.description)),
-                  if (_activities.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text(tr.empty)),
-                  for (final activity in _activities)
-                    Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.event_outlined),
-                        title: Text(activity.title),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () async => context.dispatchAsUrl(activity.url),
+      body: SafeArea(
+        top: false,
+        child: _loading
+            ? const CenteredCircularIndicator()
+            : _failed
+            ? buildRetryButton(context, _load, message: context.t.general.failedToLoad)
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    Padding(padding: const EdgeInsets.all(12), child: Text(tr.description)),
+                    if (_activities.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text(tr.empty)),
+                    for (final activity in _activities)
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.event_outlined),
+                          title: Text(activity.title),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () async => context.dispatchAsUrl(activity.url),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }
