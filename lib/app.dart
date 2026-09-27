@@ -32,6 +32,7 @@ import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
+import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/replied_thread/cubit/replied_thread_cubit.dart';
 import 'package:tsdm_client/features/root/bloc/points_changes_cubit.dart';
@@ -344,6 +345,14 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
               );
             },
             lazy: false,
+          ),
+          // Secondary title of the current account for the homepage, the own profile and the medal & title hub; read
+          // on demand, keyed by account and dropped on every account change.
+          BlocProvider(
+            create: (context) {
+              final auth = context.repo<AuthenticationRepository>();
+              return CurrentTitleCubit(currentUid: () => auth.currentUser?.uid, authStatus: auth.status);
+            },
           ),
           // Top level: leaving the progress page must not cancel the run, like the auto checkin.
           BlocProvider(

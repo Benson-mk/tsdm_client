@@ -191,7 +191,28 @@
       "today": "今日",
       "yesterday": "昨日",
       "threads": "帖子"
-    }
+    },
+    "greeting": {
+      "morning": "早安，${name}",
+      "afternoon": "午安，${name}",
+      "evening": "晚安，${name}",
+      "night": "夜深了，${name}"
+    },
+    "todayPosts": "今天已有 ${count} 篇新帖",
+    "forumActivity": "論壇動態",
+    "guideTitle": "論壇導讀",
+    "tools": "我的工具",
+    "supportNote": "完全自願，不支持也能使用全部功能"
+  },
+  "medalTitleHub": {
+    "title": "勳章與稱號",
+    "entryDescription": "勳章中心、我的頭銜與頭銜商店",
+    "currentTitle": "目前的頭銜",
+    "noTitle": "目前沒有使用頭銜",
+    "loadFailed": "無法讀取目前的頭銜",
+    "medalCenterDescription": "瀏覽勳章與取得方式",
+    "myTitlesDescription": "使用、切換或摘下已擁有的頭銜",
+    "titleShopDescription": "瀏覽頭銜與價格，每次購買都會先確認"
   },
   "topicPage": {
     "title": "分割區",
@@ -590,6 +611,7 @@
   "profilePage": {
     "title": "個人資料",
     "userNodeNotFound": "未找到使用者資訊節點",
+    "secondaryTitle": "頭銜",
     "checkin": {
       "title": "簽到",
       "checkinFailed": "簽到失敗",
@@ -1696,7 +1718,9 @@
     "unset": "摘下",
     "openTitleShop": "頭銜商店",
     "noneActivated": "目前尚未啟動任何頭銜",
-    "activated": "使用中：${name: String}"
+    "activated": "使用中：${name: String}",
+    "empty": "目前還沒有擁有任何頭銜",
+    "tapToUse": "點一下頭銜即可使用"
   },
   "titleShop": {
     "title": "頭銜商店",

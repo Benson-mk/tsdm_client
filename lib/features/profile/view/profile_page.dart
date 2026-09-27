@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dart_bbcode_web_colors/dart_bbcode_web_colors.dart';
@@ -21,9 +22,11 @@ import 'package:tsdm_client/features/checkin/bloc/checkin_bloc.dart';
 import 'package:tsdm_client/features/checkin/widgets/checkin_button.dart';
 import 'package:tsdm_client/features/friend/widgets/add_friend_dialog.dart';
 import 'package:tsdm_client/features/need_login/view/need_login_page.dart';
+import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/bloc/profile_bloc.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
+import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/medal.dart';
@@ -768,6 +771,9 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ],
 
+      // Secondary title of the profile owner.
+      _ProfileSecondaryTitle(parsedUrl: state.secondaryTitleUrl, profileUid: int.tryParse(userProfile.uid ?? '')),
+
       /// Medals, if any.
       if (userProfile.profileMedals?.isNotEmpty ?? false) ...[
         _SectionTitle(tr.medals),
@@ -778,14 +784,15 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ],
 
-      // Medal centre entry: the catalogue is meant for the logged user (buy/apply for themselves), so it only shows
-      // on the user's own profile, like the achievements entry in the app bar.
+      // Medal centre, own titles and title shop: all meant for the logged user (buy/apply/switch for themselves), so
+      // the entry only shows on the user's own profile, like the achievements entry in the app bar.
       if (widget.username == null && widget.uid == null)
         ListTile(
           leading: const Icon(Icons.workspace_premium_outlined),
-          title: Text(context.t.medalCenter.title),
+          title: Text(context.t.medalTitleHub.title),
+          subtitle: Text(context.t.medalTitleHub.entryDescription),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () async => context.pushNamed(ScreenPaths.medalCenter),
+          onTap: () async => context.pushNamed(ScreenPaths.medalTitleHub),
         ),
 
       if (widget.username == null && widget.uid == null)
@@ -913,8 +920,15 @@ class _ProfilePageState extends State<ProfilePage> {
       controller: _refreshController,
       scrollController: _scrollController,
       header: const MaterialHeader(),
-      onRefresh: () =>
-          context.read<ProfileBloc>().add(ProfileRefreshRequested(uid: widget.uid, username: widget.username)),
+      onRefresh: () {
+        context.read<ProfileBloc>().add(ProfileRefreshRequested(uid: widget.uid, username: widget.username));
+        // The own title comes from the titles page of the account, refresh it with the profile.
+        final currentTitle = context.readOrNull<CurrentTitleCubit>();
+        final currentUid = context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
+        if (currentTitle != null && currentUid != null && '$currentUid' == state.userProfile?.uid) {
+          unawaited(currentTitle.ensureLoaded(force: true));
+        }
+      },
       childBuilder: (context, physics) => CustomScrollView(
         controller: _scrollController,
         physics: physics,
@@ -993,6 +1007,74 @@ class _ProfilePageState extends State<ProfilePage> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Secondary title of the profile owner.
+///
+/// * The image the profile page itself renders for its owner, when it has one ([parseProfileSecondaryTitleUrl]).
+/// * Otherwise, on the profile of the logged in account only, the title read from that account's titles page
+///   ([CurrentTitleCubit]). Other users never get the current account's title.
+class _ProfileSecondaryTitle extends StatefulWidget {
+  const _ProfileSecondaryTitle({required this.parsedUrl, required this.profileUid});
+
+  /// Title image found in the profile page.
+  final String? parsedUrl;
+
+  /// Uid of the profile owner, as the profile page states it.
+  final int? profileUid;
+
+  @override
+  State<_ProfileSecondaryTitle> createState() => _ProfileSecondaryTitleState();
+}
+
+class _ProfileSecondaryTitleState extends State<_ProfileSecondaryTitle> {
+  CurrentTitleCubit? _cubit;
+
+  /// The profile shown is the logged in account's.
+  bool get _isOwn {
+    final uid = widget.profileUid;
+    return uid != null && uid == context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _cubit = context.readOrNull<CurrentTitleCubit>();
+    final cubit = _cubit;
+    if (widget.parsedUrl == null && cubit != null && _isOwn) {
+      unawaited(cubit.ensureLoaded());
+    }
+  }
+
+  Widget _section(BuildContext context, Widget badge) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [_SectionTitle(context.t.profilePage.secondaryTitle), badge],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final parsedUrl = widget.parsedUrl;
+    if (parsedUrl != null) {
+      return _section(context, SecondaryTitleBadge(parsedUrl, width: 138));
+    }
+    final cubit = _cubit;
+    if (cubit == null || !_isOwn) {
+      return sizedBoxEmpty;
+    }
+    return BlocBuilder<CurrentTitleCubit, CurrentTitleState>(
+      bloc: cubit,
+      builder: (context, state) {
+        final url = state.imageUrlFor(widget.profileUid);
+        if (url == null) {
+          return sizedBoxEmpty;
+        }
+        return _section(
+          context,
+          SecondaryTitleBadge(url, key: ValueKey(url), width: 138, semanticLabel: state.title?.name),
+        );
+      },
     );
   }
 }

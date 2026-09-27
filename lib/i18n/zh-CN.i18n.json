@@ -191,7 +191,28 @@
       "today": "今日",
       "yesterday": "昨日",
       "threads": "帖子"
-    }
+    },
+    "greeting": {
+      "morning": "早上好，${name}",
+      "afternoon": "下午好，${name}",
+      "evening": "晚上好，${name}",
+      "night": "夜深了，${name}"
+    },
+    "todayPosts": "今天已有 ${count} 篇新帖",
+    "forumActivity": "论坛动态",
+    "guideTitle": "论坛导读",
+    "tools": "我的工具",
+    "supportNote": "完全自愿，不支持也能使用全部功能"
+  },
+  "medalTitleHub": {
+    "title": "勋章与称号",
+    "entryDescription": "勋章中心、我的称号与称号商店",
+    "currentTitle": "当前称号",
+    "noTitle": "当前没有使用称号",
+    "loadFailed": "无法读取当前称号",
+    "medalCenterDescription": "浏览勋章与获取方式",
+    "myTitlesDescription": "使用、切换或摘下已拥有的称号",
+    "titleShopDescription": "浏览称号与价格，每次购买都会先确认"
   },
   "topicPage": {
     "title": "分区",
@@ -590,6 +611,7 @@
   "profilePage": {
     "title": "个人资料",
     "userNodeNotFound": "未找到用户信息节点",
+    "secondaryTitle": "称号",
     "checkin": {
       "title": "签到",
       "checkinFailed": "签到失败",
@@ -1696,7 +1718,9 @@
     "unset": "摘下",
     "openTitleShop": "称号商店",
     "noneActivated": "当前尚未激活任何称号",
-    "activated": "使用中：${name: String}"
+    "activated": "使用中：${name: String}",
+    "empty": "目前还没有拥有任何称号",
+    "tapToUse": "点击称号即可使用"
   },
   "titleShop": {
     "title": "称号商店",

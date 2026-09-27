@@ -6,15 +6,23 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/bloc/my_titles_cubit.dart';
 import 'package:tsdm_client/features/profile/repository/my_titles_repository.dart';
+import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_card.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
-import 'package:tsdm_client/widgets/single_line_text.dart';
+
+/// Preferred width of a title card; the grid fits as many as the width allows.
+const _cardExtent = 208.0;
+
+/// Spacing between title cards.
+const _cardSpacing = 12.0;
 
 /// Page showing current user's titles.
 ///
@@ -38,7 +46,14 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
         ),
         BlocProvider(
           create: (context) {
-            final cubit = MyTitlesCubit(context.repo());
+            // The page belongs to the account logged in when it opened: hand what it reads over to the current title
+            // badge only for that account.
+            final uid = context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
+            final currentTitle = context.readOrNull<CurrentTitleCubit>();
+            final cubit = MyTitlesCubit(
+              context.repo(),
+              onTitlesChanged: currentTitle == null ? null : (titles) => currentTitle.record(uid: uid, titles: titles),
+            );
             unawaited(cubit.fetchAvailableSecondaryTitles());
             return cubit;
           },
@@ -51,7 +66,6 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
           }
         },
         builder: (context, state) {
-          final currentTitleName = state.titles.firstWhereOrNull((v) => v.activated)?.name;
           final body = switch (state.status) {
             MyTitlesStatus.initial || MyTitlesStatus.loadingTitles => const CenteredCircularIndicator(),
             MyTitlesStatus.failure when state.titles.isEmpty => buildRetryButton(
@@ -61,39 +75,44 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
             MyTitlesStatus.switchingTitle || MyTitlesStatus.success || MyTitlesStatus.failure => ScrollConfiguration(
               behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
               child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                padding: edgeInsetsL16T16R16B16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Row(
-                        children: [
-                          sizedBoxW12H12,
-                          Icon(
-                            Icons.lightbulb_outline,
-                            color: Theme.of(context).colorScheme.onSecondaryContainer,
-                          ),
-                          sizedBoxW4H4,
-                          Expanded(
-                            child: SingleLineText(
-                              currentTitleName == null ? tr.noneActivated : tr.activated(name: currentTitleName),
-                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                          if (currentTitleName != null) ...[
-                            sizedBoxW8H8,
-                            TextButton(
-                              child: Text(tr.unset),
-                              onPressed: () async => context.read<MyTitlesCubit>().unsetSecondaryTitle(),
-                            ),
-                          ],
-                        ],
+                    _CurrentTitleHeader(state),
+                    sizedBoxW16H16,
+                    if (state.titles.isEmpty)
+                      Padding(
+                        padding: edgeInsetsT12,
+                        child: Text(
+                          tr.empty,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
+                        ),
+                      )
+                    else
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final columns = ((constraints.maxWidth + _cardSpacing) / (_cardExtent + _cardSpacing))
+                              .floor()
+                              .clamp(1, 8);
+                          final width = (constraints.maxWidth - _cardSpacing * (columns - 1)) / columns;
+                          return Wrap(
+                            spacing: _cardSpacing,
+                            runSpacing: _cardSpacing,
+                            children: state.titles
+                                .map(
+                                  (e) => SizedBox(
+                                    width: width,
+                                    child: SecondaryTitleCard(e, key: ValueKey(e.id)),
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        },
                       ),
-                    ),
-                    ...state.titles.map(SecondaryTitleCard.new),
                   ],
                 ),
               ),
@@ -119,6 +138,65 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
             body: SafeArea(top: false, child: body),
           );
         },
+      ),
+    );
+  }
+}
+
+/// The title in use with its image, the unset action and a hint on how to switch.
+class _CurrentTitleHeader extends StatelessWidget {
+  const _CurrentTitleHeader(this.state);
+
+  final MyTitlesState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final tr = context.t.myTitlesPage;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final current = state.titles.firstWhereOrNull((v) => v.activated);
+    return Card(
+      margin: EdgeInsets.zero,
+      color: colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: edgeInsetsL16T12R16B12,
+        child: Row(
+          children: [
+            if (current != null) ...[
+              SecondaryTitleBadge(current.imageUrl, width: 110, semanticLabel: current.name),
+              sizedBoxW12H12,
+            ] else ...[
+              Icon(Icons.lightbulb_outline, color: colorScheme.onSurfaceVariant),
+              sizedBoxW12H12,
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    current == null ? tr.noneActivated : tr.activated(name: current.name),
+                    style: textTheme.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (state.titles.isNotEmpty) ...[
+                    sizedBoxW4H4,
+                    Text(tr.tapToUse, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                  ],
+                ],
+              ),
+            ),
+            if (current != null) ...[
+              sizedBoxW8H8,
+              TextButton(
+                onPressed: state.status == MyTitlesStatus.switchingTitle
+                    ? null
+                    : () async => context.read<MyTitlesCubit>().unsetSecondaryTitle(),
+                child: Text(tr.unset),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

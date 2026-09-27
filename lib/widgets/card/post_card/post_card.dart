@@ -10,6 +10,7 @@ import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
+import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -20,6 +21,7 @@ import 'package:tsdm_client/shared/models/thread_floor_interaction_mode.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/widgets/adaptive_ink_response.dart';
+import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/card/lock_card/locked_card.dart';
 import 'package:tsdm_client/widgets/card/packet_card.dart';
 import 'package:tsdm_client/widgets/card/poll_card.dart';
@@ -31,6 +33,12 @@ import 'package:tsdm_client/widgets/munched_html.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+/// Height of the user group badge in the author row; the forum renders it 20px high as well.
+const _groupBadgeHeight = 20.0;
+
+/// Width of the secondary title in the author row (natively 184x100, shown at 76x41).
+const _secondBadgeWidth = 76.0;
 
 /// Actions in post context menu.
 ///
@@ -213,6 +221,22 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
             '${widget.post.publishTime?.yyyyMMDDHHMMSS()}',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
           ),
+          // Badges the forum renders in this floor's author column: the user group badge and the secondary title of
+          // this author. Nothing about the current account is used here.
+          if (widget.post.badge != null || widget.post.secondBadge != null) ...[
+            sizedBoxW4H4,
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (widget.post.badge != null)
+                  CachedImage(widget.post.badge!, height: _groupBadgeHeight, maxWidth: 120, fit: BoxFit.contain),
+                if (widget.post.secondBadge != null)
+                  SecondaryTitleBadge(widget.post.secondBadge!, width: _secondBadgeWidth),
+              ],
+            ),
+          ],
         ],
       ),
       trailing: Column(

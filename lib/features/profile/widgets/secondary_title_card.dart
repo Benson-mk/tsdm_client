@@ -1,14 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/features/profile/bloc/my_titles_cubit.dart';
 import 'package:tsdm_client/features/profile/models/secondary_title.dart';
+import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
-import 'package:tsdm_client/widgets/network_indicator_image.dart';
 
-/// Card to show a secondary title.
-class SecondaryTitleCard extends StatefulWidget {
+/// Card to show a secondary title, tap to use it.
+///
+/// The image keeps its natural 184x100 ratio inside the card padding (at most its natural width), the current title is
+/// marked with an outline and a label below the name instead of a corner ribbon covering the image.
+class SecondaryTitleCard extends StatelessWidget {
   /// Constructor.
   const SecondaryTitleCard(this.title, {super.key});
 
@@ -16,68 +22,73 @@ class SecondaryTitleCard extends StatefulWidget {
   final SecondaryTitle title;
 
   @override
-  State<SecondaryTitleCard> createState() => _SecondaryTitleCardState();
-}
-
-class _SecondaryTitleCardState extends State<SecondaryTitleCard> {
-  bool _activated = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _activated = widget.title.activated;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    _activated = context.select<MyTitlesCubit, bool>(
-      (cubit) => cubit.state.titles.firstWhereOrNull((e) => e.id == widget.title.id)?.activated ?? false,
+    final activated = context.select<MyTitlesCubit, bool>(
+      (cubit) => cubit.state.titles.firstWhereOrNull((e) => e.id == title.id)?.activated ?? false,
     );
     final loading = context.select<MyTitlesCubit, bool>((cubit) => cubit.state.status == MyTitlesStatus.switchingTitle);
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    final card = Card(
-      clipBehavior: Clip.hardEdge,
-      color: loading ? Theme.of(context).colorScheme.surfaceContainer : null,
+    return Card(
+      clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
+      color: activated ? colorScheme.secondaryContainer : colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: activated ? colorScheme.primary : colorScheme.outlineVariant,
+          width: activated ? 2 : 1,
+        ),
+      ),
       child: InkWell(
-        onTap: loading ? null : () async => context.read<MyTitlesCubit>().setSecondaryTitle(widget.title.id),
+        onTap: loading || activated ? null : () async => context.read<MyTitlesCubit>().setSecondaryTitle(title.id),
         child: Padding(
           padding: edgeInsetsL12T12R12B12,
-          child: Column(
-            children: [
-              NetworkIndicatorImage(widget.title.imageUrl),
-              sizedBoxW8H8,
-              Text(
-                style: TextStyle(
-                  color: loading
-                      ? Colors.grey[400]
-                      : _activated
-                      ? Theme.of(context).colorScheme.primary
-                      : null,
-                  fontSize: Theme.of(context).textTheme.labelLarge?.fontSize,
-                ),
-                '${widget.title.name} (${widget.title.id})',
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final badgeWidth = math.min(constraints.maxWidth, badgeImageSize.width);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SecondaryTitleBadge(title.imageUrl, width: badgeWidth, semanticLabel: title.name),
+                  sizedBoxW8H8,
+                  Text(
+                    title.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelLarge?.copyWith(
+                      color: loading
+                          ? colorScheme.outline
+                          : activated
+                          ? colorScheme.onSecondaryContainer
+                          : null,
+                      fontWeight: activated ? FontWeight.bold : null,
+                    ),
+                  ),
+                  sizedBoxW4H4,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (activated) ...[
+                        Icon(Icons.check_circle, size: 16, color: colorScheme.primary),
+                        sizedBoxW4H4,
+                        Text(
+                          context.t.myTitlesPage.current,
+                          style: textTheme.labelMedium?.copyWith(color: colorScheme.primary),
+                        ),
+                        sizedBoxW8H8,
+                      ],
+                      Text('ID ${title.id}', style: textTheme.labelSmall?.copyWith(color: colorScheme.outline)),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
-    );
-
-    return ConstrainedBox(
-      // A secondary title image is 184x100. Set a larger size for titles and spaces.
-      constraints: const BoxConstraints(
-        minHeight: 130,
-      ),
-      child: _activated
-          ? ClipRect(
-              child: Banner(
-                message: context.t.myTitlesPage.current,
-                location: BannerLocation.topEnd,
-                child: card,
-              ),
-            )
-          : card,
     );
   }
 }

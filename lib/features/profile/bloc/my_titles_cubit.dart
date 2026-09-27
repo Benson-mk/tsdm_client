@@ -53,9 +53,23 @@ final class MyTitlesState with MyTitlesStateMappable {
 /// Cubit of my titles page.
 final class MyTitlesCubit extends Cubit<MyTitlesState> with LoggerMixin {
   /// Constructor.
-  MyTitlesCubit(this._repo) : super(const MyTitlesState());
+  ///
+  /// [onTitlesChanged] receives the titles every time they are read or the current one changed, so the badge of the
+  /// current account elsewhere in the app follows without reading the page again.
+  MyTitlesCubit(this._repo, {void Function(List<SecondaryTitle> titles)? onTitlesChanged})
+    : _onTitlesChanged = onTitlesChanged,
+      super(const MyTitlesState());
 
   final MyTitlesRepository _repo;
+  final void Function(List<SecondaryTitle> titles)? _onTitlesChanged;
+
+  @override
+  void onChange(Change<MyTitlesState> change) {
+    super.onChange(change);
+    if (change.nextState.status == MyTitlesStatus.success) {
+      _onTitlesChanged?.call(change.nextState.titles);
+    }
+  }
 
   /// Fetch info about all secondary titles for current user.
   Future<void> fetchAvailableSecondaryTitles() async {

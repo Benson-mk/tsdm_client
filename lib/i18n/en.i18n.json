@@ -191,7 +191,28 @@
       "today": "Today",
       "yesterday": "Yesterday",
       "threads": "Posts"
-    }
+    },
+    "greeting": {
+      "morning": "Good morning, ${name}",
+      "afternoon": "Good afternoon, ${name}",
+      "evening": "Good evening, ${name}",
+      "night": "Still up, ${name}?"
+    },
+    "todayPosts": "${count} new posts today",
+    "forumActivity": "Forum activity",
+    "guideTitle": "Forum guide",
+    "tools": "My tools",
+    "supportNote": "Entirely optional: every feature stays available without it"
+  },
+  "medalTitleHub": {
+    "title": "Medals & titles",
+    "entryDescription": "Medal centre, my titles and the title shop",
+    "currentTitle": "Current title",
+    "noTitle": "No secondary title in use",
+    "loadFailed": "Could not read your current title",
+    "medalCenterDescription": "Browse medals and how to get them",
+    "myTitlesDescription": "Use, switch or unset the titles you own",
+    "titleShopDescription": "Browse titles and prices, every purchase asks for confirmation"
   },
   "topicPage": {
     "title": "Topics",
@@ -590,6 +611,7 @@
   "profilePage": {
     "title": "User Profile",
     "userNodeNotFound": "user info root node not found",
+    "secondaryTitle": "Secondary title",
     "checkin": {
       "title": "Check In",
       "checkinFailed": "Failed to check in",
@@ -1696,7 +1718,9 @@
     "unset": "Unset",
     "openTitleShop": "Title shop",
     "noneActivated": "None secondary title activated",
-    "activated": "Activated: ${name: String}"
+    "activated": "Activated: ${name: String}",
+    "empty": "You do not own any secondary title yet",
+    "tapToUse": "Tap a title to use it"
   },
   "titleShop": {
     "title": "Title shop",

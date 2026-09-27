@@ -86,6 +86,9 @@ class ScreenPaths {
   /// Read-only medal catalogue.
   static const String medalCenter = '/medalCenter';
 
+  /// Common entry of the medal centre, the current account's titles and the title shop.
+  static const String medalTitleHub = '/medalTitleHub';
+
   /// Community bank balances, records and current-account transactions.
   static const String bank = '/bank';
 

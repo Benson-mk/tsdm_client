@@ -64,6 +64,13 @@ class UserOperationDialog extends StatelessWidget with LoggerMixin {
             },
           ),
           ListTile(
+            title: Text(context.t.medalTitleHub.title),
+            onTap: () async {
+              context.pop();
+              await context.pushNamed(ScreenPaths.medalTitleHub);
+            },
+          ),
+          ListTile(
             title: Text(tr.history),
             onTap: () async {
               context.pop();

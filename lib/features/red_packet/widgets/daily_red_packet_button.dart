@@ -17,8 +17,12 @@ class DailyRedPacketButton extends StatefulWidget {
     required this.config,
     required this.formHash,
     this.repository = const RedPacketRepository(),
+    this.labeled = false,
     super.key,
   });
+
+  /// Show a tonal button with a label instead of an icon button, e.g. on the homepage greeting card.
+  final bool labeled;
 
   /// Today's packet.
   final DailyRedPacketConfig config;
@@ -72,6 +76,14 @@ class _DailyRedPacketButtonState extends State<DailyRedPacketButton> with Logger
       return sizedBoxEmpty;
     }
     final tooltip = context.t.redPacket.daily.tooltip;
+    if (widget.labeled) {
+      return FilledButton.tonalIcon(
+        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+        icon: _claiming ? sizedCircularProgressIndicator : const Icon(Icons.redeem_outlined),
+        label: Text(tooltip),
+        onPressed: _claiming ? null : _claim,
+      );
+    }
     if (_claiming) {
       return IconButton(icon: sizedCircularProgressIndicator, tooltip: tooltip, onPressed: null);
     }

@@ -239,23 +239,26 @@ void main() {
       return router;
     }
 
-    testWidgets('shows every module with its title, 更多 button, first 10 items and the 抢沙发 chip', (tester) async {
+    testWidgets('one card: a tab per module, the first 10 items of the selected one, 更多 and the 抢沙发 chip', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1080, 6000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final modules = parseGuideIndex(_index());
       await pump(tester, _FixtureRepository(modules));
 
-      expect(find.byType(GuideModuleCard), findsNWidgets(4));
+      expect(find.text('Forum guide'), findsOneWidget);
       for (final module in modules) {
-        expect(find.widgetWithText(GuideModuleCard, module.title), findsOneWidget);
-        expect(find.widgetWithText(ActionChip, module.title), findsOneWidget, reason: 'nav chip');
+        expect(find.text(module.title), findsOneWidget, reason: 'tab');
       }
-      expect(find.widgetWithText(TextButton, 'More'), findsNWidgets(4));
+      expect(find.byType(GuideModuleList), findsOneWidget, reason: 'only the selected module is listed');
+      expect(find.widgetWithText(TextButton, 'More'), findsOneWidget);
       expect(find.widgetWithText(ActionChip, 'Sofa'), findsOneWidget);
 
-      // 最新热门: 10 of the 30 items, the first one highlighted in the error color with its forum and participants.
-      final hot = find.byType(GuideModuleCard).first;
+      // 最新热门 is selected first: 10 of the 30 items, the first one highlighted in the error color with its forum and
+      // participants.
+      final hot = find.byType(GuideModuleList);
       for (final item in modules[0].items.take(10)) {
         expect(
           find.descendant(of: hot, matching: find.text(item.title)),
@@ -270,8 +273,13 @@ void main() {
       final title = tester.widget<Text>(find.descendant(of: hot, matching: find.text('部分用户无法登录的问题我说几句')));
       expect(title.style?.color, Theme.of(context).colorScheme.error);
       expect(find.descendant(of: hot, matching: find.text(modules[0].items[10].title)), findsNothing);
+      expect(find.text('暂时还没有帖子'), findsNothing);
+
       // 最新精华 is empty: the page's own message.
+      await tester.tap(find.text('最新精华'));
+      await tester.pumpAndSettle();
       expect(find.text('暂时还没有帖子'), findsOneWidget);
+      expect(find.text('部分用户无法登录的问题我说几句'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -306,10 +314,17 @@ void main() {
       router.pop();
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(ActionChip, '最新发表'));
+      // Another tab: its threads, and 更多 follows the selection.
+      await tester.tap(find.text('最新发表'));
+      await tester.pumpAndSettle();
+      expect(find.text(parseGuideIndex(_index())[3].items.first.title), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'More'));
       await tester.pumpAndSettle();
       expect(router.state.uri.queryParameters['url'], guideUrl('newthread'));
+      expect(router.state.uri.queryParameters['title'], '最新发表');
       router.pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('最新热门'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('若闲小阁').first);
@@ -323,7 +338,7 @@ void main() {
       await pump(tester, const _FixtureRepository([], fail: true));
       expect(find.text('Failed to load, tap to retry'), findsOneWidget);
       expect(find.widgetWithText(ActionChip, 'Sofa'), findsOneWidget);
-      expect(find.byType(GuideModuleCard), findsNothing);
+      expect(find.byType(GuideModuleList), findsNothing);
       // Retry keeps failing here, the row must survive it.
       await tester.tap(find.text('Failed to load, tap to retry'));
       await tester.pumpAndSettle();
