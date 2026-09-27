@@ -96,6 +96,8 @@ final class PostEditContent with PostEditContentMappable {
     required this.permList,
     required this.price,
     required this.maxPrice,
+    this.tags = '',
+    this.canSaveDraft = false,
   });
 
   /// Build a instance of [PostEditContent] from [document].
@@ -104,6 +106,23 @@ final class PostEditContent with PostEditContentMappable {
   /// info about current editing thread. e.g. Drafting a new thread where those
   /// info are not generated until we post the thread to server.
   static PostEditContent? fromDocument(uh.Document document, {bool requireThreadInfo = true}) {
+    if (!supportsDocument(document)) return null;
+    return _parse(document, requireThreadInfo: requireThreadInfo);
+  }
+
+  /// Ordinary fields (subject, body, tokens, bool options) of a poll creation form.
+  ///
+  /// Only for a form already validated by `PollCreateForm.parse`; the poll fields themselves are parsed there and
+  /// never stored in [options].
+  static PostEditContent? fromPollCreateDocument(uh.Document document) {
+    final form = document.querySelector('#postform');
+    if (form == null || !_supportsGenericFields(form)) return null;
+    String value(String name) => form.querySelector('[name="$name"]')?.attributes['value'] ?? '';
+    if (value('specialextra').isNotEmpty || (value('sortid').isNotEmpty && value('sortid') != '0')) return null;
+    return _parse(document, requireThreadInfo: false);
+  }
+
+  static PostEditContent? _parse(uh.Document document, {required bool requireThreadInfo}) {
     final rootNode = document.querySelector('div#ct');
     final postBoxNode = document.querySelector('div#postbox');
 
@@ -179,12 +198,7 @@ final class PostEditContent with PostEditContentMappable {
             // Only check these thread info when `requireThreadInfo` is true.
             (delattachop == null || fid == null || tid == null || pid == null || page == null)) ||
         data == null) {
-      talker.error(
-        'invalid post edit form data: '
-        'formhash=$formHash, posttime=$postTime, '
-        'delattachop=$delattachop, wysiwyg=$wysiwyg, '
-        'fid=$fid, tid=$tid, pid=$pid, page=$page, data=$data',
-      );
+      talker.error('invalid post edit form data');
       return null;
     }
 
@@ -261,8 +275,53 @@ final class PostEditContent with PostEditContentMappable {
       permList: permList,
       price: price,
       maxPrice: maxPrice,
+      tags: rootNode?.querySelector('input[name="tags"]')?.attributes['value'] ?? '',
+      canSaveDraft:
+          rootNode?.querySelector('#postsave[name="save"]') != null &&
+          (rootNode
+                  ?.querySelectorAll('button[type="button"]')
+                  .any(
+                    (button) =>
+                        !button.attributes.containsKey('disabled') &&
+                        (button.attributes['onclick'] ?? '').contains('postsave') &&
+                        RegExp(r'\.value\s*=\s*1\b').hasMatch(button.attributes['onclick'] ?? ''),
+                  ) ??
+              false),
     );
   }
+
+  /// Do not overwrite structured thread data that this editor cannot preserve.
+  static bool supportsDocument(uh.Document document) {
+    final form = document.querySelector('#postform') ?? document.querySelector('#ct');
+    if (form == null) return true; // The ordinary parser reports malformed/missing forms.
+    String value(String name) => form.querySelector('[name="$name"]')?.attributes['value'] ?? '';
+    final isReply = document
+        .querySelectorAll('script')
+        .any((script) => RegExp(r'\bisfirstpost\s*=\s*0\s*;').hasMatch(script.text ?? ''));
+    final ordinaryReply = isReply && value('special') != '2';
+    return (ordinaryReply ||
+            ((value('special').isEmpty || value('special') == '0') &&
+                value('specialextra').isEmpty &&
+                (value('sortid').isEmpty || value('sortid') == '0'))) &&
+        _supportsGenericFields(form);
+  }
+
+  /// Editor formats and scheduled/credit extras no in-app editor can preserve, whatever the thread type.
+  static bool _supportsGenericFields(uh.Element form) {
+    String value(String name) => form.querySelector('[name="$name"]')?.attributes['value'] ?? '';
+    return value('contentType') != 'json' &&
+        value('contentEditor') != 'jsonEditor' &&
+        form.querySelector('input[name="cronpublish"][checked]') == null &&
+        form.querySelector('input[name="rushreply"][checked]') == null &&
+        (int.tryParse(value('replycredit_extcredits')) ?? 0) == 0 &&
+        form.querySelector('[name^="typeoption["]') == null;
+  }
+
+  /// Preserve server tags even though the app has no tag editor.
+  final String tags;
+
+  /// Both the save field and an enabled draft button must be offered by the forum.
+  final bool canSaveDraft;
 
   /// Thread type.
   ///

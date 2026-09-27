@@ -254,6 +254,11 @@ class ScreenPaths {
   /// Index of `PostEditType` is needed to specify the reason.
   static const String editPost = '/editPost/:editType/:fid';
 
+  /// Page to create an ordinary poll thread in forum `fid`.
+  ///
+  /// The page always fetches and validates the forum's own poll form before offering any input.
+  static const String createPoll = '/createPoll/:fid';
+
   /// Page to show image in full page.
   static const String imageDetail = '/imageDetail/:imageUrl';
 
