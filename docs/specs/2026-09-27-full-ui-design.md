@@ -57,7 +57,7 @@
 
 | 位置 | 來源 | 尺寸 |
 |---|---|---|
-| 首頁問候卡右上 | `CurrentTitleCubit`（目前帳號的稱號頁），只對目前帳號 uid | 桌面／平板 184；手機 120–138（依空間 40%）；問候文字剩餘寬度 < 168 時換行到問候下方 |
+| 首頁問候卡右上 | `CurrentTitleCubit`（目前帳號的稱號頁），只對目前帳號 uid | **2026-09-27 使用者細修取代舊目標**：寬版 240（放大超過原圖 184，仍 184:100 contain，不經 `fitWidth` 的原寬上限）；手機 160–184（依內容寬 45%）；不超過卡片寬；問候文字剩餘寬度 < 168 時換行到問候下方。（舊：桌面 184、手機 120–138） |
 | 自己的個人資料 | 個人資料頁本身若有稱號區塊則用之；否則（僅本人）用 `CurrentTitleCubit` | 最大 184，完整顯示 |
 | 別人的個人資料 | 只用該個人資料頁本身的稱號區塊（樣本尚未證實存在），絕不套目前帳號 | 同上；無資料不顯示 |
 | 帖子作者區 | 該樓層作者欄 `div.tsdmtitle-badges div.tsdmtitle-title > img`（X5 樣本 #011 已驗證），舊版 `img.tsdmtitles`／`img.tsdm_lv_title` 後備 | 手機 120、寬螢幕 138；與等級牌子 `Wrap` 換行，不硬塞 |
@@ -84,5 +84,17 @@
 
 每批以 `slang`（若有新字串）、`build_runner`（若有 mapper 變動）、`dart format`、`flutter analyze`、`flutter test` 驗證；少量 widget test 覆蓋窄螢幕、長文字與第二牌子（第 1 批：`test/regression/test_163_full_ui_phase1_test.dart`；第 2 批：`test/regression/test_164_full_ui_phase2_test.dart`；第 3 批：`test/regression/test_165_full_ui_phase3_test.dart`，含鍵盤開啟時底部送出列仍可點；第 4 批：`test/regression/test_166_full_ui_phase4_test.dart`，稱號圖比例、320 寬 2 倍字購買確認與銀行確認、寬螢幕兩欄、自動簽到卡片換行；第 5 批：`test/regression/test_167_full_ui_phase5_test.dart`，320 寬 2 倍字的破壞性問答（按鈕型別與順序、回傳值）、備份匯出（鍵盤開啟、兩個密碼欄、回傳密碼）與還原錯誤文字、同步間隔／圖片清理不在選項中的預設值（原本會超出索引）、字級與語言回傳值、設定分組列可切換、需登入狀態單一登入鈕）。
 
+## 導覽與首頁細修（使用者追加需求，2026-09-27）— 程式已改，未驗證
+
+依使用者提供的 `work/ui-navigation-reference/reference-sidebar.png`（左欄分組）與 `current-greeting.png`：
+
+- **側欄（drawer 大視窗、rail 中寬）**：9 個真實入口兩組——首頁、版塊、活動、通知、我的；「更多功能」：稱號商店、勳章中心、銀行、設定。沿用 App 主題色（深淺色／自訂色），不強制參考圖的紫色。首頁／版塊／設定是 shell tab（保留分支狀態、雙擊回頂送 `HomeTab.index`）；其他 6 項 `pushNamed` 蓋在 shell 上，返回回到原 tab，選取高亮只給 tab，不把 9 個索引塞進 `HomeTab`。通知入口的未讀徽章只用 `NotificationStateCubit`，規則同 AppBar 通知鈕；無帳號點通知開登入頁。rail 標籤常駐、組間 16px 間距，包在不佔 PrimaryScrollController 的捲動區，短視窗不溢出。手機底部列維持 3 個 tab，其他入口沿用首頁既有入口。
+- **文案**：導覽「分割區」改「版塊」（簡「版块」、英「Forums」），僅 `navigation.topics` 與 `topicPage.title`。
+- **每日紅包入口**：問候卡簽到旁常駐 `DailyRedPacketEntry`。可領（config＋formHash）→原 `claimDaily`，單次提交防連點；伺服器確認領到／已領→「今日紅包已領取」停用（只針對該頁面的紅包）；頁面沒有紅包時一律顯示「目前無可領取」並可點擊重新整理首頁（tooltip 說明可能已領或未開放）——repo 沒有站點時區依據，不以推測日期宣稱今日已領（2026-09-27 修正移除原 UTC+8 推測）；無帳號→「登入後可領取」。不新增協定、不持久化、不假造可領。
+- **問候卡第二牌子**：見上表，寬版 240、手機 160–184。
+
 ## 全 UI 自動驗證結果（2026-09-27）
 五批實作與測試發現的修正已完成。slang、format、嚴格分析通過，完整 Flutter 測試 1629 通過／1 略過。長標題對話框在 320px／2 倍字且鍵盤開啟時保留可捲動完整文字與固定動作；登入表單改為一次建立所有欄位以確保驗證與重試可達。Android／Windows 預覽建置與實機驗收仍待完成，禁止據此宣稱已發布或實機測試。
+
+## 追加導覽驗證（2026-09-27）
+導覽細修及其修正已通過 slang、format、嚴格分析與完整 Flutter 測試：1648 通過、1 略過、0 失敗。未讀徽章的測試等待修正保留並加強正負例，紅包移除未確認的時區假設。預覽106建置和實機驗收待完成。

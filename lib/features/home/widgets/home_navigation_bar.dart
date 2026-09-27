@@ -16,7 +16,9 @@ class _HomeNavigationBarState extends State<HomeNavigationBar> {
 
   @override
   Widget build(BuildContext context) {
-    final barItems = _buildNavigationItems(context);
+    // Only the three tabs: the other side navigation entries stay reachable from the homepage (greeting actions, tools
+    // card, user menu, notice button) instead of crowding the bar with nine destinations.
+    final barItems = _buildTabItems(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     // Same look as the side navigation: low container color, rounded indicator, hairline towards the content.
@@ -32,7 +34,7 @@ class _HomeNavigationBarState extends State<HomeNavigationBar> {
         destinations: barItems
             .map((e) => NavigationDestination(icon: e.icon, selectedIcon: e.selectedIcon, label: e.label))
             .toList(),
-        selectedIndex: context.watch<HomeCubit>().state.tab.index,
+        selectedIndex: _selectedIndexOf(barItems, context.watch<HomeCubit>().state.tab),
         onDestinationSelected: (index) => _onHomeDestinationSelected(context, _doubleTap, barItems, index),
       ),
     );

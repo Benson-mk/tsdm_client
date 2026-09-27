@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
@@ -23,15 +25,30 @@ const _minGreetingWidth = 168.0;
 /// Gap between the greeting and the title badge.
 const _greetingBadgeGap = 12.0;
 
+/// Least width (at text scale 1) of the phone greeting card content showing check-in and red packet on one row.
+const _dailyActionsRowWidth = 300.0;
+
+/// Width of the title badge in the greeting card on wide layouts, larger than the natural 184px of the image (user
+/// request of 2026-09-27, replacing the former 184px target).
+const homeGreetingBadgeWideWidth = 240.0;
+
+/// Least width of the title badge in the greeting card on phones, unless the card is narrower.
+const homeGreetingBadgeCompactMinWidth = 160.0;
+
+/// Largest width of the title badge in the greeting card on phones.
+const homeGreetingBadgeCompactMaxWidth = 184.0;
+
 /// Width of the title badge in the greeting card whose content is [available] wide.
 ///
-/// Wide layouts show the image at its natural 184px width; phones give it 120 to 138px depending on the room, so the
-/// 184:100 image stays complete and legible without pushing the greeting or the buttons away.
+/// Wide layouts show the image 240px wide; phones give it 160 to 184px depending on the room. Only in this card the
+/// image is enlarged past its natural 184px ([SecondaryTitleBadge.fitWidth] is not used here, it caps at the natural
+/// width); it stays contained in its 184:100 box, never cropped nor stretched, and never wider than the card. When the
+/// greeting would be left too little room beside it, the badge goes below the greeting ([homeGreetingBadgeBeside]).
 double homeGreetingBadgeWidth(double available, {required bool compact}) {
-  if (!compact) {
-    return SecondaryTitleBadge.fitWidth(available);
-  }
-  return SecondaryTitleBadge.fitWidth(available, preferred: (available * 0.4).clamp(120, 138).toDouble());
+  final preferred = compact
+      ? (available * 0.45).clamp(homeGreetingBadgeCompactMinWidth, homeGreetingBadgeCompactMaxWidth)
+      : homeGreetingBadgeWideWidth;
+  return math.max<double>(0, math.min(available, preferred));
 }
 
 /// Whether the greeting leaves enough room beside a badge of [badgeWidth] in [available] width.
@@ -62,6 +79,8 @@ class HomeGreetingCard extends StatelessWidget {
     required this.dailyRedPacket,
     required this.formHash,
     required this.compact,
+    this.onRefresh,
+    this.claimDailyRedPacket,
     super.key,
   });
 
@@ -82,6 +101,12 @@ class HomeGreetingCard extends StatelessWidget {
 
   /// Narrow layout: actions stacked under the greeting.
   final bool compact;
+
+  /// Reload the homepage, offered by the daily red packet entry when the page had no packet.
+  final VoidCallback? onRefresh;
+
+  /// Claim request of the daily red packet, the plugin's endpoint when null (tests pass a fake).
+  final DailyRedPacketClaim? claimDailyRedPacket;
 
   @override
   Widget build(BuildContext context) {
@@ -116,19 +141,20 @@ class HomeGreetingCard extends StatelessWidget {
       ],
     );
 
-    final redPacket = dailyRedPacket;
-    final hash = formHash;
+    // Always visible next to the check-in, with the state the homepage can tell (claimable, claimed in this run, none
+    // to claim now, needs a login).
+    final redPacket = DailyRedPacketEntry(
+      uid: uid,
+      config: dailyRedPacket,
+      formHash: formHash,
+      onRefresh: onRefresh,
+      claim: claimDailyRedPacket,
+    );
     final quickActions = Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        if (redPacket != null && hash != null)
-          DailyRedPacketButton(
-            key: ValueKey('dailyRedPacket-${redPacket.dateFlag}'),
-            config: redPacket,
-            formHash: hash,
-            labeled: true,
-          ),
+        if (!compact) redPacket,
         _QuickAction(
           icon: Icons.event_outlined,
           label: context.t.activitiesPage.title,
@@ -163,39 +189,29 @@ class HomeGreetingCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final badgeWidth = homeGreetingBadgeWidth(constraints.maxWidth, compact: compact);
-                  if (homeGreetingBadgeBeside(constraints.maxWidth, badgeWidth)) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: greeting),
-                        CurrentAccountTitleBadge(
-                          uid: uid,
-                          width: badgeWidth,
-                          padding: const EdgeInsetsDirectional.only(start: _greetingBadgeGap),
-                        ),
-                      ],
-                    );
-                  }
-                  // Too narrow for both side by side: the badge wraps below the greeting, the text keeps its width.
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      greeting,
-                      CurrentAccountTitleBadge(
-                        uid: uid,
-                        width: badgeWidth,
-                        padding: const EdgeInsets.only(top: _greetingBadgeGap),
-                      ),
-                    ],
-                  );
-                },
-              ),
+              HomeGreetingHeader(greeting: greeting, uid: uid, compact: compact),
               SizedBox(height: compact ? 14 : 20),
               if (compact) ...[
-                checkin,
+                // Check-in and red packet side by side when both fit, stacked otherwise (narrow window, large text).
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+                    if (constraints.maxWidth >= _dailyActionsRowWidth * textScale) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: checkin),
+                          sizedBoxW8H8,
+                          Expanded(child: redPacket),
+                        ],
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [checkin, sizedBoxW8H8, redPacket],
+                    );
+                  },
+                ),
                 sizedBoxW12H12,
                 quickActions,
               ] else
@@ -213,6 +229,54 @@ class HomeGreetingCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Top of the greeting card: the [greeting] and the title badge of the account [uid], beside the greeting when both
+/// fit ([homeGreetingBadgeBeside]) and below it otherwise, [homeGreetingBadgeWidth] wide.
+class HomeGreetingHeader extends StatelessWidget {
+  /// Constructor.
+  const HomeGreetingHeader({required this.greeting, required this.uid, required this.compact, super.key});
+
+  /// Date line, greeting and today count.
+  final Widget greeting;
+
+  /// Logged in account, for its title badge.
+  final int? uid;
+
+  /// Phone layout.
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final badgeWidth = homeGreetingBadgeWidth(constraints.maxWidth, compact: compact);
+      if (homeGreetingBadgeBeside(constraints.maxWidth, badgeWidth)) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: greeting),
+            CurrentAccountTitleBadge(
+              uid: uid,
+              width: badgeWidth,
+              padding: const EdgeInsetsDirectional.only(start: _greetingBadgeGap),
+            ),
+          ],
+        );
+      }
+      // Too narrow for both side by side: the badge wraps below the greeting, the text keeps its width.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          greeting,
+          CurrentAccountTitleBadge(
+            uid: uid,
+            width: badgeWidth,
+            padding: const EdgeInsets.only(top: _greetingBadgeGap),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _QuickAction extends StatelessWidget {

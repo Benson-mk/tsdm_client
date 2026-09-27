@@ -129,6 +129,7 @@ class _HomepagePageState extends State<HomepagePage> {
       dailyRedPacket: state.dailyRedPacket,
       formHash: state.formHash,
       compact: layout == _HomeLayout.compact,
+      onRefresh: () => _refresh(context),
     );
     // The swiper block of the forum homepage is gone since Discuz! X5; kept in case it comes back.
     final swiper = state.swiperUrlList.isEmpty

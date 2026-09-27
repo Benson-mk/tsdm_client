@@ -162,8 +162,14 @@
   },
   "navigation": {
     "homepage": "Home",
-    "topics": "Topics",
+    "topics": "Forums",
+    "activities": "Activities",
+    "notice": "Notifications",
     "profile": "Profile",
+    "moreSection": "More",
+    "titleShop": "Title shop",
+    "medalCenter": "Medal center",
+    "bank": "Bank",
     "settings": "Settings"
   },
   "home": {
@@ -215,7 +221,7 @@
     "titleShopDescription": "Browse titles and prices, every purchase asks for confirmation"
   },
   "topicPage": {
-    "title": "Topics",
+    "title": "Forums",
     "threads": "Threads: ",
     "posts": "Posts: ",
     "today": "Today: ",
@@ -952,7 +958,11 @@
       "tooltip": "Daily red packet",
       "claimed": "Daily red packet: you got ${amount} ${unit}",
       "alreadyClaimed": "Already claimed today, come back tomorrow",
-      "failed": "Failed to claim: ${err}"
+      "failed": "Failed to claim: ${err}",
+      "claimedToday": "Claimed today",
+      "unavailable": "Daily red packet: none to claim now",
+      "unavailableHint": "The homepage offers no red packet right now (maybe already claimed or not open yet). Tap to refresh.",
+      "needLogin": "Daily red packet: log in to claim"
     }
   },
   "latestThreadPage": {

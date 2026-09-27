@@ -32,27 +32,34 @@ void main() {
   });
 
   group('secondary title sizes', () {
-    test('homepage greeting: natural 184px on wide layouts', () {
-      expect(homeGreetingBadgeWidth(528, compact: false), 184);
-      expect(homeGreetingBadgeWidth(1200, compact: false), 184);
-      expect(homeGreetingBadgeBeside(528, 184), isTrue);
+    // Target approved on 2026-09-27: 240px on wide layouts and 160 to 184px on phones (replaces 184 / 120 to 138).
+    test('homepage greeting: 240px on wide layouts, past the natural 184px of the image', () {
+      expect(homeGreetingBadgeWidth(528, compact: false), homeGreetingBadgeWideWidth);
+      expect(homeGreetingBadgeWidth(1200, compact: false), 240);
+      expect(homeGreetingBadgeBeside(528, 240), isTrue);
     });
 
-    test('homepage greeting: 120 to 138px on phones, beside the greeting when it keeps its room', () {
-      // 360, 390 and 412 wide phones: page padding 12 and card padding 16 on each side.
-      for (final window in [360.0, 390.0, 412.0]) {
+    test('homepage greeting: 160 to 184px on phones, beside the greeting only when it keeps its room', () {
+      // 360, 390, 412 and 480 wide phones: page padding 12 and card padding 16 on each side.
+      for (final window in [360.0, 390.0, 412.0, 480.0]) {
         final available = window - 56;
         final width = homeGreetingBadgeWidth(available, compact: true);
-        expect(width, inInclusiveRange(120, 138), reason: '$window');
-        expect(homeGreetingBadgeBeside(available, width), isTrue, reason: '$window');
+        expect(width, inInclusiveRange(160, 184), reason: '$window');
       }
-      expect(homeGreetingBadgeWidth(356, compact: true), 138);
+      // 412 wide: beside the greeting, which keeps at least 168px.
+      expect(homeGreetingBadgeBeside(356, homeGreetingBadgeWidth(356, compact: true)), isTrue);
+      // 360 wide: below the greeting instead of squeezing it.
+      expect(homeGreetingBadgeBeside(304, homeGreetingBadgeWidth(304, compact: true)), isFalse);
+      expect(homeGreetingBadgeWidth(600, compact: true), 184);
     });
 
     test('homepage greeting: the badge wraps below the greeting on very narrow windows', () {
       final width = homeGreetingBadgeWidth(264, compact: true);
-      expect(width, 120, reason: 'not shrunk below 120 to squeeze beside the text');
+      expect(width, 160, reason: 'not shrunk below 160 to squeeze beside the text');
       expect(homeGreetingBadgeBeside(264, width), isFalse);
+      // Never wider than the card.
+      expect(homeGreetingBadgeWidth(150, compact: true), 150);
+      expect(homeGreetingBadgeWidth(200, compact: false), 200);
     });
 
     test('never wider than the room nor than the image', () {

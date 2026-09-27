@@ -162,8 +162,14 @@
   },
   "navigation": {
     "homepage": "首頁",
-    "topics": "分割區",
+    "topics": "版塊",
+    "activities": "活動",
+    "notice": "通知",
     "profile": "我的",
+    "moreSection": "更多功能",
+    "titleShop": "稱號商店",
+    "medalCenter": "勳章中心",
+    "bank": "銀行",
     "settings": "設定"
   },
   "home": {
@@ -215,7 +221,7 @@
     "titleShopDescription": "瀏覽頭銜與價格，每次購買都會先確認"
   },
   "topicPage": {
-    "title": "分割區",
+    "title": "版塊",
     "threads": "主題: ",
     "posts": "帖數: ",
     "today": "今日: ",
@@ -952,7 +958,11 @@
       "tooltip": "今日紅包",
       "claimed": "今日紅包：獲得 ${amount} ${unit}",
       "alreadyClaimed": "今天已經領過囉，明天再來",
-      "failed": "領取失敗：${err}"
+      "failed": "領取失敗：${err}",
+      "claimedToday": "今日紅包已領取",
+      "unavailable": "每日紅包：目前無可領取",
+      "unavailableHint": "首頁目前沒有提供今日紅包（可能已領取或尚未開放），點一下重新整理",
+      "needLogin": "每日紅包：登入後可領取"
     }
   },
   "latestThreadPage": {

@@ -162,8 +162,14 @@
   },
   "navigation": {
     "homepage": "主页",
-    "topics": "分区",
+    "topics": "版块",
+    "activities": "活动",
+    "notice": "通知",
     "profile": "我的",
+    "moreSection": "更多功能",
+    "titleShop": "称号商店",
+    "medalCenter": "勋章中心",
+    "bank": "银行",
     "settings": "设置"
   },
   "home": {
@@ -215,7 +221,7 @@
     "titleShopDescription": "浏览称号与价格，每次购买都会先确认"
   },
   "topicPage": {
-    "title": "分区",
+    "title": "版块",
     "threads": "主题: ",
     "posts": "帖数: ",
     "today": "今日: ",
@@ -952,7 +958,11 @@
       "tooltip": "今日红包",
       "claimed": "今日红包：获得 ${amount} ${unit}",
       "alreadyClaimed": "今天已经领过了，明天再来",
-      "failed": "领取失败：${err}"
+      "failed": "领取失败：${err}",
+      "claimedToday": "今日红包已领取",
+      "unavailable": "每日红包：暂无可领取",
+      "unavailableHint": "首页目前没有提供今日红包（可能已领取或尚未开放），点一下刷新",
+      "needLogin": "每日红包：登录后可领取"
     }
   },
   "latestThreadPage": {

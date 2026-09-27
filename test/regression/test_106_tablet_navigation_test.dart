@@ -145,8 +145,14 @@ void main() {
   }
 
   /// Tap the destination of [tab] like a user, on its icon or (bar and drawer: the rail hides its labels) its label.
+  ///
+  /// The side navigation has nine entries since 2026-09-27 and the rail scrolls in short windows: like a user, scroll
+  /// the destination into view first (settings is the last entry).
   Future<void> tap(WidgetTester tester, HomeTab tab, {bool onLabel = false}) async {
-    await tester.tap(onLabel ? find.text(label(tab)) : icon(tab));
+    final target = onLabel ? find.text(label(tab)) : icon(tab);
+    await tester.ensureVisible(target);
+    await tester.pump();
+    await tester.tap(target);
     await tester.pump();
   }
 
