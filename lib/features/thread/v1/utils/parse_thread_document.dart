@@ -3,6 +3,7 @@ import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
+import 'package:tsdm_client/features/post/utils/draft_marker.dart';
 import 'package:tsdm_client/features/post_report/utils/report_page_context.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/instance.dart';
@@ -225,12 +226,15 @@ ThreadPageInfo parseThreadDocument(uh.Document document, int pageNumber) {
   }
 
   // Draft mark: `<span>[草稿]</span>` in title node, exclude the subject node itself.
-  final isDraft =
-      document
-          .querySelectorAll('div#postlist h1.ts > span')
-          .where((e) => e.id != 'thread_subject')
-          .any((e) => e.innerText.contains('草稿')) ||
-      postList.any((e) => e.isDraft);
+  final isDraft = isDraftThreadDocument(document) || postList.any((e) => e.isDraft);
+  if (isDraft) {
+    for (var index = 0; index < postList.length; index++) {
+      final post = postList[index];
+      if (isFirstThreadPost(document.getElementById('post_${post.postID}'), tid: tid) && post.editUrl != null) {
+        postList[index] = post.copyWith(isDraft: true);
+      }
+    }
+  }
 
   final latestModAct = document.querySelector('div.modact')?.innerText;
 

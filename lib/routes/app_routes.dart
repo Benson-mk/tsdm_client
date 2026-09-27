@@ -32,8 +32,10 @@ import 'package:tsdm_client/features/open_in_app/view/open_in_app_page.dart';
 import 'package:tsdm_client/features/packet/view/packet_detail_page.dart';
 import 'package:tsdm_client/features/points/views/points_page.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
+import 'package:tsdm_client/features/post/models/poll_create.dart';
 import 'package:tsdm_client/features/post/view/fast_reply_edit_template_page.dart';
 import 'package:tsdm_client/features/post/view/fast_reply_template_page.dart';
+import 'package:tsdm_client/features/post/view/poll_create_page.dart';
 import 'package:tsdm_client/features/post/view/post_edit_page.dart';
 import 'package:tsdm_client/features/profile/view/edit_avatar_page.dart';
 import 'package:tsdm_client/features/profile/view/edit_user_profile_page.dart';
@@ -55,6 +57,7 @@ import 'package:tsdm_client/features/settings/widgets/app_license_page.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 import 'package:tsdm_client/features/thread/v2/view/thread_page_v2.dart';
 import 'package:tsdm_client/features/thread_visit_history/view/thread_visit_history_page.dart';
+import 'package:tsdm_client/features/title_shop/view/title_shop_page.dart';
 import 'package:tsdm_client/features/topics/view/topics_page.dart';
 import 'package:tsdm_client/features/update/view/local_changelog_page.dart';
 import 'package:tsdm_client/features/update/view/update_page.dart';
@@ -238,7 +241,10 @@ final List<RouteBase> _appRoutes = [
   ),
   AppRoute(path: ScreenPaths.noticeSearch, builder: (_) => const NotificationSearchPage()),
   AppRoute(path: ScreenPaths.notificationSyncAll, builder: (_) => const NotificationSyncAllPage()),
-  AppRoute(path: ScreenPaths.myThread, builder: (_) => const MyThreadPage()),
+  AppRoute(
+    path: ScreenPaths.myThread,
+    builder: (state) => MyThreadPage(showDrafts: state.uri.queryParameters['tab'] == 'drafts'),
+  ),
   AppRoute(
     path: ScreenPaths.favorite,
     builder: (state) => FavoritePage(
@@ -286,6 +292,7 @@ final List<RouteBase> _appRoutes = [
   AppRoute(path: ScreenPaths.editAvatar, builder: (_) => const EditAvatarPage()),
   AppRoute(path: ScreenPaths.switchUserGroup, builder: (_) => const SwitchUserGroupPage()),
   AppRoute(path: ScreenPaths.switchTitle, builder: (_) => const MyTitlesPage()),
+  AppRoute(path: ScreenPaths.titleShop, builder: (_) => const TitleShopPage()),
   AppRoute(path: ScreenPaths.userBlock, builder: (_) => const UserBlockPage()),
   AppRoute(path: ScreenPaths.medalCenter, builder: (_) => const MedalCenterPage()),
   AppRoute(path: ScreenPaths.bank, builder: (_) => const BankPage()),
@@ -336,7 +343,26 @@ final List<RouteBase> _appRoutes = [
       final pid = state.uri.queryParameters['pid'];
       assert(editType != null, 'PostEditType enum value is not a integer: $editType');
       assert(PostEditType.values.length > editType!, 'invalid PostEditType enum value: $editType');
-      return PostEditPage(editType: PostEditType.values[editType!], fid: fid, tid: tid, pid: pid);
+      return PostEditPage(
+        editType: PostEditType.values[editType!],
+        fid: fid,
+        tid: tid,
+        pid: pid,
+        pollOffered: state.uri.queryParameters['poll'] == '1',
+        transfer: state.extra is ThreadModeTransfer ? state.extra! as ThreadModeTransfer : null,
+      );
+    },
+  ),
+  AppRoute(
+    path: ScreenPaths.createPoll,
+    builder: (state) {
+      final fid = state.pathParameters['fid']!;
+      // Guard: only a positive forum id reaches the page, which then validates the forum's own form.
+      if (!RegExp(r'^[1-9]\d*$').hasMatch(fid)) return const PollCreateInvalidPage();
+      return PollCreatePage(
+        fid: fid,
+        transfer: state.extra is ThreadModeTransfer ? state.extra! as ThreadModeTransfer : null,
+      );
     },
   ),
   AppRoute(
