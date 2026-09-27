@@ -51,12 +51,14 @@ String? titleShopPageUrl(String? href) {
 
 /// Whether a `tsdmtitle_return` value only sends the browser back to the shop (as observed:
 /// `plugin.php?id=tsdmtitle:tsdmtitle&action=shop&app=plugin`, optionally with a page).
+/// The forum preserves `mobile=no` when the App requests its desktop layout.
 bool _isShopReturn(String value) {
   final params = _pluginParams(value);
   if (params == null ||
       params['action'] != 'shop' ||
-      params.keys.any((k) => !{'id', 'action', 'app', 'buyitem', 'page'}.contains(k)) ||
+      params.keys.any((k) => !{'id', 'action', 'app', 'buyitem', 'page', 'mobile'}.contains(k)) ||
       (params.containsKey('app') && params['app'] != 'plugin') ||
+      (params.containsKey('mobile') && params['mobile'] != 'no') ||
       (params.containsKey('buyitem') && params['buyitem'] != '0')) {
     return false;
   }

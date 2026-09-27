@@ -79,6 +79,46 @@ void main() {
     },
   );
 
+  test('desktop shop forms revalidate, post the fresh token and exact return once, then verify ownership', () async {
+    for (final page in [1, 2]) {
+      final pageQuery = page == 1 ? '' : '&buyitem=0&page=$page';
+      final returnPath = 'plugin.php?id=tsdmtitle:tsdmtitle&action=shop$pageQuery&mobile=no&app=plugin';
+      final htmlReturn = returnPath.replaceAll('&', '&amp;');
+      final shop = _Shop([
+        () => shopPage([buyRow(9001, '虚构作品-甲', '3800', returnPath: htmlReturn)], page: page),
+        () => shopPage([
+          buyRow(9001, '虚构作品-甲', '3800', returnPath: htmlReturn, formHash: 'FRESH_HASH'),
+        ], page: page),
+        () => shopPage([ownedRow(9001, '虚构作品-甲', '3800')], page: page),
+      ]);
+      final cubit = TitleShopCubit(currentUid: () => 1000, repository: shop.repository);
+      addTearDown(cubit.close);
+      final pageUrl = '$titleShopUrl$pageQuery';
+      await cubit.load(pageUrl);
+      final expected = cubit.state.page!;
+      final item = _item(cubit);
+      expect(cubit.canPurchase(expected, item), isTrue, reason: returnPath);
+
+      await cubit.purchase(expected: expected, item: item);
+
+      expect(shop.gets, [pageUrl, pageUrl, pageUrl], reason: 'load, fresh revalidation and ownership GET');
+      expect(shop.posts, hasLength(1));
+      expect(shop.posts.single.$1, titleBuyUrl);
+      expect(shop.posts.single.$2, {
+        'formhash': 'FRESH_HASH',
+        'tsdmtitle_return': returnPath,
+        'buyid': '9001',
+        'buysubmit': 'true',
+      });
+      expect(cubit.state.result?.outcome, TitlePurchaseOutcome.purchased);
+      expect(_item(cubit).status, TitleShopStatus.owned);
+      expect(cubit.state.page!.page, page);
+      expect(cubit.state.purchasingId, isNull);
+      await cubit.purchase(expected: expected, item: item);
+      expect(shop.posts, hasLength(1), reason: 'the old confirmation cannot purchase again');
+    }
+  });
+
   test('a changed price, name or confirmation posts nothing and needs a new confirmation', () async {
     final shop = _Shop([_buyable, () => _buyable(price: '4500'), () => _buyable(price: '4500'), _owned]);
     final cubit = await _loaded(shop);

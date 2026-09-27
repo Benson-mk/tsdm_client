@@ -60,6 +60,49 @@ void main() {
     expect(_parse(shopPage([buyRow(9001, '甲', '1')], page: 7)).nextUrl, isNull);
   });
 
+  test('desktop shop returns stay purchasable and preserve the server return path', () {
+    for (final returnPath in [
+      'plugin.php?id=tsdmtitle:tsdmtitle&action=shop&mobile=no&app=plugin',
+      'plugin.php?id=tsdmtitle:tsdmtitle&action=shop&buyitem=0&page=2&mobile=no&app=plugin',
+    ]) {
+      final item = _parse(
+        shopPage([buyRow(9001, '甲', '3800', returnPath: returnPath.replaceAll('&', '&amp;'))]),
+      ).items.single;
+      expect(item.status, TitleShopStatus.purchasable, reason: returnPath);
+      expect(item.form!.url, titleBuyUrl, reason: 'desktop mode only affects the return, never the POST endpoint');
+      expect(item.form!.returnPath, returnPath);
+      expect(item.form!.body(), {
+        'formhash': 'TEST_HASH',
+        'tsdmtitle_return': returnPath,
+        'buyid': '9001',
+        'buysubmit': 'true',
+      });
+    }
+  });
+
+  test('desktop mode does not permit invalid or ambiguous shop returns', () {
+    const desktopReturn = 'plugin.php?id=tsdmtitle:tsdmtitle&action=shop&mobile=no&app=plugin';
+    for (final returnPath in [
+      for (final value in ['', 'yes', '1', '2', 'NO']) desktopReturn.replaceFirst('mobile=no', 'mobile=$value'),
+      '$desktopReturn&mobile=no',
+      '$desktopReturn&%6dobile=no',
+      '$desktopReturn&action=shop',
+      '$desktopReturn&page=2&page=3',
+      '$desktopReturn&page=0',
+      '$desktopReturn&buyitem=1',
+      '$desktopReturn&formhash=other',
+      desktopReturn.replaceFirst('action=shop', 'action=buy'),
+      desktopReturn.replaceFirst('app=plugin', 'app=other'),
+      'https://evil.example/$desktopReturn',
+    ]) {
+      final item = _parse(
+        shopPage([buyRow(9001, '甲', '3800', returnPath: returnPath.replaceAll('&', '&amp;'))]),
+      ).items.single;
+      expect(item.status, TitleShopStatus.unavailable, reason: returnPath);
+      expect(item.form, isNull, reason: returnPath);
+    }
+  });
+
   test('tampered or unknown purchase forms never become a purchase', () {
     for (final (reason, row) in [
       (
