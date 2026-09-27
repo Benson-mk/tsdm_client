@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
@@ -17,8 +19,9 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 /// Header (icon, name, time of the latest thread), counters as pills, then the optional shortcuts (latest thread,
 /// links and sub forums) in inner blocks.
 ///
-/// [large] is for the wide topics page on desktop windows: more padding, a bigger forum picture fitted whole, larger
-/// name, time and counters. Every other page keeps the compact card.
+/// [large] is for the wide topics page on desktop windows: the forum picture (up to 240x120, fitted whole) and a 24px
+/// name share the card width, and the three counters are equal blocks ([ForumCardStat]) filling the bottom. Every
+/// other page keeps the compact card.
 class ForumCard extends StatefulWidget {
   /// Constructor.
   const ForumCard(this.forum, {this.large = false, super.key});
@@ -36,8 +39,115 @@ class ForumCard extends StatefulWidget {
 /// Size of the forum picture of a compact [ForumCard].
 const forumCardImageSize = Size(88, 44);
 
-/// Size of the forum picture of a large [ForumCard]; the picture is fitted whole (contain), enlarged when smaller.
-const forumCardLargeImageSize = Size(136, 68);
+/// Largest forum picture of a large [ForumCard] (2:1); the picture is fitted whole (contain), enlarged when smaller.
+const forumCardLargeImageSize = Size(240, 120);
+
+/// Narrowest forum picture shown beside the name of a large [ForumCard].
+const forumCardLargeImageMinWidth = 180.0;
+
+/// Gap between the picture and the name of a large [ForumCard].
+const forumCardLargeImageGap = 20.0;
+
+/// Room the name of a large [ForumCard] needs beside the picture at 1x text; below it the name goes under the picture.
+const forumCardLargeNameMinWidth = 220.0;
+
+/// Picture size of a large [ForumCard] whose content is [contentWidth] wide, and whether the name fits beside it.
+///
+/// Beside the name the picture takes 42% of the card (180 to 240 wide). When the name would get less than
+/// [forumCardLargeNameMinWidth] (scaled by [textScale]), the picture keeps its largest size and the name goes under it.
+({Size image, bool sideBySide}) forumCardLargeHeaderLayout(double contentWidth, double textScale) {
+  final ratio = forumCardLargeImageSize.height / forumCardLargeImageSize.width;
+  final beside = (contentWidth * 0.42).clamp(forumCardLargeImageMinWidth, forumCardLargeImageSize.width);
+  if (contentWidth - beside - forumCardLargeImageGap >= forumCardLargeNameMinWidth * textScale) {
+    return (image: Size(beside, beside * ratio), sideBySide: true);
+  }
+  final stacked = math.min(contentWidth, forumCardLargeImageSize.width);
+  return (image: Size(stacked, stacked * ratio), sideBySide: false);
+}
+
+/// Padding of a large [ForumCard].
+const forumCardLargePadding = EdgeInsets.symmetric(horizontal: 24, vertical: 20);
+
+/// One counter of a large [ForumCard]: icon and caption on top, the number below; the three share the card width.
+///
+/// The number is never cut: it scales down when a narrow block with large text cannot hold it.
+class ForumCardStat extends StatelessWidget {
+  /// Constructor.
+  const ForumCardStat({
+    required this.icon,
+    required this.caption,
+    required this.value,
+    required this.tooltip,
+    super.key,
+  });
+
+  /// Icon.
+  final IconData icon;
+
+  /// Short caption ("Threads").
+  final String caption;
+
+  /// The number.
+  final String value;
+
+  /// Tooltip and semantic label.
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Tooltip(
+      message: tooltip,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(appInnerRadius),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 20, color: colorScheme.primary),
+                  sizedBoxW8H8,
+                  Expanded(
+                    child: Text(
+                      caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(fontSize: 15, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+              sizedBoxW4H4,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  style: textTheme.titleLarge?.copyWith(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Caption of a counter from a tooltip prefix like "Threads: ".
+String _statCaption(String prefix) => prefix.replaceAll(RegExp(r'[:：]\s*$'), '').trim();
 
 final class _ForumCardState extends State<ForumCard> with LoggerMixin {
   bool showingSubThread = false;
@@ -180,17 +290,78 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
     final textTheme = Theme.of(context).textTheme;
     final tr = context.t.topicPage;
     final large = widget.large;
-    final imageSize = large ? forumCardLargeImageSize : forumCardImageSize;
+
+    final shortcut = StreamBuilder(
+      stream: settingsStream,
+      builder: (context, settings) {
+        if (!settings.hasData) {
+          return const SizedBox.shrink();
+        }
+        if (settings.data!.showShortcutInForumCard) {
+          return _buildShortcut(context);
+        }
+        return const SizedBox.shrink();
+      },
+    );
+
+    Future<void> openForum() async {
+      await context.pushNamed(
+        ScreenPaths.forum,
+        pathParameters: <String, String>{'fid': '${widget.forum.forumID}'},
+        queryParameters: {'appBarTitle': widget.forum.name},
+      );
+    }
+
+    if (large) {
+      return AppSurface(
+        padding: forumCardLargePadding,
+        onTap: openForum,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildLargeHeader(context),
+            const SizedBox(height: 18),
+            // Three equal blocks filling the bottom of the card.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ForumCardStat(
+                    icon: Icons.forum_outlined,
+                    caption: _statCaption(tr.threads),
+                    value: '${widget.forum.threadCount}',
+                    tooltip: '${tr.threads}${widget.forum.threadCount}',
+                  ),
+                ),
+                sizedBoxW12H12,
+                Expanded(
+                  child: ForumCardStat(
+                    icon: Icons.chat_outlined,
+                    caption: _statCaption(tr.posts),
+                    value: '${widget.forum.replyCount}',
+                    tooltip: '${tr.posts}${widget.forum.replyCount}',
+                  ),
+                ),
+                sizedBoxW12H12,
+                Expanded(
+                  child: ForumCardStat(
+                    icon: Icons.mark_chat_unread_outlined,
+                    caption: _statCaption(tr.today),
+                    value: '${widget.forum.threadTodayCount ?? 0}',
+                    tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
+                  ),
+                ),
+              ],
+            ),
+            shortcut,
+          ],
+        ),
+      );
+    }
 
     return AppSurface(
-      padding: large ? const EdgeInsets.symmetric(horizontal: 20, vertical: 18) : edgeInsetsL12T12R12B12,
-      onTap: () async {
-        await context.pushNamed(
-          ScreenPaths.forum,
-          pathParameters: <String, String>{'fid': '${widget.forum.forumID}'},
-          queryParameters: {'appBarTitle': widget.forum.name},
-        );
-      },
+      padding: edgeInsetsL12T12R12B12,
+      onTap: openForum,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -199,12 +370,11 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
               ClipRRect(
                 borderRadius: BorderRadius.circular(appInnerRadius),
                 child: SizedBox.fromSize(
-                  size: imageSize,
-                  // Large: fit the whole picture and let a small one grow with the box; compact keeps the old look.
-                  child: NetworkIndicatorImage(widget.forum.iconUrl, fit: large ? BoxFit.contain : null),
+                  size: forumCardImageSize,
+                  child: NetworkIndicatorImage(widget.forum.iconUrl),
                 ),
               ),
-              if (large) sizedBoxW16H16 else sizedBoxW12H12,
+              sizedBoxW12H12,
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,27 +383,21 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                       widget.forum.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: large
-                          ? textTheme.titleLarge?.copyWith(fontSize: 20, fontWeight: FontWeight.w600)
-                          : textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    if (widget.forum.latestThreadTime != null) ...[
-                      if (large) sizedBoxW2H2,
+                    if (widget.forum.latestThreadTime != null)
                       Text(
                         widget.forum.latestThreadTime!.elapsedTillNow(context),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: (large ? textTheme.bodyMedium : textTheme.labelSmall)?.copyWith(
-                          color: colorScheme.secondary,
-                        ),
+                        style: textTheme.labelSmall?.copyWith(color: colorScheme.secondary),
                       ),
-                    ],
                   ],
                 ),
               ),
             ],
           ),
-          if (large) sizedBoxW16H16 else sizedBoxW12H12,
+          sizedBoxW12H12,
           Wrap(
             spacing: 8,
             runSpacing: 6,
@@ -242,36 +406,88 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                 icon: Icons.forum_outlined,
                 label: '${widget.forum.threadCount}',
                 tooltip: '${tr.threads}${widget.forum.threadCount}',
-                large: large,
               ),
               AppInfoPill(
                 icon: Icons.chat_outlined,
                 label: '${widget.forum.replyCount}',
                 tooltip: '${tr.posts}${widget.forum.replyCount}',
-                large: large,
               ),
               AppInfoPill(
                 icon: Icons.mark_chat_unread_outlined,
                 label: '${widget.forum.threadTodayCount ?? 0}',
                 tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
-                large: large,
               ),
             ],
           ),
-          StreamBuilder(
-            stream: settingsStream,
-            builder: (context, settings) {
-              if (!settings.hasData) {
-                return const SizedBox.shrink();
-              }
-              if (settings.data!.showShortcutInForumCard) {
-                return _buildShortcut(context);
-              }
-              return const SizedBox.shrink();
-            },
-          ),
+          shortcut,
         ],
       ),
+    );
+  }
+
+  /// Picture and name of a large card, laid out from the real card width and text scale (see
+  /// [forumCardLargeHeaderLayout]): side by side, or the name under the picture on narrow cards with large text.
+  Widget _buildLargeHeader(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final textScale = MediaQuery.textScalerOf(context).scale(24) / 24;
+
+    final name = Text(
+      widget.forum.name,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: textTheme.headlineSmall?.copyWith(fontSize: 24, fontWeight: FontWeight.w600, height: 1.3),
+    );
+    final time = widget.forum.latestThreadTime == null
+        ? null
+        : Row(
+            children: [
+              Icon(Icons.schedule_outlined, size: 18, color: colorScheme.secondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  widget.forum.latestThreadTime!.elapsedTillNow(context),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyLarge?.copyWith(fontSize: 16, color: colorScheme.secondary),
+                ),
+              ),
+            ],
+          );
+    final nameBlock = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        name,
+        if (time != null) ...[sizedBoxW4H4, time],
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layout = forumCardLargeHeaderLayout(constraints.maxWidth, textScale);
+        final picture = ClipRRect(
+          borderRadius: BorderRadius.circular(appInnerRadius),
+          child: SizedBox.fromSize(
+            size: layout.image,
+            // Fit the whole picture and let a small one grow with the box.
+            child: NetworkIndicatorImage(widget.forum.iconUrl, fit: BoxFit.contain),
+          ),
+        );
+        if (layout.sideBySide) {
+          return Row(
+            children: [
+              picture,
+              const SizedBox(width: forumCardLargeImageGap),
+              Expanded(child: nameBlock),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [picture, sizedBoxW12H12, nameBlock],
+        );
+      },
     );
   }
 }

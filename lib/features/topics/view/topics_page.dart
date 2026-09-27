@@ -23,7 +23,7 @@ import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Widest the rows of the topics page grow on desktop windows (other lists, and this page below
 /// [topicsPageLargeCardWidth], keep [appListMaxWidth]).
-const topicsPageMaxWidth = 1320.0;
+const topicsPageMaxWidth = 1520.0;
 
 /// Width the topics page must really have (measured, navigation excluded) to show its forum cards large.
 ///
