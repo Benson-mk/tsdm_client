@@ -98,3 +98,17 @@
 
 ## 追加導覽驗證（2026-09-27）
 導覽細修及其修正已通過 slang、format、嚴格分析與完整 Flutter 測試：1648 通過、1 略過、0 失敗。未讀徽章的測試等待修正保留並加強正負例，紅包移除未確認的時區假設。預覽106建置和實機驗收待完成。
+
+## 版塊頁桌面放大（使用者 preview106 回饋，2026-09-28）— 程式已改，未驗證
+
+回饋：「電腦版的版塊太小」（`work/ui-topic-reference/desktop-too-small.png`：寬視窗內容只佔中間約 960，四張卡、版塊圖、標題、統計都小）。根因：版塊頁用共用 `AppCenteredList` 預設 `appListMaxWidth` 960，`ForumCard` 在所有寬度都用手機密度（圖 88×44、`titleMedium`、`labelSmall` 統計）。
+
+- **只改版塊頁**：`topics_page.dart` 依 `LayoutBuilder` 量到的頁面實際寬度（扣掉側欄，不看 Platform）判斷：寬 ≥ `topicsPageLargeCardWidth` 1100 → 內容區最寬 `topicsPageMaxWidth` 1320，仍兩欄，卡片／欄距 12；未達 1100 → 與改前完全相同（960、一欄→840 起兩欄、間距 8）。全域 `appListMaxWidth` 不動，其他列表頁不變。
+- **大卡（`ForumCard(large: true)`，只有版塊頁寬版傳入）**：內距 20/18；版塊圖 136×68 且 `BoxFit.contain`（完整呈現、小圖會放大；精簡卡維持原本只縮不放）；名稱 20、w600、最多兩行；時間 `bodyMedium` 14；三個統計 `AppInfoPill(large: true)`（圖示 17、`labelLarge` 14、內距 10/5）；捷徑區（最新主題、連結、子版塊）字級各升一級。無圖 fallback、點卡片進版塊、統計 tooltip、捷徑設定不變。
+- **版主列**：`GroupModeratorsRow(large: true)` 內距 16/12、圖示 22、標籤 `titleSmall`、人名 chip `labelLarge` 標準密度；與卡片同一 ListView，左右邊緣對齊。
+- 字級全走 theme＋`TextScaler`，系統／App 文字縮放照常作用；1100 寬 2 倍字時名稱換行／省略、統計 Wrap 換行。
+- 新增共用參數（預設值保持原樣）：`AppInfoPill.large`、`NetworkIndicatorImage.fit`（轉給 `CachedImage.fit`）、`ForumCard.large`、`GroupModeratorsRow.large`。
+- 測試：`test/regression/test_169_topics_desktop_test.dart`（1600 寬：內容 1320 置中、兩欄、卡寬 654、版主列同邊緣、圖 136×68、名稱 20、統計 large；1000 寬：960、兩欄、88×44、非大卡；320 寬 2 倍字長名稱：單欄、捲動無例外；1100 寬 2 倍字長名稱：大卡兩欄、捲動無例外；大卡與版主 chip 導覽仍正確）。
+
+## 電腦版版塊驗證（2026-09-28）
+format、嚴格分析通過；新 test169 五項尺寸/大字/導覽測試通過，完整 Flutter 測試1653通過／1略過／0失敗。Codex補上新測試漏掉的shared models引用，並以ActionChip本體作點擊目標。預覽107建置與實機驗收待完成。

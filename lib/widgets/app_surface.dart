@@ -381,7 +381,7 @@ class AppIconTile extends StatelessWidget {
 /// Wraps to several lines instead of overflowing when the text is long or the font is large.
 class AppInfoPill extends StatelessWidget {
   /// Constructor.
-  const AppInfoPill({required this.icon, required this.label, this.tooltip, super.key});
+  const AppInfoPill({required this.icon, required this.label, this.tooltip, this.large = false, super.key});
 
   /// Leading icon.
   final IconData icon;
@@ -392,27 +392,35 @@ class AppInfoPill extends StatelessWidget {
   /// Optional tooltip and semantic label explaining the value, for numbers without a caption.
   final String? tooltip;
 
+  /// Bigger icon, text and padding, for cards shown large on wide windows.
+  final bool large;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final pill = DecoratedBox(
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(appInnerRadius),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: large
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 5)
+            : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: colorScheme.outline),
-            sizedBoxW4H4,
+            Icon(icon, size: large ? 17 : 14, color: colorScheme.outline),
+            SizedBox(width: large ? 6 : 4),
             Flexible(
               child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: (large ? textTheme.labelLarge : textTheme.labelSmall)?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],

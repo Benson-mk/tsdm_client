@@ -12,6 +12,7 @@ class NetworkIndicatorImage extends StatelessWidget {
     this.maxHeight,
     this.minWidth,
     this.minHeight,
+    this.fit,
     super.key,
   });
 
@@ -36,6 +37,9 @@ class NetworkIndicatorImage extends StatelessWidget {
   /// Min image height.
   final double? minHeight;
 
+  /// How the image is fitted into its box; null keeps the image's default (scaled down only, never enlarged).
+  final BoxFit? fit;
+
   @override
   Widget build(BuildContext context) => CachedImage(
     src,
@@ -45,5 +49,6 @@ class NetworkIndicatorImage extends StatelessWidget {
     maxHeight: maxHeight,
     minWidth: minWidth,
     minHeight: minHeight,
+    fit: fit,
   );
 }

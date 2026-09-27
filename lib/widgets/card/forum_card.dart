@@ -16,16 +16,28 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 ///
 /// Header (icon, name, time of the latest thread), counters as pills, then the optional shortcuts (latest thread,
 /// links and sub forums) in inner blocks.
+///
+/// [large] is for the wide topics page on desktop windows: more padding, a bigger forum picture fitted whole, larger
+/// name, time and counters. Every other page keeps the compact card.
 class ForumCard extends StatefulWidget {
   /// Constructor.
-  const ForumCard(this.forum, {super.key});
+  const ForumCard(this.forum, {this.large = false, super.key});
 
   /// Forum id.
   final Forum forum;
 
+  /// Show the card large, see [ForumCard].
+  final bool large;
+
   @override
   State<ForumCard> createState() => _ForumCardState();
 }
+
+/// Size of the forum picture of a compact [ForumCard].
+const forumCardImageSize = Size(88, 44);
+
+/// Size of the forum picture of a large [ForumCard]; the picture is fitted whole (contain), enlarged when smaller.
+const forumCardLargeImageSize = Size(136, 68);
 
 final class _ForumCardState extends State<ForumCard> with LoggerMixin {
   bool showingSubThread = false;
@@ -47,6 +59,7 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
   Widget _buildShortcut(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final large = widget.large;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -71,7 +84,7 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                         widget.forum.latestThreadTitle ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: textTheme.labelMedium,
+                        style: large ? textTheme.bodyMedium : textTheme.labelMedium,
                       ),
                     ),
                     if (widget.forum.latestThreadUserName?.isNotEmpty ?? false) ...[
@@ -82,7 +95,9 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                           widget.forum.latestThreadUserName!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                          style: (large ? textTheme.labelMedium : textTheme.labelSmall)?.copyWith(
+                            color: colorScheme.outline,
+                          ),
                         ),
                       ),
                     ],
@@ -119,7 +134,7 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
         .map(
           (e) => ActionChip(
             label: Text(e.$1),
-            labelStyle: Theme.of(context).textTheme.labelSmall,
+            labelStyle: widget.large ? Theme.of(context).textTheme.labelMedium : Theme.of(context).textTheme.labelSmall,
             visualDensity: VisualDensity.compact,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
             onPressed: () async => _openUrl(e.$2),
@@ -140,7 +155,9 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
               Expanded(
                 child: Text(
                   '$title (${dataList.length})',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  style:
+                      (widget.large ? Theme.of(context).textTheme.titleMedium : Theme.of(context).textTheme.titleSmall)
+                          ?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               Icon(state ? Icons.expand_less : Icons.expand_more),
@@ -162,9 +179,11 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final tr = context.t.topicPage;
+    final large = widget.large;
+    final imageSize = large ? forumCardLargeImageSize : forumCardImageSize;
 
     return AppSurface(
-      padding: edgeInsetsL12T12R12B12,
+      padding: large ? const EdgeInsets.symmetric(horizontal: 20, vertical: 18) : edgeInsetsL12T12R12B12,
       onTap: () async {
         await context.pushNamed(
           ScreenPaths.forum,
@@ -179,9 +198,13 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(appInnerRadius),
-                child: SizedBox(width: 88, height: 44, child: NetworkIndicatorImage(widget.forum.iconUrl)),
+                child: SizedBox.fromSize(
+                  size: imageSize,
+                  // Large: fit the whole picture and let a small one grow with the box; compact keeps the old look.
+                  child: NetworkIndicatorImage(widget.forum.iconUrl, fit: large ? BoxFit.contain : null),
+                ),
               ),
-              sizedBoxW12H12,
+              if (large) sizedBoxW16H16 else sizedBoxW12H12,
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,21 +213,27 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                       widget.forum.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: large
+                          ? textTheme.titleLarge?.copyWith(fontSize: 20, fontWeight: FontWeight.w600)
+                          : textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    if (widget.forum.latestThreadTime != null)
+                    if (widget.forum.latestThreadTime != null) ...[
+                      if (large) sizedBoxW2H2,
                       Text(
                         widget.forum.latestThreadTime!.elapsedTillNow(context),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: textTheme.labelSmall?.copyWith(color: colorScheme.secondary),
+                        style: (large ? textTheme.bodyMedium : textTheme.labelSmall)?.copyWith(
+                          color: colorScheme.secondary,
+                        ),
                       ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          sizedBoxW12H12,
+          if (large) sizedBoxW16H16 else sizedBoxW12H12,
           Wrap(
             spacing: 8,
             runSpacing: 6,
@@ -213,16 +242,19 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                 icon: Icons.forum_outlined,
                 label: '${widget.forum.threadCount}',
                 tooltip: '${tr.threads}${widget.forum.threadCount}',
+                large: large,
               ),
               AppInfoPill(
                 icon: Icons.chat_outlined,
                 label: '${widget.forum.replyCount}',
                 tooltip: '${tr.posts}${widget.forum.replyCount}',
+                large: large,
               ),
               AppInfoPill(
                 icon: Icons.mark_chat_unread_outlined,
                 label: '${widget.forum.threadTodayCount ?? 0}',
                 tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
+                large: large,
               ),
             ],
           ),
