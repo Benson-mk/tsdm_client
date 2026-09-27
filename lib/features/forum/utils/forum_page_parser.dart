@@ -1,4 +1,6 @@
 import 'package:tsdm_client/extensions/universal_html.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
+import 'package:tsdm_client/features/draft_box/models/draft_data.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -30,7 +32,13 @@ final class ForumPageData {
     required this.filterSpecialTypeList,
     required this.filterOrderList,
     required this.filterDatelineList,
+    this.pollOfferUid,
   });
+
+  /// Account the page offered its own poll creation link to, null when not offered.
+  ///
+  /// Only a hint for the entry: the poll page validates the form and permission again.
+  final int? pollOfferUid;
 
   /// Forum title.
   final String? title;
@@ -200,7 +208,33 @@ ForumPageData parseForumPage(uh.Document document, String fid) {
     filterSpecialTypeList: filterSpecialTypeList,
     filterOrderList: filterOrderList,
     filterDatelineList: filterDatelineList,
+    pollOfferUid: hasPollCreationLink(document, fid) ? parseLoggedUidFromDocument(document) : null,
   );
+}
+
+/// Whether the forum page itself links to creating a poll (`newthread&special=1`) in forum [fid].
+///
+/// Links inside thread rows or the moderator-written rules are content, not an offer. Viewing the forum or a
+/// `specialtype=poll` filter is not a permission to create polls.
+bool hasPollCreationLink(uh.Document document, String fid) {
+  bool isContent(uh.Element element) {
+    for (uh.Element? node = element; node != null; node = node.parent) {
+      final id = node.id;
+      if (id.startsWith('normalthread_') || id.startsWith('stickthread_') || id == 'forum_rules_$fid') return true;
+    }
+    return false;
+  }
+
+  return document.querySelectorAll('a[href]').any((link) {
+    final uri = draftForumUri(link.attributes['href']);
+    final query = uri?.queryParameters;
+    return uri?.path == '/forum.php' &&
+        query?['mod'] == 'post' &&
+        query?['action'] == 'newthread' &&
+        query?['fid'] == fid &&
+        query?['special'] == '1' &&
+        !isContent(link);
+  });
 }
 
 /// Build a list of thread from given html [document].
