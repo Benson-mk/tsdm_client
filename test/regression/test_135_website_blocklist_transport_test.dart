@@ -71,9 +71,33 @@ void main() {
       expect(missing.getLeft().toNullable()?.failure, WebsiteBlocklistFailure.notFound);
       expect(forum.posts, isEmpty);
     });
+
+    test('desktop list and UID lookup accept the served mobile=no field without any POST', () async {
+      final forum = BlocklistForum(listed: {2001: 'Alpha'}, desktopLayout: true);
+      final client = _clientOf(forum);
+      final list = (await repo.fetchList(client, uid: blocklistOwner)).getOrElse((error) => fail('$error'));
+      expect(list.rows.map((row) => row.uid), [2001]);
+      final found = (await repo.lookup(client, uid: blocklistOwner, target: 2003)).getOrElse((error) => fail('$error'));
+      expect((found.uid, found.username, found.canAdd, found.alreadyListed), (2003, 'Charlie', true, false));
+      expect(forum.gets.map((uri) => uri.queryParameters['mobile']), ['no', 'no']);
+      expect(forum.gets.map((uri) => uri.queryParameters['bu_q']), [null, '2003']);
+      expect(forum.posts, isEmpty);
+    });
   });
 
   group('add', () {
+    test('desktop form adds once with its served body and verifies the new list once', () async {
+      final forum = BlocklistForum(listed: {2001: 'Alpha'}, desktopLayout: true);
+      final result = await repo.add(_clientOf(forum), uid: blocklistOwner, target: 2003, expectedName: 'Charlie');
+      expect(result.isSuccess, isTrue);
+      expect(result.list!.rows.map((row) => row.uid), [2001, 2003]);
+      expect(forum.posts, hasLength(1));
+      expect(forum.posts.single.form, {'formhash': blocklistToken, 'blockuseradd': blocklistAddFlag, 'buid': '2003'});
+      expect(forum.posts.single.uri.queryParametersAll['mobile'], ['no']);
+      expect(Map.of(forum.posts.single.uri.queryParameters)..remove('mobile'), websiteBlocklistQuery);
+      expect(forum.gets.map((uri) => uri.queryParameters['bu_q']), ['2003', null]);
+    });
+
     test('one post from a fresh lookup form, confirmed by the reloaded list', () async {
       final forum = BlocklistForum(listed: {2001: 'Alpha'});
       final result = await repo.add(_clientOf(forum), uid: blocklistOwner, target: 2003, expectedName: 'Charlie');
@@ -189,6 +213,23 @@ void main() {
   });
 
   group('remove', () {
+    test('desktop form removes once with its served body and verifies the remaining list once', () async {
+      final forum = BlocklistForum(listed: {2001: 'Alpha', 2002: 'Bravo'}, desktopLayout: true);
+      final result = await repo.remove(_clientOf(forum), uid: blocklistOwner, target: 2001);
+      expect(result.isSuccess, isTrue);
+      expect(result.list!.rows.map((row) => row.uid), [2002]);
+      expect(forum.posts, hasLength(1));
+      expect(forum.posts.single.form, {
+        'formhash': blocklistToken,
+        'blockuserdel': blocklistRemoveFlag,
+        'buid': '2001',
+      });
+      expect(forum.posts.single.uri.queryParametersAll['mobile'], ['no']);
+      expect(Map.of(forum.posts.single.uri.queryParameters)..remove('mobile'), websiteBlocklistQuery);
+      expect(forum.gets, hasLength(2));
+      expect(forum.gets.every((uri) => !uri.queryParameters.containsKey('bu_q')), isTrue);
+    });
+
     test('one post from the fresh row form, confirmed by absence in the reloaded complete list', () async {
       final forum = BlocklistForum(listed: {2001: 'Alpha', 2002: 'Bravo'});
       final result = await repo.remove(_clientOf(forum), uid: blocklistOwner, target: 2001);

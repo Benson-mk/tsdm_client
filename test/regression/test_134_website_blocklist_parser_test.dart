@@ -146,10 +146,43 @@ void main() {
   });
 
   group('lookup form', () {
+    final desktopForm = blocklistDesktopLookupForm;
+
     test('the observed GET form with hidden routing is the plugin page; without it the list is still read', () {
       expect(_parse(_listPage([blocklistRow(2001, 'Alpha')])).list.rows, hasLength(1));
       final without = blocklistPage(rows: [blocklistRow(2001, 'Alpha')], quota: blocklistQuota(1, 10), lookupForm: '');
       expect(_parse(without).list.rows, hasLength(1));
+    });
+
+    test('the desktop GET form with one hidden mobile=no keeps the list readable', () {
+      final page = _parse(
+        blocklistPage(
+          rows: [blocklistRow(2001, 'Alpha', action: blocklistDesktopAction)],
+          quota: blocklistQuota(1, 10),
+          lookupForm: desktopForm,
+        ),
+      );
+      expect(page.list.rows.map((row) => (row.uid, row.username, row.removable)), [(2001, 'Alpha', true)]);
+      expect(page.list.complete, isTrue);
+      expect(page.actionOf(add: false, uid: 2001).toString(), websiteBlocklistUrl);
+    });
+
+    test('the desktop GET form with one hidden mobile=no keeps the member lookup readable', () {
+      final page = _parse(
+        blocklistPage(
+          quota: blocklistQuota(0, 10),
+          lookupForm: desktopForm,
+          confirmation: blocklistConfirmation(2003, 'Charlie', action: blocklistDesktopAction),
+        ),
+        lookup: 2003,
+      );
+      expect((page.lookup?.uid, page.lookup?.username, page.lookup?.canAdd), (2003, 'Charlie', true));
+      expect(page.addPayload(2003), {
+        'formhash': blocklistToken,
+        'blockuseradd': blocklistAddFlag,
+        'buid': '2003',
+      });
+      expect(page.actionOf(add: true, uid: 2003).toString(), websiteBlocklistUrl);
     });
 
     for (final (name, form) in [
@@ -165,10 +198,58 @@ void main() {
       ('another host', blocklistLookupForm.replaceFirst('action="home.php"', 'action="https://example.com/home.php"')),
       ('a POST method', blocklistLookupForm.replaceFirst('method="get"', 'method="post"')),
       ('no query box', blocklistLookupForm.replaceFirst('name="bu_q"', 'name="q"')),
+      for (final value in ['', 'yes', 'NO'])
+        ('mobile value "$value"', desktopForm.replaceFirst('name="mobile" value="no"', 'name="mobile" value="$value"')),
+      (
+        'a repeated mobile field',
+        desktopForm.replaceFirst('</form>', '<input type="hidden" name="mobile" value="no" /></form>'),
+      ),
+      (
+        'an unknown hidden field beside mobile=no',
+        desktopForm.replaceFirst('</form>', '<input type="hidden" name="extra" value="synthetic" /></form>'),
+      ),
+      (
+        'mobile=no in the action query',
+        blocklistLookupForm.replaceFirst('action="home.php"', 'action="home.php?mobile=no"'),
+      ),
     ]) {
       test('a lookup form with $name is not understood', () {
         final raw = blocklistPage(rows: [blocklistRow(2001, 'Alpha')], quota: blocklistQuota(1, 10), lookupForm: form);
         expect(_failureOf(raw), WebsiteBlocklistFailure.unsupported);
+      });
+    }
+  });
+
+  group('desktop POST actions', () {
+    test('only the optional mobile=no query is accepted and normalized for the desktop client', () {
+      expect(websiteBlocklistActionOf(blocklistDesktopAction)?.queryParameters, websiteBlocklistQuery);
+      expect(websiteBlocklistActionOf(blocklistDesktopAction).toString(), websiteBlocklistUrl);
+      expect(websiteBlocklistActionOf(blocklistAction)?.queryParameters, websiteBlocklistQuery);
+    });
+
+    for (final (name, action) in [
+      for (final value in ['', 'yes', 'NO', '%']) ('mobile value "$value"', '$blocklistAction&amp;mobile=$value'),
+      ('repeated mobile', '$blocklistDesktopAction&amp;mobile=no'),
+      ('unknown parameter', '$blocklistDesktopAction&amp;extra=synthetic'),
+      ('repeated routing', '$blocklistDesktopAction&amp;id=blockuser:spacecp'),
+      ('wrong plugin', blocklistDesktopAction.replaceFirst('blockuser:spacecp', 'other:spacecp')),
+      ('foreign host', 'https://example.com/$blocklistDesktopAction'),
+    ]) {
+      test('$name leaves both add and remove unavailable', () {
+        expect(websiteBlocklistActionOf(action), isNull);
+        final page = _parse(
+          blocklistPage(
+            rows: [blocklistRow(2001, 'Alpha', action: action)],
+            quota: blocklistQuota(1, 10),
+            lookupForm: blocklistDesktopLookupForm,
+            confirmation: blocklistConfirmation(2003, 'Charlie', action: action),
+          ),
+          lookup: 2003,
+        );
+        expect(page.list.rows.single.removable, isFalse);
+        expect(page.lookup?.canAdd, isFalse);
+        expect(page.addPayload(2003), isNull);
+        expect(page.removePayload(2001), isNull);
       });
     }
   });

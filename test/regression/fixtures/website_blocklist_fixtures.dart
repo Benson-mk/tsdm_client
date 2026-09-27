@@ -29,6 +29,9 @@ const blocklistRemoveFlag = 'synthetic-remove';
 /// Action of both POST forms, as the page serves it.
 const blocklistAction = 'home.php?mod=spacecp&amp;ac=plugin&amp;id=blockuser:spacecp';
 
+/// Desktop add/remove action observed in the forum's network response.
+const blocklistDesktopAction = '$blocklistAction&amp;mobile=no';
+
 /// A full page of account [uid] around [content], with layout links that are not the list.
 String blocklistDocument(String content, {int uid = blocklistOwner}) =>
     '''
@@ -54,6 +57,12 @@ const blocklistLookupForm = '''
 <input type="text" id="bu_q" name="bu_q" maxlength="200" value="" />
 <button type="submit" id="bu_qbtn">查詢</button>
 </form>''';
+
+/// Desktop GET form also carries the layout flag in a hidden field.
+final blocklistDesktopLookupForm = blocklistLookupForm.replaceFirst(
+  '</form>',
+  '<input type="hidden" name="mobile" value="no" /></form>',
+);
 
 /// The plugin page: quota, lookup form, lookup result [confirmation] and the list of [rows]; [quota] null prints none.
 String blocklistPage({
@@ -152,7 +161,10 @@ ${withForm ? blocklistForm(attributes: 'id="bu_addform"', flagName: flagName, fl
 /// Writes change [listed] unless told otherwise; every request is recorded.
 class BlocklistForum implements HttpClientAdapter {
   /// Constructor.
-  BlocklistForum({Map<int, String>? listed, this.limit = 10}) : listed = listed ?? {};
+  BlocklistForum({Map<int, String>? listed, this.limit = 10, this.desktopLayout = false}) : listed = listed ?? {};
+
+  /// Serve the observed desktop GET hidden field and POST action query.
+  final bool desktopLayout;
 
   /// Users on the list, uid to name.
   final Map<int, String> listed;
@@ -201,18 +213,23 @@ class BlocklistForum implements HttpClientAdapter {
   final gets = <Uri>[];
   int _listReads = 0;
 
-  List<String> get _rows => [for (final e in listed.entries) blocklistRow(e.key, e.value)];
+  String get _action => desktopLayout ? blocklistDesktopAction : blocklistAction;
+
+  String get _lookupForm => desktopLayout ? blocklistDesktopLookupForm : blocklistLookupForm;
+
+  List<String> get _rows => [for (final e in listed.entries) blocklistRow(e.key, e.value, action: _action)];
 
   String get _quota => blocklistQuota(listed.length, limit);
 
-  String listPage() => blocklistPage(rows: _rows, quota: _quota, uid: pageUid);
+  String listPage() => blocklistPage(rows: _rows, quota: _quota, lookupForm: _lookupForm, uid: pageUid);
 
   String lookupPage(int uid) {
     final name = members[uid];
     return blocklistPage(
       rows: _rows,
       quota: _quota,
-      confirmation: name == null || listed.containsKey(uid) ? '' : blocklistConfirmation(uid, name),
+      lookupForm: _lookupForm,
+      confirmation: name == null || listed.containsKey(uid) ? '' : blocklistConfirmation(uid, name, action: _action),
       uid: pageUid,
     );
   }

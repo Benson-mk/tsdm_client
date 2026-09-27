@@ -97,8 +97,9 @@ Map<String, String>? _singleQuery(Uri uri) {
 }
 
 /// The url to send a plugin POST form to, null unless [raw] is exactly the plugin page: the forum's `home.php` with
-/// `mod`, `ac` and `id` of [websiteBlocklistQuery], each once, and no other parameter. The observed forms carry the
-/// target only in the `buid` field; an action with more parameters (a target, an operation) is not that form.
+/// `mod`, `ac` and `id` of [websiteBlocklistQuery], each once, and optionally one `mobile=no` layout parameter. The
+/// observed forms carry the target only in the `buid` field; other parameters (a target, an operation) are refused.
+/// The optional layout parameter is removed after validation: the desktop network client adds it exactly once.
 Uri? websiteBlocklistActionOf(String? raw) {
   if (raw == null) {
     return null;
@@ -108,14 +109,23 @@ Uri? websiteBlocklistActionOf(String? raw) {
     return null;
   }
   final query = _singleQuery(uri);
-  if (query == null || query.length != websiteBlocklistQuery.length) {
+  if (query == null) {
     return null;
   }
-  return canonicalForumOperationUrl(uri, websiteBlocklistQuery);
+  final mobile = query.remove('mobile');
+  if ((mobile != null && mobile != 'no') || query.length != websiteBlocklistQuery.length) {
+    return null;
+  }
+  final action = canonicalForumOperationUrl(uri, websiteBlocklistQuery);
+  if (action == null || mobile == null) {
+    return action;
+  }
+  return action.replace(query: Uri.parse(websiteBlocklistUrl).query);
 }
 
 /// Whether [form] is the plugin's lookup form `form#bu_qform` as observed: GET to the forum's bare `home.php`, the
-/// plugin query as hidden `mod`, `ac` and `id` fields (each once) and one `bu_q` text box.
+/// plugin query as hidden `mod`, `ac` and `id` fields (each once), optionally one hidden `mobile=no`, and one `bu_q`
+/// text box. The desktop layout field is served on pages requested with `mobile=no`.
 ///
 /// A GET form replaces the query of its action by its fields, so routing in the action as well would be ignored by a
 /// browser or conflict with the hidden fields: an action with a query is refused.
@@ -148,6 +158,10 @@ bool _isLookupForm(uh.Element form) {
     } else {
       return false;
     }
+  }
+  final mobile = routing.remove('mobile');
+  if (mobile != null && mobile != 'no') {
+    return false;
   }
   return boxes == 1 &&
       routing.length == websiteBlocklistQuery.length &&

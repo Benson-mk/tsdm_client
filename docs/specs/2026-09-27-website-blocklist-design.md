@@ -28,12 +28,12 @@ served. Test fixtures use this structure with made-up values (`test/regression/f
 |---|---|
 | Container | `div#bu_page.bu-page` |
 | Quota | `div#bu_quota.bu-quota`, text like `已屏蔽 1／10 人` (full width slash; limit read from the page) |
-| Lookup form | `form#bu_qform` GET, action `home.php`, hidden `mod` / `ac` / `id`, `input#bu_q[name=bu_q]`, unnamed submit |
+| Lookup form | `form#bu_qform` GET, action `home.php`, hidden `mod` / `ac` / `id`, optional hidden `mobile=no`, `input#bu_q[name=bu_q]`, unnamed submit |
 | Lookup result | `div#bu_confirm` > `div.bu-member` > `span.bu-name > b#bu_confirmname` (name) and `span.bu-uid` (`UID n`) |
-| Add form | `form#bu_addform` POST to the plugin page: hidden `formhash`, `blockuseradd`, `buid`; unnamed submit |
+| Add form | `form#bu_addform` POST to the plugin page, optionally with `mobile=no` in its action: hidden `formhash`, `blockuseradd`, `buid`; unnamed submit |
 | List | `table#bu_list.bu-list`, `thead` (會員 / 加入時間 / 操作), `tbody > tr#bu_row_n` |
 | Row | 1st cell `span.bu-name > a[href=home.php?mod=space&uid=n]` and `span.bu-uid`; 2nd date; 3rd `form.bu-delform` |
-| Remove form | `form.bu-delform` POST to the plugin page: hidden `formhash`, `blockuserdel`, `buid`; unnamed submit |
+| Remove form | `form.bu-delform` POST to the plugin page, optionally with `mobile=no` in its action: hidden `formhash`, `blockuserdel`, `buid`; unnamed submit |
 
 ## Protocol handling (fail closed)
 
@@ -41,7 +41,8 @@ served. Test fixtures use this structure with made-up values (`test/regression/f
   confirmation). Both must be a normal forum page of the expected account (`checkForumPage` with identity), complete
   (`</html>`), with exactly one `#bu_page` holding `table#bu_list`. A page without the list table is an error, never
   an empty list. A `#bu_qform` present must be the observed GET form: routing only in its hidden fields, each once
-  (a GET form replaces the action's query, so routing in the action as well is refused).
+  (a GET form replaces the action's query, so routing in the action as well is refused). The desktop variant may
+  additionally contain exactly one hidden `mobile=no`; another value, duplicate or unknown hidden field is refused.
 * **Rows**: only `tbody > tr` of `table#bu_list`, each with three cells where the row id `bu_row_n`, the profile link
   and the `UID n` label name the same uid (strict decimal, 1 to 2^31-1; a repeated query parameter is refused). Any
   other row, a row linking another user, the account itself or a uid twice rejects the page.
@@ -49,13 +50,14 @@ served. Test fixtures use this structure with made-up values (`test/regression/f
   A list is **complete** only when the page prints a count equal to its rows and has no pagination; without a count
   it is incomplete. Only a complete list is called empty, gives a total, can be imported from and proves absence.
 * **Forms**: only the observed shape is used — POST to exactly `home.php?mod=spacecp&ac=plugin&id=blockuser:spacecp`
-  (same origin, default port, no user info, exactly these three parameters once), hidden `formhash`, the flag of the
+  (same origin, default port, no user info, exactly these three parameters once and optionally one `mobile=no`), hidden `formhash`, the flag of the
   form (`blockuseradd` in `#bu_addform` inside `#bu_confirm`, `blockuserdel` in the row's `form.bu-delform`) and
   `buid`, each once and not blank, and one unnamed submit button. The other flag, another field, a named or second
   button, a disabled field or a target in the action make the form unusable (the row stays listed without remove; the
   lookup offers no add). A remove form's `buid` must be its row's uid; the add form's `buid` and the confirmation's
   `UID n` must be the uid asked for, otherwise the lookup is a target mismatch. Unobserved variants (bulk delete,
-  checkboxes, operation words) are not supported.
+  checkboxes, operation words) are not supported. After validating a desktop action, its optional layout flag is
+  removed from the URL because the network client appends `mobile=no` itself; the request contains it only once.
 * **Writes**: add = fresh lookup GET of exactly the chosen uid (name must still match the confirmed one) → one
   `postForm(singleAttempt: true)`; remove = fresh list GET → the row's form → one POST. The caller's validity check
   (account + generation) runs before the fresh read and again right before the POST: a confirmation that expired
@@ -97,3 +99,19 @@ and name) is taken from the list current at import time, not from the row tapped
 * No live add/remove was performed: the POST round trip, the forum's answer to it, its "not found" lookup page and
   its empty-list page were not observed. An empty list is accepted only as an empty `table#bu_list` with a matching
   count; any other empty or error layout is shown as unsupported with the website fallback.
+
+## Desktop query form correction (2026-09-27)
+
+The Android preview could reject the initial list before attempting a member lookup, logging `lookup form not
+understood`. Inspection of the forum's actual network response confirmed that its GET form includes the additional
+hidden field `mobile=no`, matching the layout requested by the app's network client. The original parser required
+exactly the three routing fields and therefore rejected this valid desktop form. This was not evidence that the
+queried member did not exist. Further read-only inspection confirmed that the add and remove forms also carry
+`mobile=no` in their action URLs; rejecting every extra action parameter made those forms unavailable as well.
+
+The parser now permits this one optional GET hidden field and one optional POST action parameter, each with exactly
+the observed value. The GET action must still be bare `home.php`, and POST routing, hidden fields, tokens and target
+binding retain their checks. Synthetic parser tests cover list and lookup with the desktop forms and reject
+unsupported values, duplicates, unknown parameters and foreign actions. Transport tests verify reads do not send
+any POST and that adding or removing through a fake adapter sends once, retains the served body, sends only one
+layout parameter and reloads the list once for confirmation. No real add/remove was performed for this correction.
