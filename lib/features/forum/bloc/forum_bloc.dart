@@ -31,35 +31,35 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
   Future<void> _onForumLoadMoreRequested(ForumLoadMoreRequested event, ForumEmitter emit) async {
     if (state.status == ForumStatus.failure) {
       // Restoring from failure state.
-      emit(state.copyWith(status: ForumStatus.loading));
+      emit(state.copyWith(status: ForumStatus.loading, pollOfferUid: null));
     }
     await await _forumRepository
         .fetchForum(fid: state.fid, pageNumber: event.pageNumber, filterState: state.filterState)
         .match((e) {
           handle(e);
-          emit(state.copyWith(status: ForumStatus.failure));
+          emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
         }, (v) async => emit(await _parseFromDocument(v, event.pageNumber)))
         .run();
   }
 
   Future<void> _onForumRefreshRequested(ForumRefreshRequested event, ForumEmitter emit) async {
-    emit(state.copyWith(status: ForumStatus.loading, normalThreadList: []));
+    emit(state.copyWith(status: ForumStatus.loading, normalThreadList: [], pollOfferUid: null));
 
     await await _forumRepository.fetchForum(fid: state.fid, filterState: state.filterState).match((e) {
       handle(e);
       error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
-      emit(state.copyWith(status: ForumStatus.failure));
+      emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
     }, (v) async => emit(await _parseFromDocument(v, 1))).run();
   }
 
   Future<void> _onForumJumpPageRequested(ForumJumpPageRequested event, ForumEmitter emit) async {
-    emit(state.copyWith(status: ForumStatus.loading, normalThreadList: []));
+    emit(state.copyWith(status: ForumStatus.loading, normalThreadList: [], pollOfferUid: null));
     await await _forumRepository
         .fetchForum(fid: state.fid, pageNumber: event.pageNumber, filterState: state.filterState)
         .match((e) {
           handle(e);
           error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
-          emit(state.copyWith(status: ForumStatus.failure));
+          emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
         }, (v) async => emit(await _parseFromDocument(v, event.pageNumber)))
         .run();
   }
@@ -68,11 +68,18 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
     ForumChangeThreadFilterStateRequested event,
     ForumEmitter emit,
   ) async {
-    emit(state.copyWith(status: ForumStatus.loading, normalThreadList: [], filterState: event.filterState));
+    emit(
+      state.copyWith(
+        status: ForumStatus.loading,
+        normalThreadList: [],
+        filterState: event.filterState,
+        pollOfferUid: null,
+      ),
+    );
     await await _forumRepository.fetchForum(fid: state.fid, filterState: state.filterState).match((e) {
       handle(e);
       error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
-      emit(state.copyWith(status: ForumStatus.failure));
+      emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
     }, (v) async => emit(await _parseFromDocument(v, 1))).run();
   }
 
@@ -95,6 +102,8 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
       filterSpecialTypeList: page.filterSpecialTypeList,
       filterOrderList: page.filterOrderList,
       filterDatelineList: page.filterDatelineList,
+      // Always the latest page's own offer: never carried over from an earlier page or account.
+      pollOfferUid: page.pollOfferUid,
     );
 
     if (page.stickThreadList.isNotEmpty) {
