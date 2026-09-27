@@ -37,9 +37,17 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 /// large cards once it really has [topicsPageLargeCardWidth]; phones and medium windows keep the compact layout.
 /// UI107 feedback: the large cards were still mostly empty, so the picture (up to 240x120) and a 24px name now share
 /// the card width and the counters are three equal blocks filling the bottom; the page grows to 1520.
+/// preview109 feedback: phones must not use the desktop size, so large cards are for desktop platforms only: desktop
+/// cases run as Windows, phone cases as Android, and a 1600 wide Android landscape stays compact.
 ///
 /// Fake data only (same fake index shape as test_043): no forum icon, so no image is fetched.
 const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
+
+/// Desktop window.
+const _windows = TargetPlatformVariant({TargetPlatform.windows});
+
+/// Phone.
+const _android = TargetPlatformVariant({TargetPlatform.android});
 
 /// Serves the fake forum index for every `/forum.php` request.
 final class _FakeAdapter implements HttpClientAdapter {
@@ -298,7 +306,22 @@ void main() {
     final value = tester.widget<ForumCardStat>(firstStat).value;
     expect(tester.widget<Text>(find.descendant(of: firstStat, matching: find.text(value))).style?.fontSize, 20);
     expect(tester.getSize(firstStat).width, greaterThan(200));
-  });
+  }, variant: _windows);
+
+  testWidgets('Android 1600 wide landscape keeps the phone cards and the shared width', (tester) async {
+    await pumpTopics(tester, const Size(1600, 1000));
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ForumCard), findsNWidgets(4));
+    expect(tester.widgetList<ForumCard>(find.byType(ForumCard)).any((e) => e.large), isFalse);
+    final first = tester.getRect(card(0));
+    final second = tester.getRect(card(1));
+    expect(second.right - first.left, moreOrLessEquals(appListMaxWidth));
+    expect(imageSize(tester, 0), forumCardImageSize);
+    expect(tester.widget<Text>(find.text('新人报到')).style?.fontSize, isNot(24));
+    expect(tester.widget<GroupModeratorsRow>(find.byType(GroupModeratorsRow)).large, isFalse);
+    expect(find.descendant(of: card(0), matching: find.byType(AppInfoPill)), findsNWidgets(3));
+    expect(find.byType(ForumCardStat), findsNothing);
+  }, variant: _android);
 
   testWidgets('a medium window keeps the compact cards and the shared width', (tester) async {
     await pumpTopics(tester, const Size(1000, 800));
@@ -314,7 +337,7 @@ void main() {
     // Compact counters stay the small pills.
     expect(find.descendant(of: card(0), matching: find.byType(AppInfoPill)), findsNWidgets(3));
     expect(find.byType(ForumCardStat), findsNothing);
-  });
+  }, variant: _windows);
 
   testWidgets('phone 320 at 2x text with long names: one compact column, no overflow while scrolling', (tester) async {
     forums = [for (var i = 0; i < 6; i++) '很长很长的版块名称$i' * 4];
@@ -331,7 +354,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.takeException(), isNull);
     }
-  });
+  }, variant: _android);
 
   testWidgets('narrowest large layout at 2x text with long names and counters puts the name under the picture', (
     tester,
@@ -357,7 +380,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.takeException(), isNull);
     }
-  });
+  }, variant: _windows);
 
   testWidgets('narrow desktop at 1x keeps the picture beside the name, long names and counters fit', (tester) async {
     forums = [for (var i = 0; i < 6; i++) '很长很长的版块名称$i' * 6];
@@ -382,7 +405,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.takeException(), isNull);
     }
-  });
+  }, variant: _windows);
 
   testWidgets('large cards and moderator chips still navigate', (tester) async {
     final r = await pumpTopics(tester, const Size(1600, 1000));
@@ -396,5 +419,5 @@ void main() {
     await pumpFrames(tester);
     expect(find.text('profile 捕风巫'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
+  }, variant: _windows);
 }

@@ -403,21 +403,26 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
         }
         context.read<ForumBloc>().add(ForumRefreshRequested());
       },
-      // One column on phones, two on wide windows.
+      // One column on phones, two on wide windows; large cards in a wider area on desktop windows, like the topics
+      // page (phones keep the compact cards at any width). The width is measured inside the page's SafeArea, so side
+      // insets are already excluded.
       child: AppCenteredList(
-        builder: (context, side, width) {
-          final columns = appColumnsFor(width);
+        builder: (context, _, width) {
+          final layout = forumCardListLayout(width, Theme.of(context).platform);
           return ListView.separated(
             controller: _subredditScrollController,
-            padding: side.copyWith(top: 8).add(context.safePadding()),
-            itemCount: appRowCount(subredditList.length, columns),
+            padding: layout.side
+                .copyWith(top: layout.large ? 16 : 8, bottom: layout.large ? 20 : 0)
+                .add(context.safePadding()),
+            itemCount: appRowCount(subredditList.length, layout.columns),
             itemBuilder: (context, row) => AppColumnsRow(
               row: row,
-              columns: columns,
+              columns: layout.columns,
               count: subredditList.length,
-              itemBuilder: (_, index) => ForumCard(subredditList[index]),
+              gap: layout.gap,
+              itemBuilder: (_, index) => ForumCard(subredditList[index], large: layout.large),
             ),
-            separatorBuilder: (context, index) => appListSeparator,
+            separatorBuilder: (context, index) => layout.separator,
           );
         },
       ),
@@ -549,34 +554,43 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
         ),
         BlocProvider(create: (context) => JumpPageCubit()),
       ],
-      child: BlocBuilder<ForumBloc, ForumState>(
-        builder: (context, state) {
-          if (state.status == ForumStatus.success &&
-              state.normalThreadList.isEmpty &&
-              // Do not switch tab if filtering but filtering non result left.
-              !state.filterState.isFiltering()) {
-            tabController.animateTo(_subredditTabIndex, duration: const Duration(milliseconds: 500));
+      // A forum without threads opens its sub forums tab. Switched from a listener, once per loaded state: switching
+      // in the builder notified the tab listener (setState) during the build, and forced the tab back on every rebuild.
+      child: BlocListener<ForumBloc, ForumState>(
+        listenWhen: (_, state) =>
+            state.status == ForumStatus.success &&
+            state.normalThreadList.isEmpty &&
+            // Do not switch tab if filtering but filtering non result left.
+            !state.filterState.isFiltering(),
+        listener: (context, state) {
+          if (!mounted || tabController.index == _subredditTabIndex) {
+            return;
           }
-          // Update jump page state.
-          context.read<JumpPageCubit>().setPageInfo(currentPage: state.currentPage, totalPages: state.totalPages);
-
-          // Reset jump page state when every build.
-          if (state.status == ForumStatus.initial || state.status == ForumStatus.loading) {
-            context.read<JumpPageCubit>().markLoading();
-          } else {
-            context.read<JumpPageCubit>().markSuccess();
-          }
-
-          return Scaffold(
-            // appBar: PreferredSize(preferredSize: const Size.fromHeight(145), child: _buildListAppBar(context, state)),
-            appBar: _buildListAppBar(context, state),
-            body: NotificationListener<UserScrollNotification>(
-              onNotification: _onBodyScrollNotification,
-              child: SafeArea(bottom: false, child: _buildBody(context, state)),
-            ),
-            floatingActionButton: _buildFloatingActionButton(context, state),
-          );
+          tabController.animateTo(_subredditTabIndex, duration: const Duration(milliseconds: 500));
         },
+        child: BlocBuilder<ForumBloc, ForumState>(
+          builder: (context, state) {
+            // Update jump page state.
+            context.read<JumpPageCubit>().setPageInfo(currentPage: state.currentPage, totalPages: state.totalPages);
+
+            // Reset jump page state when every build.
+            if (state.status == ForumStatus.initial || state.status == ForumStatus.loading) {
+              context.read<JumpPageCubit>().markLoading();
+            } else {
+              context.read<JumpPageCubit>().markSuccess();
+            }
+
+            return Scaffold(
+              // appBar: PreferredSize(preferredSize: const Size.fromHeight(145), child: _buildListAppBar(context, state)),
+              appBar: _buildListAppBar(context, state),
+              body: NotificationListener<UserScrollNotification>(
+                onNotification: _onBodyScrollNotification,
+                child: SafeArea(bottom: false, child: _buildBody(context, state)),
+              ),
+              floatingActionButton: _buildFloatingActionButton(context, state),
+            );
+          },
+        ),
       ),
     );
   }

@@ -19,9 +19,9 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 /// Header (icon, name, time of the latest thread), counters as pills, then the optional shortcuts (latest thread,
 /// links and sub forums) in inner blocks.
 ///
-/// [large] is for the wide topics page on desktop windows: the forum picture (up to 240x120, fitted whole) and a 24px
-/// name share the card width, and the three counters are equal blocks ([ForumCardStat]) filling the bottom. Every
-/// other page keeps the compact card.
+/// [large] is for the forum lists of desktop windows (see [forumCardListLayout]): the forum picture (up to 240x120,
+/// fitted whole) and a 24px name share the card width, and the three counters are equal blocks ([ForumCardStat])
+/// filling the bottom. Phones (even wide landscape ones) and medium windows keep the compact card.
 class ForumCard extends StatefulWidget {
   /// Constructor.
   const ForumCard(this.forum, {this.large = false, super.key});
@@ -67,6 +67,45 @@ const forumCardLargeNameMinWidth = 220.0;
 
 /// Padding of a large [ForumCard].
 const forumCardLargePadding = EdgeInsets.symmetric(horizontal: 24, vertical: 20);
+
+/// Widest a list of [ForumCard]s grows once it shows large cards (other lists, and forum lists below
+/// [forumCardListLargeWidth], keep [appListMaxWidth]).
+const forumCardListMaxWidth = 1520.0;
+
+/// Width a list of [ForumCard]s must really have (measured: navigation and safe area excluded) to show large cards.
+///
+/// Below it the list keeps the compact cards of phones and tablets (one column, then two from [appTwoColumnWidth]).
+const forumCardListLargeWidth = 1100.0;
+
+/// Whether [platform] is a desktop one. Only desktop windows get large [ForumCard]s: phones and tablets keep the
+/// compact cards at any width, landscape included.
+bool forumCardListIsDesktop(TargetPlatform platform) => switch (platform) {
+  TargetPlatform.windows || TargetPlatform.linux || TargetPlatform.macOS => true,
+  TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => false,
+};
+
+/// Whether a list of [ForumCard]s shows large cards in a page of [width] on [platform].
+bool forumCardListUsesLargeCards(double width, TargetPlatform platform) =>
+    forumCardListIsDesktop(platform) && width >= forumCardListLargeWidth;
+
+/// Layout of a list of [ForumCard]s in a page of [width] on [platform] (topics, sub forums of a forum, forum group).
+///
+/// Desktop windows get a wider content area (still two columns) with large cards, so the list is not a small island
+/// in the middle of the window; phones (any width), tablets and medium windows keep the shared list width and the
+/// compact cards. Pass `Theme.of(context).platform`.
+({bool large, int columns, EdgeInsets side, double gap, Widget separator}) forumCardListLayout(
+  double width,
+  TargetPlatform platform,
+) {
+  final large = forumCardListUsesLargeCards(width, platform);
+  return (
+    large: large,
+    columns: appColumnsFor(width),
+    side: appCenteredPadding(width, maxWidth: large ? forumCardListMaxWidth : appListMaxWidth),
+    gap: large ? appSurfaceGap : appSurfaceGapCompact,
+    separator: large ? const SizedBox(height: appSurfaceGap) : appListSeparator,
+  );
+}
 
 /// One counter of a large [ForumCard]: icon and caption on top, the number below; the three share the card width.
 ///

@@ -126,3 +126,19 @@ format、嚴格分析通過；新 test169 五項尺寸/大字/導覽測試通過
 
 ## 桌面卡片第二次放大驗證（2026-09-28）
 Codex 已執行格式、嚴格分析並通過完整 Flutter 測試：1654 通過、1 略過、0 失敗。涵蓋 1600 寬大卡與全寬統計、1100 寬長名稱/長數字/2倍字、1000 與320寬手機精簡卡保持原樣，以及導航。Windows 預覽108待建置與實機確認；手機布局不變。
+
+## 子版塊與分組頁大卡（使用者 108 回饋，2026-09-28）— 程式已改，未驗證
+
+回饋：「子版塊都很小需要調整」（`work/ui-topic-reference/subforums-too-small.png`：版塊內「子版塊」tab 仍 960 寬、88×44 小圖）。根因：`forum_page.dart` `_buildSubredditTab` 與 `forum_group_page.dart` `_buildContent` 仍用 `AppCenteredList` 預設 960，`ForumCard` 未傳 `large`。`rg ForumCard(` 的 lib 使用處只有這兩處與 `topics_page`。
+
+- **共用規則移到 `widgets/card/forum_card.dart`**：`forumCardListMaxWidth` 1520、`forumCardListLargeWidth` 1100、`forumCardListUsesLargeCards(width)`、`forumCardListLayout(width)`（回傳 large、欄數、左右置中內距、欄距、列分隔）。forum 層不再需要 import topics。`topics_page` 改用它；`topicsPageMaxWidth`／`topicsPageLargeCardWidth`／`topicsPageUsesLargeCards` 保留為同值別名，test_169 不需改。
+- **子版塊 tab、gid 分組頁**：與版塊頁相同——`LayoutBuilder` 量到的頁寬（兩頁 body 都在 `SafeArea(bottom: false)` 內，已扣掉 Android 橫向左右安全區與側欄）≥ 1100 → 內容最寬 1520 置中、兩欄、`ForumCard(large: true)`、欄距／列距 12、上 16 下 20；< 1100 → 與改前完全相同（960、一欄→840 起兩欄、間距 8、88×44）。底部仍加 `context.safePadding()`。
+- 未動：ScrollController、EasyRefresh／下拉重整、空狀態、載入／錯誤、自動切到子版塊 tab、雙擊回頂、FAB、帖子列表、卡片本身。
+- 測試：新 `test/regression/test_170_subforum_cards_test.dart`，子版塊 tab（真 `ForumPage`，無帖子自動切 tab）與 `ForumGroupPage` 各跑一次：1600 → 兩欄大卡、內容 1520 置中、圖 240×120、名稱 24、三統計；1100@2x 長名稱 → 大卡、捲動無例外；1140 寬左側 inset 44 → 實際 1096 維持精簡卡；844×390@2x 左右 inset 44 → 精簡卡且都在安全區內、捲動無例外；320@2x → 單欄精簡 88×44、捲動無例外；390 與 1600 點卡片進入子版塊。
+
+## 手機不用電腦版大小＋無帖子自動切 tab 修正（使用者 109 追加與 Codex 實跑結果，2026-09-28）— 程式已改，未驗證
+
+- **僅桌面平台放大**：使用者明確要求「手機版不要用電腦版這個大小」。`forum_card.dart` 新增 `forumCardListIsDesktop(TargetPlatform)`（Windows／Linux／macOS 為桌面，Android／iOS／Fuchsia 否）；`forumCardListUsesLargeCards(width, platform)`＝桌面且量到寬度 ≥ 1100；`forumCardListLayout(width, platform)`。三處（版塊頁、子版塊 tab、gid 分組頁）皆傳 `Theme.of(context).platform`（App 未設 ThemeData.platform，正式環境即實際平台；測試用 `TargetPlatformVariant` 可控）。Android／iOS 即使 1600 寬橫向或平板也維持手機精簡卡、960 共用寬度；寬度仍於 SafeArea 內量測。
+- **strict**：`topics_page.dart` 別名補型別 `const double topicsPageMaxWidth`／`topicsPageLargeCardWidth`；`topicsPageUsesLargeCards` 改為 `(width, platform)`。
+- **生命週期**：`ForumPage` 原在 `BlocBuilder` builder 內呼叫 `tabController.animateTo(子版塊)`，TabController 同步通知 `_updateFabVisibilityByTabIndex` → build 中 `setState`（test_170 子版塊全敗的原因），且每次重建都把 tab 拉回子版塊。改為外層 `BlocListener`：`listenWhen` 為載入成功、無帖子、非篩選；listener 檢查 `mounted` 與目前不在子版塊 tab 才切。只在新狀態觸發，不在 build 中，使用者手動切回主題 tab 不再被拉回。
+- **測試**：test_169 桌面案例（1600、1000 中寬、1100@2x、1100@1x、導航）標 Windows，320@2x 標 Android，新增 Android 1600 寬仍精簡卡。test_170 兩頁各 8 項：Windows 1600 大卡、Android 1600 精簡、Windows 1100@2x、Windows 1140−inset44、Android 844×390@2x 安全區、Android 320@2x、Android 390 導航、Windows 1600 導航；另加「無帖子」群組：Android 390 自動切子版塊 → 點主題 tab 維持在主題 tab（顯示無帖子）→ 切回子版塊點卡片導航；Windows 1600 自動切子版塊且大卡。

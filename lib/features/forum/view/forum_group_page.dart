@@ -28,20 +28,25 @@ class ForumGroupPage extends StatefulWidget {
 class _ForumGroupPageState extends State<ForumGroupPage> {
   Widget _buildContent(BuildContext context, ForumGroup forumGroup) {
     final forums = forumGroup.forumList;
-    // One column on phones, two on wide windows.
+    // One column on phones, two on wide windows; large cards in a wider area on desktop windows, like the topics
+    // page (phones keep the compact cards at any width). The width is measured inside the page's SafeArea, so side
+    // insets are already excluded.
     return AppCenteredList(
-      builder: (context, side, width) {
-        final columns = appColumnsFor(width);
+      builder: (context, _, width) {
+        final layout = forumCardListLayout(width, Theme.of(context).platform);
         return ListView.separated(
-          padding: side.copyWith(top: 8).add(context.safePadding()),
-          itemCount: appRowCount(forums.length, columns),
+          padding: layout.side
+              .copyWith(top: layout.large ? 16 : 8, bottom: layout.large ? 20 : 0)
+              .add(context.safePadding()),
+          itemCount: appRowCount(forums.length, layout.columns),
           itemBuilder: (context, row) => AppColumnsRow(
             row: row,
-            columns: columns,
+            columns: layout.columns,
             count: forums.length,
-            itemBuilder: (_, index) => ForumCard(forums[index]),
+            gap: layout.gap,
+            itemBuilder: (_, index) => ForumCard(forums[index], large: layout.large),
           ),
-          separatorBuilder: (_, _) => appListSeparator,
+          separatorBuilder: (_, _) => layout.separator,
         );
       },
     );
