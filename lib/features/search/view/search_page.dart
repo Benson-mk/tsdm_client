@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
-import 'package:tsdm_client/extensions/list.dart';
 import 'package:tsdm_client/features/jump_page/widgets/jump_page_dialog.dart';
 import 'package:tsdm_client/features/open_in_app/view/open_in_app_page.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
@@ -12,6 +11,7 @@ import 'package:tsdm_client/features/search/repository/search_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -224,19 +224,20 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
   }
 
   Widget _buildSearchButton(BuildContext context, SearchState state) {
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 50,
-            child: DebounceFilledButton(
-              shouldDebounce: state.status.isSearching(),
-              onPressed: () async => _search(context),
-              child: Text(context.t.searchPage.form.search),
-            ),
-          ),
+    return SizedBox(
+      height: 48,
+      child: DebounceFilledButton(
+        shouldDebounce: state.status.isSearching(),
+        onPressed: () async => _search(context),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_outlined),
+            sizedBoxW8H8,
+            Flexible(child: Text(context.t.searchPage.form.search, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -286,142 +287,207 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
   }
 
   Widget _buildSearchForm(BuildContext context, SearchState state) {
-    return Form(
-      key: formKey,
-      child: Column(
-        children: <Widget>[
-          TextFormField(
-            autofocus: true,
-            controller: keywordController,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.abc_outlined),
-              labelText: context.t.searchPage.form.keyword,
-            ),
-            validator: (v) {
-              // FIXME: Extra validation not graceful at all.
-              // Purpose is to skip keyword validation when both author and forum id are valid and not `any`.
-              // The server allows searching without keyword when author or forum id is set.
-              // If author or forum id is not valid, it's unnecessary to validate keyword.
-              if (_validateAuthor(context, authorController.text) != null ||
-                  _validateFid(context, fidController.text) != null) {
-                return null;
-              }
-              // Validation only fails when running with keyword field, in other words author and forum id are `any`.
-              // It's fine to have an empty keyword when author or forum id is not `any`.
-              if (v == null || v.isEmpty && authorController.text.trim().isEmpty && fidController.text == '0') {
-                return context.t.searchPage.form.keywordEmpty;
-              }
-              if (v.contains('%')) {
-                return context.t.searchPage.form.keywordInvalid;
-              }
-              return null;
-            },
-          ),
-          TextFormField(
-            controller: authorController,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.person_outline),
-              labelText: context.t.searchPage.form.author,
-              suffixText: unlimitedAuthor ? context.t.searchPage.form.any : null,
-            ),
-            onChanged: (v) {
-              setState(() {
-                unlimitedAuthor = v.trim().isEmpty;
-              });
-            },
-            validator: (v) => _validateAuthor(context, v),
-          ),
-          TextFormField(
-            controller: fidController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.forum_outlined),
-              labelText: context.t.searchPage.form.fid,
-              suffixText: unlimitedFid ? context.t.searchPage.form.any : null,
-            ),
-            onChanged: (v) {
-              setState(() {
-                unlimitedFid = fidController.text == '0';
-              });
-            },
-            validator: (v) => _validateFid(context, v),
-          ),
-          _buildSearchButton(context, state),
-        ].insertBetween(sizedBoxW12H12),
+    final keywordField = TextFormField(
+      autofocus: true,
+      controller: keywordController,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.abc_outlined),
+        labelText: context.t.searchPage.form.keyword,
+      ),
+      validator: (v) {
+        // FIXME: Extra validation not graceful at all.
+        // Purpose is to skip keyword validation when both author and forum id are valid and not `any`.
+        // The server allows searching without keyword when author or forum id is set.
+        // If author or forum id is not valid, it's unnecessary to validate keyword.
+        if (_validateAuthor(context, authorController.text) != null ||
+            _validateFid(context, fidController.text) != null) {
+          return null;
+        }
+        // Validation only fails when running with keyword field, in other words author and forum id are `any`.
+        // It's fine to have an empty keyword when author or forum id is not `any`.
+        if (v == null || v.isEmpty && authorController.text.trim().isEmpty && fidController.text == '0') {
+          return context.t.searchPage.form.keywordEmpty;
+        }
+        if (v.contains('%')) {
+          return context.t.searchPage.form.keywordInvalid;
+        }
+        return null;
+      },
+    );
+    final authorField = TextFormField(
+      controller: authorController,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.person_outline),
+        labelText: context.t.searchPage.form.author,
+        suffixText: unlimitedAuthor ? context.t.searchPage.form.any : null,
+      ),
+      onChanged: (v) {
+        setState(() {
+          unlimitedAuthor = v.trim().isEmpty;
+        });
+      },
+      validator: (v) => _validateAuthor(context, v),
+    );
+    final fidField = TextFormField(
+      controller: fidController,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.forum_outlined),
+        labelText: context.t.searchPage.form.fid,
+        suffixText: unlimitedFid ? context.t.searchPage.form.any : null,
+      ),
+      onChanged: (v) {
+        setState(() {
+          unlimitedFid = fidController.text == '0';
+        });
+      },
+      validator: (v) => _validateFid(context, v),
+    );
+
+    // One surface: keyword on its own line, the two filters side by side when there is room, the button last.
+    return AppSurface(
+      padding: edgeInsetsL16T16R16B16,
+      child: Form(
+        key: formKey,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 560;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppSectionHeader(
+                  context.t.searchPage.title,
+                  icon: Icons.manage_search_outlined,
+                  padding: const EdgeInsets.only(bottom: 12),
+                ),
+                keywordField,
+                sizedBoxW12H12,
+                if (wide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: authorField),
+                      sizedBoxW12H12,
+                      Expanded(child: fidField),
+                    ],
+                  )
+                else ...[
+                  authorField,
+                  sizedBoxW12H12,
+                  fidField,
+                ],
+                sizedBoxW16H16,
+                _buildSearchButton(context, state),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
+  /// Title and counts of the result with the page switcher; the switcher goes below the counts on narrow windows.
   Widget _buildResultInfoRow(BuildContext context, SearchState state) {
     final searching = state.status.isSearching();
     final r = context.t.searchPage.result;
-    final searchResultCount =
-        '${r.totalThreadCount(count: '${state.searchResult?.count ?? "-"}')} '
-        '${r.pageInfo(total: state.searchResult?.totalPages ?? "-")}';
-    return Row(
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final result = state.searchResult;
+    final info = Row(
       children: [
+        const AppIconTile(Icons.list_alt_outlined, size: 36),
+        sizedBoxW12H12,
         Expanded(
-          child: ListTile(
-            title: Text(context.t.searchPage.result.title, style: Theme.of(context).textTheme.titleMedium),
-            subtitle: Text(searchResultCount),
-            visualDensity: VisualDensity.compact,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(r.title, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                '${r.totalThreadCount(count: '${result?.count ?? "-"}')} · '
+                '${r.pageInfo(total: result?.totalPages ?? "-")}',
+                style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+              ),
+            ],
           ),
-        ),
-        // Text(),
-        IconButton(
-          icon: const Icon(Icons.arrow_left_outlined),
-          onPressed: !searching && _hasPreviousPage(state) ? () async => _searchPreviousPage(context, state) : null,
-        ),
-        TextButton(
-          onPressed: !searching && (_hasPreviousPage(state) || _hasNextPage(state)) && state.searchResult != null
-              ? () async {
-                  await _gotoSpecifiedPage(context, state);
-                }
-              : null,
-          child: Text('${state.searchResult?.currentPage ?? "-"}'),
-        ),
-        IconButton(
-          icon: const Icon(Icons.arrow_right_outlined),
-          onPressed: !searching && _hasNextPage(state) ? () async => _searchNextPage(context, state) : null,
         ),
       ],
     );
-  }
-
-  Widget _buildSearchResult(BuildContext context, SearchState state) {
-    if (state.status.isSearching()) {
-      return const Expanded(child: CenteredCircularIndicator());
-    } else if (state.searchResult?.data?.isEmpty ?? true) {
-      return Expanded(child: Center(child: Text(context.t.searchPage.result.noData)));
-    }
-
-    return Expanded(
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: ListView.separated(
-          controller: scrollController,
-          shrinkWrap: true,
-          itemCount: state.searchResult!.data!.length,
-          itemBuilder: (context, index) {
-            final d = state.searchResult!.data![index];
-            return SearchedThreadCard(d);
-          },
-          separatorBuilder: (context, index) => sizedBoxW4H4,
-        ),
+    final pager = AppPager(
+      current: result?.currentPage,
+      total: result?.totalPages,
+      onPrevious: !searching && _hasPreviousPage(state) ? () async => _searchPreviousPage(context, state) : null,
+      onNext: !searching && _hasNextPage(state) ? () async => _searchNextPage(context, state) : null,
+      onJump: !searching && (_hasPreviousPage(state) || _hasNextPage(state)) && result != null
+          ? () async => _gotoSpecifiedPage(context, state)
+          : null,
+    );
+    return AppSurface(
+      padding: edgeInsetsL12T8R12B8,
+      child: LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth < 420
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  info,
+                  sizedBoxW8H8,
+                  Align(alignment: Alignment.centerRight, child: pager),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(child: info),
+                  sizedBoxW8H8,
+                  pager,
+                ],
+              ),
       ),
     );
   }
 
   Widget _buildBody(BuildContext context, SearchState state) {
-    return Padding(
-      padding: edgeInsetsL12T4R12,
-      child: Column(
-        children: [
-          if (expandForm) _buildSearchForm(context, state),
-          _buildResultInfoRow(context, state),
-          _buildSearchResult(context, state),
-        ].insertBetween(sizedBoxW12H12),
-      ),
+    // Form, result info and results share one centered column, at most [appListMaxWidth] wide, in one scroll view:
+    // with the keyboard up or a large font the form scrolls instead of overflowing.
+    return AppCenteredList(
+      builder: (context, side, _) {
+        final results = state.searchResult?.data;
+        final Widget resultSliver;
+        if (state.status.isSearching()) {
+          resultSliver = const SliverFillRemaining(hasScrollBody: false, child: CenteredCircularIndicator());
+        } else if (results == null || results.isEmpty) {
+          resultSliver = SliverFillRemaining(
+            hasScrollBody: false,
+            child: AppStateView(
+              icon: Icons.search_off_outlined,
+              message: context.t.searchPage.result.noData,
+              scrollable: false,
+            ),
+          );
+        } else {
+          resultSliver = SliverPadding(
+            padding: side.copyWith(bottom: 12).add(context.safePadding()),
+            sliver: SliverList.separated(
+              itemCount: results.length,
+              itemBuilder: (context, index) => SearchedThreadCard(results[index]),
+              separatorBuilder: (context, index) => appListSeparator,
+            ),
+          );
+        }
+        return CustomScrollView(
+          controller: scrollController,
+          slivers: [
+            if (expandForm)
+              SliverPadding(
+                padding: side.copyWith(top: 8),
+                sliver: SliverToBoxAdapter(child: _buildSearchForm(context, state)),
+              ),
+            SliverPadding(
+              padding: side.copyWith(top: 12, bottom: 8),
+              sliver: SliverToBoxAdapter(child: _buildResultInfoRow(context, state)),
+            ),
+            resultSliver,
+          ],
+        );
+      },
     );
   }
 
@@ -450,6 +516,9 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
                 const OpenInAppPageButton(),
                 IconButton(
                   icon: Icon(expandForm ? Icons.expand_less : Icons.expand_more),
+                  tooltip: expandForm
+                      ? MaterialLocalizations.of(context).expandedIconTapHint
+                      : MaterialLocalizations.of(context).collapsedIconTapHint,
                   onPressed: () {
                     setState(() {
                       expandForm = !expandForm;
@@ -458,8 +527,7 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
                 ),
               ],
             ),
-            // FIXME: Support android landscape orientation.
-            body: _buildBody(context, state),
+            body: SafeArea(bottom: false, child: _buildBody(context, state)),
           );
         },
       ),

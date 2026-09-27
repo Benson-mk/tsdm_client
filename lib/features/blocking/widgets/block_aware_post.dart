@@ -7,6 +7,7 @@ import 'package:tsdm_client/features/blocking/utils/block_filter.dart';
 import 'package:tsdm_client/features/blocking/widgets/user_block_button.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Shows [post] through [builder], or a placeholder keeping its floor when the author is blocked locally.
 ///
@@ -84,28 +85,58 @@ class BlockedPostPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.userBlock;
+    final colorScheme = Theme.of(context).colorScheme;
+    final action = pending
+        ? TextButton(
+            onPressed: () async => context.read<UserBlockCubit>().reload(),
+            child: Text(context.t.general.retry),
+          )
+        : TextButton(
+            onPressed: () async => unblockUser(context, uid: uid, username: username),
+            child: Text(tr.unblock),
+          );
+    // A muted, compact floor: the floor number keeps its place, the content is replaced by one line and one action.
     return Card(
       margin: EdgeInsets.zero,
+      color: colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Row(
-          children: [
-            Text(floor == null ? '#' : '#$floor', style: Theme.of(context).textTheme.labelMedium),
-            sizedBoxW8H8,
-            Icon(_pendingIcon(pending: pending, failed: failed), size: 18),
-            sizedBoxW8H8,
-            Expanded(child: Text(pending ? _pendingText(tr, failed: failed) : tr.postPlaceholder)),
-            if (pending)
-              TextButton(
-                onPressed: () async => context.read<UserBlockCubit>().reload(),
-                child: Text(context.t.general.retry),
-              )
-            else
-              TextButton(
-                onPressed: () async => unblockUser(context, uid: uid, username: username),
-                child: Text(tr.unblock),
-              ),
-          ],
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The action beside the text only when it leaves the text a readable width: on a narrow phone or with a
+            // large font the button would squeeze the message to a word per line, so it moves under the message.
+            final scale = MediaQuery.textScalerOf(context).scale(1);
+            final besideText = constraints.maxWidth >= 420 * scale;
+            final texts = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  floor == null ? '#' : '#$floor',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                ),
+                Text(
+                  pending ? _pendingText(tr, failed: failed) : tr.postPlaceholder,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+                if (!besideText) Align(alignment: AlignmentDirectional.centerEnd, child: action),
+              ],
+            );
+            return Row(
+              crossAxisAlignment: besideText ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+              children: [
+                AppIconTile(
+                  _pendingIcon(pending: pending, failed: failed),
+                  size: 32,
+                  color: pending && failed ? colorScheme.errorContainer : colorScheme.surfaceContainerHighest,
+                  foregroundColor: pending && failed ? colorScheme.onErrorContainer : colorScheme.outline,
+                ),
+                sizedBoxW12H12,
+                Expanded(child: texts),
+                if (besideText) action,
+              ],
+            );
+          },
         ),
       ),
     );
@@ -140,38 +171,31 @@ class BlockedThreadNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.userBlock;
-    return Center(
-      child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_pendingIcon(pending: pending, failed: failed), size: 48),
-            sizedBoxW8H8,
-            Text(pending ? _pendingText(tr, failed: failed) : tr.threadHidden, textAlign: TextAlign.center),
-            sizedBoxW8H8,
-            Wrap(
-              spacing: 8,
-              children: [
-                if (Navigator.of(context).canPop())
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: Text(tr.goBack),
-                  ),
-                if (pending)
-                  FilledButton(
-                    onPressed: () async => context.read<UserBlockCubit>().reload(),
-                    child: Text(context.t.general.retry),
-                  )
-                else
-                  FilledButton(
-                    onPressed: () async => unblockUser(context, uid: uid, username: username),
-                    child: Text(tr.unblock),
-                  ),
-              ],
+    return AppStateView(
+      icon: _pendingIcon(pending: pending, failed: failed),
+      error: pending && failed,
+      message: pending ? _pendingText(tr, failed: failed) : tr.threadHidden,
+      action: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.center,
+        children: [
+          if (Navigator.of(context).canPop())
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              child: Text(tr.goBack),
             ),
-          ],
-        ),
+          if (pending)
+            FilledButton(
+              onPressed: () async => context.read<UserBlockCubit>().reload(),
+              child: Text(context.t.general.retry),
+            )
+          else
+            FilledButton(
+              onPressed: () async => unblockUser(context, uid: uid, username: username),
+              child: Text(tr.unblock),
+            ),
+        ],
       ),
     );
   }

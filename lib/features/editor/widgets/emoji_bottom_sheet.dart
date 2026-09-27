@@ -11,6 +11,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Show a bottom sheet that provides emojis in editor.
@@ -69,11 +70,19 @@ class _EmojiBottomSheetState extends State<_EmojiBottomSheet> with SingleTickerP
           if (data == null) {
             return Text('${e.id}_${e.emojiList[index].id}');
           }
-          return GestureDetector(
-            onTap: () async {
-              Navigator.of(context).pop(e.emojiList[index].code);
-            },
-            child: ClipOval(child: Image.memory(data, fit: BoxFit.cover)),
+          // Rounded pressed highlight around each emoji, like the swatches of the color picker.
+          return Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(appInnerRadius),
+              onTap: () async {
+                Navigator.of(context).pop(e.emojiList[index].code);
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: ClipOval(child: Image.memory(data, fit: BoxFit.cover)),
+              ),
+            ),
           );
         },
         itemCount: e.emojiList.length,
@@ -82,7 +91,13 @@ class _EmojiBottomSheetState extends State<_EmojiBottomSheet> with SingleTickerP
 
     return Column(
       children: [
-        TabBar(isScrollable: true, tabAlignment: TabAlignment.start, controller: tabController, tabs: tabs.toList()),
+        TabBar(
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          controller: tabController,
+          tabs: tabs.toList(),
+          dividerColor: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
+        ),
         sizedBoxW12H12,
         Expanded(
           child: TabBarView(controller: tabController, children: [const CustomImageTab(), ...tabViews]),

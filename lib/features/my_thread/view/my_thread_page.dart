@@ -1,12 +1,12 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/draft_box/view/draft_box_panel.dart';
 import 'package:tsdm_client/features/my_thread/bloc/my_thread_bloc.dart';
 import 'package:tsdm_client/features/my_thread/repository/my_thread_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -37,20 +37,17 @@ class _MyThreadPageState extends State<MyThreadPage> with SingleTickerProviderSt
       ..finishLoad();
     final Widget child;
     if (state.threadList.isEmpty) {
-      child = Center(
-        child: Text(
-          context.t.general.noData,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-        ),
-      );
+      child = AppStateView(icon: Icons.article_outlined, message: context.t.general.noData);
     } else {
-      child = ListView.separated(
-        padding: edgeInsetsL12T4R12.add(context.safePadding()),
-        itemCount: state.threadList.length,
-        itemBuilder: (context, index) {
-          return MyThreadCard(state.threadList[index]);
-        },
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      child = AppCenteredList(
+        builder: (context, side, _) => ListView.separated(
+          padding: side.copyWith(top: 8).add(context.safePadding()),
+          itemCount: state.threadList.length,
+          itemBuilder: (context, index) {
+            return MyThreadCard(state.threadList[index]);
+          },
+          separatorBuilder: (context, index) => appListSeparator,
+        ),
       );
     }
     return EasyRefresh(
@@ -80,20 +77,17 @@ class _MyThreadPageState extends State<MyThreadPage> with SingleTickerProviderSt
       ..finishLoad();
     final Widget child;
     if (state.replyList.isEmpty) {
-      child = Center(
-        child: Text(
-          context.t.general.noData,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-        ),
-      );
+      child = AppStateView(icon: Icons.article_outlined, message: context.t.general.noData);
     } else {
-      child = ListView.separated(
-        padding: edgeInsetsL12T4R12.add(context.safePadding()),
-        itemCount: state.replyList.length,
-        itemBuilder: (context, index) {
-          return MyThreadCard(state.replyList[index]);
-        },
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      child = AppCenteredList(
+        builder: (context, side, _) => ListView.separated(
+          padding: side.copyWith(top: 8).add(context.safePadding()),
+          itemCount: state.replyList.length,
+          itemBuilder: (context, index) {
+            return MyThreadCard(state.replyList[index]);
+          },
+          separatorBuilder: (context, index) => appListSeparator,
+        ),
       );
     }
 

@@ -4,6 +4,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
 
 /// Widget to show the answer of a bounty in thread.
@@ -31,42 +32,43 @@ class BountyAnswerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final secondaryColor = Theme.of(context).colorScheme.secondary;
-    return Card(
+    final textTheme = Theme.of(context).textTheme;
+    // The accepted answer: who answered (opens the profile) and the answer quoted under it.
+    return AppEmbedCard(
+      icon: Icons.verified,
+      title: context.t.bountyAnswerCard.title,
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: edgeInsetsL16T16R16B16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () async => context.dispatchAsUrl(userSpaceUrl),
+            child: Row(
               children: [
-                Icon(Icons.verified, size: 28, color: secondaryColor),
-                sizedBoxW12H12,
-                Text(
-                  context.t.bountyAnswerCard.title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: secondaryColor),
-                ),
-              ],
-            ),
-            sizedBoxW12H12,
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: GestureDetector(
-                onTap: () async => context.dispatchAsUrl(userSpaceUrl),
-                child: CircleAvatar(
+                CircleAvatar(
+                  radius: 16,
                   backgroundImage: CachedImageProvider(
                     userAvatarUrl,
                     fallbackImageUrl: noAvatarUrl,
                     usage: ImageUsageInfoUserAvatar(username),
                   ),
                 ),
-              ),
-              title: GestureDetector(onTap: () async => context.dispatchAsUrl(userSpaceUrl), child: Text(username)),
+                sizedBoxW8H8,
+                Expanded(
+                  child: Text(username, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
-            Text(answer),
-          ],
-        ),
+          ),
+          sizedBoxW8H8,
+          SizedBox(
+            width: double.infinity,
+            child: AppInsetBlock(
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              child: Text(answer, style: textTheme.bodyMedium),
+            ),
+          ),
+        ],
       ),
     );
   }

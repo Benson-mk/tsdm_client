@@ -5,9 +5,9 @@ import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/features/favorite/models/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
-import 'package:tsdm_client/themes/widget_themes.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
-/// Card of one favorite record (thread or forum): title, time, optional note and a remove button.
+/// Card of one favorite record (thread or forum): kind icon, title, time pill, optional note and a remove button.
 class FavoriteCard extends StatelessWidget {
   /// Constructor.
   const FavoriteCard(this.item, {required this.onRemove, this.removing = false, super.key});
@@ -37,56 +37,72 @@ class FavoriteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tr = context.t.favoritePage;
     final theme = Theme.of(context);
-    final outline = theme.colorScheme.outline;
+    final colorScheme = theme.colorScheme;
     final description = item.description;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.hardEdge,
-      child: InkWell(
-        onTap: () async => _open(context),
-        child: Padding(
-          padding: edgeInsetsL12T12R12B12,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final isForum = item is FavoriteForum;
+    return AppSurface(
+      padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+      onTap: () async => _open(context),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIconTile(isForum ? Icons.folder_outlined : Icons.bookmark_outline, size: 36),
+          sizedBoxW12H12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                sizedBoxW8H8,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
-                    Text(item.title, style: theme.textTheme.titleMedium),
-                    sizedBoxW4H4,
-                    Row(
-                      children: [
-                        Icon(Icons.access_time_outlined, size: smallIconSize, color: outline),
-                        sizedBoxW4H4,
-                        Text(
-                          item.time == null ? '-' : tr.favoritedAt(time: item.time!.yyyyMMDDHHMM()),
-                          style: theme.textTheme.bodySmall?.copyWith(color: outline),
-                        ),
-                      ],
+                    AppInfoPill(
+                      icon: Icons.access_time_outlined,
+                      label: item.time == null ? '-' : tr.favoritedAt(time: item.time!.yyyyMMDDHHMM()),
                     ),
-                    if (description != null) ...[
-                      sizedBoxW4H4,
-                      Text(
-                        description,
-                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.secondary),
-                      ),
-                    ],
                   ],
                 ),
-              ),
-              sizedBoxW8H8,
-              if (removing)
-                const Padding(padding: edgeInsetsL8R8, child: sizedCircularProgressIndicator)
-              else
-                IconButton(
-                  icon: Icon(item is FavoriteForum ? Icons.folder_off_outlined : Icons.bookmark_remove_outlined),
-                  tooltip: tr.remove,
-                  onPressed: onRemove,
-                ),
-            ],
+                if (description != null) ...[
+                  sizedBoxW8H8,
+                  // The note of the favorite, set on the forum: quoted in an inner block.
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(appInnerRadius),
+                    ),
+                    child: Padding(
+                      padding: edgeInsetsL12T8R12B8,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.format_quote_outlined, size: 16, color: colorScheme.secondary),
+                          sizedBoxW8H8,
+                          Expanded(
+                            child: Text(
+                              description,
+                              style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.secondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
+          sizedBoxW4H4,
+          if (removing)
+            const Padding(padding: edgeInsetsL8R8, child: sizedCircularProgressIndicator)
+          else
+            IconButton(
+              icon: Icon(isForum ? Icons.folder_off_outlined : Icons.bookmark_remove_outlined),
+              tooltip: tr.remove,
+              onPressed: onRemove,
+            ),
+        ],
       ),
     );
   }

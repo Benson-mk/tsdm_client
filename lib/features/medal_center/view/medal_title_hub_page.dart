@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Common entry of the medal centre, the titles of the current account and the title shop.
 ///
@@ -29,7 +30,7 @@ class MedalTitleHubPage extends StatelessWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(maxWidth: appFormMaxWidth),
             child: ListView(
               padding: edgeInsetsL16T16R16B16,
               children: [
@@ -76,43 +77,58 @@ class _CurrentTitleCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final cubit = context.readOrNull<CurrentTitleCubit>();
-    return Card(
-      margin: EdgeInsets.zero,
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr.currentTitle, style: textTheme.titleMedium),
+        sizedBoxW4H4,
+        if (cubit != null && uid != null)
+          BlocBuilder<CurrentTitleCubit, CurrentTitleState>(
+            bloc: cubit,
+            builder: (context, state) {
+              final String text;
+              if (state.uid != uid) {
+                text = '';
+              } else {
+                text = switch (state.status) {
+                  CurrentTitleStatus.success => state.title?.name ?? tr.noTitle,
+                  CurrentTitleStatus.failure => tr.loadFailed,
+                  CurrentTitleStatus.initial || CurrentTitleStatus.loading => state.title?.name ?? '',
+                };
+              }
+              return Text(text, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant));
+            },
+          ),
+      ],
+    );
+    return AppSurface(
       color: colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: edgeInsetsL16T16R16B16,
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(tr.currentTitle, style: textTheme.titleMedium),
-                  sizedBoxW4H4,
-                  if (cubit != null && uid != null)
-                    BlocBuilder<CurrentTitleCubit, CurrentTitleState>(
-                      bloc: cubit,
-                      builder: (context, state) {
-                        final String text;
-                        if (state.uid != uid) {
-                          text = '';
-                        } else {
-                          text = switch (state.status) {
-                            CurrentTitleStatus.success => state.title?.name ?? tr.noTitle,
-                            CurrentTitleStatus.failure => tr.loadFailed,
-                            CurrentTitleStatus.initial || CurrentTitleStatus.loading => state.title?.name ?? '',
-                          };
-                        }
-                        return Text(text, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant));
-                      },
-                    ),
-                ],
-              ),
-            ),
-            sizedBoxW12H12,
-            CurrentAccountTitleBadge(uid: uid, width: 138),
-          ],
-        ),
+      padding: edgeInsetsL16T16R16B16,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The title at its natural 184px width beside the text when there is room, below it otherwise.
+          final badgeWidth = SecondaryTitleBadge.fitWidth(constraints.maxWidth);
+          if (constraints.maxWidth - badgeWidth - 12 >= 160) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: info),
+                CurrentAccountTitleBadge(
+                  uid: uid,
+                  width: badgeWidth,
+                  padding: const EdgeInsetsDirectional.only(start: 12),
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              info,
+              CurrentAccountTitleBadge(uid: uid, width: badgeWidth, padding: const EdgeInsets.only(top: 12)),
+            ],
+          );
+        },
       ),
     );
   }

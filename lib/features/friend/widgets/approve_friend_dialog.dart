@@ -12,6 +12,7 @@ import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Localized text of [failure].
 String approveFriendFailureText(BuildContext context, ApproveFriendFailure failure) {
@@ -260,15 +261,32 @@ class _ApproveFriendDialogState extends State<ApproveFriendDialog> with LoggerMi
       final name = form.targetName.isEmpty ? 'UID ${form.targetUid}' : form.targetName;
       content = Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(tr.content(name: name)),
+          AppInsetBlock(
+            outlined: true,
+            padding: edgeInsetsL12T12R12B12,
+            child: Text(tr.content(name: name)),
+          ),
           sizedBoxW12H12,
           DropdownButtonFormField<String>(
             key: const ValueKey('approve-friend-group'),
             initialValue: _gid,
-            decoration: InputDecoration(labelText: tr.group),
-            items: [for (final group in form.groups) DropdownMenuItem(value: group.gid, child: Text(group.name))],
+            isExpanded: true,
+            borderRadius: BorderRadius.circular(appInnerRadius),
+            decoration: InputDecoration(
+              labelText: tr.group,
+              prefixIcon: const Icon(Icons.group_outlined),
+              filled: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+            ),
+            items: [
+              for (final group in form.groups)
+                DropdownMenuItem(
+                  value: group.gid,
+                  child: Text(group.name, overflow: TextOverflow.ellipsis),
+                ),
+            ],
             onChanged: _submitting ? null : (v) => setState(() => _gid = v ?? _gid),
           ),
           if (_submitting) ...[
@@ -294,7 +312,13 @@ class _ApproveFriendDialogState extends State<ApproveFriendDialog> with LoggerMi
       },
       child: AlertDialog(
         scrollable: true,
-        title: Text(tr.title),
+        title: Row(
+          children: [
+            const AppIconTile(Icons.how_to_reg_outlined, size: 36),
+            sizedBoxW12H12,
+            Expanded(child: Text(tr.title)),
+          ],
+        ),
         content: content,
         actions: [
           TextButton(

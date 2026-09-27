@@ -46,6 +46,11 @@ final class CurrentTitleState {
   /// anybody else, nor for the previous account while switching.
   String? imageUrlFor(int? uid) => uid != null && uid == this.uid ? title?.imageUrl : null;
 
+  /// [status] when it is about the account [uid], [CurrentTitleStatus.initial] otherwise.
+  ///
+  /// Lets a badge tell "not known yet" or "failed to read" apart from "no title in use" for that account only.
+  CurrentTitleStatus statusFor(int? uid) => uid != null && uid == this.uid ? status : CurrentTitleStatus.initial;
+
   @override
   bool operator ==(Object other) =>
       other is CurrentTitleState && other.uid == uid && other.status == status && other.title == title;

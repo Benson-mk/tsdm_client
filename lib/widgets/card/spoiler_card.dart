@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/list.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// SpoilerCard is an area munched from html document.
 ///
@@ -31,36 +32,26 @@ class _SpoilerCardState extends State<SpoilerCard> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.spoilerCard;
-    final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Card(
-      elevation: widget.elevation,
-      child: Padding(
-        padding: edgeInsetsL16T16R16B16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.expand_outlined, color: primaryColor),
-                sizedBoxW8H8,
-                Text(tr.title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: primaryColor)),
-              ],
-            ),
-            sizedBoxW8H8,
-            OutlinedButton.icon(
-              icon: _visible ? const Icon(Icons.expand_less_outlined) : const Icon(Icons.expand_more_outlined),
-              label: Text.rich(widget.title),
-              onPressed: () {
-                setState(() {
-                  _visible = !_visible;
-                });
-              },
-            ),
-            if (_visible) ...[sizedBoxW8H8, Text.rich(widget.content)],
-          ].insertBetween(sizedBoxW4H4),
-        ),
+    // The toggle carries the forum's own spoiler title; the content opens under it in the same block.
+    return AppEmbedCard(
+      icon: Icons.expand_outlined,
+      title: tr.title,
+      color: appEmbedColor(context, widget.elevation),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          OutlinedButton.icon(
+            icon: _visible ? const Icon(Icons.expand_less_outlined) : const Icon(Icons.expand_more_outlined),
+            label: Text.rich(widget.title),
+            onPressed: () {
+              setState(() {
+                _visible = !_visible;
+              });
+            },
+          ),
+          if (_visible) ...[sizedBoxW8H8, Text.rich(widget.content)],
+        ].insertBetween(sizedBoxW4H4),
       ),
     );
   }

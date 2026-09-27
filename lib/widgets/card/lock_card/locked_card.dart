@@ -23,6 +23,7 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_client_prov
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
@@ -48,7 +49,7 @@ class LockedCard extends StatefulWidget {
   /// Locked area model.
   final Locked locked;
 
-  /// Elevation of this card.
+  /// Nesting elevation given by the HTML renderer; a nested block gets a higher surface container, no shadow.
   final double? elevation;
 
   @override
@@ -193,15 +194,12 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
     final tr = context.t.lockedCard;
     final widgets = <Widget>[];
 
-    final primaryStyle = Theme.of(
-      context,
-    ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary);
     final secondaryStyle = Theme.of(context).textTheme.bodySmall;
 
-    final Text title;
+    final String title;
 
     if (widget.locked.lockedWithPoints) {
-      title = Text(tr.points.title, style: primaryStyle);
+      title = tr.points.title;
       widgets.addAll([
         Text(
           widget.locked.points != null
@@ -211,7 +209,7 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
         ),
       ]);
     } else if (widget.locked.lockedWithPurchase) {
-      title = Text(tr.purchase.title, style: primaryStyle);
+      title = tr.purchase.title;
       widgets.addAll([
         if (widget.locked.purchasedCount != null)
           Text.rich(
@@ -222,12 +220,12 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
         _buildPurchaseBody(context),
       ]);
     } else if (widget.locked.lockedWithReply) {
-      title = Text(tr.reply.title, style: primaryStyle);
+      title = tr.reply.title;
       widgets.addAll([
         Text.rich(tr.reply.detail(reply: _buildUnderlineText(context, tr.reply.detailReply)), style: secondaryStyle),
       ]);
     } else if (widget.locked.lockedWithAuthor) {
-      title = Text(tr.author.title, style: primaryStyle);
+      title = tr.author.title;
       widgets.addAll([
         Text.rich(
           tr.author.detail(author: _buildUnderlineText(context, tr.author.detailAuthor)),
@@ -235,10 +233,10 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
         ),
       ]);
     } else if (widget.locked.lockedWithBlocked) {
-      title = Text(tr.blocked.title, style: primaryStyle);
+      title = tr.blocked.title;
       widgets.add(Text(tr.blocked.detail));
     } else if (widget.locked.lockedWithSale) {
-      title = Text(tr.sale.title, style: primaryStyle);
+      title = tr.sale.title;
       widgets.addAll([
         // Sales count is not available for moderators on Discuz X5, only show the price line in that case.
         Text(
@@ -246,83 +244,101 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
               ? tr.sale.detail(price: '${widget.locked.price!}', count: '${widget.locked.purchasedCount!}')
               : tr.sale.detail(price: '${widget.locked.price!}', count: '').split('\n').first,
         ),
-        OutlinedButton(
-          child: Text(tr.sale.viewLog),
-          onPressed: () async {
-            await showDialog<void>(
-              context: context,
-              builder: (_) => RootPage(
-                DialogPaths.showThreadSalesHistory,
-                CustomAlertDialog.future(
-                  title: Text(tr.sale.dialog.title),
-                  future: _fetchSalesHistory(widget.locked.tid!),
-                  successBuilder: (context, snapshot) {
-                    final salesHistory = snapshot;
-                    if (salesHistory.isEmpty) {
-                      return Text(
-                        context.t.general.noData,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-                      );
-                    }
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.receipt_long_outlined),
+            label: Text(tr.sale.viewLog),
+            onPressed: () async {
+              await showDialog<void>(
+                context: context,
+                builder: (_) => RootPage(
+                  DialogPaths.showThreadSalesHistory,
+                  CustomAlertDialog.future(
+                    title: Row(
+                      children: [
+                        const AppIconTile(Icons.receipt_long_outlined, size: 36),
+                        sizedBoxW12H12,
+                        Expanded(child: Text(tr.sale.dialog.title)),
+                      ],
+                    ),
+                    future: _fetchSalesHistory(widget.locked.tid!),
+                    successBuilder: (context, snapshot) {
+                      final salesHistory = snapshot;
+                      if (salesHistory.isEmpty) {
+                        return AppStateView(message: context.t.general.noData, scrollable: false);
+                      }
 
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: salesHistory
-                          .map(
-                            (v) => ListTile(
-                              leading: HeroUserAvatar(username: v.username, avatarUrl: null, disableHero: true),
-                              title: Text(v.username),
-                              isThreeLine: true,
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SingleLineText(v.time.yyyyMMDDHHMMSS()),
-                                  SingleLineText(tr.sale.dialog.price(price: v.price)),
-                                ],
+                      final colorScheme = Theme.of(context).colorScheme;
+                      final textTheme = Theme.of(context).textTheme;
+                      // One tappable block per buyer: avatar, name and time, the price at the end.
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 8,
+                        children: salesHistory
+                            .map(
+                              (v) => Material(
+                                color: colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(appInnerRadius),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () async =>
+                                      context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': v.uid}),
+                                  child: Padding(
+                                    padding: edgeInsetsL12T8R12B8,
+                                    child: Row(
+                                      children: [
+                                        HeroUserAvatar(username: v.username, avatarUrl: null, disableHero: true),
+                                        sizedBoxW12H12,
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SingleLineText(
+                                                v.username,
+                                                style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                                              ),
+                                              SingleLineText(
+                                                v.time.yyyyMMDDHHMMSS(),
+                                                style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        sizedBoxW8H8,
+                                        Text(
+                                          tr.sale.dialog.price(price: v.price),
+                                          style: textTheme.labelLarge?.copyWith(color: colorScheme.primary),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
-                              onTap: () async =>
-                                  context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': v.uid}),
-                            ),
-                          )
-                          .toList(),
-                    );
-                  },
+                            )
+                            .toList(),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ]);
     } else {
       throw UnimplementedError('Widget for card type of locked card not implemented');
     }
 
-    return Card(
-      elevation: widget.elevation,
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: edgeInsetsL16T16R16B16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.locked.lockedWithSale)
-                  Icon(Icons.sell_outlined, color: Theme.of(context).colorScheme.primary)
-                else
-                  Icon(Icons.lock_outlined, color: Theme.of(context).colorScheme.primary),
-                sizedBoxW8H8,
-                title,
-              ],
-            ),
-            sizedBoxW8H8,
-            ...widgets.insertBetween(sizedBoxW8H8),
-          ],
-        ),
+    return AppEmbedCard(
+      icon: widget.locked.lockedWithSale ? Icons.sell_outlined : Icons.lock_outlined,
+      title: title,
+      color: appEmbedColor(context, widget.elevation),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: widgets.insertBetween(sizedBoxW8H8),
       ),
     );
   }

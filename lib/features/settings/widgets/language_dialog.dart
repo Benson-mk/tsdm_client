@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
 
@@ -14,14 +15,19 @@ class LanguageDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomAlertDialog.sync(
-      title: Text(t.settingsPage.appearanceSection.languages.selectLanguage),
+      title: AppDialogTitle(
+        icon: Icons.translate_outlined,
+        title: t.settingsPage.appearanceSection.languages.selectLanguage,
+      ),
       content: Column(
         children: [
           SelectableListTile(
+            leading: currentLocale == '' ? null : const Icon(Icons.phone_android_outlined),
             title: Text(t.settingsPage.appearanceSection.languages.followSystem),
             selected: currentLocale == '',
             onTap: () async => Navigator.of(context).pop((null, true)),
           ),
+          const Divider(indent: 24, endIndent: 24),
           ...AppLocale.values.map(
             (e) => SelectableListTile(
               // TODO: Check if is caused by lazy loading.
@@ -36,6 +42,7 @@ class LanguageDialog extends StatelessWidget {
                   'language tag $v',
                 ),
               }),
+              subtitle: Text(e.languageTag),
               selected: currentLocale == e.languageTag,
               onTap: () async => Navigator.of(context).pop((e, false)),
             ),

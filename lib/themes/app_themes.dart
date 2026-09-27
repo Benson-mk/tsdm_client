@@ -1,5 +1,6 @@
 import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// App themes.
 class AppTheme {
@@ -33,7 +34,34 @@ class AppTheme {
     drawerRadius: 0,
   );
 
-  static CardThemeData _buildCardTheme() => const CardThemeData(elevation: 0);
+  /// Cards are the rounded content surfaces of the homepage design, app wide.
+  static CardThemeData _buildCardTheme(ThemeData base, ColorScheme colorScheme) =>
+      base.cardTheme.copyWith(elevation: 0, shape: appSurfaceShapeOf(colorScheme));
+
+  /// Popup menus and dialogs follow the rounded surfaces.
+  static PopupMenuThemeData _buildPopupMenuTheme(ThemeData base) => base.popupMenuTheme.copyWith(
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+  );
+
+  static DialogThemeData _buildDialogTheme(ThemeData base) => base.dialogTheme.copyWith(
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appSurfaceRadius + 6)),
+  );
+
+  /// Theme parts that depend on the final color scheme.
+  static ThemeData _finish(ThemeData base, ColorScheme? seedScheme) {
+    final colorScheme = seedScheme ?? base.colorScheme;
+    return base.copyWith(
+      colorScheme: seedScheme,
+      cardTheme: _buildCardTheme(base, colorScheme),
+      chipTheme: _buildChipTheme(),
+      listTileTheme: _buildListTileTheme(),
+      navigationDrawerTheme: _buildNavigationDrawerTheme(seedScheme),
+      tabBarTheme: _buildTabBarTheme(),
+      progressIndicatorTheme: _buildProcessIndicatorTheme(),
+      popupMenuTheme: _buildPopupMenuTheme(base),
+      dialogTheme: _buildDialogTheme(base),
+    );
+  }
 
   static ChipThemeData _buildChipTheme() => const ChipThemeData(padding: EdgeInsets.all(2));
 
@@ -75,7 +103,7 @@ class AppTheme {
     if (seedColor != null) {
       seedScheme = ColorScheme.fromSeed(seedColor: seedColor);
     }
-    return FlexThemeData.light(
+    final base = FlexThemeData.light(
       fontFamily: fontFamily.isEmpty ? null : fontFamily,
       colors: seedScheme != null
           ? FlexSchemeColor(
@@ -95,15 +123,8 @@ class AppTheme {
       subThemesData: _subThemesData,
       keyColors: const FlexKeyColors(),
       visualDensity: FlexColorScheme.comfortablePlatformDensity,
-    ).copyWith(
-      colorScheme: seedScheme,
-      cardTheme: _buildCardTheme(),
-      chipTheme: _buildChipTheme(),
-      listTileTheme: _buildListTileTheme(),
-      navigationDrawerTheme: _buildNavigationDrawerTheme(seedScheme),
-      tabBarTheme: _buildTabBarTheme(),
-      progressIndicatorTheme: _buildProcessIndicatorTheme(),
     );
+    return _finish(base, seedScheme);
   }
 
   /// App dark themes.
@@ -112,7 +133,7 @@ class AppTheme {
     if (seedColor != null) {
       seedScheme = ColorScheme.fromSeed(seedColor: seedColor, brightness: Brightness.dark);
     }
-    return FlexThemeData.dark(
+    final base = FlexThemeData.dark(
       fontFamily: fontFamily.isEmpty ? null : fontFamily,
       colors: seedScheme != null
           ? FlexSchemeColor(
@@ -132,15 +153,8 @@ class AppTheme {
       subThemesData: _subThemesData,
       keyColors: const FlexKeyColors(),
       visualDensity: FlexColorScheme.comfortablePlatformDensity,
-    ).copyWith(
-      colorScheme: seedScheme,
-      cardTheme: _buildCardTheme(),
-      chipTheme: _buildChipTheme(),
-      listTileTheme: _buildListTileTheme(),
-      navigationDrawerTheme: _buildNavigationDrawerTheme(seedScheme),
-      tabBarTheme: _buildTabBarTheme(),
-      progressIndicatorTheme: _buildProcessIndicatorTheme(),
     );
+    return _finish(base, seedScheme);
   }
 }
 

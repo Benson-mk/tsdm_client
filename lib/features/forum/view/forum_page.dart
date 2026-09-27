@@ -24,6 +24,7 @@ import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/error_card.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
@@ -182,64 +183,82 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
     );
   }
 
+  /// Filter bar pinned above the threads: opaque with a hairline under it, the chips start at the edge of the
+  /// centered column of cards and scroll sideways when they do not fit. Its height follows the chips, so a large font
+  /// is not clipped.
   Widget _buildNormalThreadFilterRow(BuildContext context, ForumState state) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            color: Theme.of(context).colorScheme.surface,
-            height: 40,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (state.filterTypeList.isNotEmpty) const ThreadTypeChip(),
-                  if (state.filterSpecialTypeList.isNotEmpty) const ThreadSpecialTypeChip(),
-                  if (state.filterDatelineList.isNotEmpty) const ThreadDatelineChip(),
-                  if (state.filterOrderList.isNotEmpty) const ThreadOrderChip(),
-                  const ThreadDigestChip(),
-                  const ThreadRecommendedChip(),
-                ].prepend(sizedBoxW4H4).insertBetween(sizedBoxW12H12),
-              ),
-            ),
+    final colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: appCenteredPadding(constraints.maxWidth).copyWith(top: 4, bottom: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // Decorative lead of the bar, every chip carries its own label.
+              ExcludeSemantics(child: Icon(Icons.tune_outlined, size: 20, color: colorScheme.primary)),
+              if (state.filterTypeList.isNotEmpty) const ThreadTypeChip(),
+              if (state.filterSpecialTypeList.isNotEmpty) const ThreadSpecialTypeChip(),
+              if (state.filterDatelineList.isNotEmpty) const ThreadDatelineChip(),
+              if (state.filterOrderList.isNotEmpty) const ThreadOrderChip(),
+              const ThreadDigestChip(),
+              const ThreadRecommendedChip(),
+            ].insertBetween(sizedBoxW8H8),
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildStickThreadTab(BuildContext context, ForumState state) {
     if (state.stickThreadList.isEmpty && state.rulesElement == null) {
-      return Center(child: Text(context.t.forumPage.stickThreadTab.noThread));
+      return AppStateView(icon: Icons.push_pin_outlined, message: context.t.forumPage.stickThreadTab.noThread);
     }
     late final Widget content;
     if (state.rulesElement == null) {
-      content = ListView.separated(
-        controller: _pinnedScrollController,
-        padding: edgeInsetsL12T4R12,
-        itemCount: state.stickThreadList.length,
-        itemBuilder: (context, index) => NormalThreadCard(state.stickThreadList[index]),
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      content = AppCenteredList(
+        builder: (context, side, _) => ListView.separated(
+          controller: _pinnedScrollController,
+          padding: side.copyWith(top: 8).add(context.safePadding()),
+          itemCount: state.stickThreadList.length,
+          itemBuilder: (context, index) => NormalThreadCard(state.stickThreadList[index]),
+          separatorBuilder: (context, index) => appListSeparator,
+        ),
       );
     } else {
-      content = ListView.separated(
-        controller: _pinnedScrollController,
-        padding: edgeInsetsL12T4R12.add(context.safePadding()),
-        itemCount: state.stickThreadList.length + 1,
-        itemBuilder: (context, index) {
-          // TODO: Do NOT add leading rules card by checking index value.
-          if (index == 0) {
-            return Card(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              child: munchElement(context, state.rulesElement!),
-            );
-          } else {
-            return NormalThreadCard(state.stickThreadList[index - 1]);
-          }
-        },
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      content = AppCenteredList(
+        builder: (context, side, _) => ListView.separated(
+          controller: _pinnedScrollController,
+          padding: side.copyWith(top: 8).add(context.safePadding()),
+          itemCount: state.stickThreadList.length + 1,
+          itemBuilder: (context, index) {
+            // TODO: Do NOT add leading rules card by checking index value.
+            if (index == 0) {
+              // Forum rules: a titled surface above the pinned threads, the forum's own markup inside.
+              return AppSurface(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppSectionHeader(
+                      context.t.forumPage.rulesTab.title,
+                      icon: Icons.gavel_outlined,
+                      padding: const EdgeInsets.only(bottom: 8),
+                    ),
+                    munchElement(context, state.rulesElement!),
+                  ],
+                ),
+              );
+            } else {
+              return NormalThreadCard(state.stickThreadList[index - 1]);
+            }
+          },
+          separatorBuilder: (context, index) => appListSeparator,
+        ),
       );
     }
 
@@ -262,8 +281,9 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
     // Use _haveNoThread to ensure we parsed the web page and there really
     // no thread in the forum.
     if (normalThreadList.isEmpty) {
-      final emptyContentHint = Center(
-        child: Text(context.t.forumPage.threadTab.noThread, style: Theme.of(context).inputDecorationTheme.hintStyle),
+      final emptyContentHint = AppStateView(
+        icon: Icons.forum_outlined,
+        message: context.t.forumPage.threadTab.noThread,
       );
       if (state.filterState.isFiltering()) {
         return Column(
@@ -305,20 +325,21 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
         context.read<ForumBloc>().add(ForumLoadMoreRequested(state.currentPage + 1));
         // _refreshController.finishLoad();
       },
-      childBuilder: (context, physics) => CustomScrollView(
-        controller: _threadScrollController,
-        physics: physics,
-        slivers: [
-          PinnedHeaderSliver(child: _buildNormalThreadFilterRow(context, state)),
-          const SliverPadding(padding: edgeInsetsL12T4R12),
-          SliverList.separated(
-            itemCount: normalThreadList.length,
-            itemBuilder: (context, index) =>
-                Padding(padding: edgeInsetsL12R12, child: NormalThreadCard(normalThreadList[index])),
-            separatorBuilder: (context, index) => sizedBoxW4H4,
-          ),
-          SliverPadding(padding: context.safePadding()),
-        ],
+      childBuilder: (context, physics) => AppCenteredList(
+        builder: (context, side, _) => CustomScrollView(
+          controller: _threadScrollController,
+          physics: physics,
+          slivers: [
+            PinnedHeaderSliver(child: _buildNormalThreadFilterRow(context, state)),
+            const SliverPadding(padding: edgeInsetsT8),
+            SliverList.separated(
+              itemCount: normalThreadList.length,
+              itemBuilder: (context, index) => Padding(padding: side, child: NormalThreadCard(normalThreadList[index])),
+              separatorBuilder: (context, index) => appListSeparator,
+            ),
+            SliverPadding(padding: context.safePadding()),
+          ],
+        ),
       ),
     );
   }
@@ -336,7 +357,7 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
       if (state.permissionDeniedMessage != null) {
         return ErrorCard(child: munchElement(context, state.permissionDeniedMessage!));
       } else {
-        return Center(child: Text(context.t.general.noPermission));
+        return AppStateView(icon: Icons.lock_outline, message: context.t.general.noPermission);
       }
     } else {
       return TabBarView(
@@ -368,7 +389,7 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
 
   Widget _buildSubredditTab(BuildContext context, List<Forum> subredditList) {
     if (subredditList.isEmpty) {
-      return Center(child: Text(context.t.forumPage.subredditTab.noSubreddit));
+      return AppStateView(icon: Icons.folder_outlined, message: context.t.forumPage.subredditTab.noSubreddit);
     }
 
     return EasyRefresh(
@@ -382,12 +403,23 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
         }
         context.read<ForumBloc>().add(ForumRefreshRequested());
       },
-      child: ListView.separated(
-        controller: _subredditScrollController,
-        padding: edgeInsetsL12T4R12.add(context.safePadding()),
-        itemCount: subredditList.length,
-        itemBuilder: (context, index) => ForumCard(subredditList[index]),
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      // One column on phones, two on wide windows.
+      child: AppCenteredList(
+        builder: (context, side, width) {
+          final columns = appColumnsFor(width);
+          return ListView.separated(
+            controller: _subredditScrollController,
+            padding: side.copyWith(top: 8).add(context.safePadding()),
+            itemCount: appRowCount(subredditList.length, columns),
+            itemBuilder: (context, row) => AppColumnsRow(
+              row: row,
+              columns: columns,
+              count: subredditList.length,
+              itemBuilder: (_, index) => ForumCard(subredditList[index]),
+            ),
+            separatorBuilder: (context, index) => appListSeparator,
+          );
+        },
       ),
     );
   }
@@ -401,26 +433,50 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
     final pollOfferUid = state.pollOfferUid;
     final canCreatePoll =
         pollOfferUid != null && pollOfferUid == context.read<AuthenticationRepository>().effectiveCurrentUid;
-    final newThread = FloatingActionButton(
-      onPressed: () async => context.pushNamed(
-        ScreenPaths.editPost,
-        pathParameters: {'editType': '${PostEditType.newThread.index}', 'fid': widget.fid},
-        queryParameters: {if (canCreatePoll) 'poll': '1'},
-      ),
-      tooltip: context.t.forumPage.tooltip.fab,
-      child: const Icon(Icons.add_outlined),
+    // Wide windows have room for labelled buttons; phones keep the compact round ones over the list.
+    final wide = MediaQuery.sizeOf(context).width >= 600;
+    Future<void> openNewThread() async => context.pushNamed(
+      ScreenPaths.editPost,
+      pathParameters: {'editType': '${PostEditType.newThread.index}', 'fid': widget.fid},
+      queryParameters: {if (canCreatePoll) 'poll': '1'},
     );
+    Future<void> openPoll() async => context.pushNamed(ScreenPaths.createPoll, pathParameters: {'fid': widget.fid});
+    final newThread = wide
+        ? FloatingActionButton.extended(
+            onPressed: openNewThread,
+            tooltip: context.t.forumPage.tooltip.fab,
+            icon: const Icon(Icons.edit_outlined),
+            label: Text(context.t.forumPage.tooltip.fab),
+          )
+        : FloatingActionButton(
+            onPressed: openNewThread,
+            tooltip: context.t.forumPage.tooltip.fab,
+            child: const Icon(Icons.edit_outlined),
+          );
     if (!canCreatePoll) return newThread;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        FloatingActionButton.small(
-          heroTag: 'forum_create_poll_fab',
-          onPressed: () async => context.pushNamed(ScreenPaths.createPoll, pathParameters: {'fid': widget.fid}),
-          tooltip: context.t.pollCreate.entry,
-          child: const Icon(Icons.poll_outlined),
-        ),
+        if (wide)
+          FloatingActionButton.extended(
+            heroTag: 'forum_create_poll_fab',
+            onPressed: openPoll,
+            tooltip: context.t.pollCreate.entry,
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+            icon: const Icon(Icons.poll_outlined),
+            label: Text(context.t.pollCreate.entry),
+          )
+        else
+          FloatingActionButton.small(
+            heroTag: 'forum_create_poll_fab',
+            onPressed: openPoll,
+            tooltip: context.t.pollCreate.entry,
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+            child: const Icon(Icons.poll_outlined),
+          ),
         sizedBoxW12H12,
         newThread,
       ],

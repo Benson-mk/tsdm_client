@@ -11,6 +11,7 @@ import 'package:tsdm_client/features/notification/repository/notification_reposi
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
 
@@ -23,20 +24,48 @@ final class BroadcastMessageDetailPage extends StatelessWidget {
   final String pmid;
 
   Widget _buildBody(BuildContext context, BroadcastMessageDetailState state) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: edgeInsetsL12R12B12.add(context.safePadding()),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.campaign_outlined)),
-              title: SingleLineText(context.t.noticePage.broadcastMessageTab.system),
-              subtitle: Text(state.dateTime?.yyyyMMDD() ?? ''),
-            ),
-            sizedBoxW4H4,
-            Padding(padding: edgeInsetsL16R16, child: munchElement(context, state.messageNode!)),
-          ],
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // One reading surface: sender and date as the header, the message below, centered at a readable width.
+    return AppCenteredList(
+      maxWidth: appReadingMaxWidth,
+      builder: (context, side, _) => SingleChildScrollView(
+        padding: side.copyWith(top: 8, bottom: 12).add(context.safePadding()),
+        child: AppSurface(
+          padding: edgeInsetsL16T16R16B16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppIconTile(
+                    Icons.campaign_outlined,
+                    color: colorScheme.tertiaryContainer,
+                    foregroundColor: colorScheme.onTertiaryContainer,
+                  ),
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SingleLineText(
+                          context.t.noticePage.broadcastMessageTab.system,
+                          style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (state.dateTime != null)
+                          Text(
+                            state.dateTime!.yyyyMMDD(),
+                            style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              munchElement(context, state.messageNode!),
+            ],
+          ),
         ),
       ),
     );

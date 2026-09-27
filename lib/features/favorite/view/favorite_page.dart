@@ -12,6 +12,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Page listing what the current user added to favorites: a tab of threads (帖子) and a tab of forums (版块), like
@@ -117,34 +118,32 @@ class _FavoriteTabState extends State<_FavoriteTab> with AutomaticKeepAliveClien
             padding: edgeInsetsL12T4R12.add(context.safePadding()),
             children: [
               sizedBoxW32H32,
-              Center(
-                child: Text(
-                  switch (widget.type) {
-                    FavoriteType.thread => tr.empty,
-                    FavoriteType.forum => tr.emptyForum,
-                  },
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
+              AppStateView(
+                icon: Icons.star_outline,
+                message: switch (widget.type) {
+                  FavoriteType.thread => tr.empty,
+                  FavoriteType.forum => tr.emptyForum,
+                },
               ),
             ],
           );
         }
-        return ListView.separated(
-          physics: physics,
-          controller: _scrollController,
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          itemCount: state.items.length,
-          itemBuilder: (context, index) {
-            final item = state.items[index];
-            return FavoriteCard(
-              item,
-              removing: state.removing.contains(item.favid),
-              onRemove: () async => _confirmRemove(context, item),
-            );
-          },
-          separatorBuilder: (context, index) => sizedBoxW4H4,
+        return AppCenteredList(
+          builder: (context, side, _) => ListView.separated(
+            physics: physics,
+            controller: _scrollController,
+            padding: side.copyWith(top: 8).add(context.safePadding()),
+            itemCount: state.items.length,
+            itemBuilder: (context, index) {
+              final item = state.items[index];
+              return FavoriteCard(
+                item,
+                removing: state.removing.contains(item.favid),
+                onRemove: () async => _confirmRemove(context, item),
+              );
+            },
+            separatorBuilder: (context, index) => appListSeparator,
+          ),
         );
       },
     );

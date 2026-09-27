@@ -9,6 +9,7 @@ import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/copy_button.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -121,21 +122,44 @@ class _CopyContentDialogState extends State<_CopyContentDialog> {
   Widget build(BuildContext context) {
     final tr = context.t.copyDialog;
 
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return CustomAlertDialog.sync(
-      title: Text(widget.title ?? tr.copyTitle),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.content_copy_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(widget.title ?? tr.copyTitle)),
+        ],
+      ),
       content: Padding(
-        padding: edgeInsetsR12.add(edgeInsetsT12),
+        padding: edgeInsetsT12,
         child: Column(
-          spacing: 12,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 8,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          // One block per value: its name, the value itself (selectable, wraps) and a copy button beside it.
           children: widget.contents
               .mapIndexed(
-                (idx, e) => TextField(
-                  controller: controllers[idx],
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    labelText: e.name,
-                    suffixIcon: CopyButton(data: controllers[idx].text),
+                (idx, e) => AppInsetBlock(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(e.name, style: textTheme.labelMedium?.copyWith(color: colorScheme.outline)),
+                            sizedBoxW2H2,
+                            SelectableText(
+                              controllers[idx].text,
+                              maxLines: 4,
+                              style: textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                      CopyButton(data: controllers[idx].text),
+                    ],
                   ),
                 ),
               )
@@ -180,11 +204,18 @@ class _CopySelectContentDialog extends StatelessWidget {
     final tr = context.t.copyDialog;
 
     return CustomAlertDialog.sync(
-      title: Text(title ?? tr.copySelectTitle),
-      content: SelectableText(data),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.text_snippet_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(title ?? tr.copySelectTitle)),
+        ],
+      ),
+      content: AppInsetBlock(padding: edgeInsetsL12T12R12B12, child: SelectableText(data)),
       actions: [
-        TextButton(
-          child: Text(tr.share),
+        TextButton.icon(
+          icon: const Icon(Icons.share_outlined),
+          label: Text(tr.share),
           onPressed: () async {
             await SharePlus.instance.share(ShareParams(text: data));
             if (!context.mounted) {
@@ -193,8 +224,9 @@ class _CopySelectContentDialog extends StatelessWidget {
             context.pop();
           },
         ),
-        TextButton(
-          child: Text(tr.copyAll),
+        FilledButton.icon(
+          icon: const Icon(Icons.copy_all_outlined),
+          label: Text(tr.copyAll),
           onPressed: () async {
             await copyToClipboard(context, data);
             if (!context.mounted) {

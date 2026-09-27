@@ -17,9 +17,14 @@ class _HomeNavigationRailState extends State<HomeNavigationRail> {
   @override
   Widget build(BuildContext context) {
     final barItems = _buildNavigationItems(context);
+    final colorScheme = Theme.of(context).colorScheme;
 
+    // Same look as the bottom bar and the drawer: low container color, rounded indicator, labels always shown.
     return NavigationRail(
       groupAlignment: 0,
+      backgroundColor: colorScheme.surfaceContainerLow,
+      indicatorShape: _navigationIndicatorShape,
+      labelType: NavigationRailLabelType.all,
       destinations: barItems
           .map((e) => NavigationRailDestination(icon: e.icon, selectedIcon: e.selectedIcon, label: Text(e.label)))
           .toList(),

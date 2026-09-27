@@ -8,10 +8,9 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
-import 'package:tsdm_client/widgets/section_title_text.dart';
-import 'package:tsdm_client/widgets/tips.dart';
 
 const _avatarMaxWidth = 100.0;
 const _avatarMaxHeight = 150.0;
@@ -33,82 +32,123 @@ class _EditAvatarPageState extends State<EditAvatarPage> {
 
   Widget _buildContent(BuildContext context, EditAvatarState state) {
     final tr = context.t.editAvatarPage;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    return ListView(
-      children: [
-        SectionTitleText(tr.currentAvatar),
-        if (state.avatarUrl?.isNotEmpty ?? false) ...[
-          Padding(
-            padding: edgeInsetsL12R12,
-            child: CachedImage(state.avatarUrl!, maxWidth: _avatarMaxWidth, maxHeight: _avatarMaxHeight),
-          ),
-          sizedBoxW12H12,
-        ] else ...[
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 50),
+    /// One avatar box: caption above, the image or a muted placeholder, same size either way.
+    Widget avatarBlock(String caption, String? url, IconData placeholderIcon, String? placeholderText) => AppInsetBlock(
+      outlined: true,
+      padding: edgeInsetsL12T12R12B12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(caption, style: textTheme.labelMedium?.copyWith(color: colorScheme.outline)),
+          sizedBoxW8H8,
+          SizedBox(
+            width: _avatarMaxWidth + 20,
+            height: _avatarMaxHeight,
             child: Center(
-              child: Text(
-                tr.noAvatar,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-              ),
+              child: url != null
+                  ? CachedImage(url, maxWidth: _avatarMaxWidth, maxHeight: _avatarMaxHeight)
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(placeholderIcon, size: 32, color: colorScheme.outline),
+                        if (placeholderText != null) ...[
+                          sizedBoxW4H4,
+                          Text(
+                            placeholderText,
+                            textAlign: TextAlign.center,
+                            style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+                          ),
+                        ],
+                      ],
+                    ),
             ),
           ),
-          sizedBoxW12H12,
         ],
-        Padding(
-          padding: edgeInsetsL12R12,
-          child: TextField(
-            controller: _avatarController,
-            decoration: InputDecoration(labelText: tr.avatarUrl),
-          ),
-        ),
-        sizedBoxW12H12,
-        Padding(
-          padding: edgeInsetsL12R12,
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonal(
-                  onPressed: state.status == EditAvatarStatus.uploading || _avatarController.text.isEmpty
-                      ? null
-                      : () => setState(() => _previewUrl = _avatarController.text),
-                  child: Text(tr.preview),
+      ),
+    );
+
+    // Form pages stay at most [appFormMaxWidth] wide, centered on wide windows. The current avatar and the preview
+    // sit side by side (wrapping on narrow phones), so the change is compared before it is submitted.
+    return AppCenteredList(
+      maxWidth: appFormMaxWidth,
+      builder: (context, padding, _) => ListView(
+        padding: padding.copyWith(top: 12, bottom: 24),
+        children: [
+          AppSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppSectionHeader(tr.currentAvatar, icon: Icons.account_circle_outlined),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    avatarBlock(
+                      tr.currentAvatar,
+                      (state.avatarUrl?.isNotEmpty ?? false) ? state.avatarUrl : null,
+                      Icons.no_photography_outlined,
+                      tr.noAvatar,
+                    ),
+                    avatarBlock(tr.preview, _previewUrl, Icons.preview_outlined, null),
+                  ],
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: appSurfaceGap),
+          AppFormSection(
+            title: tr.avatarUrl,
+            icon: Icons.link_outlined,
+            children: [
+              TextField(
+                controller: _avatarController,
+                decoration: appFieldDecoration(label: tr.avatarUrl, icon: Icons.image_outlined),
               ),
-              sizedBoxW8H8,
-              Expanded(
-                child: FilledButton(
-                  onPressed: state.formHash == null || state.status == EditAvatarStatus.uploading
-                      ? null
-                      : () {
-                          context.read<EditAvatarBloc>().add(
-                            EditAvatarUploadRequested(avatarUrl: _avatarController.text, formHash: state.formHash!),
-                          );
-                        },
-                  child: Text(tr.submit),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.preview_outlined),
+                      onPressed: state.status == EditAvatarStatus.uploading || _avatarController.text.isEmpty
+                          ? null
+                          : () => setState(() => _previewUrl = _avatarController.text),
+                      label: Text(tr.preview),
+                    ),
+                  ),
+                  sizedBoxW8H8,
+                  Expanded(
+                    child: FilledButton.icon(
+                      icon: state.status == EditAvatarStatus.uploading
+                          ? sizedCircularProgressIndicator
+                          : const Icon(Icons.cloud_upload_outlined),
+                      onPressed: state.formHash == null || state.status == EditAvatarStatus.uploading
+                          ? null
+                          : () {
+                              context.read<EditAvatarBloc>().add(
+                                EditAvatarUploadRequested(avatarUrl: _avatarController.text, formHash: state.formHash!),
+                              );
+                            },
+                      label: Text(tr.submit),
+                    ),
+                  ),
+                ],
+              ),
+              AppNoticeBanner(message: tr.clearAvatarTip),
+              Align(
+                child: TextButton.icon(
+                  icon: const Icon(Icons.collections_outlined),
+                  label: Text(tr.viewSharedAvatars),
+                  onPressed: () async => context.pushNamed(ScreenPaths.threadV1, queryParameters: {'tid': '1106488'}),
                 ),
               ),
             ],
           ),
-        ),
-        sizedBoxW12H12,
-        Align(
-          child: TextButton(
-            child: Text(tr.viewSharedAvatars, style: const TextStyle(decoration: TextDecoration.underline)),
-            onPressed: () async => context.pushNamed(ScreenPaths.threadV1, queryParameters: {'tid': '1106488'}),
-          ),
-        ),
-        sizedBoxW12H12,
-        Tips(tr.clearAvatarTip),
-
-        if (_previewUrl != null) ...[
-          SectionTitleText(tr.preview),
-          Padding(
-            padding: edgeInsetsL12R12,
-            child: CachedImage(_previewUrl!, maxWidth: _avatarMaxWidth, maxHeight: _avatarMaxHeight),
-          ),
         ],
-      ],
+      ),
     );
   }
 

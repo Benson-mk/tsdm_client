@@ -100,9 +100,18 @@ class _CustomAlertDialogState<F> extends State<CustomAlertDialog<F>> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    // The title is not flexible in an AlertDialog: a long title on a narrow phone with a large text scale pushed the
+    // content and the actions out of the dialog. Keep it at most a part of the room left above the keyboard and let it
+    // scroll there, so the content (which scrolls by itself) and the actions always stay on screen.
+    final titleMaxHeight = math.max((size.height - MediaQuery.viewInsetsOf(context).bottom) * 0.3, 48).toDouble();
 
     return AlertDialog(
-      title: widget.title,
+      title: widget.title == null
+          ? null
+          : ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: titleMaxHeight),
+              child: SingleChildScrollView(child: widget.title),
+            ),
       // This value copied from the default value in AlterDialog and removed horizontal padding.
       contentPadding: const EdgeInsets.only(
         // left: 24.0,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
+import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/post/view/fast_reply_edit_template_page.dart';
 import 'package:tsdm_client/features/post/widgets/fast_reply_template_card.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -10,6 +11,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Page to view all templates for fast reply.
@@ -35,7 +37,7 @@ class _FastReplyTemplatePageState extends State<FastReplyTemplatePage> with Logg
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           error('failed to load fast reply templates: ${snapshot.error!}');
-          return Center(child: Text(context.t.general.failedToLoad));
+          return AppStateView(error: true, icon: Icons.error_outline, message: context.t.general.failedToLoad);
         }
 
         if (!snapshot.hasData) {
@@ -45,33 +47,33 @@ class _FastReplyTemplatePageState extends State<FastReplyTemplatePage> with Logg
         final allTemplates = snapshot.data!;
 
         if (allTemplates.isEmpty) {
-          return Center(
-            child: Text(
-              tr.empty,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-            ),
-          );
+          return AppStateView(icon: Icons.quickreply_outlined, message: tr.empty);
         }
 
-        return SingleChildScrollView(
-          child: Padding(
-            padding: edgeInsetsL12T8R12,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: allTemplates
-                  .map(
-                    (e) => FastReplyTemplateCard(
-                      key: ValueKey('FastReplyTemplateCard_${e.hashCode}'),
-                      replyTemplate: e,
-                      allowEdit: !widget.pick,
-                      onTap: widget.pick ? .popBackSelf : .openMenu,
-                      onLongPressOrRightClick: .openMenu,
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
+        return AppCenteredList(
+          builder: (context, horizontal, width) {
+            final columns = appColumnsFor(width);
+            return ListView.separated(
+              padding: horizontal.add(edgeInsetsT12).add(context.safePadding()),
+              itemCount: appRowCount(allTemplates.length, columns),
+              separatorBuilder: (_, _) => appListSeparator,
+              itemBuilder: (context, row) => AppColumnsRow(
+                row: row,
+                columns: columns,
+                count: allTemplates.length,
+                itemBuilder: (context, index) {
+                  final e = allTemplates[index];
+                  return FastReplyTemplateCard(
+                    key: ValueKey('FastReplyTemplateCard_${e.hashCode}'),
+                    replyTemplate: e,
+                    allowEdit: !widget.pick,
+                    onTap: widget.pick ? .popBackSelf : .openMenu,
+                    onLongPressOrRightClick: .openMenu,
+                  );
+                },
+              ),
+            );
+          },
         );
       },
     );

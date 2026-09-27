@@ -23,6 +23,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -125,50 +126,48 @@ class _ManageAccountPageState extends State<ManageAccountPage> {
     final Widget body;
     if (snapshot.hasError) {
       // Unreachable.
-      body = Center(child: Text('${snapshot.error}'));
+      body = AppStateView(icon: Icons.error_outline, error: true, message: '${snapshot.error}');
     } else if (!snapshot.hasData) {
       body = const CenteredCircularIndicator();
     } else {
-      body = SingleChildScrollView(
-        child: Padding(
-          padding: edgeInsetsL12T4R12B4,
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: edgeInsetsL12T12R12.add(context.safePadding()),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text(tr.allUsers, style: Theme.of(context).textTheme.titleMedium),
-                      if (busy) ...[sizedBoxW12H12, sizedCircularProgressIndicator],
-                    ],
+      // One group of accounts, centered like the other form pages; the add row sits apart under it so it is not
+      // taken for an account.
+      body = AppCenteredList(
+        maxWidth: appFormMaxWidth,
+        builder: (context, padding, _) => ListView(
+          padding: padding.copyWith(top: 12, bottom: 24).add(context.safePadding()),
+          children: [
+            AppTileGroup(
+              title: tr.allUsers,
+              icon: Icons.people_outline,
+              trailing: busy ? sizedCircularProgressIndicator : null,
+              children: [
+                // List all recorded users.
+                ...users.map(
+                  (e) => _UserInfoListTile(
+                    userInfo: e.user,
+                    lastCheckin: e.lastCheckin,
+                    sessionExpiredAt: e.sessionExpiredAt,
+                    currentUid: currentUid,
+                    selecting: selection.selecting,
+                    selected: selection.selectedUids.contains(e.user.uid),
+                    enabled: !busy,
                   ),
-                  sizedBoxW4H4,
-                  // List all recorded users.
-                  ...users.map(
-                    (e) => _UserInfoListTile(
-                      userInfo: e.user,
-                      lastCheckin: e.lastCheckin,
-                      sessionExpiredAt: e.sessionExpiredAt,
-                      currentUid: currentUid,
-                      selecting: selection.selecting,
-                      selected: selection.selectedUids.contains(e.user.uid),
-                      enabled: !busy,
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.add_outlined),
-                    title: Text(tr.addUser),
-                    enabled: !busy && !selection.selecting,
-                    onTap: () async => context.pushNamed(ScreenPaths.login),
-                  ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: appSurfaceGap),
+            AppSurface(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                leading: const AppIconTile(Icons.person_add_alt_outlined),
+                title: Text(tr.addUser),
+                trailing: const Icon(Icons.chevron_right),
+                enabled: !busy && !selection.selecting,
+                onTap: () async => context.pushNamed(ScreenPaths.login),
               ),
             ),
-          ),
+          ],
         ),
       );
     }
@@ -344,10 +343,22 @@ class _UserInfoListTile extends StatelessWidget with LoggerMixin {
         label: Text(tr.sessionExpired.loginAgain),
       );
     } else if (isCurrentUser) {
-      trailing = Chip(
-        side: BorderSide.none,
-        backgroundColor: colorScheme.secondaryContainer,
-        label: Text(tr.online, style: textTheme.labelMedium?.copyWith(color: colorScheme.onSecondaryContainer)),
+      // Same rounded pill as the other status marks of the app.
+      trailing = DecoratedBox(
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(appInnerRadius),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Text(
+            tr.online,
+            style: textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       );
     } else {
       trailing = null;
@@ -364,12 +375,12 @@ class _UserInfoListTile extends StatelessWidget with LoggerMixin {
               child: const Icon(Icons.check),
             )
           : HeroUserAvatar(username: userInfo.username!, avatarUrl: null, disableHero: true),
-      title: Text(userInfo.username!),
+      title: Text(userInfo.username!, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${userInfo.uid!}'),
+          Text('UID ${userInfo.uid!}', style: textTheme.labelSmall?.copyWith(color: colorScheme.outline)),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [

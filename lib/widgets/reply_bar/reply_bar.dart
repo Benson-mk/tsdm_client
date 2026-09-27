@@ -13,6 +13,7 @@ import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/chat/models/models.dart';
+import 'package:tsdm_client/features/editor/widgets/editor_frame.dart';
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/editor/widgets/toolbar.dart';
 import 'package:tsdm_client/features/root/models/models.dart';
@@ -26,6 +27,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/bbcode/spoiler_normalizer.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/platform.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 
@@ -208,21 +210,51 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
       buildWhen: (prev, curr) => prev.status != curr.status,
       builder: (context, state) {
         final loading = state.status == ReplyStatus.loading;
-        return ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
+        final colorScheme = Theme.of(context).colorScheme;
+        final border = OutlineInputBorder(
+          borderRadius: BorderRadius.circular(appSurfaceRadius),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        );
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6))),
+          ),
           child: Padding(
-            padding: edgeInsetsL12T12R12B12.add(context.safePadding()),
-            child: TextField(
-              controller: controller,
-              readOnly: true,
-              enabled: onTapCallback != null,
-              // Follow the app theme (outlined) like the expanded editor does, so both states of the reply box
-              // share the same look.
-              decoration: InputDecoration(
-                hintText: context.t.threadPage.sendReplyHint,
-                suffix: loading ? sizedCircularProgressIndicator : null,
+            padding: edgeInsetsL12T8R12B8.add(context.safePadding()),
+            // Not AppContentWidth: its Align takes all the height it is offered, and a host that gives the bar a
+            // bounded height (Scaffold.bottomNavigationBar) would get a bar as tall as the page, covering the editor
+            // sheet above it. heightFactor 1 keeps the bar as tall as its field.
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: appReadingMaxWidth),
+                // One rounded box: the same field whether it invites a reply, keeps an unsent one, or explains why
+                // replying is not possible (need login, thread closed).
+                child: TextField(
+                  controller: controller,
+                  readOnly: true,
+                  enabled: onTapCallback != null,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: colorScheme.surface,
+                    hintText: context.t.threadPage.sendReplyHint,
+                    prefixIcon: Icon(
+                      onTapCallback == null ? Icons.lock_outline : Icons.edit_outlined,
+                      size: 20,
+                      color: onTapCallback == null ? colorScheme.outline : colorScheme.primary,
+                    ),
+                    suffix: loading ? sizedCircularProgressIndicator : null,
+                    border: border,
+                    enabledBorder: border,
+                    disabledBorder: border,
+                    focusedBorder: border.copyWith(borderSide: BorderSide(color: colorScheme.primary)),
+                  ),
+                  onTap: onTapCallback,
+                ),
               ),
-              onTap: onTapCallback,
             ),
           ),
         );
@@ -550,9 +582,8 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
 
   /// Build an editor with bbcode support.
   Widget _buildRichEditor(BuildContext context) {
-    return InputDecorator(
-      isFocused: focusNode.hasFocus,
-      decoration: const InputDecoration(),
+    return EditorFrame(
+      focusNode: focusNode,
       child: _wrapWithSendShortcuts(
         RichEditor(
           // Initial text is the text passed from outside.
@@ -568,25 +599,57 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
   /// Currently showing the floor user is replying to (if any), and a button to
   /// set to reply to thread (not any floor).
   Widget _buildHintTextRow(BuildContext context) {
-    if (_hintText == null || _closed || !_hasLogin) {
-      // The size here is actually a padding on the top of editor body.
-      // But it's here.
-      return sizedBoxW12H12;
-    }
-    final outlineColor = Theme.of(context).colorScheme.outline;
-    return Padding(
-      padding: edgeInsetsL12T4R12,
-      child: Row(
-        children: [
-          Text(_hintText!, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: outlineColor)),
-          const Spacer(),
-          IconButton(
-            icon: Icon(Icons.clear_outlined, color: outlineColor, size: 16),
-            tooltip: context.t.replyBar.notReplyToFloorTip,
-            onPressed: _clearTextAndHint,
+    // Grip of the sheet: shows the editor is a panel over the page.
+    final colorScheme = Theme.of(context).colorScheme;
+    final grip = Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colorScheme.outlineVariant,
+            borderRadius: BorderRadius.circular(2),
           ),
-        ],
+          child: const SizedBox(width: 32, height: 4),
+        ),
       ),
+    );
+    if (_hintText == null || _closed || !_hasLogin) {
+      return grip;
+    }
+    // The floor this reply goes to, as a pill that can be dropped to reply to the thread instead.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        grip,
+        Padding(
+          padding: edgeInsetsL12R12,
+          child: AppInsetBlock(
+            color: colorScheme.secondaryContainer,
+            padding: const EdgeInsets.only(left: 12),
+            child: Row(
+              children: [
+                Icon(Icons.reply_outlined, size: 18, color: colorScheme.onSecondaryContainer),
+                sizedBoxW8H8,
+                Expanded(
+                  child: Text(
+                    _hintText!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(color: colorScheme.onSecondaryContainer),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.clear_outlined, color: colorScheme.onSecondaryContainer, size: 16),
+                  tooltip: context.t.replyBar.notReplyToFloorTip,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _clearTextAndHint,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -658,19 +721,29 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
     );
   }
 
-  Widget _buildContent(BuildContext context, ReplyState state) {
+  Widget _buildContent(BuildContext context, ReplyState state) => LayoutBuilder(
+    // The editor, its toolbar and buttons stay in the reading column of the page on wide windows; the sheet itself
+    // and the mobile panel keep the full width.
+    builder: (context, constraints) => _buildContentIn(
+      context,
+      state,
+      appCenteredPadding(constraints.maxWidth, maxWidth: appReadingMaxWidth, minPadding: 0),
+    ),
+  );
+
+  Widget _buildContentIn(BuildContext context, ReplyState state, EdgeInsets horizontal) {
     final tr = context.t.replyBar;
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Reply hint row.
-        _buildHintTextRow(context),
+        Padding(padding: horizontal, child: _buildHintTextRow(context)),
 
         // Editor.
         Flexible(
           child: Padding(
-            padding: edgeInsetsL12T4R12B4,
+            padding: horizontal.add(const EdgeInsets.fromLTRB(12, 8, 12, 4)),
             child: Listener(
               onPointerUp:
                   // Only collapse editor toolbar on mobile platforms.
@@ -686,9 +759,9 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
           ),
         ),
 
-        _buildDesktopToolbar(context, state),
+        Padding(padding: horizontal, child: _buildDesktopToolbar(context, state)),
         Padding(
-          padding: edgeInsetsL12R12B12,
+          padding: horizontal.add(edgeInsetsL12R12B12),
           child: Row(
             children: [
               // Only control expand or collapse on mobile platforms.
@@ -729,7 +802,14 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
                 },
               ),
               const Spacer(),
-              FilledButton.tonal(onPressed: widget.controller.closeEditor, child: const Icon(Icons.unfold_less)),
+              Tooltip(
+                // "Collapse": the draft is kept in the reply box below.
+                message: MaterialLocalizations.of(context).expandedIconTapHint,
+                child: FilledButton.tonal(
+                  onPressed: widget.controller.closeEditor,
+                  child: const Icon(Icons.unfold_less),
+                ),
+              ),
               sizedBoxW8H8,
               // Send Button
               FilledButton(

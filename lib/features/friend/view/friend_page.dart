@@ -12,6 +12,7 @@ import 'package:tsdm_client/features/need_login/view/need_login_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Page listing the friends of a user.
@@ -42,17 +43,6 @@ class _FriendPageState extends State<FriendPage> {
     super.dispose();
   }
 
-  Widget _buildCenteredText(BuildContext context, String text) => Center(
-    child: Padding(
-      padding: edgeInsetsL24R24,
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-      ),
-    ),
-  );
-
   Widget _buildList(BuildContext context, FriendState state) {
     final tr = context.t.friendPage;
     if (!state.refreshing) {
@@ -74,24 +64,39 @@ class _FriendPageState extends State<FriendPage> {
         }
         context.read<FriendBloc>().add(const FriendLoadMoreRequested());
       },
-      childBuilder: (context, physics) {
-        if (state.items.isEmpty) {
-          return ListView(
+      childBuilder: (context, physics) => AppCenteredList(
+        builder: (context, side, width) {
+          final padding = side.copyWith(top: 12, bottom: 12).add(context.safePadding());
+          if (state.items.isEmpty) {
+            return ListView(
+              physics: physics,
+              controller: _scrollController,
+              padding: padding,
+              children: [
+                sizedBoxW32H32,
+                AppStateView(icon: Icons.people_outline, message: tr.empty, scrollable: false),
+              ],
+            );
+          }
+          // Two columns on wide windows; each row holds up to two friend cards.
+          final columns = appColumnsFor(width);
+          final gap = width < 600 ? appSurfaceGapCompact : appSurfaceGap;
+          return ListView.separated(
             physics: physics,
             controller: _scrollController,
-            padding: edgeInsetsL12T4R12.add(context.safePadding()),
-            children: [sizedBoxW32H32, _buildCenteredText(context, tr.empty)],
+            padding: padding,
+            itemCount: appRowCount(state.items.length, columns),
+            itemBuilder: (context, row) => AppColumnsRow(
+              row: row,
+              columns: columns,
+              count: state.items.length,
+              gap: gap,
+              itemBuilder: (context, index) => FriendCard(state.items[index]),
+            ),
+            separatorBuilder: (context, index) => SizedBox(height: gap),
           );
-        }
-        return ListView.separated(
-          physics: physics,
-          controller: _scrollController,
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          itemCount: state.items.length,
-          itemBuilder: (context, index) => FriendCard(state.items[index]),
-          separatorBuilder: (context, index) => sizedBoxW4H4,
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -102,8 +107,12 @@ class _FriendPageState extends State<FriendPage> {
       needPop: true,
       popCallback: (context) => context.read<FriendBloc>().add(const FriendLoadRequested()),
     ),
-    FriendStatus.notice => _buildCenteredText(context, state.message ?? ''),
-    FriendStatus.failure => buildRetryButton(context, () => context.read<FriendBloc>().add(const FriendLoadRequested())),
+    // The forum's own explanation (privacy settings, no such member).
+    FriendStatus.notice => AppStateView(icon: Icons.info_outline, message: state.message ?? ''),
+    FriendStatus.failure => buildRetryButton(
+      context,
+      () => context.read<FriendBloc>().add(const FriendLoadRequested()),
+    ),
     FriendStatus.success => _buildList(context, state),
   };
 
@@ -145,12 +154,10 @@ class _FriendPageState extends State<FriendPage> {
     return MultiRepositoryProvider(
       providers: [RepositoryProvider(create: (_) => const FriendRepository())],
       child: BlocProvider(
-        create: (context) =>
-            FriendBloc(
-                friendRepository: context.repo(),
-                firstPageUrl: FriendRepository.listUrl(uid: uid, username: widget.username),
-              )
-              ..add(const FriendLoadRequested()),
+        create: (context) => FriendBloc(
+          friendRepository: context.repo(),
+          firstPageUrl: FriendRepository.listUrl(uid: uid, username: widget.username),
+        )..add(const FriendLoadRequested()),
         child: BlocListener<FriendBloc, FriendState>(
           listenWhen: (prev, curr) => prev.failureCount != curr.failureCount,
           listener: (context, state) => showFailedToLoadSnackBar(context),

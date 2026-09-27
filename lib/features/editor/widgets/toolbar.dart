@@ -24,7 +24,7 @@ import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
-import 'package:tsdm_client/widgets/tips_card.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Representing all features types.
 enum EditorFeatures {
@@ -181,38 +181,26 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
   }) async {
     final tr = context.t.postEditPage.portation;
 
-    final topBar = BottomSheetTopBar(
-      height: 110,
-      alignment: .center,
-      child: Padding(
-        padding: edgeInsetsL12R12,
-        child: Align(
+    // The two warnings scroll with the actions (they used to sit in a fixed 110 px top bar that clipped them with a
+    // large font), then the actions grouped by format: BBCode keeps the content only, Quill Delta the options too.
+    await showCustomBottomSheet<void>(
+      title: tr.title,
+      context: context,
+      childrenBuilder: (_) => [
+        Padding(
+          padding: edgeInsetsL12R12,
           child: Column(
-            spacing: 10,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TipsCard(
-                iconData: Icons.warning_outlined,
-                tips: '${tr.tip}  ',
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              ),
-              TipsCard(
-                tips: '${tr.typesTip}  ',
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              ),
+              AppNoticeBanner(tone: AppNoticeTone.warning, icon: Icons.warning_outlined, message: tr.tip),
+              sizedBoxW8H8,
+              AppNoticeBanner(message: tr.typesTip),
+              const AppSectionHeader('BBCode', icon: Icons.code_outlined, padding: EdgeInsets.only(top: 16, bottom: 4)),
             ],
           ),
         ),
-      ),
-    );
-
-    await showCustomBottomSheet<void>(
-      title: tr.title,
-      topBar: topBar,
-      context: context,
-      childrenBuilder: (_) => [
         ListTile(
+          leading: const Icon(Icons.copy_outlined),
           title: Text(tr.copyBBCode),
           onTap: () async {
             await Clipboard.setData(ClipboardData(text: controller.toForumBBCode()));
@@ -224,6 +212,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.content_paste_outlined),
           title: Text(tr.pasteBBCode),
           onTap: () async {
             final bbcode = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
@@ -246,6 +235,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.save_alt_outlined),
           title: Text(tr.exportBBCode),
           onTap: () async {
             await _exportFile(context, 'bbcode_', 'txt', controller.toForumBBCode());
@@ -256,6 +246,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.file_open_outlined),
           title: Text(tr.importBBCode),
           onTap: () async {
             final data = await _importFile(context, ['txt']);
@@ -276,7 +267,16 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
             Navigator.of(context).pop();
           },
         ),
+        const Padding(
+          padding: edgeInsetsL12R12,
+          child: AppSectionHeader(
+            'Quill Delta',
+            icon: Icons.data_object_outlined,
+            padding: EdgeInsets.only(top: 16, bottom: 4),
+          ),
+        ),
         ListTile(
+          leading: const Icon(Icons.copy_outlined),
           title: Text(tr.copyQuilllDelta),
           onTap: () async {
             final data = EditorDocument.build(collectMetadata?.call(), controller.toQuillDeltaJson());
@@ -289,6 +289,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.content_paste_outlined),
           title: Text(tr.pasteQuillDelta),
           onTap: () async {
             final data = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
@@ -323,6 +324,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.save_alt_outlined),
           title: Text(tr.exportQuillDelta),
           onTap: () async {
             final data = EditorDocument.build(collectMetadata?.call(), controller.toQuillDeltaJson());
@@ -334,6 +336,7 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.file_open_outlined),
           title: Text(tr.importQuillDelta),
           onTap: () async {
             final data = await _importFile(context, ['json']);
@@ -428,11 +431,23 @@ class EditorToolbar extends StatelessWidget with LoggerMixin {
       showFree: _hasFeature(EditorFeatures.free),
     );
 
+    // The package builds plain Material icon buttons (IconButton, IconButton.filled while a style is on): give them the
+    // rounded shape of the app's inner blocks instead of circles, sizes and touch targets unchanged. Only the look
+    // changes, every button keeps its action and feature switch.
+    final themed = IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+        ),
+      ),
+      child: toolbar,
+    );
+
     if (isMobile) {
-      return Column(mainAxisSize: MainAxisSize.min, children: [toolbar, sizedBoxW24H24]);
+      return Column(mainAxisSize: MainAxisSize.min, children: [themed, sizedBoxW24H24]);
     }
 
-    return toolbar;
+    return themed;
   }
 }
 

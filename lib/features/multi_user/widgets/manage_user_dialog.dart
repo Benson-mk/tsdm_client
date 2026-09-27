@@ -17,6 +17,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
@@ -66,13 +67,31 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.manageAccountPage.switchAccount.dialog;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // Only this account's own name and uid: nothing of another account is shown here.
     return CustomAlertDialog.sync(
       clipBehavior: Clip.hardEdge,
       title: Row(
         children: [
           HeroUserAvatar(username: userInfo.username!, avatarUrl: null, disableHero: true, minRadius: 30),
           sizedBoxW12H12,
-          Expanded(child: SingleLineText(userInfo.username!, style: Theme.of(context).textTheme.titleLarge)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleLineText(userInfo.username!, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (userInfo.uid != null) AppInfoPill(icon: Icons.tag, label: '${userInfo.uid}'),
+                    if (isCurrentUser) AppInfoPill(icon: Icons.circle, label: context.t.manageAccountPage.online),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       content: Column(
@@ -80,6 +99,8 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
           if (isCurrentUser) ...[_buildLogoutTile(context), _buildRemoveFromDeviceTile(context)],
           if (!isCurrentUser) ...[
             ListTile(
+              leading: const Icon(Icons.switch_account_outlined),
+              shape: _tileShape,
               title: Text(tr.switchAccount),
               onTap: () async {
                 var times = 10;
@@ -97,6 +118,27 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.login_outlined),
+              shape: _tileShape,
+              title: Text(tr.loginAgain.title),
+              subtitle: Text(tr.loginAgain.detail),
+              onTap: () async {
+                await context.pushNamed(
+                  ScreenPaths.login,
+                  queryParameters: {if (userInfo.username != null) 'username': '${userInfo.username}'},
+                );
+                if (!context.mounted) {
+                  return;
+                }
+                context.pop();
+              },
+            ),
+            Divider(height: 9, color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+            // Destructive, last and in the error color.
+            ListTile(
+              leading: Icon(Icons.person_remove_outlined, color: colorScheme.error),
+              shape: _tileShape,
+              textColor: colorScheme.error,
               title: Text(tr.deleteAccount.title),
               subtitle: Text(tr.deleteAccount.detail),
               enabled: userInfo.uid != null,
@@ -121,25 +163,13 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
                 context.pop();
               },
             ),
-            ListTile(
-              title: Text(tr.loginAgain.title),
-              subtitle: Text(tr.loginAgain.detail),
-              onTap: () async {
-                await context.pushNamed(
-                  ScreenPaths.login,
-                  queryParameters: {if (userInfo.username != null) 'username': '${userInfo.username}'},
-                );
-                if (!context.mounted) {
-                  return;
-                }
-                context.pop();
-              },
-            ),
           ],
         ],
       ),
     );
   }
+
+  static final _tileShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius));
 
   /// Remove the current account from this device after confirmation, without logging out of the forum.
   ///
@@ -147,7 +177,11 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
   /// left the account stuck as "online" before (issue #6).
   Widget _buildRemoveFromDeviceTile(BuildContext context) {
     final tr = context.t.manageAccountPage;
+    final error = Theme.of(context).colorScheme.error;
     return ListTile(
+      leading: Icon(Icons.phonelink_erase_outlined, color: error),
+      shape: _tileShape,
+      textColor: error,
       title: Text(tr.removeFromDevice.title),
       subtitle: Text(tr.removeFromDevice.detail),
       onTap: () async {
@@ -181,6 +215,8 @@ class _ManageUserDialog extends StatelessWidget with LoggerMixin {
   Widget _buildLogoutTile(BuildContext context) {
     final tr = context.t.manageAccountPage;
     return ListTile(
+      leading: const Icon(Icons.logout_outlined),
+      shape: _tileShape,
       title: Text(tr.logout),
       subtitle: Text(tr.logoutDetail),
       onTap: () async {

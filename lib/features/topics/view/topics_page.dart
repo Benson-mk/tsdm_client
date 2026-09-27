@@ -17,6 +17,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -93,14 +94,26 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
       _tabScrollControllers.putIfAbsent(e.name, ScrollController.new);
 
       final head = e.moderators.isEmpty ? 0 : 1;
-      return ListView.separated(
-        controller: _tabScrollControllers[e.name],
-        padding: edgeInsetsL12T4R12,
-        itemCount: e.forumList.length + head,
-        itemBuilder: (context, index) => head == 1 && index == 0
-            ? GroupModeratorsRow(moderators: e.moderators)
-            : ForumCard(e.forumList[index - head]),
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      final forums = e.forumList;
+      // One column on phones, two on wide windows; rows stay centered at a readable width.
+      return AppCenteredList(
+        builder: (context, side, width) {
+          final columns = appColumnsFor(width);
+          return ListView.separated(
+            controller: _tabScrollControllers[e.name],
+            padding: side.copyWith(top: 8, bottom: 16),
+            itemCount: appRowCount(forums.length, columns) + head,
+            itemBuilder: (context, index) => head == 1 && index == 0
+                ? GroupModeratorsRow(moderators: e.moderators)
+                : AppColumnsRow(
+                    row: index - head,
+                    columns: columns,
+                    count: forums.length,
+                    itemBuilder: (_, i) => ForumCard(forums[i]),
+                  ),
+            separatorBuilder: (context, index) => appListSeparator,
+          );
+        },
       );
     }).toList();
 
@@ -177,7 +190,10 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
                 header: const MaterialHeader(),
                 child: const CenteredCircularIndicator(),
               ),
-              TopicsStatus.failed => buildRetryButton(context, () => context.read<TopicsBloc>().add(const TopicsRefreshRequested())),
+              TopicsStatus.failed => buildRetryButton(
+                context,
+                () => context.read<TopicsBloc>().add(const TopicsRefreshRequested()),
+              ),
               TopicsStatus.success when state.forumGroupList.isNotEmpty => _buildContent(context, state),
               TopicsStatus.success => NeedLoginPage(
                 backUri: GoRouterState.of(context).uri,

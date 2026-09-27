@@ -12,6 +12,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Show a bottom sheet provides clear cache functionality with clear cache
@@ -54,39 +55,51 @@ class _ClearCacheBottomSheetState extends State<_ClearCacheBottomSheet> {
         builder: (context, state) {
           final body = switch (state.status) {
             SettingsCacheStatus.loaded || SettingsCacheStatus.cleared => SingleChildScrollView(
+              padding: edgeInsetsL16R16,
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CheckboxListTile(
-                    secondary: const Icon(Icons.image_outlined),
-                    title: Text(tr.images),
-                    subtitle: Text(state.storageInfo!.imageSize.withSizeHint()),
-                    value: state.clearInfo.clearImage,
-                    onChanged: (v) => context.read<SettingsCacheBloc>().add(
-                      SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearImage: v)),
-                    ),
-                  ),
-                  CheckboxListTile(
-                    secondary: const Icon(Icons.emoji_emotions_outlined),
-                    title: Text(tr.emoji),
-                    subtitle: Text(state.storageInfo!.emojiSize.withSizeHint()),
-                    value: state.clearInfo.clearEmoji,
-                    onChanged: (v) => context.read<SettingsCacheBloc>().add(
-                      SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearEmoji: v)),
-                    ),
-                  ),
-                  CheckboxListTile(
-                    secondary: const Icon(Symbols.text_ad),
-                    title: Text(tr.log),
-                    subtitle: Text(state.storageInfo!.logSize.withSizeHint()),
-                    value: state.clearInfo.clearLog,
-                    onChanged: (v) => context.read<SettingsCacheBloc>().add(
-                      SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearLog: v)),
+                  AppNoticeBanner(message: tr.downloadAgainInfo),
+                  sizedBoxW12H12,
+                  AppInsetBlock(
+                    outlined: true,
+                    padding: edgeInsetsT4B4,
+                    child: Column(
+                      children: [
+                        CheckboxListTile(
+                          secondary: const Icon(Icons.image_outlined),
+                          title: Text(tr.images),
+                          subtitle: Text(state.storageInfo!.imageSize.withSizeHint()),
+                          value: state.clearInfo.clearImage,
+                          onChanged: (v) => context.read<SettingsCacheBloc>().add(
+                            SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearImage: v)),
+                          ),
+                        ),
+                        CheckboxListTile(
+                          secondary: const Icon(Icons.emoji_emotions_outlined),
+                          title: Text(tr.emoji),
+                          subtitle: Text(state.storageInfo!.emojiSize.withSizeHint()),
+                          value: state.clearInfo.clearEmoji,
+                          onChanged: (v) => context.read<SettingsCacheBloc>().add(
+                            SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearEmoji: v)),
+                          ),
+                        ),
+                        CheckboxListTile(
+                          secondary: const Icon(Symbols.text_ad),
+                          title: Text(tr.log),
+                          subtitle: Text(state.storageInfo!.logSize.withSizeHint()),
+                          value: state.clearInfo.clearLog,
+                          onChanged: (v) => context.read<SettingsCacheBloc>().add(
+                            SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearLog: v)),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            _ => const CenteredCircularIndicator(),
+            _ => const Padding(padding: edgeInsetsL24T24R24B24, child: CenteredCircularIndicator()),
           };
 
           return Column(
@@ -97,8 +110,9 @@ class _ClearCacheBottomSheetState extends State<_ClearCacheBottomSheet> {
                 children: [
                   Expanded(
                     child: Padding(
-                      padding: edgeInsetsL12T12R12B12.add(context.safePadding()),
-                      child: FilledButton(
+                      padding: edgeInsetsL16T12R16B12.add(context.safePadding()),
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.cleaning_services_outlined),
                         onPressed: state.status == SettingsCacheStatus.loaded
                             ? () {
                                 if (state.clearInfo.hasSelected) {
@@ -110,7 +124,7 @@ class _ClearCacheBottomSheetState extends State<_ClearCacheBottomSheet> {
                                 }
                               }
                             : null,
-                        child: Text(context.t.general.ok),
+                        label: Text(context.t.general.ok),
                       ),
                     ),
                   ),

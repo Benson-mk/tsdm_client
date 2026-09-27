@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
-import 'package:tsdm_client/widgets/card/error_card.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// A page to show need to login hint.
 ///
@@ -40,35 +40,31 @@ class NeedLoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same state view as the other empty and locked pages: icon block, message, one login action.
     return Scaffold(
       appBar: showAppBar ? AppBar(title: Text(context.t.appName)) : null,
-      body: ErrorCard(
-        message: t.general.needLoginToSeeThisPage,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 150),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  child: Text(t.loginPage.login),
-                  onPressed: () async {
-                    await context.pushNamed(ScreenPaths.login);
-                    if (!context.mounted) {
-                      return;
-                    }
-                    if (needPop) {
-                      await popCallback?.call(context);
-                      if (!context.mounted) {
-                        return;
-                      }
-                      context.pushReplacement(backUri.toString());
-                    } else {
-                      await context.push(backUri.toString());
-                    }
-                  },
-                ),
-              ),
-            ],
+      body: SafeArea(
+        child: AppStateView(
+          icon: Icons.lock_person_outlined,
+          message: t.general.needLoginToSeeThisPage,
+          action: FilledButton.icon(
+            icon: const Icon(Icons.login_outlined),
+            label: Text(t.loginPage.login),
+            onPressed: () async {
+              await context.pushNamed(ScreenPaths.login);
+              if (!context.mounted) {
+                return;
+              }
+              if (needPop) {
+                await popCallback?.call(context);
+                if (!context.mounted) {
+                  return;
+                }
+                context.pushReplacement(backUri.toString());
+              } else {
+                await context.push(backUri.toString());
+              }
+            },
           ),
         ),
       ),

@@ -6,6 +6,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/html/adaptive_color.dart';
 import 'package:tsdm_client/utils/html/css_parser.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 
@@ -41,80 +42,84 @@ class FriendCard extends StatelessWidget {
     final groupIconUrl = friend.groupIconUrl;
     final credits = friend.credits;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.hardEdge,
-      child: InkWell(
-        onTap: () async => context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': friend.uid}),
-        child: Padding(
-          padding: edgeInsetsL12T8R12B8,
-          child: Row(
-            children: [
-              HeroUserAvatar(
-                username: friend.username,
-                avatarUrl: friend.avatarUrl,
-                minRadius: _avatarRadius,
-                maxRadius: _avatarRadius,
-                disableHero: true,
-              ),
-              sizedBoxW12H12,
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return AppSurface(
+      padding: edgeInsetsL12T12R12B12,
+      onTap: () async => context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': friend.uid}),
+      child: Row(
+        children: [
+          HeroUserAvatar(
+            username: friend.username,
+            avatarUrl: friend.avatarUrl,
+            minRadius: _avatarRadius,
+            maxRadius: _avatarRadius,
+            disableHero: true,
+          ),
+          sizedBoxW12H12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  friend.username,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: _color(context, friend.nameColor),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                sizedBoxW4H4,
+                // Group and credits; a long group name pushes the credits to the next line instead of being cut.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(
-                      friend.username,
-                      style: theme.textTheme.titleMedium?.copyWith(color: _color(context, friend.nameColor)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    sizedBoxW4H4,
-                    // Group and credits; a long group name pushes the credits to the next line instead of being cut.
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 2,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (groupIconUrl != null || groupName != null)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (groupIconUrl != null) ...[
-                                CachedImage(groupIconUrl, height: _groupIconHeight, maxWidth: 64),
-                                sizedBoxW4H4,
-                              ],
-                              if (groupName != null)
-                                Flexible(
-                                  child: Text(
-                                    groupName,
-                                    style: secondaryStyle?.copyWith(
-                                      color: _color(context, friend.groupColor) ?? secondaryStyle.color,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                    if (groupIconUrl != null || groupName != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (groupIconUrl != null) ...[
+                            CachedImage(groupIconUrl, height: _groupIconHeight, maxWidth: 64),
+                            sizedBoxW4H4,
+                          ],
+                          if (groupName != null)
+                            Flexible(
+                              child: Text(
+                                groupName,
+                                style: secondaryStyle?.copyWith(
+                                  color: _color(context, friend.groupColor) ?? secondaryStyle.color,
                                 ),
-                            ],
-                          ),
-                        if (credits != null) Text(tr.credits(count: credits), style: secondaryStyle),
-                      ],
-                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      ),
+                    if (credits != null)
+                      AppInfoPill(
+                        icon: Icons.stars_outlined,
+                        label: tr.credits(count: credits),
+                      ),
                   ],
                 ),
-              ),
-              sizedBoxW8H8,
-              IconButton(
-                icon: const Icon(Icons.email_outlined),
-                tooltip: tr.sendMessage,
-                onPressed: () async => context.pushNamed(
-                  ScreenPaths.chat,
-                  pathParameters: {'uid': friend.uid},
-                  extra: <String, dynamic>{'username': friend.username},
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          sizedBoxW8H8,
+          IconButton.filledTonal(
+            icon: const Icon(Icons.email_outlined),
+            tooltip: tr.sendMessage,
+            style: IconButton.styleFrom(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+            ),
+            onPressed: () async => context.pushNamed(
+              ScreenPaths.chat,
+              pathParameters: {'uid': friend.uid},
+              extra: <String, dynamic>{'username': friend.username},
+            ),
+          ),
+        ],
       ),
     );
   }

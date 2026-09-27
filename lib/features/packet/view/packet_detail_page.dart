@@ -16,6 +16,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -50,50 +51,63 @@ class _PacketDetailPageState extends State<PacketDetailPage> {
 
   String _nextSortTip = '';
 
-  Widget _buildInfoRow(BuildContext context, List<PacketDetailModel> data) {
+  /// Totals of the packet (time from first to last claim, claimers, coins); tapping shows them as a sentence.
+  Widget _buildSummary(BuildContext context, List<PacketDetailModel> data) {
     final tr = context.t.packetDetailPage;
-    final secondaryColor = Theme.of(context).colorScheme.secondary;
-    final textStyle = Theme.of(context).textTheme.labelLarge?.copyWith(color: secondaryColor);
+    final colorScheme = Theme.of(context).colorScheme;
 
     final timeElapsed = data.first.time.difference(data.last.time).readable(context);
     final userCount = data.length;
     final coinsCount = data.fold(0, (prev, e) => prev + e.coins);
 
-    return InkWell(
+    Widget value(IconData icon, String text) => AppInsetBlock(
+      color: colorScheme.surfaceContainerHigh,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: colorScheme.secondary, size: 16),
+          sizedBoxW8H8,
+          Flexible(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(color: colorScheme.secondary),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return AppSurface(
       onTap: () async => showMessageSingleButtonDialog(
         context: context,
         title: tr.title,
         message: tr.statistics(users: userCount, coins: coinsCount, time: timeElapsed),
       ),
-      child: Column(
+      child: Row(
         children: [
-          sizedBoxW4H4,
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Icon(Icons.timelapse_outlined, color: secondaryColor, size: 16),
-              sizedBoxW4H4,
-              Text(timeElapsed, style: textStyle),
-              sizedBoxW12H12,
-              Icon(Icons.person_outline, color: secondaryColor, size: 16),
-              sizedBoxW4H4,
-              Text('$userCount', style: textStyle),
-              sizedBoxW12H12,
-              Icon(FontAwesomeIcons.coins, color: secondaryColor, size: 16),
-              sizedBoxW4H4,
-              Text('$coinsCount', style: textStyle),
-              sizedBoxW12H12,
-            ],
+          const AppIconTile(Icons.redeem_outlined),
+          sizedBoxW12H12,
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                value(Icons.timelapse_outlined, timeElapsed),
+                value(Icons.person_outline, '$userCount'),
+                value(FontAwesomeIcons.coins, '$coinsCount'),
+                value(Icons.sort_outlined, _sortByCoins.tip(context)),
+              ],
+            ),
           ),
-          sizedBoxW4H4,
         ],
       ),
     );
   }
 
   Widget _buildContent(BuildContext context, List<PacketDetailModel> data) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-    final secondaryColor = Theme.of(context).colorScheme.secondary;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     final dataSorted = switch (_sortByCoins) {
       _SortBy.time => data.toList(),
@@ -101,44 +115,66 @@ class _PacketDetailPageState extends State<PacketDetailPage> {
       _SortBy.coinsMost => data.sortedByCompare((e) => e.coins, (lhs, rhs) => rhs - lhs).toList(),
     };
 
-    return ListView.builder(
-      itemCount: data.length,
-      itemBuilder: (context, index) => InkWell(
-        onTap: () async =>
-            context.pushNamed(ScreenPaths.profile, queryParameters: {'username': dataSorted[index].username}),
-        child: Padding(
-          key: ValueKey(dataSorted[index].id),
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 30,
-                child: Text(
-                  '${dataSorted[index].id}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: secondaryColor),
+    return AppCenteredList(
+      builder: (context, side, _) => ListView.separated(
+        padding: side.copyWith(top: 12, bottom: 12).add(context.safePadding()),
+        itemCount: data.length + 1,
+        separatorBuilder: (_, _) => appListSeparator,
+        itemBuilder: (context, index) {
+          if (index == 0) return _buildSummary(context, data);
+          final item = dataSorted[index - 1];
+          return AppSurface(
+            key: ValueKey(item.id),
+            padding: edgeInsetsL12T8R12B8,
+            onTap: () async => context.pushNamed(ScreenPaths.profile, queryParameters: {'username': item.username}),
+            child: Row(
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 32),
+                  child: Text(
+                    '${item.id}',
+                    textAlign: TextAlign.center,
+                    style: textTheme.titleMedium?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.bold),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: ListTile(
-                  leading: HeroUserAvatar(username: dataSorted[index].username, avatarUrl: null),
-                  title: Text(dataSorted[index].username, style: TextStyle(color: primaryColor)),
-                  subtitle: Text(dataSorted[index].time.yyyyMMDDHHMMSS()),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                sizedBoxW8H8,
+                HeroUserAvatar(username: item.username, avatarUrl: null),
+                sizedBoxW12H12,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${dataSorted[index].coins}',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: secondaryColor),
+                        item.username,
+                        style: textTheme.titleSmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
                       ),
-                      sizedBoxW4H4,
-                      const Icon(FontAwesomeIcons.coins, size: 12),
+                      Text(
+                        item.time.yyyyMMDDHHMMSS(),
+                        style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
+                sizedBoxW8H8,
+                AppInsetBlock(
+                  color: colorScheme.secondaryContainer,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${item.coins}',
+                        style: textTheme.labelLarge?.copyWith(color: colorScheme.onSecondaryContainer),
+                      ),
+                      sizedBoxW4H4,
+                      Icon(FontAwesomeIcons.coins, size: 12, color: colorScheme.onSecondaryContainer),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -166,26 +202,16 @@ class _PacketDetailPageState extends State<PacketDetailPage> {
         builder: (context, state) {
           final tr = context.t.packetDetailPage;
 
-          final (body, infoRow) = switch (state) {
-            PacketDetailInitial() || PacketDetailLoading() => (const CenteredCircularIndicator(), null),
-            PacketDetailFailure() => (
-              Center(
-                child: buildRetryButton(context, () async => context.read<PacketDetailCubit>().fetchDetail(widget.tid)),
-              ),
-              null,
+          final body = switch (state) {
+            PacketDetailInitial() || PacketDetailLoading() => const CenteredCircularIndicator(),
+            PacketDetailFailure() => Center(
+              child: buildRetryButton(context, () async => context.read<PacketDetailCubit>().fetchDetail(widget.tid)),
             ),
-            PacketDetailSuccess(:final data) when data.isEmpty => (
-              Center(
-                child: Text(
-                  context.t.general.noData,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-              ),
-              null,
+            PacketDetailSuccess(:final data) when data.isEmpty => AppStateView(
+              icon: Icons.redeem_outlined,
+              message: context.t.general.noData,
             ),
-            PacketDetailSuccess(:final data) => (_buildContent(context, data), _buildInfoRow(context, data)),
+            PacketDetailSuccess(:final data) => _buildContent(context, data),
           };
 
           return Scaffold(
@@ -203,7 +229,6 @@ class _PacketDetailPageState extends State<PacketDetailPage> {
                       : null,
                 ),
               ],
-              bottom: infoRow == null ? null : PreferredSize(preferredSize: const Size.fromHeight(24), child: infoRow),
             ),
             body: SafeArea(bottom: false, child: body),
           );

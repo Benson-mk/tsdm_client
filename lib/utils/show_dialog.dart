@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 
 /// Show a dialog with given [title] and [message], with a ok button to navigate
@@ -19,7 +20,7 @@ Future<void> showMessageSingleButtonDialog({
       return RootPage(
         DialogPaths.messageSingleButton,
         CustomAlertDialog.sync(
-          title: Text(title),
+          title: AppDialogTitle(icon: Icons.info_outline, title: title),
           content: SelectableText(message),
           actions: [
             TextButton(
@@ -57,7 +58,12 @@ Future<bool?> showQuestionDialog({
       return RootPage(
         DialogPaths.question,
         CustomAlertDialog.sync(
-          title: Text(title),
+          // A destructive question gets the error colors in its title; the buttons and their order are unchanged.
+          title: AppDialogTitle(
+            icon: dangerous ? Icons.warning_amber_outlined : Icons.help_outline,
+            title: title,
+            error: dangerous,
+          ),
           content: message != null ? SelectableText(message) : Text.rich(richMessage!),
           actions: [
             TextButton(

@@ -46,12 +46,61 @@ class _JumpPageDialogState extends State<JumpPageDialog> {
     textController.dispose();
   }
 
+  /// Select [page], kept within the pages of the thread.
+  void _select(int page) => setState(() {
+    currentPage = page.clamp(widget.min, widget.max);
+    textController.text = '$currentPage';
+  });
+
   @override
   Widget build(BuildContext context) {
+    final localizations = MaterialLocalizations.of(context);
+    final atStart = currentPage <= math.max(widget.min, 1);
+    final atEnd = currentPage >= widget.max;
     return CustomAlertDialog.sync(
       title: Text(context.t.jumpDialog.title),
       content: Column(
         children: [
+          // Quick steps: first, previous, next and last page, with the platform's own tooltips.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.first_page),
+                tooltip: localizations.firstPageTooltip,
+                onPressed: atStart ? null : () => _select(math.max(widget.min, 1)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                tooltip: localizations.previousPageTooltip,
+                onPressed: atStart ? null : () => _select(currentPage - 1),
+              ),
+              Flexible(
+                child: Padding(
+                  padding: edgeInsetsL8R8,
+                  child: Text(
+                    '$currentPage / ${widget.max}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                tooltip: localizations.nextPageTooltip,
+                onPressed: atEnd ? null : () => _select(currentPage + 1),
+              ),
+              IconButton(
+                icon: const Icon(Icons.last_page),
+                tooltip: localizations.lastPageTooltip,
+                onPressed: atEnd ? null : () => _select(widget.max),
+              ),
+            ],
+          ),
           Slider(
             autofocus: true,
             // Since flutter 3.29

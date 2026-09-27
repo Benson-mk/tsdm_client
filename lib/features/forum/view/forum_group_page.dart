@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_group_bloc.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -27,11 +27,23 @@ class ForumGroupPage extends StatefulWidget {
 
 class _ForumGroupPageState extends State<ForumGroupPage> {
   Widget _buildContent(BuildContext context, ForumGroup forumGroup) {
-    return ListView.separated(
-      padding: edgeInsetsL12T4R12.add(context.safePadding()),
-      itemCount: forumGroup.forumList.length,
-      itemBuilder: (_, index) => ForumCard(forumGroup.forumList[index]),
-      separatorBuilder: (_, _) => sizedBoxW4H4,
+    final forums = forumGroup.forumList;
+    // One column on phones, two on wide windows.
+    return AppCenteredList(
+      builder: (context, side, width) {
+        final columns = appColumnsFor(width);
+        return ListView.separated(
+          padding: side.copyWith(top: 8).add(context.safePadding()),
+          itemCount: appRowCount(forums.length, columns),
+          itemBuilder: (context, row) => AppColumnsRow(
+            row: row,
+            columns: columns,
+            count: forums.length,
+            itemBuilder: (_, index) => ForumCard(forums[index]),
+          ),
+          separatorBuilder: (_, _) => appListSeparator,
+        );
+      },
     );
   }
 

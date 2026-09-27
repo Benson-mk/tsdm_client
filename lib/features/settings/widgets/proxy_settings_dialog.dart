@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 
 /// Dialog for proxy settings.
@@ -67,10 +68,13 @@ class _ProxySettingsDialogState extends State<ProxySettingsDialog> {
         ),
         options: Options(sendTimeout: const Duration(seconds: 3)),
       );
+      // The dialog may have been closed while waiting.
+      if (!mounted) return;
       setState(() {
         connStatus = _TestConnStatus.connected;
       });
     } on DioException catch (e, _) {
+      if (!mounted) return;
       setState(() {
         connStatus = _TestConnStatus.connected;
       });
@@ -105,17 +109,25 @@ class _ProxySettingsDialogState extends State<ProxySettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.settingsPage.advancedSection.proxySettings;
+    final colorScheme = Theme.of(context).colorScheme;
+    final (IconData statusIcon, Color statusColor) = switch (connStatus) {
+      _TestConnStatus.waiting => (Icons.help_outline, colorScheme.outline),
+      _TestConnStatus.testing => (Icons.hourglass_top_outlined, colorScheme.outline),
+      _TestConnStatus.connected => (Icons.check_circle_outline, colorScheme.primary),
+      _TestConnStatus.disconnected => (Icons.error_outline, colorScheme.error),
+    };
     return CustomAlertDialog.sync(
-      title: Text(tr.title),
+      title: AppDialogTitle(icon: Icons.network_locked_outlined, title: tr.title),
       content: Form(
         key: formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            sizedBoxW4H4,
             TextFormField(
               controller: hostController,
               autofocus: true,
-              decoration: InputDecoration(prefixIcon: Icon(MdiIcons.ipNetworkOutline), labelText: tr.host),
+              decoration: appFieldDecoration(label: tr.host).copyWith(prefixIcon: Icon(MdiIcons.ipNetworkOutline)),
               validator: (v) {
                 if (v == null || v.trim().isEmpty || v.contains(':')) {
                   return tr.invalidHostOrIp;
@@ -123,10 +135,11 @@ class _ProxySettingsDialogState extends State<ProxySettingsDialog> {
                 return null;
               },
             ),
-            sizedBoxW16H16,
+            sizedBoxW12H12,
             TextFormField(
               controller: portController,
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.network_ping_outlined), labelText: tr.port),
+              keyboardType: TextInputType.number,
+              decoration: appFieldDecoration(label: tr.port, icon: Icons.network_ping_outlined),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) {
                   return tr.invalidPort;
@@ -138,33 +151,48 @@ class _ProxySettingsDialogState extends State<ProxySettingsDialog> {
                 return null;
               },
             ),
-            sizedBoxW16H16,
-            TextButton.icon(
-              label: Text(switch (connStatus) {
-                _TestConnStatus.waiting => tr.testConnection.waiting,
-                _TestConnStatus.testing => tr.testConnection.testing,
-                _TestConnStatus.connected => tr.testConnection.connected,
-                _TestConnStatus.disconnected => tr.testConnection.disconnected,
-              }),
-              icon: const Icon(Icons.refresh_outlined),
-              onPressed: connStatus == _TestConnStatus.testing ? null : () async => testConnection(),
+            sizedBoxW12H12,
+            // Connection test: the status and its button in one block.
+            AppInsetBlock(
+              outlined: true,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (connStatus == _TestConnStatus.testing)
+                    const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    Icon(statusIcon, size: 20, color: statusColor),
+                  OutlinedButton.icon(
+                    label: Text(switch (connStatus) {
+                      _TestConnStatus.waiting => tr.testConnection.waiting,
+                      _TestConnStatus.testing => tr.testConnection.testing,
+                      _TestConnStatus.connected => tr.testConnection.connected,
+                      _TestConnStatus.disconnected => tr.testConnection.disconnected,
+                    }),
+                    icon: const Icon(Icons.refresh_outlined),
+                    onPressed: connStatus == _TestConnStatus.testing ? null : () async => testConnection(),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(
+        TextButton.icon(
+          icon: const Icon(Icons.restart_alt_outlined),
           onPressed: () {
             // Clear proxy settings.
             context.read<SettingsBloc>().add(const SettingsValueChanged(SettingsKeys.netClientProxy, ''));
             showSnackBar(context: context, message: context.t.general.affectAfterRestart);
             context.pop();
           },
-          child: Text(context.t.general.reset),
+          label: Text(context.t.general.reset),
         ),
-        sizedBoxW24H24,
         TextButton(onPressed: () => context.pop(), child: Text(context.t.general.cancel)),
-        TextButton(
+        FilledButton(
           onPressed: () {
             if (!formKey.currentState!.validate()) {
               return;

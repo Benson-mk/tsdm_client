@@ -22,6 +22,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/utils/html/munch_options.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/munched_html.dart';
 
@@ -82,144 +83,127 @@ class _NoticeCardV2State extends State<NoticeCardV2> {
       return const SizedBox.shrink();
     }
     final showBadge = getIt.get<SettingsRepository>().currentSettings.showUnreadNoticeBadge;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: Badge(
-              isLabelVisible: showBadge && !widget.data.alreadyRead,
-              child: const CircleAvatar(child: Icon(Icons.notifications_outlined)),
-            ),
-            title: Text(context.t.noticePage.noticeTab.title),
-            subtitle: Text(
-              // Timestamp in second.
-              DateTime.fromMillisecondsSinceEpoch(widget.data.timestamp * 1000).yyyyMMDDHHMMSS(),
-            ),
-            trailing: PopupMenuButton(
-              itemBuilder: (_) => [
-                if (!widget.data.alreadyRead)
-                  PopupMenuItem(
-                    value: _Actions.markAsRead,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.mark_chat_read_outlined),
-                        sizedBoxPopupMenuItemIconSpacing,
-                        Text(tr.markAsRead),
-                      ],
-                    ),
-                  ),
-                if (widget.data.alreadyRead)
-                  PopupMenuItem(
-                    value: _Actions.markAsUnread,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.mark_chat_unread_outlined),
-                        sizedBoxPopupMenuItemIconSpacing,
-                        Text(tr.markAsUnread),
-                      ],
-                    ),
-                  ),
-                PopupMenuItem(
-                  value: _Actions.deleteItem,
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
-                      sizedBoxPopupMenuItemIconSpacing,
-                      Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                    ],
-                  ),
-                ),
-                // Only offered when the notice's own ignore link names its author and type. System notices (author 0)
-                // can only be ignored for everybody on the forum, there is no user to block.
-                if (widget.data.authorId != null && widget.data.ignoreType != null) ...<PopupMenuEntry<_Actions>>[
-                  const PopupMenuDivider(),
-                  // Not listening: the menu is built on tap, outside of the build phase.
-                  if (widget.data.authorId! > 0 &&
-                      widget.data.authorId != currentBlockList(context, listen: false).ownerUid)
-                    PopupMenuItem(
-                      value: _Actions.blockAuthor,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.block_outlined),
-                          sizedBoxPopupMenuItemIconSpacing,
-                          Expanded(child: Text(context.t.userBlock.block)),
-                        ],
-                      ),
-                    ),
-                  PopupMenuItem(
-                    value: _Actions.ignoreOnForum,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.notifications_off_outlined),
-                        sizedBoxPopupMenuItemIconSpacing,
-                        Expanded(child: Text(context.t.userBlock.serverRules.entry)),
-                      ],
-                    ),
-                  ),
-                ] else ...<PopupMenuEntry<_Actions>>[
-                  // Without the ignore link there is nothing to act on; say so instead of silently dropping the entries
-                  // above.
-                  const PopupMenuDivider(),
-                  PopupMenuItem<_Actions>(enabled: false, child: Text(context.t.userBlock.serverRules.notAvailable)),
+    final unread = showBadge && !widget.data.alreadyRead;
+    return _NotificationCardShell(
+      highlight: unread,
+      leading: Badge(isLabelVisible: unread, child: const AppIconTile(Icons.notifications_outlined)),
+      title: Text(context.t.noticePage.noticeTab.title),
+      timestamp: widget.data.timestamp,
+      menu: PopupMenuButton(
+        itemBuilder: (_) => [
+          if (!widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsRead,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_read_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsRead),
                 ],
-                if (context.read<SettingsBloc>().state.settingsMap.enableDebugOperations) ...<PopupMenuEntry<_Actions>>[
-                  const PopupMenuDivider(),
-                  PopupMenuItem(value: _Actions.copyRawContent, child: Text(tr.copyRawContent)),
+              ),
+            ),
+          if (widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsUnread,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_unread_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsUnread),
                 ],
+              ),
+            ),
+          PopupMenuItem(
+            value: _Actions.deleteItem,
+            child: Row(
+              children: [
+                Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+                sizedBoxPopupMenuItemIconSpacing,
+                Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
-              onSelected: (value) async {
-                switch (value) {
-                  case _Actions.blockAuthor:
-                    // The notice names no reliable username, the management page shows the uid.
-                    final authorId = widget.data.authorId!;
-                    await confirmAndBlockUser(context, uid: authorId, username: 'UID $authorId');
-                  case _Actions.ignoreOnForum:
-                    await showNoticeIgnoreDialog(
-                      context,
-                      NoticeIgnoreTarget(type: widget.data.ignoreType!, authorId: widget.data.authorId!),
-                    );
-                  case _Actions.markAsRead:
-                    _onUrlLaunched(markAsRead: true);
-                  case _Actions.markAsUnread:
-                    _onUrlLaunched(markAsRead: false);
-                  case _Actions.deleteItem:
-                    final tr = context.t.noticePage.cardMenu.delete;
-                    final result = await showQuestionDialog(
-                      context: context,
-                      title: tr.title,
-                      message: tr.detail,
-                      dangerous: true,
-                    );
-                    if (!context.mounted || result == null || !result) {
-                      return;
-                    }
-
-                    if (!widget.data.alreadyRead) {
-                      context.read<NotificationStateCubit>().decreaseNotice();
-                    }
-                    context.read<NotificationBloc>().add(
-                      NotificationDeleteNoticeRequested(
-                        uid: context.read<AuthenticationRepository>().currentUser!.uid!,
-                        nid: widget.data.id,
-                      ),
-                    );
-                  case _Actions.copyRawContent:
-                    await copyToClipboard(context, widget.data.data);
-                }
-              },
             ),
           ),
-          Padding(
-            padding: edgeInsetsL16R16B12,
-            child: MunchedHtml(
-              widget.data.data,
-              options: MunchOptions(onUrlLaunched: () => _onUrlLaunched(markAsRead: true)),
+          // Only offered when the notice's own ignore link names its author and type. System notices (author 0)
+          // can only be ignored for everybody on the forum, there is no user to block.
+          if (widget.data.authorId != null && widget.data.ignoreType != null) ...<PopupMenuEntry<_Actions>>[
+            const PopupMenuDivider(),
+            // Not listening: the menu is built on tap, outside of the build phase.
+            if (widget.data.authorId! > 0 && widget.data.authorId != currentBlockList(context, listen: false).ownerUid)
+              PopupMenuItem(
+                value: _Actions.blockAuthor,
+                child: Row(
+                  children: [
+                    const Icon(Icons.block_outlined),
+                    sizedBoxPopupMenuItemIconSpacing,
+                    Expanded(child: Text(context.t.userBlock.block)),
+                  ],
+                ),
+              ),
+            PopupMenuItem(
+              value: _Actions.ignoreOnForum,
+              child: Row(
+                children: [
+                  const Icon(Icons.notifications_off_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Expanded(child: Text(context.t.userBlock.serverRules.entry)),
+                ],
+              ),
             ),
-          ),
+          ] else ...<PopupMenuEntry<_Actions>>[
+            // Without the ignore link there is nothing to act on; say so instead of silently dropping the entries
+            // above.
+            const PopupMenuDivider(),
+            PopupMenuItem<_Actions>(enabled: false, child: Text(context.t.userBlock.serverRules.notAvailable)),
+          ],
+          if (context.read<SettingsBloc>().state.settingsMap.enableDebugOperations) ...<PopupMenuEntry<_Actions>>[
+            const PopupMenuDivider(),
+            PopupMenuItem(value: _Actions.copyRawContent, child: Text(tr.copyRawContent)),
+          ],
         ],
+        onSelected: (value) async {
+          switch (value) {
+            case _Actions.blockAuthor:
+              // The notice names no reliable username, the management page shows the uid.
+              final authorId = widget.data.authorId!;
+              await confirmAndBlockUser(context, uid: authorId, username: 'UID $authorId');
+            case _Actions.ignoreOnForum:
+              await showNoticeIgnoreDialog(
+                context,
+                NoticeIgnoreTarget(type: widget.data.ignoreType!, authorId: widget.data.authorId!),
+              );
+            case _Actions.markAsRead:
+              _onUrlLaunched(markAsRead: true);
+            case _Actions.markAsUnread:
+              _onUrlLaunched(markAsRead: false);
+            case _Actions.deleteItem:
+              final tr = context.t.noticePage.cardMenu.delete;
+              final result = await showQuestionDialog(
+                context: context,
+                title: tr.title,
+                message: tr.detail,
+                dangerous: true,
+              );
+              if (!context.mounted || result == null || !result) {
+                return;
+              }
+
+              if (!widget.data.alreadyRead) {
+                context.read<NotificationStateCubit>().decreaseNotice();
+              }
+              context.read<NotificationBloc>().add(
+                NotificationDeleteNoticeRequested(
+                  uid: context.read<AuthenticationRepository>().currentUser!.uid!,
+                  nid: widget.data.id,
+                ),
+              );
+            case _Actions.copyRawContent:
+              await copyToClipboard(context, widget.data.data);
+          }
+        },
+      ),
+      body: MunchedHtml(
+        widget.data.data,
+        options: MunchOptions(onUrlLaunched: () => _onUrlLaunched(markAsRead: true)),
       ),
     );
   }
@@ -265,121 +249,100 @@ class _PersonalMessageCardV2State extends State<PersonalMessageCardV2> {
   }
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final tr = context.t.noticePage.cardMenu;
     final showBadge = getIt.get<SettingsRepository>().currentSettings.showUnreadPersonalMessageBadge;
     // Muted peers keep their conversation in the list, only the unread badge is dropped.
     final muted = isMutedPersonalMessagePeer(widget.data.peerUid, currentBlockList(context));
+    final unread = showBadge && !muted && !widget.data.alreadyRead;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () async => _onTap(context, markAsRead: true, launch: true),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: GestureDetector(
-                onTap: () async =>
-                    context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': '${widget.data.peerUid}'}),
-                child: Badge(
-                  isLabelVisible: showBadge && !muted && !widget.data.alreadyRead,
-                  child: HeroUserAvatar(username: widget.data.peerUsername, avatarUrl: null, disableHero: true),
-                ),
-              ),
-              title: GestureDetector(
-                onTap: () async =>
-                    context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': '${widget.data.peerUid}'}),
-                child: Align(alignment: Alignment.centerLeft, child: Text(widget.data.peerUsername)),
-              ),
-              subtitle: Text(
-                // Timestamp in second.
-                DateTime.fromMillisecondsSinceEpoch(widget.data.timestamp * 1000).yyyyMMDDHHMMSS(),
-              ),
-              trailing: PopupMenuButton(
-                itemBuilder: (_) => [
-                  if (!widget.data.alreadyRead)
-                    PopupMenuItem(
-                      value: _Actions.markAsRead,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.mark_chat_read_outlined),
-                          sizedBoxPopupMenuItemIconSpacing,
-                          Text(tr.markAsRead),
-                        ],
-                      ),
-                    ),
-                  if (widget.data.alreadyRead)
-                    PopupMenuItem(
-                      value: _Actions.markAsUnread,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.mark_chat_unread_outlined),
-                          sizedBoxPopupMenuItemIconSpacing,
-                          Text(tr.markAsUnread),
-                        ],
-                      ),
-                    ),
-                  PopupMenuItem(
-                    value: _Actions.deleteItem,
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
-                        sizedBoxPopupMenuItemIconSpacing,
-                        Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                      ],
-                    ),
-                  ),
-                ],
-                onSelected: (value) async {
-                  switch (value) {
-                    case _Actions.markAsRead:
-                      await _onTap(context, markAsRead: true, launch: false);
-                    case _Actions.markAsUnread:
-                      await _onTap(context, markAsRead: false, launch: false);
-                    case _Actions.deleteItem:
-                      final tr = context.t.noticePage.cardMenu.delete;
-                      final result = await showQuestionDialog(context: context, title: tr.title, message: tr.detail);
-                      if (!context.mounted || result == null || !result) {
-                        return;
-                      }
+    Future<void> openProfile() async {
+      await context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': '${widget.data.peerUid}'});
+    }
 
-                      if (!widget.data.alreadyRead &&
-                          !isMutedPersonalMessagePeer(widget.data.peerUid, currentBlockList(context, listen: false))) {
-                        context.read<NotificationStateCubit>().decreasePersonalMessage();
-                      }
-                      context.read<NotificationBloc>().add(
-                        NotificationDeletePersonalMessageRequested(
-                          uid: context.read<AuthenticationRepository>().currentUser!.uid!,
-                          peerUid: widget.data.peerUid,
-                        ),
-                      );
-                    case _Actions.copyRawContent:
-                      await copyToClipboard(context, widget.data.data);
-                    case _Actions.blockAuthor || _Actions.ignoreOnForum:
-                      // Only offered on notices.
-                      break;
-                  }
-                },
-              ),
-            ),
-            Padding(
-              padding: edgeInsetsL16R16B12,
-              // The list only carries a summary of the last message and the server drops the `&` of every url in it
-              // (`forum.php?mod=viewthreadtid=1`), so a link made of that text is not the one the sender wrote: it is
-              // unrecognized and would open the browser. Plain text here; the real link is in the conversation the
-              // card opens (GitHub #46).
-              child: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
-            ),
-          ],
+    return _NotificationCardShell(
+      highlight: unread,
+      onTap: () async => _onTap(context, markAsRead: true, launch: true),
+      leading: GestureDetector(
+        onTap: openProfile,
+        child: Badge(
+          isLabelVisible: unread,
+          child: HeroUserAvatar(username: widget.data.peerUsername, avatarUrl: null, disableHero: true),
         ),
       ),
+      title: GestureDetector(onTap: openProfile, child: Text(widget.data.peerUsername)),
+      timestamp: widget.data.timestamp,
+      menu: PopupMenuButton(
+        itemBuilder: (_) => [
+          if (!widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsRead,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_read_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsRead),
+                ],
+              ),
+            ),
+          if (widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsUnread,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_unread_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsUnread),
+                ],
+              ),
+            ),
+          PopupMenuItem(
+            value: _Actions.deleteItem,
+            child: Row(
+              children: [
+                Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+                sizedBoxPopupMenuItemIconSpacing,
+                Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ],
+            ),
+          ),
+        ],
+        onSelected: (value) async {
+          switch (value) {
+            case _Actions.markAsRead:
+              await _onTap(context, markAsRead: true, launch: false);
+            case _Actions.markAsUnread:
+              await _onTap(context, markAsRead: false, launch: false);
+            case _Actions.deleteItem:
+              final tr = context.t.noticePage.cardMenu.delete;
+              final result = await showQuestionDialog(context: context, title: tr.title, message: tr.detail);
+              if (!context.mounted || result == null || !result) {
+                return;
+              }
+
+              if (!widget.data.alreadyRead &&
+                  !isMutedPersonalMessagePeer(widget.data.peerUid, currentBlockList(context, listen: false))) {
+                context.read<NotificationStateCubit>().decreasePersonalMessage();
+              }
+              context.read<NotificationBloc>().add(
+                NotificationDeletePersonalMessageRequested(
+                  uid: context.read<AuthenticationRepository>().currentUser!.uid!,
+                  peerUid: widget.data.peerUid,
+                ),
+              );
+            case _Actions.copyRawContent:
+              await copyToClipboard(context, widget.data.data);
+            case _Actions.blockAuthor || _Actions.ignoreOnForum:
+              // Only offered on notices.
+              break;
+          }
+        },
+      ),
+      // The list only carries a summary of the last message and the server drops the `&` of every url in it
+      // (`forum.php?mod=viewthreadtid=1`), so a link made of that text is not the one the sender wrote: it is
+      // unrecognized and would open the browser. Plain text here; the real link is in the conversation the
+      // card opens (GitHub #46).
+      body: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
     );
   }
 }
@@ -426,97 +389,174 @@ class _BroadcastMessageCardV2State extends State<BroadcastMessageCardV2> {
   Widget build(BuildContext context) {
     final tr = context.t.noticePage.cardMenu;
     final showBadge = getIt.get<SettingsRepository>().currentSettings.showUnreadBroadcastMessageBadge;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () async => _onTap(context, markAsRead: true, launch: true),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: Badge(
-                isLabelVisible: showBadge && !widget.data.alreadyRead,
-                child: const CircleAvatar(child: Icon(Icons.campaign_outlined)),
-              ),
-              title: Text(context.t.noticePage.broadcastMessageTab.system),
-              subtitle: Text(
-                // Timestamp in second.
-                DateTime.fromMillisecondsSinceEpoch(widget.data.timestamp * 1000).yyyyMMDDHHMMSS(),
-              ),
-              trailing: PopupMenuButton(
-                itemBuilder: (_) => [
-                  if (!widget.data.alreadyRead)
-                    PopupMenuItem(
-                      value: _Actions.markAsRead,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.mark_chat_read_outlined),
-                          sizedBoxPopupMenuItemIconSpacing,
-                          Text(tr.markAsRead),
-                        ],
-                      ),
-                    ),
-                  if (widget.data.alreadyRead)
-                    PopupMenuItem(
-                      value: _Actions.markAsUnread,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.mark_chat_unread_outlined),
-                          sizedBoxPopupMenuItemIconSpacing,
-                          Text(tr.markAsUnread),
-                        ],
-                      ),
-                    ),
-                  PopupMenuItem(
-                    value: _Actions.deleteItem,
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
-                        sizedBoxPopupMenuItemIconSpacing,
-                        Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                      ],
-                    ),
-                  ),
-                ],
-                onSelected: (value) async {
-                  switch (value) {
-                    case _Actions.markAsRead:
-                      await _onTap(context, markAsRead: true, launch: false);
-                    case _Actions.markAsUnread:
-                      await _onTap(context, markAsRead: false, launch: false);
-                    case _Actions.deleteItem:
-                      final tr = context.t.noticePage.cardMenu.delete;
-                      final result = await showQuestionDialog(context: context, title: tr.title, message: tr.detail);
-                      if (!context.mounted || result == null || !result) {
-                        return;
-                      }
-
-                      if (!widget.data.alreadyRead) {
-                        context.read<NotificationStateCubit>().decreaseBroadcastMessage();
-                      }
-                      context.read<NotificationBloc>().add(
-                        NotificationDeleteBroadcastMessageRequested(
-                          uid: context.read<AuthenticationRepository>().currentUser!.uid!,
-                          pmid: widget.data.pmid,
-                        ),
-                      );
-                    case _Actions.copyRawContent:
-                      await copyToClipboard(context, widget.data.data);
-                    case _Actions.blockAuthor || _Actions.ignoreOnForum:
-                      // Only offered on notices.
-                      break;
-                  }
-                },
-              ),
-            ),
-            Padding(
-              padding: edgeInsetsL16R16B12,
-              // Same summary as the personal message list, see above; the detail page has the full message.
-              child: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
-            ),
-          ],
+    final unread = showBadge && !widget.data.alreadyRead;
+    final colorScheme = Theme.of(context).colorScheme;
+    return _NotificationCardShell(
+      highlight: unread,
+      onTap: () async => _onTap(context, markAsRead: true, launch: true),
+      leading: Badge(
+        isLabelVisible: unread,
+        child: AppIconTile(
+          Icons.campaign_outlined,
+          color: colorScheme.tertiaryContainer,
+          foregroundColor: colorScheme.onTertiaryContainer,
         ),
+      ),
+      title: Text(context.t.noticePage.broadcastMessageTab.system),
+      timestamp: widget.data.timestamp,
+      menu: PopupMenuButton(
+        itemBuilder: (_) => [
+          if (!widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsRead,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_read_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsRead),
+                ],
+              ),
+            ),
+          if (widget.data.alreadyRead)
+            PopupMenuItem(
+              value: _Actions.markAsUnread,
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_unread_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.markAsUnread),
+                ],
+              ),
+            ),
+          PopupMenuItem(
+            value: _Actions.deleteItem,
+            child: Row(
+              children: [
+                Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+                sizedBoxPopupMenuItemIconSpacing,
+                Text(tr.delete.title, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ],
+            ),
+          ),
+        ],
+        onSelected: (value) async {
+          switch (value) {
+            case _Actions.markAsRead:
+              await _onTap(context, markAsRead: true, launch: false);
+            case _Actions.markAsUnread:
+              await _onTap(context, markAsRead: false, launch: false);
+            case _Actions.deleteItem:
+              final tr = context.t.noticePage.cardMenu.delete;
+              final result = await showQuestionDialog(context: context, title: tr.title, message: tr.detail);
+              if (!context.mounted || result == null || !result) {
+                return;
+              }
+
+              if (!widget.data.alreadyRead) {
+                context.read<NotificationStateCubit>().decreaseBroadcastMessage();
+              }
+              context.read<NotificationBloc>().add(
+                NotificationDeleteBroadcastMessageRequested(
+                  uid: context.read<AuthenticationRepository>().currentUser!.uid!,
+                  pmid: widget.data.pmid,
+                ),
+              );
+            case _Actions.copyRawContent:
+              await copyToClipboard(context, widget.data.data);
+            case _Actions.blockAuthor || _Actions.ignoreOnForum:
+              // Only offered on notices.
+              break;
+          }
+        },
+      ),
+      // Same summary as the personal message list, see above; the detail page has the full message.
+      body: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
+    );
+  }
+}
+
+/// Layout shared by the notification cards: leading block with the unread badge, title and time, menu, then the
+/// content.
+///
+/// Unread cards (only when their unread badge is enabled in settings) get a tinted surface and a bolder title, so the
+/// state is visible without relying on the small badge alone.
+class _NotificationCardShell extends StatelessWidget {
+  const _NotificationCardShell({
+    required this.leading,
+    required this.title,
+    required this.timestamp,
+    required this.menu,
+    required this.body,
+    required this.highlight,
+    this.onTap,
+  });
+
+  /// Avatar or icon block.
+  final Widget leading;
+
+  /// Title, a text; styled here.
+  final Widget title;
+
+  /// Time of the notification, in seconds.
+  final int timestamp;
+
+  /// Popup menu of the card.
+  final Widget menu;
+
+  /// Content.
+  final Widget body;
+
+  /// Show as unread.
+  final bool highlight;
+
+  /// Tap on the card.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return AppSurface(
+      onTap: onTap,
+      color: highlight
+          ? Color.alphaBlend(colorScheme.primaryContainer.withValues(alpha: 0.3), colorScheme.surfaceContainerLow)
+          : null,
+      padding: const EdgeInsets.fromLTRB(14, 10, 4, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              leading,
+              sizedBoxW12H12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DefaultTextStyle.merge(
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: highlight ? FontWeight.bold : FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      child: title,
+                    ),
+                    Text(
+                      // Timestamp in second.
+                      DateTime.fromMillisecondsSinceEpoch(timestamp * 1000).yyyyMMDDHHMMSS(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                    ),
+                  ],
+                ),
+              ),
+              menu,
+            ],
+          ),
+          sizedBoxW8H8,
+          Padding(padding: edgeInsetsR12, child: body),
+        ],
       ),
     );
   }

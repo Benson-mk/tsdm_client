@@ -17,6 +17,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Manage the local block list and the forum's notice ignore rules of the current account.
 ///
@@ -168,41 +169,45 @@ class _UserBlockPageState extends State<UserBlockPage> {
     final tr = context.t.userBlock;
     switch (list.status) {
       case UserBlockListStatus.loading when list.ownerUid != null:
-        return const ListTile(title: LinearProgressIndicator());
+        return const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: LinearProgressIndicator());
       case UserBlockListStatus.failed:
-        return ListTile(
-          leading: Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
-          title: Text(tr.loadFailed),
-          trailing: TextButton(
-            onPressed: () async => context.read<UserBlockCubit>().reload(),
-            child: Text(context.t.general.retry),
-          ),
+        return AppNoticeBanner(
+          message: tr.loadFailed,
+          tone: AppNoticeTone.error,
+          actions: [
+            TextButton.icon(
+              onPressed: () async => context.read<UserBlockCubit>().reload(),
+              icon: const Icon(Icons.refresh),
+              label: Text(context.t.general.retry),
+            ),
+          ],
         );
       case UserBlockListStatus.loading || UserBlockListStatus.ready:
         break;
     }
     if (list.ownerUid == null) {
-      return ListTile(title: Text(tr.invalid));
+      return AppNoticeBanner(message: tr.invalid, icon: Icons.login);
     }
     if (list.users.isEmpty) {
-      return ListTile(title: Text(tr.empty));
+      return _EmptyLine(icon: Icons.person_off_outlined, text: tr.empty);
     }
     return Column(
-      children: list.users
-          .map(
-            (u) => ListTile(
-              key: ValueKey('blocked-${u.uid}'),
-              leading: const Icon(Icons.block_outlined),
-              title: Text(u.username),
-              subtitle: Text('UID ${u.uid} · ${tr.blockedAt(time: u.blockedAt.yyyyMMDDHHMMSS())}'),
-              onTap: () async => context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': '${u.uid}'}),
-              trailing: TextButton(
-                onPressed: () async => unblockUser(context, uid: u.uid, username: u.username),
-                child: Text(tr.unblock),
-              ),
+      children: [
+        for (final (index, u) in list.users.indexed) ...[
+          if (index > 0) sizedBoxW8H8,
+          _BlockRow(
+            key: ValueKey('blocked-${u.uid}'),
+            icon: Icons.block_outlined,
+            title: u.username,
+            subtitle: 'UID ${u.uid} · ${tr.blockedAt(time: u.blockedAt.yyyyMMDDHHMMSS())}',
+            onTap: () async => context.pushNamed(ScreenPaths.profile, queryParameters: {'uid': '${u.uid}'}),
+            action: TextButton(
+              onPressed: () async => unblockUser(context, uid: u.uid, username: u.username),
+              child: Text(tr.unblock),
             ),
-          )
-          .toList(),
+          ),
+        ],
+      ],
     );
   }
 
@@ -233,47 +238,56 @@ class _UserBlockPageState extends State<UserBlockPage> {
       loadLabel = tr.reload;
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ListTile(leading: const Icon(Icons.info_outline), title: Text(tr.entryHelp)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, size: 18, color: Theme.of(context).colorScheme.primary),
+            sizedBoxW8H8,
+            Expanded(child: Text(tr.entryHelp, style: Theme.of(context).textTheme.bodySmall)),
+          ],
+        ),
+        sizedBoxW8H8,
         // Always visible and apart from the header, disabled while a request is running.
-        Padding(
-          padding: edgeInsetsL4R4,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _busy ? null : _loadRules,
-              icon: const Icon(Icons.refresh),
-              label: Text(loadLabel),
-            ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: _busy ? null : _loadRules,
+            icon: const Icon(Icons.refresh),
+            label: Text(loadLabel),
           ),
         ),
         // Rules are never reported as empty before the forum answered.
-        if (rules == null && _rulesFailure == null && !_busy) ListTile(title: Text(tr.notLoaded)),
+        if (rules == null && _rulesFailure == null && !_busy)
+          _EmptyLine(icon: Icons.cloud_download_outlined, text: tr.notLoaded),
         if (_rulesFailure != null)
-          ListTile(
-            leading: Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
-            title: Text(noticeIgnoreFailureText(context, _rulesFailure!)),
-          ),
-        if (rules != null && rules.isEmpty) ListTile(title: Text(tr.empty)),
+          AppNoticeBanner(message: noticeIgnoreFailureText(context, _rulesFailure!), tone: AppNoticeTone.error),
+        if (rules != null && rules.isEmpty) _EmptyLine(icon: Icons.notifications_none_outlined, text: tr.empty),
         if (rules != null)
-          ...rules.map((r) {
-            final who = r.everybody ? tr.everybody : tr.userUid(uid: '${r.authorId}');
-            final label = '${noticeTypeName(context, r.type)} · $who';
-            // The forum's own text when it gives one; the confirmation names the rule the way the list does.
-            final title = _forumLabelOf(context, r) ?? label;
-            return ListTile(
-              key: ValueKey('rule-${r.key}'),
-              leading: const Icon(Icons.notifications_off_outlined),
-              title: Text(title),
-              subtitle: Text(label),
-              trailing: TextButton(
-                onPressed: _busy ? null : () async => _removeRule(r, title),
-                child: Text(tr.remove),
-              ),
-            );
-          }),
+          for (final (index, r) in rules.indexed) ...[
+            if (index > 0) sizedBoxW8H8,
+            _buildRule(context, r),
+          ],
       ],
+    );
+  }
+
+  Widget _buildRule(BuildContext context, NoticeIgnoreRule r) {
+    final tr = context.t.userBlock.serverRules;
+    final who = r.everybody ? tr.everybody : tr.userUid(uid: '${r.authorId}');
+    final label = '${noticeTypeName(context, r.type)} · $who';
+    // The forum's own text when it gives one; the confirmation names the rule the way the list does.
+    final title = _forumLabelOf(context, r) ?? label;
+    return _BlockRow(
+      key: ValueKey('rule-${r.key}'),
+      icon: Icons.notifications_off_outlined,
+      title: title,
+      subtitle: label,
+      action: TextButton(
+        onPressed: _busy ? null : () async => _removeRule(r, title),
+        child: Text(tr.remove),
+      ),
     );
   }
 
@@ -294,33 +308,186 @@ class _UserBlockPageState extends State<UserBlockPage> {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: ListView(
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          children: [
-            Card(
-              child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.localHint)),
-            ),
-            BlocBuilder<UserBlockCubit, UserBlockList>(builder: _buildLocalList),
-            const Divider(),
-            // The forum's blacklist has its own page: it lives in the forum account, unlike the list above.
-            ListTile(
-              key: const ValueKey('website-blocklist-entry'),
-              leading: const Icon(Icons.public_outlined),
-              title: Text(tr.website.entry, style: Theme.of(context).textTheme.titleMedium),
-              subtitle: Text(tr.website.entryHint),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async => context.pushNamed(ScreenPaths.websiteBlocklist),
-            ),
-            const Divider(),
-            ListTile(
-              title: Text(tr.serverRules.title, style: Theme.of(context).textTheme.titleMedium),
-              subtitle: Text(tr.serverRules.hint),
-              trailing: _busy ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator()) : null,
-              onTap: _busy ? null : _loadRules,
-            ),
-            _buildRules(context),
-          ],
+        child: AppCenteredList(
+          maxWidth: appFormMaxWidth,
+          builder: (context, side, _) => ListView(
+            padding: side.copyWith(top: 12, bottom: 12).add(context.safePadding()),
+            children: [
+              // 1. The list on this device.
+              AppSurface(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppSectionHeader(
+                      tr.localTitle,
+                      icon: Icons.phone_android_outlined,
+                      padding: const EdgeInsets.only(bottom: 8),
+                    ),
+                    AppInsetBlock(
+                      child: Text(
+                        tr.localHint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    sizedBoxW12H12,
+                    BlocBuilder<UserBlockCubit, UserBlockList>(builder: _buildLocalList),
+                  ],
+                ),
+              ),
+              const SizedBox(height: appSurfaceGap),
+              // 2. The forum's blacklist has its own page: it lives in the forum account, unlike the list above.
+              AppSurface(
+                key: const ValueKey('website-blocklist-entry'),
+                onTap: () async => context.pushNamed(ScreenPaths.websiteBlocklist),
+                child: Row(
+                  children: [
+                    const AppIconTile(Icons.public_outlined),
+                    sizedBoxW12H12,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tr.website.entry,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            tr.website.entryHint,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
+                  ],
+                ),
+              ),
+              const SizedBox(height: appSurfaceGap),
+              // 3. Notice rules saved in the forum account.
+              AppSurface(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppSectionHeader(
+                      tr.serverRules.title,
+                      icon: Icons.notifications_paused_outlined,
+                      padding: const EdgeInsets.only(bottom: 4),
+                      trailing: _busy ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator()) : null,
+                    ),
+                    Text(
+                      tr.serverRules.hint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    sizedBoxW12H12,
+                    _buildRules(context),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// One blocked user or rule: icon tile, name, details and the action that undoes it.
+///
+/// The action moves under the text when the row is too narrow for both (small phones, large fonts).
+class _BlockRow extends StatelessWidget {
+  const _BlockRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.action,
+    this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget action;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+        Text(subtitle, style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+      ],
+    );
+    return Material(
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(appInnerRadius),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: edgeInsetsL12T8R12B8,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 360 * MediaQuery.textScalerOf(context).scale(1);
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppIconTile(icon, size: 32),
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: wide
+                        ? text
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              text,
+                              Align(alignment: AlignmentDirectional.centerEnd, child: action),
+                            ],
+                          ),
+                  ),
+                  if (wide) ...[sizedBoxW8H8, action],
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A list without entries yet: icon and message in the muted colors.
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppInsetBlock(
+      padding: edgeInsetsL12T12R12B12,
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: colorScheme.outline),
+          sizedBoxW12H12,
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ],
       ),
     );
   }

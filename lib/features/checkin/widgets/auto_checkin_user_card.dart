@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Card to show auto checkin info.
 class AutoCheckinUserCard extends StatelessWidget {
@@ -18,42 +19,53 @@ class AutoCheckinUserCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color? backgroundColor;
-    Color? foregroundColor;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // null: waiting or running, false: done (checked in or already checked), true: failed.
+    final (IconData icon, Color tile, Color onTile) = switch (failure) {
+      true => (Icons.error_outline, colorScheme.errorContainer, colorScheme.onErrorContainer),
+      false => (Icons.check_circle_outline, colorScheme.primaryContainer, colorScheme.onPrimaryContainer),
+      null => (Icons.schedule_outlined, colorScheme.surfaceContainerHighest, colorScheme.onSurfaceVariant),
+    };
+    final username = userInfo.username ?? '';
 
-    switch (failure) {
-      case true:
-        backgroundColor = Theme.of(context).colorScheme.errorContainer;
-        foregroundColor = Theme.of(context).colorScheme.onErrorContainer;
-      default:
-        break;
-    }
-
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.hardEdge,
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: backgroundColor),
-        child: Padding(
-          padding: edgeInsetsL12T12R12B12,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              ListTile(
-                leading: CircleAvatar(child: Text(userInfo.username![0])),
-                title: Text(userInfo.username!),
-                subtitle: Text('${userInfo.uid!}'),
-                contentPadding: EdgeInsets.zero,
-                minVerticalPadding: 0,
-                minTileHeight: 0,
+              CircleAvatar(child: Text(username.isEmpty ? '?' : username.characters.first)),
+              sizedBoxW12H12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(username, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(
+                      'UID ${userInfo.uid ?? '-'}',
+                      style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
               ),
-              if (message != null) ...[
-                sizedBoxW8H8,
-                Text(message!, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foregroundColor)),
-              ],
+              sizedBoxW8H8,
+              AppIconTile(icon, size: 32, color: tile, foregroundColor: onTile),
             ],
           ),
-        ),
+          if (message != null) ...[
+            sizedBoxW8H8,
+            AppInsetBlock(
+              color: failure ?? false ? colorScheme.errorContainer : null,
+              child: Text(
+                message!,
+                style: textTheme.bodySmall?.copyWith(
+                  color: failure ?? false ? colorScheme.onErrorContainer : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

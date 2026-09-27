@@ -19,6 +19,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Upstream JS starts the website form with three choice rows.
@@ -32,9 +33,7 @@ class PollCreateInvalidPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(context.t.pollCreate.title)),
-    body: Center(
-      child: Padding(padding: const EdgeInsets.all(24), child: Text(context.t.pollCreate.state.unsupported)),
-    ),
+    body: AppStateView(icon: Icons.web_outlined, message: context.t.pollCreate.state.unsupported),
   );
 }
 
@@ -269,27 +268,48 @@ class _PollCreatePageState extends State<PollCreatePage> {
     return issue == null ? null : _issueText(context, issue, form);
   }
 
-  Widget _constrained(Widget child) => Align(
-    alignment: Alignment.topCenter,
-    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: child),
-  );
-
-  Widget _buildMessage(BuildContext context, String message, List<Widget> actions) => Center(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SelectableText(message, textAlign: TextAlign.center),
-            sizedBoxW16H16,
-            Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: actions),
-          ],
-        ),
-      ),
+  /// Centered form list: full width scroll view (scrollbar, drag anywhere), rows at most the form width.
+  Widget _formList({required Key key, required List<Widget> children}) => AppCenteredList(
+    maxWidth: appFormMaxWidth,
+    builder: (context, horizontal, width) => ListView(
+      key: key,
+      padding: horizontal.add(const EdgeInsets.symmetric(vertical: 12)).add(context.safePadding()),
+      children: children,
     ),
   );
+
+  Widget _buildMessage(
+    BuildContext context,
+    String message,
+    List<Widget> actions, {
+    IconData icon = Icons.info_outline,
+    bool error = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIconTile(
+                icon,
+                size: 64,
+                color: error ? colorScheme.errorContainer : colorScheme.secondaryContainer,
+                foregroundColor: error ? colorScheme.onErrorContainer : colorScheme.onSecondaryContainer,
+              ),
+              sizedBoxW16H16,
+              SelectableText(message, textAlign: TextAlign.center),
+              sizedBoxW16H16,
+              Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: actions),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _browserButton(BuildContext context) => TextButton.icon(
     icon: const Icon(Icons.open_in_browser_outlined),
@@ -303,25 +323,16 @@ class _PollCreatePageState extends State<PollCreatePage> {
     onPressed: () async => _cubit.load(),
   );
 
-  Widget _banner(BuildContext context, String title, String message, List<Widget> actions) {
-    final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.errorContainer,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onErrorContainer)),
-            sizedBoxW4H4,
-            SelectableText(message, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
-            Wrap(spacing: 8, children: actions),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _banner(BuildContext context, String title, String message, List<Widget> actions) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: AppNoticeBanner(
+      tone: AppNoticeTone.error,
+      title: title,
+      message: message,
+      selectable: true,
+      actions: actions,
+    ),
+  );
 
   /// Nothing was posted: the fresh form check stopped before sending.
   Widget _preflightBanner(BuildContext context, PollCreateState state) {
@@ -354,207 +365,270 @@ class _PollCreatePageState extends State<PollCreatePage> {
     final offeredExtras = {for (final option in form.extraOptions) option.name};
     final shownExtras = _extras.values.where((e) => offeredExtras.contains(e.name) || e.checked).toList();
 
-    return _constrained(
-      ListView(
-        key: const ValueKey('poll-editor'),
-        padding: edgeInsetsL16R16.add(const EdgeInsets.symmetric(vertical: 12)).add(context.safePadding()),
-        children: [
-          if (state.status == PollCreateStatus.rejected)
-            _banner(
-              context,
-              tr.result.rejectedTitle,
-              (state.message?.isNotEmpty ?? false) ? state.message! : tr.result.rejectedFallback,
-              [_reloadButton(context), _browserButton(context)],
+    return _formList(
+      key: const ValueKey('poll-editor'),
+      children: [
+        if (state.status == PollCreateStatus.rejected)
+          _banner(
+            context,
+            tr.result.rejectedTitle,
+            (state.message?.isNotEmpty ?? false) ? state.message! : tr.result.rejectedFallback,
+            [_reloadButton(context), _browserButton(context)],
+          ),
+        if (state.status == PollCreateStatus.preflightFailed) _preflightBanner(context, state),
+        // Where the poll goes and what it is about.
+        AppFormSection(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.forum_outlined, size: 18, color: theme.colorScheme.primary),
+                sizedBoxW8H8,
+                Expanded(
+                  child: Text(
+                    tr.forum(forum: form.forumName ?? '#${form.fid}'),
+                    style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                ),
+              ],
             ),
-          if (state.status == PollCreateStatus.preflightFailed) _preflightBanner(context, state),
-          Text(tr.forum(forum: form.forumName ?? '#${form.fid}'), style: theme.textTheme.labelLarge),
-          sizedBoxW12H12,
-          // Optional for polls: upstream exempts special threads from a forum's required type.
-          if (types.isNotEmpty || _threadType != null) ...[
-            InputDecorator(
+            // Optional for polls: upstream exempts special threads from a forum's required type.
+            if (types.isNotEmpty || _threadType != null)
+              InputDecorator(
+                decoration: InputDecoration(
+                  labelText: tr.threadType,
+                  helperText: tr.threadTypeOptional,
+                  helperMaxLines: 2,
+                  errorMaxLines: 3,
+                  errorText: _fieldError(context, form, const [PollInputIssue.threadTypeUnavailable]),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    value: typeOffered ? _threadType!.typeID : null,
+                    isDense: true,
+                    isExpanded: true,
+                    items: [
+                      DropdownMenuItem(child: Text(tr.threadTypeNone)),
+                      for (final type in types) DropdownMenuItem(value: type.typeID, child: Text(type.name)),
+                    ],
+                    onChanged: (id) => setState(() => _threadType = types.where((e) => e.typeID == id).firstOrNull),
+                  ),
+                ),
+              ),
+            TextField(
+              controller: _subject,
               decoration: InputDecoration(
-                labelText: tr.threadType,
-                helperText: tr.threadTypeOptional,
-                helperMaxLines: 2,
-                errorMaxLines: 3,
-                errorText: _fieldError(context, form, const [PollInputIssue.threadTypeUnavailable]),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String?>(
-                  value: typeOffered ? _threadType!.typeID : null,
-                  isDense: true,
-                  isExpanded: true,
-                  items: [
-                    DropdownMenuItem(child: Text(tr.threadTypeNone)),
-                    for (final type in types) DropdownMenuItem(value: type.typeID, child: Text(type.name)),
-                  ],
-                  onChanged: (id) => setState(() => _threadType = types.where((e) => e.typeID == id).firstOrNull),
+                labelText: tr.subject,
+                suffixText: tr.subjectCounter(
+                  used: discuzStrLen(discuzEscape(_subject.text.trim())),
+                  limit: form.subjectLimit,
                 ),
+                errorText: _fieldError(context, form, const [
+                  PollInputIssue.subjectEmpty,
+                  PollInputIssue.subjectTooLong,
+                ]),
               ),
+              onChanged: (_) => setState(() {}),
             ),
-            sizedBoxW12H12,
+            TextField(
+              controller: _body,
+              minLines: 3,
+              maxLines: 10,
+              keyboardType: TextInputType.multiline,
+              decoration: InputDecoration(labelText: tr.body, hintText: tr.bodyHint, alignLabelWithHint: true),
+            ),
           ],
-          TextField(
-            controller: _subject,
-            decoration: InputDecoration(
-              labelText: tr.subject,
-              suffixText: tr.subjectCounter(
-                used: discuzStrLen(discuzEscape(_subject.text.trim())),
-                limit: form.subjectLimit,
-              ),
-              errorText: _fieldError(context, form, const [
-                PollInputIssue.subjectEmpty,
-                PollInputIssue.subjectTooLong,
-              ]),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          sizedBoxW12H12,
-          TextField(
-            controller: _body,
-            minLines: 3,
-            maxLines: 10,
-            keyboardType: TextInputType.multiline,
-            decoration: InputDecoration(labelText: tr.body, hintText: tr.bodyHint, alignLabelWithHint: true),
-          ),
-          sizedBoxW16H16,
-          Text(tr.options, style: theme.textTheme.titleSmall),
-          Text(
-            tr.optionCount(count: filled, max: form.maxOptions),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: optionListError == null ? theme.colorScheme.outline : theme.colorScheme.error,
-            ),
-          ),
-          if (optionListError != null)
-            Text(optionListError, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
-          for (var i = 0; i < _options.length; i++)
-            Padding(
-              key: ObjectKey(_options[i]),
-              padding: edgeInsetsT8,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _options[i],
-                      decoration: InputDecoration(
-                        labelText: tr.optionLabel(index: i + 1),
-                        errorText: _validation?.optionIssues[i] == null
-                            ? null
-                            : _issueText(context, _validation!.optionIssues[i]!, form),
-                        errorMaxLines: 4,
+        ),
+        appListSeparator,
+        // Choices: count and list problems in the header, one row per choice.
+        AppFormSection(
+          gap: 0,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.poll_outlined, size: 20, color: theme.colorScheme.primary),
+                sizedBoxW8H8,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tr.options, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(
+                        tr.optionCount(count: filled, max: form.maxOptions),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: optionListError == null ? theme.colorScheme.outline : theme.colorScheme.error,
+                        ),
                       ),
-                      onChanged: (_) => setState(() {}),
+                      if (optionListError != null)
+                        Text(
+                          optionListError,
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            for (var i = 0; i < _options.length; i++)
+              Padding(
+                key: ObjectKey(_options[i]),
+                padding: edgeInsetsT8,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _options[i],
+                        decoration: InputDecoration(
+                          labelText: tr.optionLabel(index: i + 1),
+                          errorText: _validation?.optionIssues[i] == null
+                              ? null
+                              : _issueText(context, _validation!.optionIssues[i]!, form),
+                          errorMaxLines: 4,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: tr.removeOption,
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: _options.length <= 2
-                        ? null
-                        : () => setState(() {
-                            _disposeLater(_options.removeAt(i));
-                            _validation = null;
-                          }),
-                  ),
-                ],
-              ),
-            ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: Text(tr.addOption),
-              onPressed: _options.length >= form.maxOptions
-                  ? null
-                  : () => setState(() => _options.add(TextEditingController())),
-            ),
-          ),
-          sizedBoxW8H8,
-          Wrap(
-            spacing: 16,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                width: 280,
-                child: TextField(
-                  controller: _maxChoices,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: tr.maxChoices,
-                    helperText: tr.maxChoicesHelper,
-                    helperMaxLines: 3,
-                    errorMaxLines: 3,
-                    errorText: _fieldError(context, form, const [PollInputIssue.maxChoicesInvalid]),
-                  ),
+                    IconButton(
+                      tooltip: tr.removeOption,
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: _options.length <= 2
+                          ? null
+                          : () => setState(() {
+                              _disposeLater(_options.removeAt(i));
+                              _validation = null;
+                            }),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(
-                width: 280,
-                child: TextField(
-                  controller: _expiry,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: tr.expiry,
-                    helperText: tr.expiryHelper,
-                    helperMaxLines: 3,
-                    errorMaxLines: 3,
-                    errorText: _fieldError(context, form, const [PollInputIssue.expiryInvalid]),
-                  ),
-                ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.add),
+                label: Text(tr.addOption),
+                onPressed: _options.length >= form.maxOptions
+                    ? null
+                    : () => setState(() => _options.add(TextEditingController())),
               ),
-            ],
-          ),
-          sizedBoxW8H8,
-          // A flag the form stopped offering stays visible while on, so the user decides instead of it vanishing.
-          if (form.visibility != null || _visibleAfterVote)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(tr.visibleAfterVote),
-              subtitle: form.visibility == null && flagError != null
-                  ? Text(flagError, style: TextStyle(color: theme.colorScheme.error))
-                  : null,
-              value: _visibleAfterVote,
-              onChanged: (value) => setState(() => _visibleAfterVote = value),
             ),
-          if (form.overt != null || _publicVoters)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(tr.publicVoters),
-              subtitle: form.overt == null && flagError != null
-                  ? Text(flagError, style: TextStyle(color: theme.colorScheme.error))
-                  : null,
-              value: _publicVoters,
-              onChanged: (value) => setState(() => _publicVoters = value),
+          ],
+        ),
+        appListSeparator,
+        // Rules of the vote.
+        AppFormSection(
+          gap: 4,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Side by side when both fit, otherwise one per row at the full width of the section.
+                final fieldWidth = constraints.maxWidth >= 2 * 240 + 16
+                    ? (constraints.maxWidth - 16) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: _maxChoices,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: InputDecoration(
+                          labelText: tr.maxChoices,
+                          helperText: tr.maxChoicesHelper,
+                          helperMaxLines: 3,
+                          errorMaxLines: 3,
+                          errorText: _fieldError(context, form, const [PollInputIssue.maxChoicesInvalid]),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: fieldWidth,
+                      child: TextField(
+                        controller: _expiry,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: tr.expiry,
+                          helperText: tr.expiryHelper,
+                          helperMaxLines: 3,
+                          errorMaxLines: 3,
+                          errorText: _fieldError(context, form, const [PollInputIssue.expiryInvalid]),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-          if (shownExtras.isNotEmpty) ...[
-            sizedBoxW8H8,
-            Text(tr.additionalOptions, style: theme.textTheme.titleSmall),
-            for (final option in shownExtras)
+            // A flag the form stopped offering stays visible while on, so the user decides instead of it vanishing.
+            if (form.visibility != null || _visibleAfterVote)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(option.readableName),
-                subtitle: offeredExtras.contains(option.name)
-                    ? null
-                    : Text(tr.issues.extraOptionUnavailable, style: TextStyle(color: theme.colorScheme.error)),
-                value: option.checked,
-                onChanged: option.disabled
-                    ? null
-                    : (value) => setState(() => _extras[option.name] = option.copyWith(checked: value)),
+                title: Text(tr.visibleAfterVote),
+                subtitle: form.visibility == null && flagError != null
+                    ? Text(flagError, style: TextStyle(color: theme.colorScheme.error))
+                    : null,
+                value: _visibleAfterVote,
+                onChanged: (value) => setState(() => _visibleAfterVote = value),
+              ),
+            if (form.overt != null || _publicVoters)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr.publicVoters),
+                subtitle: form.overt == null && flagError != null
+                    ? Text(flagError, style: TextStyle(color: theme.colorScheme.error))
+                    : null,
+                value: _publicVoters,
+                onChanged: (value) => setState(() => _publicVoters = value),
               ),
           ],
-          sizedBoxW12H12,
-          Text(tr.noDraft, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          Align(alignment: Alignment.centerLeft, child: _browserButton(context)),
-          sizedBoxW12H12,
-          FilledButton.icon(
-            icon: const Icon(Icons.fact_check_outlined),
-            label: Text(tr.review),
-            onPressed: () => _review(context),
+        ),
+        if (shownExtras.isNotEmpty) ...[
+          appListSeparator,
+          AppFormSection(
+            title: tr.additionalOptions,
+            icon: Icons.tune_outlined,
+            gap: 0,
+            children: [
+              for (final option in shownExtras)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(option.readableName),
+                  subtitle: offeredExtras.contains(option.name)
+                      ? null
+                      : Text(tr.issues.extraOptionUnavailable, style: TextStyle(color: theme.colorScheme.error)),
+                  value: option.checked,
+                  onChanged: option.disabled
+                      ? null
+                      : (value) => setState(() => _extras[option.name] = option.copyWith(checked: value)),
+                ),
+            ],
           ),
         ],
-      ),
+        sizedBoxW16H16,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, size: 16, color: theme.colorScheme.outline),
+            sizedBoxW8H8,
+            Expanded(
+              child: Text(
+                tr.noDraft,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ),
+          ],
+        ),
+        Align(alignment: Alignment.centerLeft, child: _browserButton(context)),
+        sizedBoxW12H12,
+        FilledButton.icon(
+          icon: const Icon(Icons.fact_check_outlined),
+          label: Text(tr.review),
+          onPressed: () => _review(context),
+        ),
+      ],
     );
   }
 
@@ -570,66 +644,82 @@ class _PollCreatePageState extends State<PollCreatePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.outline)),
+          sizedBoxW2H2,
           value,
         ],
       ),
     );
 
-    return _constrained(
-      ListView(
-        key: const ValueKey('poll-review'),
-        padding: edgeInsetsL16R16.add(const EdgeInsets.symmetric(vertical: 12)).add(context.safePadding()),
-        children: [
-          Text(tr.title, style: theme.textTheme.titleLarge),
-          row(tr.forum, Text(form.forumName ?? '#${form.fid}')),
-          if (poll.threadType != null) row(tr.threadType, Text(poll.threadType!.name)),
-          row(tr.subject, SelectableText(poll.subject)),
-          row(
-            tr.body,
-            poll.message.trim().isEmpty
-                ? Text(tr.bodyEmpty)
-                : Text(poll.message, maxLines: 6, overflow: TextOverflow.ellipsis),
-          ),
-          row(
-            tr.options(count: poll.options.length),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [for (var i = 0; i < poll.options.length; i++) SelectableText('${i + 1}. ${poll.options[i]}')],
-            ),
-          ),
-          row(tr.choices, Text(poll.maxChoices == 1 ? tr.single : tr.multiple(count: poll.maxChoices))),
-          row(tr.expiry, Text(poll.expiryDays == 0 ? tr.unlimited : tr.days(days: poll.expiryDays))),
-          if (form.visibility != null) row(tr.visibleAfterVote, Text(poll.visibleAfterVote ? tr.yes : tr.no)),
-          if (form.overt != null) row(tr.publicVoters, Text(poll.publicVoters ? tr.yes : tr.no)),
-          if (poll.extraOptions.isNotEmpty)
-            row(tr.additionalOptions, Text(poll.extraOptions.map((e) => e.readableName).join(', '))),
-          sizedBoxW16H16,
-          Text(tr.warning, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
-          if (checking) ...[sizedBoxW8H8, Text(context.t.pollCreate.checking)],
-          if (submitting) ...[sizedBoxW8H8, Text(context.t.pollCreate.submitting)],
-          sizedBoxW16H16,
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
+    return _formList(
+      key: const ValueKey('poll-review'),
+      children: [
+        Row(
+          children: [
+            const AppIconTile(Icons.fact_check_outlined),
+            sizedBoxW12H12,
+            Expanded(child: Text(tr.title, style: theme.textTheme.titleLarge)),
+          ],
+        ),
+        sizedBoxW12H12,
+        // Everything that will be sent, in one surface.
+        AppSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Going back while checking cancels the check; nothing has been sent yet.
-              OutlinedButton(onPressed: submitting ? null : _cubit.cancelReview, child: Text(tr.back)),
-              FilledButton.icon(
-                icon: submitting || checking ? sizedCircularProgressIndicator : const Icon(Icons.send),
-                label: Text(tr.submit),
-                onPressed: _cubit.canConfirm ? () async => _cubit.confirm() : null,
+              row(tr.forum, Text(form.forumName ?? '#${form.fid}')),
+              if (poll.threadType != null) row(tr.threadType, Text(poll.threadType!.name)),
+              row(tr.subject, SelectableText(poll.subject)),
+              row(
+                tr.body,
+                poll.message.trim().isEmpty
+                    ? Text(tr.bodyEmpty)
+                    : Text(poll.message, maxLines: 6, overflow: TextOverflow.ellipsis),
               ),
+              row(
+                tr.options(count: poll.options.length),
+                AppInsetBlock(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < poll.options.length; i++) SelectableText('${i + 1}. ${poll.options[i]}'),
+                    ],
+                  ),
+                ),
+              ),
+              row(tr.choices, Text(poll.maxChoices == 1 ? tr.single : tr.multiple(count: poll.maxChoices))),
+              row(tr.expiry, Text(poll.expiryDays == 0 ? tr.unlimited : tr.days(days: poll.expiryDays))),
+              if (form.visibility != null) row(tr.visibleAfterVote, Text(poll.visibleAfterVote ? tr.yes : tr.no)),
+              if (form.overt != null) row(tr.publicVoters, Text(poll.publicVoters ? tr.yes : tr.no)),
+              if (poll.extraOptions.isNotEmpty)
+                row(tr.additionalOptions, Text(poll.extraOptions.map((e) => e.readableName).join(', '))),
             ],
           ),
-        ],
-      ),
+        ),
+        sizedBoxW12H12,
+        AppNoticeBanner(tone: AppNoticeTone.error, icon: Icons.warning_amber_outlined, message: tr.warning),
+        if (checking) ...[sizedBoxW8H8, Text(context.t.pollCreate.checking)],
+        if (submitting) ...[sizedBoxW8H8, Text(context.t.pollCreate.submitting)],
+        sizedBoxW16H16,
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            // Going back while checking cancels the check; nothing has been sent yet.
+            OutlinedButton(onPressed: submitting ? null : _cubit.cancelReview, child: Text(tr.back)),
+            FilledButton.icon(
+              icon: submitting || checking ? sizedCircularProgressIndicator : const Icon(Icons.send),
+              label: Text(tr.submit),
+              onPressed: _cubit.canConfirm ? () async => _cubit.confirm() : null,
+            ),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildResult(BuildContext context, PollCreateState state) {
     final tr = context.t.pollCreate.result;
-    final theme = Theme.of(context);
     final tid = state.tid;
     final (IconData icon, String title, String message) = switch (state.status) {
       PollCreateStatus.published => (Icons.check_circle_outline, tr.publishedTitle, tr.published),
@@ -638,8 +728,7 @@ class _PollCreatePageState extends State<PollCreatePage> {
     };
     final unconfirmed = state.status == PollCreateStatus.unconfirmed;
 
-    return _buildMessage(context, '$title\n\n$message', [
-      Icon(icon, color: unconfirmed ? theme.colorScheme.error : theme.colorScheme.primary),
+    return _buildMessage(context, '$title\n\n$message', icon: icon, error: unconfirmed, [
       if (tid != null)
         FilledButton(
           onPressed: () => context.pushReplacementNamed(ScreenPaths.threadV1, queryParameters: {'tid': tid}),
@@ -665,23 +754,34 @@ class _PollCreatePageState extends State<PollCreatePage> {
     final form = state.form;
     return switch (state.status) {
       PollCreateStatus.loading => const CenteredCircularIndicator(),
-      PollCreateStatus.loadFailed => _buildMessage(context, tr.state.loadFailed, [
-        _reloadButton(context),
-        _browserButton(context),
-      ]),
-      PollCreateStatus.loginRequired => _buildMessage(context, tr.state.loginRequired, [
+      PollCreateStatus.loadFailed => _buildMessage(
+        context,
+        tr.state.loadFailed,
+        icon: Icons.error_outline,
+        error: true,
+        [
+          _reloadButton(context),
+          _browserButton(context),
+        ],
+      ),
+      PollCreateStatus.loginRequired => _buildMessage(context, tr.state.loginRequired, icon: Icons.login_outlined, [
         _reloadButton(context),
         _browserButton(context),
       ]),
       PollCreateStatus.denied => _buildMessage(
         context,
         (state.message?.isNotEmpty ?? false) ? state.message! : tr.state.denied,
+        icon: Icons.block_outlined,
+        error: true,
         [_browserButton(context)],
       ),
-      PollCreateStatus.unsupported => _buildMessage(context, tr.state.unsupported, [_browserButton(context)]),
+      PollCreateStatus.unsupported => _buildMessage(context, tr.state.unsupported, icon: Icons.web_outlined, [
+        _browserButton(context),
+      ]),
       PollCreateStatus.identityChanged => _buildMessage(
         context,
         state.interruptedSubmit ? tr.state.accountChangedDuringSubmit : tr.state.accountChanged,
+        icon: Icons.manage_accounts_outlined,
         const [],
       ),
       PollCreateStatus.editing ||

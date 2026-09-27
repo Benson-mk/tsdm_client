@@ -9,15 +9,34 @@ import 'package:tsdm_client/features/red_packet/widgets/daily_red_packet_button.
 import 'package:tsdm_client/features/settings/widgets/support_development_dialog.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
-/// Corner radius of the homepage cards.
-const homeCardRadius = 18.0;
+/// Corner radius of the homepage cards, the app wide [appSurfaceRadius].
+const double homeCardRadius = appSurfaceRadius;
 
-/// Shape shared by the homepage cards: rounded, with a hairline border in the theme's outline variant.
-ShapeBorder homeCardShape(BuildContext context) => RoundedRectangleBorder(
-  borderRadius: BorderRadius.circular(homeCardRadius),
-  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6)),
-);
+/// Shape shared by the homepage cards, the app wide [appSurfaceShape].
+ShapeBorder homeCardShape(BuildContext context) => appSurfaceShape(context);
+
+/// Least width left to the greeting beside the title badge; below it the badge goes to its own line.
+const _minGreetingWidth = 168.0;
+
+/// Gap between the greeting and the title badge.
+const _greetingBadgeGap = 12.0;
+
+/// Width of the title badge in the greeting card whose content is [available] wide.
+///
+/// Wide layouts show the image at its natural 184px width; phones give it 120 to 138px depending on the room, so the
+/// 184:100 image stays complete and legible without pushing the greeting or the buttons away.
+double homeGreetingBadgeWidth(double available, {required bool compact}) {
+  if (!compact) {
+    return SecondaryTitleBadge.fitWidth(available);
+  }
+  return SecondaryTitleBadge.fitWidth(available, preferred: (available * 0.4).clamp(120, 138).toDouble());
+}
+
+/// Whether the greeting leaves enough room beside a badge of [badgeWidth] in [available] width.
+bool homeGreetingBadgeBeside(double available, double badgeWidth) =>
+    available - badgeWidth - _greetingBadgeGap >= _minGreetingWidth;
 
 /// Greeting text for the local [hour].
 String homeGreeting(BuildContext context, int hour, String name) {
@@ -144,13 +163,35 @@ class HomeGreetingCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: greeting),
-                  sizedBoxW12H12,
-                  CurrentAccountTitleBadge(uid: uid, width: compact ? 84 : 120),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final badgeWidth = homeGreetingBadgeWidth(constraints.maxWidth, compact: compact);
+                  if (homeGreetingBadgeBeside(constraints.maxWidth, badgeWidth)) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: greeting),
+                        CurrentAccountTitleBadge(
+                          uid: uid,
+                          width: badgeWidth,
+                          padding: const EdgeInsetsDirectional.only(start: _greetingBadgeGap),
+                        ),
+                      ],
+                    );
+                  }
+                  // Too narrow for both side by side: the badge wraps below the greeting, the text keeps its width.
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      greeting,
+                      CurrentAccountTitleBadge(
+                        uid: uid,
+                        width: badgeWidth,
+                        padding: const EdgeInsets.only(top: _greetingBadgeGap),
+                      ),
+                    ],
+                  );
+                },
               ),
               SizedBox(height: compact ? 14 : 20),
               if (compact) ...[

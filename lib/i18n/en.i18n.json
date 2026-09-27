@@ -275,6 +275,7 @@
           "threadType": "Daydream"
         },
         "showHelpTip": "Show tips on thread card",
+        "preview": "Preview",
         "attrs": {
           "help": "What the icons mean",
           "closed": {
@@ -458,6 +459,7 @@
       },
       "exportData": "Export data",
       "exportDataDetail": "Without cookies and passwords by default; optionally include them, encrypted with a password of your own",
+      "backupTitle": "Backup and restore",
       "exportBackup": {
         "title": "Export data",
         "includeAccounts": "Include account logins",
@@ -554,7 +556,9 @@
     "flutterVersion": "Flutter Version",
     "dartVersion": "Dart Version",
     "license": "License",
-    "copyEnvironmentInfo": "Copy environment info"
+    "copyEnvironmentInfo": "Copy environment info",
+    "linksSection": "Links and support",
+    "buildSection": "Version and build"
   },
   "loginPage": {
     "title": "Login TSDM",
@@ -817,6 +821,7 @@
       "title": "Sync all accounts",
       "detail": "Fetch notices, personal messages and broadcast messages for every account saved on this device, one account at a time. The unread badge still follows the current account only. Listing consumes the new marker on the forum side, same as a normal sync.",
       "running": "Running...",
+      "finished": "Finished",
       "empty": "No account is saved on this device",
       "user": {
         "waiting": "Waiting",
@@ -1066,7 +1071,8 @@
     "sizeValue": "${width: int} x ${height: int}",
     "cacheName": "Cache name",
     "cacheSize": "Cache size",
-    "usage": "Usage"
+    "usage": "Usage",
+    "fitToScreen": "Fit to screen"
   },
   "forumCard": {
     "links": "Links",
@@ -1788,7 +1794,14 @@
     },
     "customTitle": "Custom title",
     "signature": "Signature",
-    "timezone": "Timezone"
+    "timezone": "Timezone",
+    "sections": {
+      "basic": "Basic info",
+      "contact": "Contact",
+      "aboutMe": "About me",
+      "forum": "On the forum"
+    },
+    "uploadHint": "Changes stay on this page until you tap the upload button at the top right."
   },
   "urlInfoBottomSheet": {
     "title": "Url info",
@@ -1882,6 +1895,7 @@
     "title": "Blocking",
     "manageEntry": "Blocking",
     "localHint": "Blocked users (this device): only for the current account on this device. The user is not notified. Their topics, replies and notices with a known sender are hidden. Personal messages are still received and you can open and read them yourself, but this device no longer shows alerts or unread badges for messages from this user. Friends and forum permissions are not changed. Content whose author can not be told may still show, for example topic titles in the homepage guide, favorites and visit history, notices received before this update, and quotes of floors on other pages. Example: account A blocks X; account B on the same device does not inherit it, and the list is still there when you switch back to A.",
+    "localTitle": "Blocked users (this device)",
     "block": "Block this user (this device)",
     "unblock": "Unblock",
     "blockConfirmTitle": "Block ${name}?",

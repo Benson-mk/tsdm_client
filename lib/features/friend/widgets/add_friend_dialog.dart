@@ -5,6 +5,7 @@ import 'package:tsdm_client/features/friend/models/add_friend.dart';
 import 'package:tsdm_client/features/friend/repository/friend_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// What the user filled in: the note and the group.
 typedef AddFriendChoice = ({String note, String gid});
@@ -88,27 +89,52 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.friendPage.addFriend;
+    final border = OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius));
     return AlertDialog(
       scrollable: true,
-      title: Text(tr.title(name: widget.username)),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.person_add_alt_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(tr.title(name: widget.username))),
+        ],
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TextField(
             controller: note,
             autofocus: true,
             maxLength: addFriendNoteMaxLength,
-            decoration: InputDecoration(labelText: tr.note, helperText: widget.form.noteHint),
+            decoration: InputDecoration(
+              labelText: tr.note,
+              helperText: widget.form.noteHint,
+              helperMaxLines: 3,
+              prefixIcon: const Icon(Icons.edit_note_outlined),
+              filled: true,
+              border: border,
+            ),
             onSubmitted: (_) => _submit(),
           ),
           if (widget.form.groups.isNotEmpty) ...[
-            sizedBoxW4H4,
+            sizedBoxW8H8,
             DropdownButtonFormField<String>(
               initialValue: gid,
-              decoration: InputDecoration(labelText: tr.group),
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(appInnerRadius),
+              decoration: InputDecoration(
+                labelText: tr.group,
+                prefixIcon: const Icon(Icons.group_outlined),
+                filled: true,
+                border: border,
+              ),
               items: [
-                for (final group in widget.form.groups) DropdownMenuItem(value: group.gid, child: Text(group.name)),
+                for (final group in widget.form.groups)
+                  DropdownMenuItem(
+                    value: group.gid,
+                    child: Text(group.name, overflow: TextOverflow.ellipsis),
+                  ),
               ],
               onChanged: (v) => setState(() => gid = v ?? gid),
             ),
@@ -117,7 +143,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(context.t.general.cancel)),
-        FilledButton(onPressed: _submit, child: Text(tr.send)),
+        FilledButton.icon(onPressed: _submit, icon: const Icon(Icons.send_outlined), label: Text(tr.send)),
       ],
     );
   }

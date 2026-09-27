@@ -21,7 +21,8 @@ final class ColorPickerDialog extends StatelessWidget {
     const items = Colors.primaries;
 
     return GridView.builder(
-      padding: context.safePadding(),
+      // Same side margin as the other sheets, above the system insets.
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16).add(context.safePadding()),
       shrinkWrap: true,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: _colorBoxSize,

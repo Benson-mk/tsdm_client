@@ -275,6 +275,7 @@
           "threadType": "白日夢"
         },
         "showHelpTip": "查看貼文卡片內容的意思",
+        "preview": "預覽",
         "attrs": {
           "help": "圖示的意義",
           "closed": {
@@ -458,6 +459,7 @@
       },
       "exportData": "匯出資料",
       "exportDataDetail": "預設不含任何帳號的 Cookie 與密碼；可選擇用自設密碼加密後一併匯出",
+      "backupTitle": "備份與還原",
       "exportBackup": {
         "title": "匯出資料",
         "includeAccounts": "包含帳號登入資料",
@@ -554,7 +556,9 @@
     "flutterVersion": "Flutter版本",
     "dartVersion": "Dart版本",
     "license": "版權",
-    "copyEnvironmentInfo": "複製環境資訊"
+    "copyEnvironmentInfo": "複製環境資訊",
+    "linksSection": "連結與支持",
+    "buildSection": "版本與建置"
   },
   "loginPage": {
     "title": "登入天使動漫",
@@ -817,6 +821,7 @@
       "title": "同步所有帳號",
       "detail": "為本機保存的每個帳號逐一抓取提醒、私人訊息和公用訊息。未讀紅點仍只反映目前帳號。與平時同步一樣，列出後論壇端的「新」標記會被消耗。",
       "running": "進行中",
+      "finished": "已完成",
       "empty": "本機沒有保存任何帳號",
       "user": {
         "waiting": "等待中",
@@ -1066,7 +1071,8 @@
     "sizeValue": "${width: int} x ${height: int}",
     "cacheName": "快取名稱",
     "cacheSize": "快取大小",
-    "usage": "用途"
+    "usage": "用途",
+    "fitToScreen": "適應螢幕"
   },
   "forumCard": {
     "links": "連結",
@@ -1788,7 +1794,14 @@
     },
     "customTitle": "自訂頭銜",
     "signature": "個人簽名",
-    "timezone": "時區"
+    "timezone": "時區",
+    "sections": {
+      "basic": "基本資料",
+      "contact": "聯絡方式",
+      "aboutMe": "關於我",
+      "forum": "論壇顯示"
+    },
+    "uploadHint": "修改只保留在本頁，按右上角的上傳按鈕才會送到論壇。"
   },
   "urlInfoBottomSheet": {
     "title": "連結訊息",
@@ -1882,6 +1895,7 @@
     "title": "屏蔽管理",
     "manageEntry": "屏蔽管理",
     "localHint": "已屏蔽用戶（本機）：只對這台裝置上的目前帳號生效，不會通知對方。對方的主題、回覆與可辨識來源的提醒會被隱藏；私人訊息仍會照常接收，也可以手動開啟閱讀，但本機不再為此人的訊息跳出提醒或顯示未讀角標。好友關係與論壇權限不變。無法判斷作者的內容仍可能顯示，例如首頁導讀、收藏與瀏覽紀錄裡的主題標題、更新前收到的提醒，以及引用其他頁樓層的內容。例：帳號 A 屏蔽了 X，同一裝置上的帳號 B 不會繼承；切回帳號 A 時名單仍在。",
+    "localTitle": "已屏蔽用戶（本機）",
     "block": "屏蔽此用戶（本機）",
     "unblock": "解除屏蔽",
     "blockConfirmTitle": "屏蔽 ${name}？",

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:tsdm_client/constants/layout.dart';
-import 'package:tsdm_client/extensions/list.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Widget showing a bounty info in thread.
 class BountyCard extends StatelessWidget {
@@ -32,7 +32,7 @@ class BountyCard extends StatelessWidget {
         children: [
           Icon(Icons.done, color: secondaryColor),
           sizedBoxW4H4,
-          Text(context.t.bountyCard.resolved, style: bountyStatusTextResolvedStyle),
+          Flexible(child: Text(context.t.bountyCard.resolved, style: bountyStatusTextResolvedStyle)),
         ],
       );
     } else {
@@ -41,41 +41,36 @@ class BountyCard extends StatelessWidget {
         children: [
           Icon(Icons.pending, color: tertiaryColor),
           sizedBoxW4H4,
-          Text(context.t.bountyCard.processing, style: bountyStatusTextStyle),
+          Flexible(child: Text(context.t.bountyCard.processing, style: bountyStatusTextStyle)),
         ],
       );
     }
 
-    return Card(
+    // State (resolved / in progress) under the title, the reward as a highlighted line; both wrap with large text.
+    return AppEmbedCard(
+      icon: Icons.emoji_events_outlined,
+      title: context.t.bountyCard.title,
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: edgeInsetsL16T16R16B16,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 100),
-          child: Column(
-            children: <Widget>[
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    context.t.bountyCard.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(color: secondaryColor),
-                  ),
-                  sizedBoxW24H24,
-                  bountyStatusWidget,
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(FontAwesomeIcons.coins, size: 20),
-                  sizedBoxW4H4,
-                  Text(context.t.bountyCard.price(price: price), style: Theme.of(context).textTheme.bodyLarge),
-                ],
-              ),
-            ].insertBetween(sizedBoxW12H12),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          bountyStatusWidget,
+          AppInsetBlock(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(FontAwesomeIcons.coins, size: 18, color: Theme.of(context).colorScheme.primary),
+                sizedBoxW8H8,
+                Flexible(
+                  child: Text(context.t.bountyCard.price(price: price), style: Theme.of(context).textTheme.bodyLarge),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

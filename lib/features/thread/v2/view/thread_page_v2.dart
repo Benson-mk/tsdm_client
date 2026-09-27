@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 
-/// V2 page for each thread.
+/// V2 route of a thread.
 ///
-///
-/// Find post is not supported yet.
+/// The v2 reader was never finished and only showed a debug text; the route now opens the same reader as
+/// [ThreadPage] with the same parameters, so a v2 link shows the real thread with the redesigned floors.
 class ThreadPageV2 extends StatefulWidget {
   /// Constructor.
   const ThreadPageV2({
@@ -65,9 +66,13 @@ class ThreadPageV2 extends StatefulWidget {
 class _ThreadPageV2State extends State<ThreadPageV2> {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('THREAD PAGE V2')),
-      body: Center(child: Text('id=${widget.id}, page=${widget.pageNumber}')),
+    return ThreadPage(
+      threadID: widget.id,
+      findPostID: widget.pid?.toString(),
+      pageNumber: widget.pageNumber,
+      overrideReverseOrder: widget.overrideReverseOrder,
+      overrideWithExactOrder: widget.overrideWithExactOrder,
+      onlyVisibleUid: widget.onlyVisibleUid,
     );
   }
 }

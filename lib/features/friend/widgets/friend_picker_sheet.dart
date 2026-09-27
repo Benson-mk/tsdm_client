@@ -12,6 +12,7 @@ import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 
 /// Let the user pick one of their friends; returns null when dismissed (GitHub #23).
@@ -84,28 +85,39 @@ class _FriendPickerSheetState extends State<FriendPickerSheet> {
     final visible = friends?.where((e) => e.username.toLowerCase().contains(_keyword.toLowerCase())).toList();
     final Widget body;
     if (_failed) {
-      body = Center(
-        child: TextButton(onPressed: _load, child: Text(context.t.general.failedToLoad)),
+      body = AppStateView(
+        icon: Icons.cloud_off_outlined,
+        message: context.t.general.failedToLoad,
+        error: true,
+        action: TextButton.icon(
+          onPressed: _load,
+          icon: const Icon(Icons.refresh),
+          label: Text(context.t.general.retry),
+        ),
       );
     } else if (friends == null) {
-      body = const LinearProgressIndicator();
+      body = const Padding(padding: edgeInsetsL12R12, child: LinearProgressIndicator());
     } else if (friends.isEmpty) {
-      body = Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Text(_message != null ? tr.friendsUnavailable(message: _message!) : tr.noFriends),
+      body = AppStateView(
+        icon: Icons.people_outline,
+        message: _message != null ? tr.friendsUnavailable(message: _message!) : tr.noFriends,
       );
     } else if (visible!.isEmpty) {
-      body = Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.noMatch));
+      body = AppStateView(icon: Icons.search_off_outlined, message: tr.noMatch);
     } else {
+      final colorScheme = Theme.of(context).colorScheme;
       body = ListView.builder(
         shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         itemCount: visible.length,
         itemBuilder: (context, index) {
           final friend = visible[index];
           return ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
             leading: HeroUserAvatar(username: friend.username, avatarUrl: friend.avatarUrl, disableHero: true),
-            title: Text(friend.username),
+            title: Text(friend.username, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: friend.groupName == null ? null : Text(friend.groupName!),
+            trailing: Icon(Icons.chevron_right, color: colorScheme.outline),
             onTap: () => Navigator.of(context).pop(friend),
           );
         },
@@ -117,11 +129,21 @@ class _FriendPickerSheetState extends State<FriendPickerSheet> {
         Padding(
           padding: edgeInsetsL12T4R12,
           child: TextField(
-            decoration: InputDecoration(prefixIcon: const Icon(Icons.search_outlined), hintText: tr.filterHint),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_outlined),
+              hintText: tr.filterHint,
+              filled: true,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(appInnerRadius),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            textInputAction: TextInputAction.search,
             onChanged: (v) => setState(() => _keyword = v.trim()),
           ),
         ),
-        sizedBoxW4H4,
+        sizedBoxW8H8,
         Flexible(child: body),
       ],
     );

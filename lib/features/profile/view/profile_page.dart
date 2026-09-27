@@ -13,7 +13,6 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/date_time.dart';
-import 'package:tsdm_client/extensions/list.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
@@ -36,12 +35,11 @@ import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
-import 'package:tsdm_client/widgets/attr_block.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
-import 'package:tsdm_client/widgets/icon_chip.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/medal_group_view.dart';
 import 'package:tsdm_client/widgets/notice_button.dart';
@@ -145,6 +143,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildSliverAppBar(BuildContext context, ProfileState state, {required bool logout}) {
     final tr = context.t.profilePage;
     final userProfile = state.userProfile!;
+    final colorScheme = Theme.of(context).colorScheme;
 
     if (!context.mounted) {
       return sizedBoxEmpty;
@@ -212,6 +211,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 await context.pushNamed(ScreenPaths.userBlock);
             }
           },
+          // Same items and actions, grouped: activity, own profile, account level, then logout apart in the error
+          // color.
           itemBuilder: (context) => [
             PopupMenuItem(
               value: _ProfileActions.viewNotification,
@@ -231,6 +232,17 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
             PopupMenuItem(
+              value: _ProfileActions.viewPoints,
+              child: Row(
+                children: [
+                  const Icon(Icons.show_chart_outlined),
+                  sizedBoxPopupMenuItemIconSpacing,
+                  Text(tr.statistics.title),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(height: 8),
+            PopupMenuItem(
               value: .editProfile,
               child: Row(
                 children: [
@@ -247,16 +259,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   const Icon(Symbols.familiar_face_and_zone),
                   sizedBoxPopupMenuItemIconSpacing,
                   Text(context.t.editAvatarPage.title),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: _ProfileActions.viewPoints,
-              child: Row(
-                children: [
-                  const Icon(Icons.show_chart_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(tr.statistics.title),
                 ],
               ),
             ),
@@ -290,14 +292,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 ],
               ),
             ),
+            const PopupMenuDivider(height: 8),
             PopupMenuItem(
               enabled: !logout,
               value: _ProfileActions.logout,
               child: Row(
                 children: [
-                  DebounceIcon(icon: const Icon(Icons.logout_outlined), shouldDebounce: logout),
+                  DebounceIcon(
+                    icon: Icon(Icons.logout_outlined, color: colorScheme.error),
+                    shouldDebounce: logout,
+                  ),
                   sizedBoxPopupMenuItemIconSpacing,
-                  Text(tr.logout),
+                  Text(tr.logout, style: TextStyle(color: colorScheme.error)),
                 ],
               ),
             ),
@@ -337,14 +343,14 @@ class _ProfilePageState extends State<ProfilePage> {
       ];
     }
 
-    // Widget used in flexible space of app bar.
-    // Contains a blurred background image, bottom background color and
-    // user avatar.
-    Widget? flexSpace;
-
-    final Widget avatar = CircleAvatar(
-      radius: _appBarAvatarHeight / 2 + 3,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+    // Flexible space of the app bar: a background (the blurred avatar, or a tinted gradient when the user has no
+    // avatar, which used to leave the expanded bar empty), the page ground under the avatar and the avatar itself.
+    final Widget avatar = DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: colorScheme.surfaceContainerLowest, width: 3),
+        boxShadow: [BoxShadow(color: colorScheme.shadow.withValues(alpha: 0.12), blurRadius: 8)],
+      ),
       child: HeroUserAvatar(
         username: userProfile.username ?? '',
         avatarUrl: userProfile.avatarUrl ?? noAvatarUrl,
@@ -353,73 +359,74 @@ class _ProfilePageState extends State<ProfilePage> {
         minRadius: _appBarAvatarHeight / 2,
       ),
     );
-    if (userProfile.avatarUrl != null) {
-      flexSpace = Stack(
-        // Disable clip, let profile avatar show outside the stack.
-        clipBehavior: Clip.none,
-        children: [
-          // Background blurred image.
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: CachedImageProvider(userProfile.avatarUrl!),
-                  fit: .fitWidth,
-                  isAntiAlias: true,
-                ),
-              ),
-              foregroundDecoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.surfaceContainerLowest.withValues(alpha: 0.6),
-                    Theme.of(context).colorScheme.surfaceContainerLowest,
-                  ],
-                  begin: .topCenter,
-                  end: .bottomCenter,
-                  stops: const [0.0, 0.55],
-                ),
+    final background = userProfile.avatarUrl != null
+        ? Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: CachedImageProvider(userProfile.avatarUrl!),
+                fit: .fitWidth,
+                isAntiAlias: true,
               ),
             ),
-          ),
-          // Background color under avatar, height is half of avatar height.
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Row(
-              children: [
-                Expanded(
-                  child: ColoredBox(
-                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    // Add 4 here because the avatar row (Positioned() below) has 4 padding at bottom.
-                    child: const SizedBox(height: _appBarAvatarHeight / 2 + 4),
-                  ),
-                ),
-              ],
+            foregroundDecoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  colorScheme.surfaceContainerLowest.withValues(alpha: 0.6),
+                  colorScheme.surfaceContainerLowest,
+                ],
+                begin: .topCenter,
+                end: .bottomCenter,
+                stops: const [0.0, 0.55],
+              ),
             ),
-          ),
-          // Avatar and user info.
-          Positioned(
-            bottom: 4,
-            left: 15,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                avatar,
-                Tooltip(
-                  message: tr.online,
-                  child: Icon(
-                    Icons.circle,
-                    size: 16,
-                    color: Theme.of(context).brightness == Brightness.dark ? Colors.green[400] : Colors.green[700],
-                  ),
-                ),
-              ],
+          )
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [colorScheme.primaryContainer, colorScheme.surfaceContainerLowest],
+                begin: .topCenter,
+                end: .bottomCenter,
+                stops: const [0.0, 0.7],
+              ),
             ),
+          );
+    final flexSpace = Stack(
+      // Disable clip, let profile avatar show outside the stack.
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(child: background),
+        // Background color under avatar, height is half of avatar height.
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: ColoredBox(
+            color: colorScheme.surfaceContainerLowest,
+            // Add 4 here because the avatar row (Positioned() below) has 4 padding at bottom.
+            child: const SizedBox(height: _appBarAvatarHeight / 2 + 4),
           ),
-        ],
-      );
-    }
+        ),
+        // Avatar, lined up with the centered content below.
+        Positioned(
+          bottom: 4,
+          left: appCenteredPadding(MediaQuery.sizeOf(context).width, maxWidth: appFormMaxWidth, minPadding: 12).left,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              avatar,
+              Tooltip(
+                message: tr.online,
+                child: Icon(
+                  Icons.circle,
+                  size: 16,
+                  color: Theme.of(context).brightness == Brightness.dark ? Colors.green[400] : Colors.green[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
 
     return SliverAppBar(
       title: _showAppBarTitle ? Text(state.userProfile?.username ?? '') : null,
@@ -431,15 +438,18 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  List<Widget> _buildCheckinInfoRow(BuildContext context, ProfileState state) {
+  /// Check-in level, progress to the next level and the check-in numbers, one surface.
+  Widget? _buildCheckinSection(BuildContext context, ProfileState state) {
     final userProfile = state.userProfile;
     if (userProfile == null ||
         userProfile.checkinLevel == null ||
         userProfile.checkinDaysCount == null &&
             (!(userProfile.checkinLevel?.contains('Master') ?? false) || userProfile.checkinNextLevelDays == null)) {
-      return [];
+      return null;
     }
     final tr = context.t.profilePage;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     int? totalDays;
     final double percent;
@@ -478,73 +488,60 @@ class _ProfilePageState extends State<ProfilePage> {
       description = '${userProfile.checkinDaysCount}/-';
     }
 
-    // Checkin
-    return [
-      _SectionTitle(tr.checkin.title),
-      Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Checkin level.
-          Row(
+    return _ProfileSection(
+      title: tr.checkin.title,
+      icon: Icons.event_available_outlined,
+      children: [
+        // Level and progress to the next level.
+        AppInsetBlock(
+          padding: edgeInsetsL12T12R12B12,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                userProfile.checkinLevel!,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).primaryColor),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    userProfile.checkinLevel!,
+                    style: textTheme.titleSmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
+                  ),
+                  Text(description, style: textTheme.labelMedium?.copyWith(color: colorScheme.outline)),
+                ],
               ),
-              sizedBoxW12H12,
-              Text(
-                description,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+              sizedBoxW8H8,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(value: percent, minHeight: 8),
               ),
             ],
           ),
-          LinearProgressIndicator(value: percent),
-
-          // General info
+        ),
+        _InfoGrid([
           if (userProfile.checkinDaysCount != null)
-            _ProfileSectionListTile(
-              leading: const Icon(Icons.calendar_month_outlined),
-              title: Text(tr.checkinDaysCount),
-              subtitle: Text('${userProfile.checkinDaysCount}'),
-            ),
+            (Icons.calendar_month_outlined, tr.checkinDaysCount, '${userProfile.checkinDaysCount}'),
           if (userProfile.checkinThisMonthCount != null)
-            _ProfileSectionListTile(
-              leading: const Icon(Icons.calendar_today_outlined),
-              title: Text(tr.checkinDaysInThisMonth),
-              subtitle: Text(userProfile.checkinThisMonthCount!),
-            ),
+            (Icons.calendar_today_outlined, tr.checkinDaysInThisMonth, userProfile.checkinThisMonthCount!),
           if (userProfile.checkinRecentTime != null)
-            _ProfileSectionListTile(
-              leading: const Icon(Icons.history_outlined),
-              title: Text(tr.checkinRecentTime),
-              subtitle: Text(userProfile.checkinRecentTime!),
-            ),
+            (Icons.history_outlined, tr.checkinRecentTime, userProfile.checkinRecentTime!),
           if (userProfile.checkinAllCoins != null)
-            _ProfileSectionListTile(
-              leading: const Icon(FontAwesomeIcons.coins),
-              title: Text(tr.checkinAllCoins),
-              subtitle: Text(userProfile.checkinAllCoins!),
-            ),
+            (FontAwesomeIcons.coins, tr.checkinAllCoins, userProfile.checkinAllCoins!),
           if (userProfile.checkinLastTimeCoin != null)
-            _ProfileSectionListTile(
-              leading: const Icon(Icons.monetization_on_outlined),
-              title: Text(tr.checkinLastTimeCoins),
-              subtitle: Text(userProfile.checkinLastTimeCoin!),
-            ),
+            (Icons.monetization_on_outlined, tr.checkinLastTimeCoins, userProfile.checkinLastTimeCoin!),
           if (userProfile.checkinTodayStatus != null)
-            _ProfileSectionListTile(
-              leading: const Icon(Icons.today_outlined),
-              title: Text(tr.checkinTodayStatus),
-              subtitle: Text(userProfile.checkinTodayStatus ?? '-'),
-            ),
-        ].insertBetween(sizedBoxW4H4),
-      ),
-    ];
+            (Icons.today_outlined, tr.checkinTodayStatus, userProfile.checkinTodayStatus ?? '-'),
+        ]),
+      ],
+    );
   }
 
-  List<Widget> _buildSliverContent(BuildContext context, ProfileState state) {
+  /// Name, uid, nickname and custom title, verification marks and the personal details, one surface.
+  Widget _buildIdentitySection(BuildContext context, ProfileState state) {
     final tr = context.t.profilePage;
     final userProfile = state.userProfile!;
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     // Friends count info.
     final (count: friendsCount, url: friendsPage) = parseFriendsInfo(userProfile.friendsCount);
@@ -556,6 +553,85 @@ class _ProfilePageState extends State<ProfilePage> {
       userProfile.birthdayDay,
     ].whereType<String>().join('.');
 
+    final subtitles = [?userProfile.nickname, ?userProfile.customTitle];
+
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Username (tap to copy) and uid.
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              GestureDetector(
+                child: SingleLineText(
+                  userProfile.username ?? context.t.profilePage.title,
+                  style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                onTap: () async => copyToClipboard(context, userProfile.username ?? ''),
+              ),
+              if (userProfile.uid != null) AppInfoPill(icon: Icons.tag, label: userProfile.uid!),
+            ],
+          ),
+          if (subtitles.isNotEmpty) ...[
+            sizedBoxW4H4,
+            // Wraps instead of scrolling sideways.
+            Text(subtitles.join(' · '), style: textTheme.titleSmall?.copyWith(color: colorScheme.outline)),
+          ],
+          sizedBoxW12H12,
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (userProfile.uid != null)
+                // Email verify state.
+                IconButton(
+                  icon: const Icon(Icons.email_outlined),
+                  tooltip: userProfile.emailVerified ?? false ? tr.emailVerified : tr.emailNotVerified,
+                  onPressed: () async {
+                    final content = userProfile.emailVerified ?? false ? tr.emailVerified : tr.emailNotVerified;
+                    showSnackBar(context: context, message: content);
+                  },
+                  isSelected: userProfile.emailVerified ?? false,
+                ),
+              IconButton(
+                icon: const Icon(Icons.photo_camera_outlined),
+                tooltip: userProfile.videoVerified ?? false ? tr.videoVerified : tr.videoNotVerified,
+                onPressed: () async {
+                  final content = userProfile.videoVerified ?? false ? tr.videoVerified : tr.videoNotVerified;
+                  showSnackBar(context: context, message: content);
+                },
+                isSelected: userProfile.videoVerified ?? false,
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.group_outlined),
+                label: Text(friendsCount),
+                onPressed: friendsPage != null
+                    ? () async {
+                        await context.dispatchAsUrl(friendsPage);
+                      }
+                    : null,
+              ),
+              if (userProfile.gender != null) AppInfoPill(icon: Icons.face_2_outlined, label: userProfile.gender!),
+              if (birthDayText.isNotEmpty) AppInfoPill(icon: Icons.cake_outlined, label: birthDayText),
+              if (userProfile.zodiac != null) AppInfoPill(icon: MdiIcons.starCrescent, label: userProfile.zodiac!),
+              if (userProfile.from != null) AppInfoPill(icon: Icons.location_on_outlined, label: userProfile.from!),
+              if (userProfile.msn != null) AppInfoPill(icon: Icons.group_outlined, label: userProfile.msn!),
+              if (userProfile.qq != null) AppInfoPill(icon: FontAwesomeIcons.qq, label: userProfile.qq!),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The two group images with their colored names, side by side, each wrapping under the other when narrow.
+  Widget? _buildUserGroupSection(BuildContext context, ProfileState state) {
+    final tr = context.t.profilePage;
+    final userProfile = state.userProfile!;
     final inDark = Theme.of(context).brightness == Brightness.dark;
 
     final moderatorGroupDoc = parseHtmlDocument(userProfile.moderatorGroup ?? '').body;
@@ -584,6 +660,46 @@ class _ProfilePageState extends State<ProfilePage> {
       userGroupNameColor = null;
     }
 
+    if (moderatorGroupImg == null && userGroupImg == null) {
+      return null;
+    }
+
+    Widget group(String image, String name, Color? color) => AppInsetBlock(
+      padding: edgeInsetsL12T12R12B12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CachedImage(image, maxWidth: 200, maxHeight: _groupAvatarHeight),
+          sizedBoxW8H8,
+          Text(
+            name,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+
+    return _ProfileSection(
+      title: tr.userGroup,
+      icon: Icons.groups_outlined,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            if (moderatorGroupImg != null) group(moderatorGroupImg, moderatorGroupName ?? '', moderatorGroupNameColor),
+            if (userGroupImg != null) group(userGroupImg, userGroupName ?? '-', userGroupNameColor),
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildSliverContent(BuildContext context, ProfileState state) {
+    final tr = context.t.profilePage;
+    final userProfile = state.userProfile!;
+
     // Introduction.
     //
     // Introduction is captured as raw html code when have multiple lines.
@@ -600,306 +716,162 @@ class _ProfilePageState extends State<ProfilePage> {
       signatureContent = parseHtmlDocument(userProfile.signature ?? '').body;
     }
 
-    final iconChipBackgroundColor = Theme.of(context).colorScheme.surfaceContainerLowest;
+    final userGroup = _buildUserGroupSection(context, state);
+    final checkin = _buildCheckinSection(context, state);
 
-    // All content widgets in profile main sliver list.
-    return [
-      // Username and uid
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+    final activityItems = <_InfoItem>[
+      if (userProfile.onlineTime != null) (Icons.timelapse_outlined, tr.onlineTime, userProfile.onlineTime!),
+      if (userProfile.registerTime != null)
+        (MdiIcons.timelineAlertOutline, tr.registerTime, userProfile.registerTime!.yyyyMMDDHHMM()),
+      if (userProfile.lastVisitTime != null)
+        (MdiIcons.timelineClockOutline, tr.lastVisitTime, userProfile.lastVisitTime!.yyyyMMDDHHMM()),
+      if (userProfile.lastActiveTime != null)
+        (MdiIcons.timelineCheckOutline, tr.lastActiveTime, userProfile.lastActiveTime!.yyyyMMDDHHMM()),
+      if (userProfile.lastPostTime != null)
+        (MdiIcons.timelinePlusOutline, tr.lastPostTime, userProfile.lastPostTime!.yyyyMMDDHHMM()),
+      if (userProfile.timezone != null) (Symbols.globe_location_pin, tr.timezone, userProfile.timezone!),
+    ];
+
+    final statisticsItems = <_InfoItem>[
+      if (userProfile.credits != null) (null, tr.statistics.credits, userProfile.credits!),
+      if (userProfile.famous != null) (null, tr.statistics.famous, userProfile.famous!),
+      if (userProfile.coins != null) (null, tr.statistics.coins, userProfile.coins!),
+      if (userProfile.publicity != null) (null, tr.statistics.publicity, userProfile.publicity!),
+      if (userProfile.natural != null) (null, tr.statistics.natural, userProfile.natural!),
+      if (userProfile.scheming != null) (null, tr.statistics.scheming, userProfile.scheming!),
+      if (userProfile.spirit != null) (null, tr.statistics.spirit, userProfile.spirit!),
+      // Special attr changes over time.
+      // Here is dynamic and not translated.
+      if (userProfile.specialAttr != null && userProfile.specialAttrName != null)
+        (null, userProfile.specialAttrName!, userProfile.specialAttr!),
+      if (userProfile.specialAttr2 != null && userProfile.specialAttrName2 != null)
+        (null, userProfile.specialAttrName2!, userProfile.specialAttr2!),
+    ];
+
+    final sections = <Widget>[
+      _buildIdentitySection(context, state),
+
+      // Self introduction and signature, rendered as the forum wrote them.
+      if (introductionContent != null || signatureContent != null)
+        _ProfileSection(
+          title: introductionContent != null ? tr.introduction : tr.signature,
+          icon: Icons.notes_outlined,
           children: [
-            sizedBoxW12H12,
-            GestureDetector(
-              child: SingleLineText(
-                userProfile.username ?? context.t.profilePage.title,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              onTap: () async => copyToClipboard(context, userProfile.username ?? ''),
-            ),
-            sizedBoxW12H12,
-            if (userProfile.uid != null)
-              SingleLineText(
-                userProfile.uid!,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-              ),
+            if (introductionContent != null)
+              AppInsetBlock(padding: edgeInsetsL12T12R12B12, child: munchElement(context, introductionContent)),
+            if (introductionContent != null && signatureContent != null)
+              AppSectionHeader(tr.signature, icon: Icons.draw_outlined, padding: EdgeInsets.zero),
+            if (signatureContent != null)
+              AppInsetBlock(padding: edgeInsetsL12T12R12B12, child: munchElement(context, signatureContent)),
           ],
         ),
-      ),
-      sizedBoxW12H12,
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            sizedBoxW12H12,
-            if (userProfile.nickname != null)
-              SingleLineText(
-                userProfile.nickname!,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-              ),
-            if (userProfile.nickname != null && userProfile.customTitle != null)
-              const SizedBox(width: 20, height: 20, child: VerticalDivider()),
-            if (userProfile.customTitle != null)
-              SingleLineText(
-                userProfile.customTitle!,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-              ),
-          ],
-        ),
-      ),
-      sizedBoxW12H12,
-      Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (userProfile.uid != null)
-            // Email verify state.
-            IconButton(
-              icon: const Icon(Icons.email_outlined),
-              tooltip: userProfile.emailVerified ?? false ? tr.emailVerified : tr.emailNotVerified,
-              onPressed: () async {
-                final content = userProfile.emailVerified ?? false ? tr.emailVerified : tr.emailNotVerified;
-                showSnackBar(context: context, message: content);
-              },
-              isSelected: userProfile.emailVerified ?? false,
-            ),
-          IconButton(
-            icon: const Icon(Icons.photo_camera_outlined),
-            tooltip: userProfile.videoVerified ?? false ? tr.videoVerified : tr.videoNotVerified,
-            onPressed: () async {
-              final content = userProfile.videoVerified ?? false ? tr.videoVerified : tr.videoNotVerified;
-              showSnackBar(context: context, message: content);
-            },
-            isSelected: userProfile.videoVerified ?? false,
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.group_outlined),
-            label: Text(friendsCount),
-            onPressed: friendsPage != null
-                ? () async {
-                    await context.dispatchAsUrl(friendsPage);
-                  }
-                : null,
-          ),
-          if (userProfile.gender != null)
-            IconChip(
-              iconData: Icons.face_2_outlined,
-              text: Text(userProfile.gender!),
-              backgroundColor: iconChipBackgroundColor,
-            ),
-          if (birthDayText.isNotEmpty)
-            IconChip(iconData: Icons.cake_outlined, text: Text(birthDayText), backgroundColor: iconChipBackgroundColor),
-          if (userProfile.zodiac != null)
-            IconChip(
-              iconData: MdiIcons.starCrescent,
-              text: Text(userProfile.zodiac!),
-              backgroundColor: iconChipBackgroundColor,
-            ),
-          if (userProfile.from != null)
-            IconChip(
-              iconData: Icons.location_on_outlined,
-              text: Text(userProfile.from!),
-              backgroundColor: iconChipBackgroundColor,
-            ),
-          if (userProfile.msn != null)
-            IconChip(
-              iconData: Icons.group_outlined,
-              text: Text(userProfile.msn!),
-              backgroundColor: iconChipBackgroundColor,
-            ),
-          if (userProfile.qq != null)
-            IconChip(
-              iconData: FontAwesomeIcons.qq,
-              text: Text(userProfile.qq!),
-              iconSize: 14,
-              backgroundColor: iconChipBackgroundColor,
-            ),
-        ],
-      ),
 
-      // Self introduction.
-      if (introductionContent != null) ...[
-        sizedBoxW16H16,
-        InputDecorator(
-          decoration: InputDecoration(labelText: tr.introduction, filled: false),
-          child: munchElement(context, introductionContent),
-        ),
-      ],
-
-      // Signature.
-      if (signatureContent != null) ...[
-        sizedBoxW16H16,
-        InputDecorator(
-          decoration: InputDecoration(labelText: tr.signature, filled: false),
-          child: munchElement(context, signatureContent),
-        ),
-      ],
-
-      // User group
-      if (moderatorGroupImg != null || userGroupImg != null) ...[
-        _SectionTitle(tr.userGroup),
-        Row(
-          children: [
-            if (moderatorGroupImg != null)
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CachedImage(moderatorGroupImg, maxWidth: 200, maxHeight: _groupAvatarHeight),
-                    sizedBoxW4H4,
-                    Text(moderatorGroupName ?? '', style: TextStyle(color: moderatorGroupNameColor)),
-                  ],
-                ),
-              ),
-            if (moderatorGroupImg != null && userGroupImg != null)
-              const SizedBox(width: 20, height: _groupAvatarHeight, child: VerticalDivider()),
-            if (userGroupImg != null)
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CachedImage(userGroupImg, maxWidth: 200, maxHeight: _groupAvatarHeight),
-                    sizedBoxW4H4,
-                    Text(userGroupName ?? '-', style: TextStyle(color: userGroupNameColor)),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ],
+      ?userGroup,
 
       // Secondary title of the profile owner.
       _ProfileSecondaryTitle(parsedUrl: state.secondaryTitleUrl, profileUid: int.tryParse(userProfile.uid ?? '')),
 
       /// Medals, if any.
-      if (userProfile.profileMedals?.isNotEmpty ?? false) ...[
-        _SectionTitle(tr.medals),
-        MedalGroupView(
-          userProfile.profileMedals!
-              .map((e) => Medal(name: e.name, image: e.image, alter: e.alter, description: e.description))
-              .toList(),
+      if (userProfile.profileMedals?.isNotEmpty ?? false)
+        _ProfileSection(
+          title: tr.medals,
+          icon: Icons.military_tech_outlined,
+          children: [
+            MedalGroupView(
+              userProfile.profileMedals!
+                  .map((e) => Medal(name: e.name, image: e.image, alter: e.alter, description: e.description))
+                  .toList(),
+            ),
+          ],
         ),
-      ],
 
       // Medal centre, own titles and title shop: all meant for the logged user (buy/apply/switch for themselves), so
       // the entry only shows on the user's own profile, like the achievements entry in the app bar.
       if (widget.username == null && widget.uid == null)
-        ListTile(
-          leading: const Icon(Icons.workspace_premium_outlined),
-          title: Text(context.t.medalTitleHub.title),
-          subtitle: Text(context.t.medalTitleHub.entryDescription),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () async => context.pushNamed(ScreenPaths.medalTitleHub),
+        AppSurface(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.workspace_premium_outlined),
+                title: Text(context.t.medalTitleHub.title),
+                subtitle: Text(context.t.medalTitleHub.entryDescription),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async => context.pushNamed(ScreenPaths.medalTitleHub),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: const Icon(Icons.account_balance_outlined),
+                title: Text(context.t.bank.title),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async => context.pushNamed(ScreenPaths.bank),
+              ),
+            ],
+          ),
         ),
 
-      if (widget.username == null && widget.uid == null)
-        ListTile(
-          leading: const Icon(Icons.account_balance_outlined),
-          title: Text(context.t.bank.title),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () async => context.pushNamed(ScreenPaths.bank),
+      if (userProfile.mangedForums?.isNotEmpty ?? false)
+        _ProfileSection(
+          title: tr.mangedForum,
+          icon: Icons.admin_panel_settings_outlined,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: userProfile.mangedForums!
+                  .map(
+                    (e) => ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(e.name),
+                      onPressed: () async => context.pushNamed(ScreenPaths.forum, pathParameters: {'fid': '${e.fid}'}),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ),
-
-      if (userProfile.mangedForums?.isNotEmpty ?? false) ...[
-        _SectionTitle(tr.mangedForum),
-        Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          children: userProfile.mangedForums!
-              .map(
-                (e) => ActionChip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text(e.name),
-                  onPressed: () async => context.pushNamed(ScreenPaths.forum, pathParameters: {'fid': '${e.fid}'}),
-                ),
-              )
-              .toList(),
-        ),
-      ],
 
       /// Checkin level.
-      ..._buildCheckinInfoRow(context, state),
+      ?checkin,
 
       /// Activity
-      _SectionTitle(tr.activityStatus),
-      if (userProfile.onlineTime != null)
-        _ProfileSectionListTile(
-          leading: const Icon(Icons.timelapse_outlined),
-          title: Text(tr.onlineTime),
-          subtitle: Text(userProfile.onlineTime!),
-        ),
-      if (userProfile.registerTime != null)
-        _ProfileSectionListTile(
-          leading: Icon(MdiIcons.timelineAlertOutline),
-          title: Text(tr.registerTime),
-          subtitle: Text(userProfile.registerTime!.yyyyMMDDHHMM()),
-        ),
-      if (userProfile.lastVisitTime != null)
-        _ProfileSectionListTile(
-          leading: Icon(MdiIcons.timelineClockOutline),
-          title: Text(tr.lastVisitTime),
-          subtitle: Text(userProfile.lastVisitTime!.yyyyMMDDHHMM()),
-        ),
-      if (userProfile.lastActiveTime != null)
-        _ProfileSectionListTile(
-          leading: Icon(MdiIcons.timelineCheckOutline),
-          title: Text(tr.lastActiveTime),
-          subtitle: Text(userProfile.lastActiveTime!.yyyyMMDDHHMM()),
-        ),
-      if (userProfile.lastPostTime != null)
-        _ProfileSectionListTile(
-          leading: Icon(MdiIcons.timelinePlusOutline),
-          title: Text(tr.lastPostTime),
-          subtitle: Text(userProfile.lastPostTime!.yyyyMMDDHHMM()),
-        ),
-      if (userProfile.timezone != null)
-        _ProfileSectionListTile(
-          leading: const Icon(Symbols.globe_location_pin),
-          title: Text(tr.timezone),
-          subtitle: Text(userProfile.timezone!),
-        ),
-      if (userProfile.registerIP != null)
-        ObscureListTile(
-          contentPadding: EdgeInsets.zero,
-          minTileHeight: 0,
-          leading: const Icon(Symbols.add_location_alt),
-          title: Text(tr.registerIP),
-          subtitle: Text(userProfile.registerIP!),
-        ),
-      if (userProfile.lastVisitIP != null)
-        ObscureListTile(
-          contentPadding: EdgeInsets.zero,
-          minTileHeight: 0,
-          leading: const Icon(Symbols.moved_location),
-          title: Text(tr.lastVisitIP),
-          subtitle: Text(userProfile.lastVisitIP!),
-        ),
-
-      /// Statistics.
-      _SectionTitle(tr.statistics.title),
-      GridView(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisExtent: 70),
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
+      _ProfileSection(
+        title: tr.activityStatus,
+        icon: Icons.timeline_outlined,
         children: [
-          if (userProfile.credits != null) AttrBlock(name: tr.statistics.credits, value: userProfile.credits!),
-          if (userProfile.famous != null) AttrBlock(name: tr.statistics.famous, value: userProfile.famous!),
-          if (userProfile.coins != null) AttrBlock(name: tr.statistics.coins, value: userProfile.coins!),
-          if (userProfile.publicity != null) AttrBlock(name: tr.statistics.publicity, value: userProfile.publicity!),
-          if (userProfile.natural != null) AttrBlock(name: tr.statistics.natural, value: userProfile.natural!),
-          if (userProfile.scheming != null) AttrBlock(name: tr.statistics.scheming, value: userProfile.scheming!),
-          if (userProfile.spirit != null) AttrBlock(name: tr.statistics.spirit, value: userProfile.spirit!),
-          // Special attr changes over time.
-          // Here is dynamic and not translated.
-          if (userProfile.specialAttr != null && userProfile.specialAttrName != null)
-            AttrBlock(name: userProfile.specialAttrName!, value: userProfile.specialAttr!),
-          if (userProfile.specialAttr2 != null && userProfile.specialAttrName2 != null)
-            AttrBlock(name: userProfile.specialAttrName2!, value: userProfile.specialAttr2!),
+          if (activityItems.isNotEmpty) _InfoGrid(activityItems),
+          // IP addresses stay hidden until asked for.
+          if (userProfile.registerIP != null)
+            ObscureListTile(
+              contentPadding: EdgeInsets.zero,
+              minTileHeight: 0,
+              leading: const Icon(Symbols.add_location_alt),
+              title: Text(tr.registerIP),
+              subtitle: Text(userProfile.registerIP!),
+            ),
+          if (userProfile.lastVisitIP != null)
+            ObscureListTile(
+              contentPadding: EdgeInsets.zero,
+              minTileHeight: 0,
+              leading: const Icon(Symbols.moved_location),
+              title: Text(tr.lastVisitIP),
+              subtitle: Text(userProfile.lastVisitIP!),
+            ),
         ],
       ),
+
+      /// Statistics: value blocks sized by their text, not a fixed 70 pixels grid cut at large text scales.
+      if (statisticsItems.isNotEmpty)
+        _ProfileSection(
+          title: tr.statistics.title,
+          icon: Icons.bar_chart_outlined,
+          children: [_InfoGrid(statisticsItems, minTileWidth: 110, maxColumns: 4, emphasizeValue: true)],
+        ),
+    ];
+
+    // All content widgets in profile main sliver list.
+    return [
+      for (var i = 0; i < sections.length; i++) ...[if (i > 0) const SizedBox(height: appSurfaceGap), sections[i]],
     ];
   }
 
@@ -936,7 +908,12 @@ class _ProfilePageState extends State<ProfilePage> {
           // Real app bar when data loaded.
           _buildSliverAppBar(context, state, logout: logout),
           SliverPadding(
-            padding: edgeInsetsL12T4R12,
+            // Centered and at most [appFormMaxWidth] wide on wide windows, room for the navigation bar at the end.
+            padding: appCenteredPadding(
+              MediaQuery.sizeOf(context).width,
+              maxWidth: appFormMaxWidth,
+              minPadding: 12,
+            ).copyWith(top: 12, bottom: 24 + MediaQuery.paddingOf(context).bottom),
             sliver: SliverList(delegate: SliverChildListDelegate(_buildSliverContent(context, state))),
           ),
         ],
@@ -1048,16 +1025,22 @@ class _ProfileSecondaryTitleState extends State<_ProfileSecondaryTitle> {
     }
   }
 
-  Widget _section(BuildContext context, Widget badge) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [_SectionTitle(context.t.profilePage.secondaryTitle), badge],
+  Widget _section(BuildContext context, Widget badge) => _ProfileSection(
+    title: context.t.profilePage.secondaryTitle,
+    icon: Icons.badge_outlined,
+    children: [
+      Align(alignment: AlignmentDirectional.centerStart, child: badge),
+    ],
   );
 
   @override
   Widget build(BuildContext context) {
+    // Up to the natural 184px width of the image, complete on every phone: the room is the page width less the page
+    // and surface paddings (12 + 16 on each side).
+    final width = SecondaryTitleBadge.fitWidth(math.min(MediaQuery.sizeOf(context).width, appFormMaxWidth) - 56);
     final parsedUrl = widget.parsedUrl;
     if (parsedUrl != null) {
-      return _section(context, SecondaryTitleBadge(parsedUrl, width: 138));
+      return _section(context, SecondaryTitleBadge(parsedUrl, width: width));
     }
     final cubit = _cubit;
     if (cubit == null || !_isOwn) {
@@ -1067,60 +1050,124 @@ class _ProfileSecondaryTitleState extends State<_ProfileSecondaryTitle> {
       bloc: cubit,
       builder: (context, state) {
         final url = state.imageUrlFor(widget.profileUid);
-        if (url == null) {
-          return sizedBoxEmpty;
+        if (url != null) {
+          return _section(
+            context,
+            SecondaryTitleBadge(url, key: ValueKey(url), width: width, semanticLabel: state.title?.name),
+          );
         }
-        return _section(
-          context,
-          SecondaryTitleBadge(url, key: ValueKey(url), width: 138, semanticLabel: state.title?.name),
-        );
+        return switch (state.statusFor(widget.profileUid)) {
+          CurrentTitleStatus.loading => _section(context, SecondaryTitlePlaceholder(width: width)),
+          // Reading failed: say so and offer to try again, never claim that no title is in use.
+          CurrentTitleStatus.failure => _section(
+            context,
+            SecondaryTitleRetry(width: width, onRetry: () => unawaited(cubit.ensureLoaded())),
+          ),
+          CurrentTitleStatus.initial || CurrentTitleStatus.success => sizedBoxEmpty,
+        };
       },
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title);
+/// A section of the profile: a surface with a header and its content stacked with a small gap.
+class _ProfileSection extends StatelessWidget {
+  const _ProfileSection({required this.title, required this.icon, required this.children});
 
   final String title;
 
+  final IconData icon;
+
+  final List<Widget> children;
+
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => AppSurface(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        sizedBoxW24H24,
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
-        ),
-        sizedBoxW12H12,
+        AppSectionHeader(title, icon: icon, padding: const EdgeInsets.only(bottom: 8)),
+        for (var i = 0; i < children.length; i++) ...[if (i > 0) sizedBoxW8H8, children[i]],
       ],
-    );
-  }
+    ),
+  );
 }
 
-class _ProfileSectionListTile extends StatelessWidget {
-  /// Constructor.
-  const _ProfileSectionListTile({required this.leading, required this.title, required this.subtitle});
+/// Optional icon, caption and value of a profile number or date.
+typedef _InfoItem = (IconData? icon, String label, String value);
 
-  /// [ListTile.leading].
-  final Widget? leading;
+/// Value blocks laid out in as many columns as fit the room at the current text scale (at most [maxColumns]); the
+/// blocks of a row share its height, nothing is cut.
+class _InfoGrid extends StatelessWidget {
+  const _InfoGrid(this.items, {this.minTileWidth = 160, this.maxColumns = 3, this.emphasizeValue = false});
 
-  /// [ListTile.title].
-  final Widget? title;
+  final List<_InfoItem> items;
 
-  /// [ListTile.subtitle].
-  final Widget? subtitle;
+  /// Narrowest a block gets at text scale 1.
+  final double minTileWidth;
 
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      minTileHeight: 0,
-      contentPadding: EdgeInsets.zero,
-      leading: leading,
-      title: title,
-      subtitle: subtitle,
+  final int maxColumns;
+
+  /// Show the value larger than the caption (numbers).
+  final bool emphasizeValue;
+
+  Widget _tile(BuildContext context, _InfoItem item) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    final (icon, label, value) = item;
+    return AppInsetBlock(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 18, color: colorScheme.primary), sizedBoxW8H8],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: textTheme.labelSmall?.copyWith(color: colorScheme.outline)),
+                Text(
+                  value,
+                  style: (emphasizeValue ? textTheme.titleMedium : textTheme.bodyMedium)?.copyWith(
+                    fontWeight: emphasizeValue ? FontWeight.bold : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+      final columns = (constraints.maxWidth / (minTileWidth * scale)).floor().clamp(1, maxColumns);
+      final rows = appRowCount(items.length, columns);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var row = 0; row < rows; row++) ...[
+            if (row > 0) sizedBoxW8H8,
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var column = 0; column < columns; column++) ...[
+                    if (column > 0) sizedBoxW8H8,
+                    Expanded(
+                      child: row * columns + column < items.length
+                          ? _tile(context, items[row * columns + column])
+                          : sizedBoxEmpty,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      );
+    },
+  );
 }

@@ -53,12 +53,17 @@ import 'package:tsdm_client/utils/show_bottom_sheet.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
 import 'package:tsdm_client/utils/window_configs.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/color_palette.dart';
 import 'package:tsdm_client/widgets/section_list_tile.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
-import 'package:tsdm_client/widgets/section_title_text.dart';
 import 'package:tsdm_client/widgets/shutdown.dart';
-import 'package:tsdm_client/widgets/tips.dart';
+
+/// Window width from which the settings groups are laid out in two columns.
+const _settingsTwoColumnWidth = 1200.0;
+
+/// Widest the two columns of settings grow together.
+const _settingsTwoColumnMaxWidth = 1240.0;
 
 /// Settings page of the app.
 class SettingsPage extends StatefulWidget {
@@ -94,8 +99,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       bottomBar: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          TextButton(
-            child: Text(context.t.general.reset),
+          TextButton.icon(
+            icon: const Icon(Icons.restart_alt_outlined),
+            label: Text(context.t.general.reset),
             onPressed: () async => context.pop((null, true)),
           ),
         ],
@@ -103,19 +109,78 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     );
   }
 
-  List<Widget> _buildAccountSection(BuildContext context, SettingsState state) {
+  /// Value of a row shown at its end, in the secondary color, never wider than a third of the row.
+  Widget _trailingValue(BuildContext context, String value) => ConstrainedBox(
+    constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width / 3),
+    child: Text(
+      value,
+      textAlign: TextAlign.end,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
+    ),
+  );
+
+  Widget _buildAccountSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.accountSection;
-    return [
-      SectionTitleText(tr.title),
-      SectionListTile(
-        leading: const Icon(Icons.account_circle_outlined),
-        title: Text(tr.mgmt),
-        onTap: () async => context.pushNamed(ScreenPaths.manageAccount),
-      ),
-    ];
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.manage_accounts_outlined,
+      children: [
+        SectionListTile(
+          leading: const Icon(Icons.account_circle_outlined),
+          title: Text(tr.mgmt),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.manageAccount),
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildAppearanceSection(BuildContext context, SettingsState state) {
+  Widget _buildThemeModeTile(BuildContext context, int themeModeIndex) {
+    final tr = context.t.settingsPage.appearanceSection;
+    return SectionListTile(
+      leading: const Icon(Icons.contrast_outlined),
+      title: Text(tr.themeMode.title),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(<String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex]),
+          sizedBoxW8H8,
+          // Icons only: three labels do not fit a phone at a large text scale; each segment has a tooltip.
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(
+                value: ThemeMode.light.index,
+                icon: const Icon(Icons.light_mode_outlined),
+                tooltip: tr.themeMode.light,
+              ),
+              ButtonSegment(
+                value: ThemeMode.system.index,
+                icon: const Icon(Icons.auto_mode_outlined),
+                tooltip: tr.themeMode.system,
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark.index,
+                icon: const Icon(Icons.dark_mode_outlined),
+                tooltip: tr.themeMode.dark,
+              ),
+            ],
+            selected: {themeModeIndex},
+            onSelectionChanged: (selection) {
+              final themeIndex = selection.first;
+              context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
+            },
+          ),
+          sizedBoxW4H4,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAppearanceSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.appearanceSection;
     final settingsLocale = state.settingsMap.locale;
     final locale = AppLocale.values.firstWhereOrNull((v) => v.languageTag == settingsLocale);
@@ -124,202 +189,202 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final showForumCardShortcut = state.settingsMap.showShortcutInForumCard;
     final accentColor = state.settingsMap.accentColor;
     final accentColorFollowSystem = state.settingsMap.accentColorFollowSystem;
-    final showUnreadInfoHint = state.settingsMap.showUnreadInfoHint;
-    final showUnreadNoticeBadge = state.settingsMap.showUnreadNoticeBadge;
-    final showUnreadPersonalMessageBadge = state.settingsMap.showUnreadPersonalMessageBadge;
-    final showUnreadBroadcastMessageBadge = state.settingsMap.showUnreadBroadcastMessageBadge;
     final fontFamily = state.settingsMap.fontFamily;
     final textScaleFactor = state.settingsMap.textScaleFactor;
 
-    return [
-      SectionTitleText(tr.title),
-      SectionListTile(
-        leading: const Icon(Icons.contrast_outlined),
-        title: Text(tr.themeMode.title),
-        subtitle: Text(<String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex]),
-        trailing: ToggleButtons(
-          isSelected: [
-            themeModeIndex == ThemeMode.light.index,
-            themeModeIndex == ThemeMode.system.index,
-            themeModeIndex == ThemeMode.dark.index,
-          ],
-          children: const [
-            Icon(Icons.light_mode_outlined),
-            Icon(Icons.auto_mode_outlined),
-            Icon(Icons.dark_mode_outlined),
-          ],
-          onPressed: (index) async {
-            var themeIndex = 0;
-            switch (index) {
-              case 0: themeIndex = 1;
-              case 1: themeIndex = 0;
-              case 2: themeIndex = 2;
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.palette_outlined,
+      children: [
+        _buildThemeModeTile(context, themeModeIndex),
+        SectionListTile(
+          leading: const Icon(Icons.translate_outlined),
+          title: Text(tr.languages.title),
+          subtitle: Text(localeName),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final localeGroup = await selectLanguageDialog(context, locale?.languageTag ?? '');
+            if (localeGroup == null) return;
+            if (localeGroup.$2) {
+              await LocaleSettings.useDeviceLocale();
+              await desktopUpdateWindowTitle();
+              if (!context.mounted) return;
+              await getIt.get<SettingsRepository>().setValue(SettingsKeys.locale, '');
+            } else {
+              await LocaleSettings.setLocale(localeGroup.$1!);
+              await desktopUpdateWindowTitle();
+              if (!context.mounted) return;
+              await getIt.get<SettingsRepository>().setValue(SettingsKeys.locale, localeGroup.$1!.languageTag);
             }
-            context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
-            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
+            if (isAndroid && context.mounted) {
+              unawaited(getIt.get<BackgroundSyncController>().applySettings(getIt.get<SettingsRepository>()));
+            }
           },
         ),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.translate_outlined),
-        title: Text(tr.languages.title),
-        subtitle: Text(localeName),
-        onTap: () async {
-          final localeGroup = await selectLanguageDialog(context, locale?.languageTag ?? '');
-          if (localeGroup == null) return;
-          if (localeGroup.$2) {
-            await LocaleSettings.useDeviceLocale();
-            await desktopUpdateWindowTitle();
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.border_color_outlined),
+          title: Text(tr.colorSchemeFollowSystem.title),
+          subtitle: Text(tr.colorSchemeFollowSystem.detail),
+          value: accentColorFollowSystem,
+          onChanged: (v) async {
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.accentColorFollowSystem, v));
+            if (v) {
+              await SystemTheme.accentColor.load();
+              if (!context.mounted) return;
+              final systemColor = SystemTheme.accentColor.accent;
+              context.read<ThemeCubit>().setAccentColor(systemColor);
+            } else {
+              context.read<ThemeCubit>().setAccentColor(
+                Color(accentColor >= 0 ? accentColor : SettingsKeys.accentColor.defaultValue),
+              );
+            }
+          },
+        ),
+        SectionListTile(
+          enabled: !accentColorFollowSystem,
+          leading: const Icon(Icons.color_lens_outlined),
+          title: Text(tr.colorScheme.title),
+          subtitle: accentColorFollowSystem ? Text(tr.colorScheme.overrideWithSystem) : null,
+          trailing: accentColor < 0 || accentColorFollowSystem ? null : ColorPalette(color: Color(accentColor)),
+          onTap: () async {
+            final color = await _showAccentColorPickerDialog(context);
+            if (color == null) return;
             if (!context.mounted) return;
-            await getIt.get<SettingsRepository>().setValue(SettingsKeys.locale, '');
-          } else {
-            await LocaleSettings.setLocale(localeGroup.$1!);
-            await desktopUpdateWindowTitle();
-            if (!context.mounted) return;
-            await getIt.get<SettingsRepository>().setValue(SettingsKeys.locale, localeGroup.$1!.languageTag);
-          }
-          if (isAndroid && context.mounted) {
-            unawaited(getIt.get<BackgroundSyncController>().applySettings(getIt.get<SettingsRepository>()));
-          }
-        },
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.shortcut_outlined),
-        title: Text(tr.showShortcutInForumCard.title),
-        subtitle: Text(tr.showShortcutInForumCard.detail),
-        value: showForumCardShortcut,
-        onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showShortcutInForumCard, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.border_color_outlined),
-        title: Text(tr.colorSchemeFollowSystem.title),
-        subtitle: Text(tr.colorSchemeFollowSystem.detail),
-        value: accentColorFollowSystem,
-        onChanged: (v) async {
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.accentColorFollowSystem, v));
-          if (v) {
-            await SystemTheme.accentColor.load();
-            if (!context.mounted) return;
-            final systemColor = SystemTheme.accentColor.accent;
-            context.read<ThemeCubit>().setAccentColor(systemColor);
-          } else {
-            context.read<ThemeCubit>().setAccentColor(
-              Color(accentColor >= 0 ? accentColor : SettingsKeys.accentColor.defaultValue),
+            if (color.$2) {
+              context.read<ThemeCubit>().setAccentColor(Color(SettingsKeys.accentColor.defaultValue));
+              context.read<SettingsBloc>().add(
+                SettingsValueChanged(SettingsKeys.accentColor, SettingsKeys.accentColor.defaultValue),
+              );
+              return;
+            }
+            context.read<ThemeCubit>().setAccentColor(color.$1!);
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.accentColor, color.$1!.valueA));
+          },
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.font_download_outlined),
+          title: Text(tr.fontFamily.title),
+          subtitle: fontFamily.isEmpty ? null : Text(fontFamily),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final selectedFont = await showDialog<String>(
+              context: context,
+              builder: (_) => RootPage(DialogPaths.fontPicker, FontFamilyDialog(fontFamily)),
             );
-          }
-        },
-      ),
-      SectionListTile(
-        enabled: !accentColorFollowSystem,
-        leading: const Icon(Icons.color_lens_outlined),
-        title: Text(tr.colorScheme.title),
-        subtitle: accentColorFollowSystem ? Text(tr.colorScheme.overrideWithSystem) : null,
-        trailing: accentColor < 0 || accentColorFollowSystem ? null : ColorPalette(color: Color(accentColor)),
-        onTap: () async {
-          final color = await _showAccentColorPickerDialog(context);
-          if (color == null) return;
-          if (!context.mounted) return;
-          if (color.$2) {
-            context.read<ThemeCubit>().setAccentColor(Color(SettingsKeys.accentColor.defaultValue));
-            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.accentColor, SettingsKeys.accentColor.defaultValue));
-            return;
-          }
-          context.read<ThemeCubit>().setAccentColor(color.$1!);
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.accentColor, color.$1!.valueA));
-        },
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.notifications_outlined),
-        title: Text(tr.showUnreadInfoHint.title),
-        subtitle: Text(tr.showUnreadInfoHint.detail),
-        value: showUnreadInfoHint,
-        onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadInfoHint, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.notifications_paused_outlined),
-        title: Text(tr.unreadNoticeBadge),
-        value: showUnreadNoticeBadge,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadNoticeBadge, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.notifications_active_outlined),
-        title: Text(tr.unreadPersonalMessageBadge),
-        value: showUnreadPersonalMessageBadge,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadPersonalMessageBadge, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.notification_important_outlined),
-        title: Text(tr.unreadBroadcastMessageBadge),
-        value: showUnreadBroadcastMessageBadge,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadBroadcastMessageBadge, v)),
-      ),
-      Padding(padding: edgeInsetsT4B4, child: Tips(tr.unreadBadgeLimitation)),
-      SectionListTile(
-        leading: const Icon(Icons.article_outlined),
-        title: Text(tr.threadCard.title),
-        subtitle: Text(tr.threadCard.detail),
-        onTap: () => context.pushNamed(ScreenPaths.settingsThreadAppearance.path),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.font_download_outlined),
-        title: Text(tr.fontFamily.title),
-        subtitle: fontFamily.isEmpty ? null : Text(fontFamily),
-        onTap: () async {
-          final selectedFont = await showDialog<String>(
-            context: context,
-            builder: (_) => RootPage(DialogPaths.fontPicker, FontFamilyDialog(fontFamily)),
-          );
-          if (selectedFont == null || !context.mounted) return;
-          context.read<ThemeCubit>().setFontFamily(selectedFont);
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.fontFamily, selectedFont));
-        },
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.text_increase_outlined),
-        title: Text(tr.textScaleFactor.title),
-        onTap: () async {
-          final selectedScale = await showDialog<double>(
-            context: context,
-            builder: (_) => RootPage(DialogPaths.textScalePicker, TextScaleDialog(textScaleFactor)),
-          );
-          if (!context.mounted || selectedScale == null) return;
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.textScaleFactor, selectedScale));
-        },
-      ),
-    ];
+            if (selectedFont == null || !context.mounted) return;
+            context.read<ThemeCubit>().setFontFamily(selectedFont);
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.fontFamily, selectedFont));
+          },
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.text_increase_outlined),
+          title: Text(tr.textScaleFactor.title),
+          trailing: _trailingValue(context, '${textScaleFactor.toStringAsFixed(2)}x'),
+          onTap: () async {
+            final selectedScale = await showDialog<double>(
+              context: context,
+              builder: (_) => RootPage(DialogPaths.textScalePicker, TextScaleDialog(textScaleFactor)),
+            );
+            if (!context.mounted || selectedScale == null) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.textScaleFactor, selectedScale));
+          },
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.article_outlined),
+          title: Text(tr.threadCard.title),
+          subtitle: Text(tr.threadCard.detail),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.pushNamed(ScreenPaths.settingsThreadAppearance.path),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.shortcut_outlined),
+          title: Text(tr.showShortcutInForumCard.title),
+          subtitle: Text(tr.showShortcutInForumCard.detail),
+          value: showForumCardShortcut,
+          onChanged: (v) async =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showShortcutInForumCard, v)),
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildWindowSection(BuildContext context, SettingsState state) {
+  /// Unread hints and badges, split from the appearance group so each group stays short.
+  Widget _buildUnreadSection(BuildContext context, SettingsState state) {
+    final tr = context.t.settingsPage.appearanceSection;
+    final settings = state.settingsMap;
+    return AppTileGroup(
+      title: tr.showUnreadInfoHint.title,
+      icon: Icons.mark_email_unread_outlined,
+      footer: AppNoticeBanner(message: tr.unreadBadgeLimitation),
+      children: [
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.notifications_outlined),
+          title: Text(tr.showUnreadInfoHint.title),
+          subtitle: Text(tr.showUnreadInfoHint.detail),
+          value: settings.showUnreadInfoHint,
+          onChanged: (v) async =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadInfoHint, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.notifications_paused_outlined),
+          title: Text(tr.unreadNoticeBadge),
+          value: settings.showUnreadNoticeBadge,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadNoticeBadge, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.notifications_active_outlined),
+          title: Text(tr.unreadPersonalMessageBadge),
+          value: settings.showUnreadPersonalMessageBadge,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadPersonalMessageBadge, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.notification_important_outlined),
+          title: Text(tr.unreadBroadcastMessageBadge),
+          value: settings.showUnreadBroadcastMessageBadge,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.showUnreadBroadcastMessageBadge, v)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWindowSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.windowSection;
     final windowRememberSize = state.settingsMap.windowRememberSize;
     final windowRememberPosition = state.settingsMap.windowRememberPosition;
     final windowInCenter = state.settingsMap.windowInCenter;
 
-    return [
-      SectionTitleText(tr.title),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.settings_overscan_outlined),
-        title: Text(tr.windowRememberSize.title),
-        subtitle: Text(tr.windowRememberSize.detail),
-        value: windowRememberSize,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowRememberSize, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.open_with_outlined),
-        title: Text(tr.windowRememberPosition.title),
-        subtitle: Text(tr.windowRememberPosition.detail),
-        value: windowRememberPosition,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowRememberPosition, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.filter_center_focus_outlined),
-        title: Text(tr.windowInCenter.title),
-        subtitle: Text(tr.windowInCenter.detail),
-        value: windowInCenter,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowInCenter, v)),
-      ),
-      Tips(tr.disableHint),
-    ];
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.desktop_windows_outlined,
+      footer: AppNoticeBanner(message: tr.disableHint, selectable: true),
+      children: [
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.settings_overscan_outlined),
+          title: Text(tr.windowRememberSize.title),
+          subtitle: Text(tr.windowRememberSize.detail),
+          value: windowRememberSize,
+          onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowRememberSize, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.open_with_outlined),
+          title: Text(tr.windowRememberPosition.title),
+          subtitle: Text(tr.windowRememberPosition.detail),
+          value: windowRememberPosition,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowRememberPosition, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.filter_center_focus_outlined),
+          title: Text(tr.windowInCenter.title),
+          subtitle: Text(tr.windowInCenter.detail),
+          value: windowInCenter,
+          onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.windowInCenter, v)),
+        ),
+      ],
+    );
   }
 
   Future<void> _applyBackgroundSyncSettings(BuildContext context) async {
@@ -337,106 +402,124 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     await _applyBackgroundSyncSettings(context);
   }
 
-  List<Widget> _buildBehaviorSection(BuildContext context, SettingsState state) {
+  /// Reading and editing behavior: order, floor interaction, editor parser and the templates.
+  Widget _buildBehaviorSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.behaviorSection;
     final threadReverseOrder = state.settingsMap.threadReverseOrder;
+    final enableBBCodeParser = state.settingsMap.enableEditorBBCodeParser;
+    final threadFloorInteractionMode = state.settingsMap.threadFloorInteractionMode;
+
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.tune_outlined,
+      children: [
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.align_vertical_top_outlined),
+          title: Text(tr.threadReverseOrder.title),
+          subtitle: Text(tr.threadReverseOrder.detail),
+          value: threadReverseOrder,
+          onChanged: (v) async =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.threadReverseOrder, v)),
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.touch_app_outlined),
+          title: Text(tr.threadFloorInteractionMode.title),
+          subtitle: Text(tr.threadFloorInteractionMode.detail),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final result = await showSelectThreadFloorInteractionMode(context, threadFloorInteractionMode);
+            if (result == null) return;
+            if (!context.mounted) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.threadFloorInteractionMode, result));
+          },
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.code_outlined),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Expanded(child: Text(tr.editorBBCodeParser.title)),
+              sizedBoxW8H8,
+              IconButton(
+                icon: Icon(Icons.help_outline, color: Theme.of(context).colorScheme.secondary),
+                tooltip: tr.editorBBCodeParser.tip.title,
+                onPressed: () async => showMessageSingleButtonDialog(
+                  context: context,
+                  title: tr.editorBBCodeParser.tip.title,
+                  message: tr.editorBBCodeParser.tip.detail,
+                ),
+              ),
+            ],
+          ),
+          value: enableBBCodeParser,
+          onChanged: (v) async =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableEditorBBCodeParser, v)),
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.star_rate_outlined),
+          title: Text(context.t.fastRateTemplate.title),
+          subtitle: Text(context.t.fastRateTemplate.details),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.fastRateTemplate, pathParameters: {'pick': 'false'}),
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.quickreply_outlined),
+          title: Text(context.t.fastReplyTemplate.title),
+          subtitle: Text(context.t.fastReplyTemplate.details),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.fastReplyTemplate, pathParameters: {'pick': 'false'}),
+        ),
+      ],
+    );
+  }
+
+  /// Notice sync: interval, Android permissions and the background service.
+  Widget _buildNoticeSyncSection(BuildContext context, SettingsState state) {
+    final tr = context.t.settingsPage.behaviorSection;
     final autoSyncNoticeSeconds = state.settingsMap.autoSyncNoticeSeconds;
     Duration? autoSyncNoticeDuration;
     if (autoSyncNoticeSeconds > 0) {
       autoSyncNoticeDuration = Duration(seconds: autoSyncNoticeSeconds);
     }
-    final enableBBCodeParser = state.settingsMap.enableEditorBBCodeParser;
-    final threadFloorInteractionMode = state.settingsMap.threadFloorInteractionMode;
 
-    return [
-      SectionTitleText(tr.title),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.align_vertical_top_outlined),
-        title: Text(tr.threadReverseOrder.title),
-        subtitle: Text(tr.threadReverseOrder.detail),
-        value: threadReverseOrder,
-        onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.threadReverseOrder, v)),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.sync_outlined),
-        title: Text(tr.autoSyncNotice.title),
-        subtitle: Text(tr.autoSyncNotice.detail),
-        trailing: Text(
-          autoSyncNoticeDuration?.readable(context) ?? context.t.general.never,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
+    return AppTileGroup(
+      title: tr.autoSyncNotice.title,
+      icon: Icons.sync_outlined,
+      children: [
+        SectionListTile(
+          leading: const Icon(Icons.sync_outlined),
+          title: Text(tr.autoSyncNotice.title),
+          subtitle: Text(tr.autoSyncNotice.detail),
+          trailing: _trailingValue(context, autoSyncNoticeDuration?.readable(context) ?? context.t.general.never),
+          onTap: () async {
+            final seconds = await showDialog<int>(
+              context: context,
+              builder: (_) => RootPage(DialogPaths.selectAutoSyncDuration, AutoSyncNoticeDialog(autoSyncNoticeSeconds)),
+            );
+            if (seconds == null || !context.mounted) return;
+            if (seconds > 0) {
+              context.read<AutoNotificationCubit>().start(Duration(seconds: seconds));
+              unawaited(_permissionCubit.requestNotification(openSettingsWhenPermanentlyDenied: false));
+            } else {
+              context.read<AutoNotificationCubit>().stop();
+            }
+            await getIt.get<SettingsRepository>().setValue(SettingsKeys.autoSyncNoticeSeconds, seconds);
+            if (isAndroid && context.mounted) {
+              await _applyBackgroundSyncSettings(context);
+            }
+          },
         ),
-        onTap: () async {
-          final seconds = await showDialog<int>(
-            context: context,
-            builder: (_) => RootPage(DialogPaths.selectAutoSyncDuration, AutoSyncNoticeDialog(autoSyncNoticeSeconds)),
-          );
-          if (seconds == null || !context.mounted) return;
-          if (seconds > 0) {
-            context.read<AutoNotificationCubit>().start(Duration(seconds: seconds));
-            unawaited(_permissionCubit.requestNotification(openSettingsWhenPermanentlyDenied: false));
-          } else {
-            context.read<AutoNotificationCubit>().stop();
-          }
-          await getIt.get<SettingsRepository>().setValue(SettingsKeys.autoSyncNoticeSeconds, seconds);
-          if (isAndroid && context.mounted) {
-            await _applyBackgroundSyncSettings(context);
-          }
-        },
-      ),
-      if (isAndroid) const AndroidPermissionTiles(),
-      if (isAndroid)
-        SectionSwitchListTile(
-          secondary: const Icon(Icons.cloud_sync_outlined),
-          title: Text(tr.backgroundMessageService.title),
-          subtitle: Text(tr.backgroundMessageService.detail),
-          value: state.settingsMap.enableBackgroundMessageService,
-          onChanged: (v) async => _toggleBackgroundSync(context, enable: v),
-        ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.code_outlined),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Expanded(child: Text(tr.editorBBCodeParser.title)),
-            sizedBoxW8H8,
-            IconButton(
-              icon: Icon(Icons.help_outline, color: Theme.of(context).colorScheme.secondary),
-              tooltip: tr.editorBBCodeParser.tip.title,
-              onPressed: () async => showMessageSingleButtonDialog(
-                context: context,
-                title: tr.editorBBCodeParser.tip.title,
-                message: tr.editorBBCodeParser.tip.detail,
-              ),
-            ),
-          ],
-        ),
-        value: enableBBCodeParser,
-        onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableEditorBBCodeParser, v)),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.star_rate_outlined),
-        title: Text(context.t.fastRateTemplate.title),
-        subtitle: Text(context.t.fastRateTemplate.details),
-        onTap: () async => context.pushNamed(ScreenPaths.fastRateTemplate, pathParameters: {'pick': 'false'}),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.quickreply_outlined),
-        title: Text(context.t.fastReplyTemplate.title),
-        subtitle: Text(context.t.fastReplyTemplate.details),
-        onTap: () async => context.pushNamed(ScreenPaths.fastReplyTemplate, pathParameters: {'pick': 'false'}),
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.touch_app_outlined),
-        title: Text(context.t.settingsPage.behaviorSection.threadFloorInteractionMode.title),
-        subtitle: Text(context.t.settingsPage.behaviorSection.threadFloorInteractionMode.detail),
-        onTap: () async {
-          final result = await showSelectThreadFloorInteractionMode(context, threadFloorInteractionMode);
-          if (result == null) return;
-          if (!context.mounted) return;
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.threadFloorInteractionMode, result));
-        },
-      ),
-    ];
+        if (isAndroid) const AndroidPermissionTiles(),
+        if (isAndroid)
+          SectionSwitchListTile(
+            secondary: const Icon(Icons.cloud_sync_outlined),
+            title: Text(tr.backgroundMessageService.title),
+            subtitle: Text(tr.backgroundMessageService.detail),
+            value: state.settingsMap.enableBackgroundMessageService,
+            onChanged: (v) async => _toggleBackgroundSync(context, enable: v),
+          ),
+      ],
+    );
   }
 
   Future<String?> _showSetCheckinFeelingDialog(BuildContext context, String defaultFeeling) async {
@@ -453,54 +536,59 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     );
   }
 
-  List<Widget> _buildCheckinSection(BuildContext context, SettingsState state) {
+  Widget _buildCheckinSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.checkinSection;
     final checkinFeeling = state.settingsMap.checkinFeeling;
     final checkinMessage = state.settingsMap.checkinMessage;
     final autoCheckin = state.settingsMap.autoCheckin;
 
-    return [
-      SectionTitleText(tr.title),
-      SectionListTile(
-        leading: const Icon(Icons.emoji_emotions_outlined),
-        title: Text(tr.feeling),
-        subtitle: Text(CheckinFeeling.from(checkinFeeling).translate(context)),
-        onTap: () async {
-          final result = await _showSetCheckinFeelingDialog(context, checkinFeeling);
-          if (result == null) return;
-          if (!context.mounted) return;
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.checkinFeeling, result));
-        },
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.textsms_outlined),
-        title: Text(tr.anythingToSay),
-        subtitle: Text(checkinMessage),
-        onTap: () async {
-          final result = await _showSetCheckinMessageDialog(context, checkinMessage);
-          if (result == null) return;
-          if (!context.mounted) return;
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.checkinMessage, result));
-        },
-      ),
-      SectionSwitchListTile(
-        secondary: Icon(MdiIcons.autoFix),
-        title: Text(tr.autoCheckin.title),
-        subtitle: Text(tr.autoCheckin.detail),
-        value: autoCheckin,
-        onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoCheckin, v)),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.redeem_outlined),
-        title: Text(tr.autoDailyRedPacket.title),
-        subtitle: Text(tr.autoDailyRedPacket.detail),
-        value: state.settingsMap.autoDailyRedPacket,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoDailyRedPacket, v)),
-      ),
-    ];
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.event_available_outlined,
+      children: [
+        SectionListTile(
+          leading: const Icon(Icons.emoji_emotions_outlined),
+          title: Text(tr.feeling),
+          subtitle: Text(CheckinFeeling.from(checkinFeeling).translate(context)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final result = await _showSetCheckinFeelingDialog(context, checkinFeeling);
+            if (result == null) return;
+            if (!context.mounted) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.checkinFeeling, result));
+          },
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.textsms_outlined),
+          title: Text(tr.anythingToSay),
+          subtitle: Text(checkinMessage),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final result = await _showSetCheckinMessageDialog(context, checkinMessage);
+            if (result == null) return;
+            if (!context.mounted) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.checkinMessage, result));
+          },
+        ),
+        SectionSwitchListTile(
+          secondary: Icon(MdiIcons.autoFix),
+          title: Text(tr.autoCheckin.title),
+          subtitle: Text(tr.autoCheckin.detail),
+          value: autoCheckin,
+          onChanged: (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoCheckin, v)),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.redeem_outlined),
+          title: Text(tr.autoDailyRedPacket.title),
+          subtitle: Text(tr.autoDailyRedPacket.detail),
+          value: state.settingsMap.autoDailyRedPacket,
+          onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoDailyRedPacket, v)),
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildStorageSection(BuildContext context, SettingsState state) {
+  Widget _buildStorageSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.storageSection;
     final enableAutoClearImageCache = state.settingsMap.enableAutoClearImageCache;
     final autoClearImageDurationSec = state.settingsMap.autoClearImageCacheDuration;
@@ -509,38 +597,49 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       autoClearImageDuration = Duration(seconds: autoClearImageDurationSec);
     }
 
-    return [
-      SectionTitleText(tr.title),
-      SectionListTile(
-        leading: const Icon(Icons.cleaning_services_outlined),
-        title: Text(tr.clearCache),
-        onTap: () async => showClearCacheBottomSheet(context: context),
-      ),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.image_not_supported_outlined),
-        title: Text(tr.scheduledCleaning.title),
-        subtitle: Text(tr.scheduledCleaning.details),
-        value: enableAutoClearImageCache,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableAutoClearImageCache, v)),
-      ),
-      SectionListTile(
-        enabled: enableAutoClearImageCache,
-        leading: const Icon(Symbols.auto_timer_rounded),
-        title: Text(tr.scheduledCleaning.duration.title),
-        subtitle: autoClearImageDuration != null ? Text(autoClearImageDuration.readable(context)) : null,
-        onTap: () async {
-          final seconds = await showDialog<int>(
-            context: context,
-            builder: (_) => RootPage(DialogPaths.autoClearImageCacheDuration, AutoClearImageCacheDurationDialog(autoClearImageDurationSec)),
-          );
-          if (seconds == null || !context.mounted) return;
-          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoClearImageCacheDuration, seconds));
-        },
-      ),
-    ];
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.storage_outlined,
+      children: [
+        SectionListTile(
+          leading: const Icon(Icons.cleaning_services_outlined),
+          title: Text(tr.clearCache),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => showClearCacheBottomSheet(context: context),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.image_not_supported_outlined),
+          title: Text(tr.scheduledCleaning.title),
+          subtitle: Text(tr.scheduledCleaning.details),
+          value: enableAutoClearImageCache,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableAutoClearImageCache, v)),
+        ),
+        SectionListTile(
+          enabled: enableAutoClearImageCache,
+          leading: const Icon(Symbols.auto_timer_rounded),
+          title: Text(tr.scheduledCleaning.duration.title),
+          trailing: autoClearImageDuration != null
+              ? _trailingValue(context, autoClearImageDuration.readable(context))
+              : null,
+          onTap: () async {
+            final seconds = await showDialog<int>(
+              context: context,
+              builder: (_) => RootPage(
+                DialogPaths.autoClearImageCacheDuration,
+                AutoClearImageCacheDurationDialog(autoClearImageDurationSec),
+              ),
+            );
+            if (seconds == null || !context.mounted) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoClearImageCacheDuration, seconds));
+          },
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildAdvanceSection(BuildContext context, SettingsState state) {
+  /// Network: debug showcase (debug builds) and the proxy.
+  Widget _buildAdvanceSection(BuildContext context, SettingsState state) {
     final netClientUseProxy = state.settingsMap.netClientUseProxy;
     final netClientProxy = state.settingsMap.netClientProxy;
     final useDetectedProxy = state.settingsMap.useDetectedProxyWhenStartup;
@@ -554,86 +653,117 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final proxyAutomated = isAndroid || isMacOS || isIOS;
     final tr = context.t.settingsPage.advancedSection;
 
-    return [
-      SectionTitleText(tr.title),
-      if (!kReleaseMode)
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.settings_ethernet_outlined,
+      children: [
+        if (!kReleaseMode)
+          SectionListTile(
+            leading: const Icon(Icons.developer_mode_outlined),
+            title: const Text('DEBUG SHOWCASE'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async =>
+                Navigator.push(context, MaterialPageRoute<void>(builder: (context) => const DebugShowcasePage())),
+          ),
+        if (proxyAutomated)
+          SectionListTile(
+            leading: Icon(MdiIcons.networkOutline),
+            title: Text(tr.useProxy),
+            subtitle: Text(tr.proxySettings.automatedOnPlatform),
+            enabled: false,
+          )
+        else
+          SectionSwitchListTile(
+            secondary: Icon(MdiIcons.networkOutline),
+            title: Text(tr.useProxy),
+            value: netClientUseProxy,
+            onChanged: (v) {
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.netClientUseProxy, v));
+              showSnackBar(context: context, message: context.t.general.affectAfterRestart);
+            },
+          ),
+        if (!proxyAutomated)
+          SectionSwitchListTile(
+            secondary: const Icon(Symbols.network_manage),
+            title: Text(tr.proxySettings.useDetectProxy.title),
+            subtitle: Text(tr.proxySettings.useDetectProxy.detail),
+            value: useDetectedProxy,
+            onChanged: netClientUseProxy && !proxyAutomated
+                ? (v) async => context.read<SettingsBloc>().add(
+                    SettingsValueChanged(SettingsKeys.useDetectedProxyWhenStartup, v),
+                  )
+                : null,
+          ),
+        if (!proxyAutomated)
+          SectionListTile(
+            enabled: netClientUseProxy && !useDetectedProxy && !proxyAutomated,
+            leading: const Icon(Icons.network_locked_outlined),
+            title: Text(tr.proxySettings.title),
+            subtitle: host == null || port == null ? null : Text('$host:$port'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async => showDialog<void>(
+              context: context,
+              builder: (context) => RootPage(DialogPaths.setupProxy, ProxySettingsDialog(host: host, port: port)),
+              barrierDismissible: false,
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Export and import of the app data; the texts about what the backup holds are kept as they are.
+  Widget _buildBackupSection(BuildContext context, SettingsState state) {
+    final tr = context.t.settingsPage.advancedSection;
+    return AppTileGroup(
+      title: tr.backupTitle,
+      icon: Icons.backup_outlined,
+      children: [
         SectionListTile(
-          leading: const Icon(Icons.developer_mode_outlined),
-          title: const Text('DEBUG SHOWCASE'),
-          onTap: () async => Navigator.push(context, MaterialPageRoute<void>(builder: (context) => const DebugShowcasePage())),
-        ),
-      if (proxyAutomated)
-        SectionListTile(
-          leading: Icon(MdiIcons.networkOutline),
-          title: Text(tr.useProxy),
-          subtitle: Text(tr.proxySettings.automatedOnPlatform),
-          enabled: false,
-        )
-      else
-        SectionSwitchListTile(
-          secondary: Icon(MdiIcons.networkOutline),
-          title: Text(tr.useProxy),
-          value: netClientUseProxy,
-          onChanged: (v) {
-            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.netClientUseProxy, v));
-            showSnackBar(context: context, message: context.t.general.affectAfterRestart);
+          leading: const Icon(Icons.download_outlined),
+          title: Text(tr.exportData),
+          subtitle: Text(tr.exportDataDetail),
+          onTap: () async {
+            final choice = await showExportBackupDialog(context);
+            if (choice == null || !context.mounted) return;
+            final data = await const BackupRepository().exportSanitized(
+              await databaseFile,
+              secretsPassword: choice.password,
+            );
+            final stamp = DateTime.now().microsecondsSinceEpoch;
+            final name = choice.password == null
+                ? 'tsdm_client_data_$stamp.db'
+                : 'tsdm_client_data_${stamp}_accounts.db';
+            if (isDesktop) {
+              final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
+              if (filePath == null) return;
+              await File(filePath).writeAsBytes(data, flush: true);
+            } else {
+              await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
+            }
           },
         ),
-      if (!proxyAutomated)
-        SectionSwitchListTile(
-          secondary: const Icon(Symbols.network_manage),
-          title: Text(tr.proxySettings.useDetectProxy.title),
-          subtitle: Text(tr.proxySettings.useDetectProxy.detail),
-          value: useDetectedProxy,
-          onChanged: netClientUseProxy && !proxyAutomated ? (v) async => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.useDetectedProxyWhenStartup, v)) : null,
-        ),
-      if (!proxyAutomated)
         SectionListTile(
-          enabled: netClientUseProxy && !useDetectedProxy && !proxyAutomated,
-          leading: const Icon(Icons.network_locked_outlined),
-          title: Text(tr.proxySettings.title),
-          onTap: () async => showDialog<void>(
-            context: context,
-            builder: (context) => RootPage(DialogPaths.setupProxy, ProxySettingsDialog(host: host, port: port)),
-            barrierDismissible: false,
-          ),
+          leading: const Icon(Icons.upload_outlined),
+          title: Text(tr.importData.title),
+          onTap: () async {
+            final ok = await showQuestionDialog(
+              context: context,
+              title: tr.importData.title,
+              message: tr.importData.tip,
+            );
+            if (ok != true || !context.mounted) return;
+            final files = await FilePicker.platform.pickFiles(dialogTitle: tr.importData.title);
+            if (files == null || !context.mounted) return;
+            final file = files.files.firstOrNull;
+            if (file == null || file.path == null) {
+              showSnackBar(context: context, message: tr.importData.invalidData);
+              return;
+            }
+            await _importBackup(context, File(file.path!));
+          },
         ),
-      SectionListTile(
-        leading: const Icon(Icons.download_outlined),
-        title: Text(tr.exportData),
-        subtitle: Text(tr.exportDataDetail),
-        onTap: () async {
-          final choice = await showExportBackupDialog(context);
-          if (choice == null || !context.mounted) return;
-          final data = await const BackupRepository().exportSanitized(await databaseFile, secretsPassword: choice.password);
-          final stamp = DateTime.now().microsecondsSinceEpoch;
-          final name = choice.password == null ? 'tsdm_client_data_$stamp.db' : 'tsdm_client_data_${stamp}_accounts.db';
-          if (isDesktop) {
-            final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
-            if (filePath == null) return;
-            await File(filePath).writeAsBytes(data, flush: true);
-          } else {
-            await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
-          }
-        },
-      ),
-      SectionListTile(
-        leading: const Icon(Icons.upload_outlined),
-        title: Text(tr.importData.title),
-        onTap: () async {
-          final ok = await showQuestionDialog(context: context, title: tr.importData.title, message: tr.importData.tip);
-          if (ok != true || !context.mounted) return;
-          final files = await FilePicker.platform.pickFiles(dialogTitle: tr.importData.title);
-          if (files == null || !context.mounted) return;
-          final file = files.files.firstOrNull;
-          if (file == null || file.path == null) {
-            showSnackBar(context: context, message: tr.importData.invalidData);
-            return;
-          }
-          await _importBackup(context, File(file.path!));
-        },
-      ),
-    ];
+      ],
+    );
   }
 
   Future<void> _importBackup(BuildContext context, File source) async {
@@ -643,7 +773,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final check = await repository.validate(source, currentSchemaVersion: schemaVersion);
     if (!context.mounted) return;
     if (!check.ok) {
-      await showMessageSingleButtonDialog(context: context, title: tr.title, message: tr.invalidDetail(reason: _backupProblemText(context, check)));
+      await showMessageSingleButtonDialog(
+        context: context,
+        title: tr.title,
+        message: tr.invalidDetail(reason: _backupProblemText(context, check)),
+      );
       return;
     }
     BackupSecretsPayload? secrets;
@@ -658,7 +792,12 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     BackupReplaceException? replaceFailure;
     try {
       await getIt.get<StorageProvider>().dispose();
-      await repository.replaceDatabase(target: await databaseFile, source: source, currentSchemaVersion: schemaVersion, secrets: secrets);
+      await repository.replaceDatabase(
+        target: await databaseFile,
+        source: source,
+        currentSchemaVersion: schemaVersion,
+        secrets: secrets,
+      );
     } on BackupInvalidException catch (e) {
       invalid = e.validation;
     } on BackupReplaceException catch (e) {
@@ -710,73 +849,123 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     };
   }
 
-  List<Widget> _buildDebugSection(BuildContext context, SettingsState state) {
+  Widget _buildDebugSection(BuildContext context, SettingsState state) {
     final enableDebugOperations = state.settingsMap.enableDebugOperations;
     final tr = context.t.settingsPage.debugSection;
-    return [
-      SectionTitleText(tr.title),
-      ExpansionTile(
-        leading: const Icon(Icons.bug_report_outlined),
-        title: Text(tr.tip),
-        children: [
-          SectionSwitchListTile(
-            title: Text(tr.enableDebugOperations.title),
-            subtitle: Text(tr.enableDebugOperations.detail),
-            value: enableDebugOperations,
-            onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableDebugOperations, v)),
-          ),
-          SectionListTile(title: Text(tr.viewLog.title), onTap: () async => context.pushNamed(ScreenPaths.debugLog)),
-          SectionListTile(
-            title: Text(tr.exportLog.title),
-            subtitle: _logExportPath == null ? null : Text(tr.exportLog.detail(path: _logExportPath!)),
-            onTap: () async {
-              final logData = talker.history.map((e) => redactSensitive(e.generateTextMessage())).join('\n');
-              final outputFile = await FilePicker.platform.saveFile(fileName: 'log_${DateTime.now().millisecondsSinceEpoch}.txt', bytes: utf8.encode(logData));
-              if (outputFile == null) {
-                setState(() => _logExportPath = null);
-              } else {
-                setState(() => _logExportPath = outputFile);
-              }
-            },
-          ),
-          SectionListTile(title: Text(tr.viewHistoryLog.title), onTap: () async => context.pushNamed(ScreenPaths.debugHistoricalLog)),
-          SectionListTile(
-            title: Text(tr.copyDatabaseDir),
-            onTap: () async {
-              final path = (await databaseFile).parent.path;
-              if (!context.mounted) return;
-              await copyToClipboard(context, path);
-            },
-          ),
-          if (isAndroid)
-            SectionListTile(
-              title: Text(tr.testNotification.title),
-              subtitle: Text(tr.testNotification.detail),
-              onTap: () async => showLocalNotification(
-                context,
-                NotificationAutoSyncInfoNotice(msg: tr.testNotification.title, notice: 1, personalMessage: 0, broadcastMessage: 0, timestamp: DateTime.now().millisecondsSinceEpoch),
-              ),
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.bug_report_outlined,
+      children: [
+        // Collapsed by default: these rows are only for troubleshooting.
+        ExpansionTile(
+          leading: const Icon(Icons.warning_amber_outlined),
+          title: Text(tr.tip),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          children: [
+            SectionSwitchListTile(
+              secondary: const Icon(Icons.developer_board_outlined),
+              title: Text(tr.enableDebugOperations.title),
+              subtitle: Text(tr.enableDebugOperations.detail),
+              value: enableDebugOperations,
+              onChanged: (v) =>
+                  context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableDebugOperations, v)),
             ),
-        ],
-      ),
-    ];
+            SectionListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: Text(tr.viewLog.title),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async => context.pushNamed(ScreenPaths.debugLog),
+            ),
+            SectionListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: Text(tr.exportLog.title),
+              subtitle: _logExportPath == null ? null : Text(tr.exportLog.detail(path: _logExportPath!)),
+              onTap: () async {
+                final logData = talker.history.map((e) => redactSensitive(e.generateTextMessage())).join('\n');
+                final outputFile = await FilePicker.platform.saveFile(
+                  fileName: 'log_${DateTime.now().millisecondsSinceEpoch}.txt',
+                  bytes: utf8.encode(logData),
+                );
+                if (outputFile == null) {
+                  setState(() => _logExportPath = null);
+                } else {
+                  setState(() => _logExportPath = outputFile);
+                }
+              },
+            ),
+            SectionListTile(
+              leading: const Icon(Icons.history_outlined),
+              title: Text(tr.viewHistoryLog.title),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async => context.pushNamed(ScreenPaths.debugHistoricalLog),
+            ),
+            SectionListTile(
+              leading: const Icon(Icons.folder_copy_outlined),
+              title: Text(tr.copyDatabaseDir),
+              onTap: () async {
+                final path = (await databaseFile).parent.path;
+                if (!context.mounted) return;
+                await copyToClipboard(context, path);
+              },
+            ),
+            if (isAndroid)
+              SectionListTile(
+                leading: const Icon(Icons.notification_add_outlined),
+                title: Text(tr.testNotification.title),
+                subtitle: Text(tr.testNotification.detail),
+                onTap: () async => showLocalNotification(
+                  context,
+                  NotificationAutoSyncInfoNotice(
+                    msg: tr.testNotification.title,
+                    notice: 1,
+                    personalMessage: 0,
+                    broadcastMessage: 0,
+                    timestamp: DateTime.now().millisecondsSinceEpoch,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildOtherSection(BuildContext context, SettingsState state) {
+  Widget _buildOtherSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.othersSection;
     final enableUpdateCheckOnStartup = state.settingsMap.enableUpdateCheckOnStartup;
-    return [
-      SectionTitleText(tr.title),
-      SectionListTile(leading: const Icon(Icons.info_outline), title: Text(tr.about), onTap: () async => context.pushNamed(ScreenPaths.about)),
-      SectionSwitchListTile(
-        secondary: const Icon(Icons.cloud_done_outlined),
-        title: Text(tr.updateCheckOnStartup),
-        value: enableUpdateCheckOnStartup,
-        onChanged: (v) => context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableUpdateCheckOnStartup, v)),
-      ),
-      SectionListTile(leading: const Icon(Icons.new_releases_outlined), title: Text(tr.update), onTap: () async => context.pushNamed(ScreenPaths.update)),
-      SectionListTile(leading: const Icon(Icons.history_outlined), title: Text(tr.changelog), onTap: () async => context.pushNamed(ScreenPaths.localChangelog)),
-    ];
+    return AppTileGroup(
+      title: tr.title,
+      icon: Icons.more_horiz_outlined,
+      children: [
+        SectionListTile(
+          leading: const Icon(Icons.info_outline),
+          title: Text(tr.about),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.about),
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.cloud_done_outlined),
+          title: Text(tr.updateCheckOnStartup),
+          value: enableUpdateCheckOnStartup,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableUpdateCheckOnStartup, v)),
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.new_releases_outlined),
+          title: Text(tr.update),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.update),
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.history_outlined),
+          title: Text(tr.changelog),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async => context.pushNamed(ScreenPaths.localChangelog),
+        ),
+      ],
+    );
   }
 
   @override
@@ -809,10 +998,35 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     }
   }
 
+  /// Stacks [groups] with the gap of the lists.
+  Widget _column(List<Widget> groups) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (var i = 0; i < groups.length; i++) ...[if (i > 0) const SizedBox(height: appSurfaceGap), groups[i]],
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<SettingsBloc, SettingsState>(
       builder: (context, state) {
+        // Two columns on wide windows: looks and account on the start side, behavior and data on the end side.
+        final start = [
+          _buildAccountSection(context, state),
+          _buildAppearanceSection(context, state),
+          _buildUnreadSection(context, state),
+          if (isDesktop) _buildWindowSection(context, state),
+          _buildCheckinSection(context, state),
+        ];
+        final end = [
+          _buildBehaviorSection(context, state),
+          _buildNoticeSyncSection(context, state),
+          _buildStorageSection(context, state),
+          _buildAdvanceSection(context, state),
+          _buildBackupSection(context, state),
+          _buildDebugSection(context, state),
+          _buildOtherSection(context, state),
+        ];
         return BlocProvider<AndroidPermissionCubit>.value(
           value: _permissionCubit,
           child: Scaffold(
@@ -820,19 +1034,31 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             body: SafeArea(
               left: false,
               top: false,
-              child: ListView(
-                controller: scrollController,
-                children: [
-                  ..._buildAccountSection(context, state),
-                  ..._buildAppearanceSection(context, state),
-                  if (isDesktop) ..._buildWindowSection(context, state),
-                  ..._buildBehaviorSection(context, state),
-                  ..._buildCheckinSection(context, state),
-                  ..._buildStorageSection(context, state),
-                  ..._buildAdvanceSection(context, state),
-                  ..._buildDebugSection(context, state),
-                  ..._buildOtherSection(context, state),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final twoColumns = constraints.maxWidth >= _settingsTwoColumnWidth;
+                  final padding = appCenteredPadding(
+                    constraints.maxWidth,
+                    maxWidth: twoColumns ? _settingsTwoColumnMaxWidth : appFormMaxWidth,
+                  );
+                  return ListView(
+                    controller: scrollController,
+                    padding: padding.copyWith(top: 12, bottom: 24),
+                    children: [
+                      if (twoColumns)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: _column(start)),
+                            const SizedBox(width: appSurfaceGap),
+                            Expanded(child: _column(end)),
+                          ],
+                        )
+                      else
+                        _column([...start, ...end]),
+                    ],
+                  );
+                },
               ),
             ),
           ),

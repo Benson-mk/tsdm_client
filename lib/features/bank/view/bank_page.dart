@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
@@ -14,6 +15,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 part 'bank_service_widgets.dart';
 
@@ -129,14 +131,23 @@ class _BankPageState extends State<BankPage> {
   Widget _services(BankState state, {required bool disabled}) {
     final bank = state.bank;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: appSurfaceGap),
       child: InputDecorator(
-        decoration: InputDecoration(labelText: context.t.bank.services, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          labelText: context.t.bank.services,
+          prefixIcon: const Icon(Icons.apps_outlined),
+          filled: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(appInnerRadius),
+            borderSide: BorderSide.none,
+          ),
+        ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             key: const ValueKey('bank-service-picker'),
             isExpanded: true,
             isDense: true,
+            borderRadius: BorderRadius.circular(appInnerRadius),
             value: state.service?.name ?? ((bank?.hasAccount ?? false) ? 'current' : null),
             hint: Text(context.t.bank.services),
             onChanged: disabled
@@ -168,87 +179,130 @@ class _BankPageState extends State<BankPage> {
     );
   }
 
+  Widget _bankTile(ForumBank item, {required bool disabled}) {
+    final tr = context.t.bank;
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppSurface(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        key: ValueKey('bank-${item.id}'),
+        contentPadding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        leading: const AppIconTile(Icons.account_balance_outlined),
+        title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item.description.isNotEmpty) Text(item.description),
+            sizedBoxW4H4,
+            AppInfoPill(
+              icon: item.hasAccount ? Icons.check_circle_outline : Icons.remove_circle_outline,
+              label: item.hasAccount ? tr.opened : tr.notOpened,
+            ),
+          ],
+        ),
+        trailing: Icon(Icons.chevron_right, color: colorScheme.outline),
+        onTap: disabled ? null : () => _cubit.selectBank(item),
+      ),
+    );
+  }
+
   Widget _serviceContent(BankState state, {required bool disabled}) {
     final tr = context.t.bank;
     final data = state.serviceData;
+    final textTheme = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
-            onPressed: disabled ? null : _cubit.load,
-            icon: const Icon(Icons.arrow_back),
-            label: Text(tr.backToBanks),
-          ),
-        ),
-        Text(
-          [
+        _BankHeader(
+          icon: _serviceIcon(state.service!),
+          title: [
             if (!state.service!.global && state.bank != null) state.bank!.name,
             _serviceTitle(context, state.service!),
           ].join(' · '),
-          style: Theme.of(context).textTheme.titleLarge,
+          onBack: disabled ? null : _cubit.load,
+          backLabel: tr.backToBanks,
         ),
         if (data != null) ...[
-          if (data.unavailable.isNotEmpty) Padding(padding: const EdgeInsets.all(16), child: Text(data.unavailable)),
-          if (data.walletBalance.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('${tr.availableBalance}: ${data.walletBalance} ${data.currency}'),
+          if (data.unavailable.isNotEmpty) ...[
+            sizedBoxW12H12,
+            AppNoticeBanner(message: data.unavailable, tone: AppNoticeTone.warning, selectable: true),
+          ],
+          if (data.walletBalance.isNotEmpty) ...[
+            sizedBoxW12H12,
+            _BankValue(
+              icon: Icons.account_balance_wallet_outlined,
+              label: tr.availableBalance,
+              value: '${data.walletBalance} ${data.currency}'.trim(),
             ),
-          for (final form in data.forms)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (form.context.isNotEmpty)
-                      Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(form.context)),
-                    FilledButton(
-                      onPressed: disabled ? null : () => _serviceTransaction(data, form),
-                      child: Text(_serviceActionTitle(context, form)),
-                    ),
+          ],
+          for (final form in data.forms) ...[
+            sizedBoxW12H12,
+            AppSurface(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (form.context.isNotEmpty) ...[
+                    AppInsetBlock(child: Text(form.context)),
+                    sizedBoxW12H12,
                   ],
-                ),
+                  FilledButton(
+                    onPressed: disabled ? null : () => _serviceTransaction(data, form),
+                    child: Text(_serviceActionTitle(context, form), textAlign: TextAlign.center),
+                  ),
+                ],
               ),
             ),
-          for (final block in data.blocks)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              child: Text(block.text, style: block.heading ? Theme.of(context).textTheme.titleMedium : null),
+          ],
+          if (data.blocks.isNotEmpty) ...[
+            sizedBoxW12H12,
+            AppSurface(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final (index, block) in data.blocks.indexed)
+                    Padding(
+                      padding: EdgeInsets.only(top: index == 0 ? 0 : 8),
+                      child: Text(
+                        block.text,
+                        style: block.heading ? textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold) : null,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          if (data.unsupportedForms) Padding(padding: const EdgeInsets.all(12), child: Text(tr.unsupported)),
-          if (data.hasNext || state.servicePage > 1)
-            Wrap(
-              spacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: disabled || state.servicePage <= 1
-                      ? null
-                      : () => _cubit.loadService(state.service!, page: state.servicePage - 1),
-                  child: Text(tr.previous),
-                ),
-                Text('${state.servicePage}'),
-                TextButton(
-                  onPressed: disabled || !data.hasNext
-                      ? null
-                      : () => _cubit.loadService(state.service!, page: state.servicePage + 1),
-                  child: Text(tr.next),
-                ),
-              ],
+          ],
+          if (data.unsupportedForms) ...[
+            sizedBoxW12H12,
+            AppNoticeBanner(message: tr.unsupported, tone: AppNoticeTone.warning),
+          ],
+          if (data.hasNext || state.servicePage > 1) ...[
+            sizedBoxW8H8,
+            _BankPager(
+              page: state.servicePage,
+              previousLabel: tr.previous,
+              nextLabel: tr.next,
+              onPrevious: disabled || state.servicePage <= 1
+                  ? null
+                  : () => _cubit.loadService(state.service!, page: state.servicePage - 1),
+              onNext: disabled || !data.hasNext
+                  ? null
+                  : () => _cubit.loadService(state.service!, page: state.servicePage + 1),
             ),
+          ],
         ],
-        TextButton.icon(
-          onPressed: disabled
-              ? null
-              : () async => context.dispatchAsUrl(
-                  bankServiceUrl(state.service!, bankId: state.bank?.id, page: state.servicePage),
-                  external: true,
-                ),
-          icon: const Icon(Icons.open_in_browser_outlined),
-          label: Text(tr.openWebsite),
+        sizedBoxW8H8,
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: disabled
+                ? null
+                : () async => context.dispatchAsUrl(
+                    bankServiceUrl(state.service!, bankId: state.bank?.id, page: state.servicePage),
+                    external: true,
+                  ),
+            icon: const Icon(Icons.open_in_browser_outlined),
+            label: Text(tr.openWebsite),
+          ),
         ),
       ],
     );
@@ -256,60 +310,67 @@ class _BankPageState extends State<BankPage> {
 
   Widget _savings(ForumBank bank, BankSavings savings, {required bool disabled}) {
     final tr = context.t.bank;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(tr.savings, style: Theme.of(context).textTheme.titleMedium),
-            if (savings.summary.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(savings.summary),
-            ],
-            if (savings.walletBalance.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('${tr.availableBalance}: ${savings.walletBalance} ${savings.currency}'.trim()),
-            ],
-            if (savings.interest.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('${tr.interest}: ${savings.interest}'),
-            ],
-            if (savings.notices.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(savings.notices),
-            ],
-            const SizedBox(height: 16),
-            if (savings.form != null)
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  FilledButton.icon(
-                    key: const ValueKey('bank-deposit'),
-                    onPressed: disabled ? null : () => _transact(bank, savings, BankOperation.deposit),
-                    icon: const Icon(Icons.savings_outlined),
-                    label: Text(tr.deposit),
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppSectionHeader(tr.savings, icon: Icons.savings_outlined, padding: const EdgeInsets.only(bottom: 8)),
+          if (savings.summary.isNotEmpty) AppInsetBlock(child: Text(savings.summary)),
+          if (savings.walletBalance.isNotEmpty || savings.interest.isNotEmpty) ...[
+            sizedBoxW8H8,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (savings.walletBalance.isNotEmpty)
+                  _BankValue(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: tr.availableBalance,
+                    value: '${savings.walletBalance} ${savings.currency}'.trim(),
                   ),
-                  OutlinedButton.icon(
-                    key: const ValueKey('bank-withdraw'),
-                    onPressed: disabled ? null : () => _transact(bank, savings, BankOperation.withdraw),
-                    icon: const Icon(Icons.account_balance_wallet_outlined),
-                    label: Text(tr.withdraw),
-                  ),
-                ],
-              )
-            else
-              Text(tr.unsupported),
-            TextButton.icon(
+                if (savings.interest.isNotEmpty)
+                  _BankValue(icon: Icons.trending_up_outlined, label: tr.interest, value: savings.interest),
+              ],
+            ),
+          ],
+          if (savings.notices.isNotEmpty) ...[
+            sizedBoxW8H8,
+            AppNoticeBanner(message: savings.notices, selectable: true),
+          ],
+          sizedBoxW12H12,
+          if (savings.form != null)
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('bank-deposit'),
+                  onPressed: disabled ? null : () => _transact(bank, savings, BankOperation.deposit),
+                  icon: const Icon(Icons.savings_outlined),
+                  label: Text(tr.deposit),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('bank-withdraw'),
+                  onPressed: disabled ? null : () => _transact(bank, savings, BankOperation.withdraw),
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                  label: Text(tr.withdraw),
+                ),
+              ],
+            )
+          else
+            AppNoticeBanner(message: tr.unsupported, tone: AppNoticeTone.warning),
+          sizedBoxW4H4,
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
               onPressed: disabled
                   ? null
                   : () async => context.dispatchAsUrl(bankPageUrl(bankId: bank.id, action: 'cur'), external: true),
               icon: const Icon(Icons.open_in_browser_outlined),
               label: Text(tr.openWebsite),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -317,62 +378,78 @@ class _BankPageState extends State<BankPage> {
   Widget _logs(BankState state, {required bool disabled}) {
     final tr = context.t.bank;
     final logs = state.logs;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(tr.logs, style: Theme.of(context).textTheme.titleMedium),
-            if (state.logsFailed) Text(tr.logsFailed, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: Text(tr.ownLogs),
-                  selected: logs != null && !state.received,
-                  onSelected: disabled ? null : (_) => unawaited(_cubit.loadLogs()),
-                ),
-                ChoiceChip(
-                  label: Text(tr.receivedLogs),
-                  selected: logs != null && state.received,
-                  onSelected: disabled ? null : (_) => unawaited(_cubit.loadLogs(received: true)),
-                ),
-              ],
-            ),
-            if (logs != null) ...[
-              const SizedBox(height: 12),
-              if (logs.entries.isEmpty) Text(tr.emptyLogs),
-              for (final entry in logs.entries)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(entry.message),
-                  subtitle: entry.time.isEmpty ? null : Text(entry.time),
-                ),
-              Wrap(
-                spacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  TextButton(
-                    onPressed: disabled || state.logPage <= 1
-                        ? null
-                        : () => _cubit.loadLogs(received: state.received, page: state.logPage - 1),
-                    child: Text(tr.previous),
-                  ),
-                  Text('${state.logPage}'),
-                  TextButton(
-                    onPressed: disabled || !logs.hasNext
-                        ? null
-                        : () => _cubit.loadLogs(received: state.received, page: state.logPage + 1),
-                    child: Text(tr.next),
-                  ),
-                ],
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppSectionHeader(tr.logs, icon: Icons.receipt_long_outlined, padding: const EdgeInsets.only(bottom: 8)),
+          if (state.logsFailed) ...[
+            AppNoticeBanner(message: tr.logsFailed, tone: AppNoticeTone.error),
+            sizedBoxW8H8,
+          ],
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: Text(tr.ownLogs),
+                selected: logs != null && !state.received,
+                onSelected: disabled ? null : (_) => unawaited(_cubit.loadLogs()),
+              ),
+              ChoiceChip(
+                label: Text(tr.receivedLogs),
+                selected: logs != null && state.received,
+                onSelected: disabled ? null : (_) => unawaited(_cubit.loadLogs(received: true)),
               ),
             ],
+          ),
+          if (logs != null) ...[
+            sizedBoxW12H12,
+            if (logs.entries.isEmpty)
+              AppStateView(icon: Icons.receipt_long_outlined, message: tr.emptyLogs, scrollable: false),
+            for (final (index, entry) in logs.entries.indexed)
+              Padding(
+                padding: EdgeInsets.only(top: index == 0 ? 0 : 6),
+                child: AppInsetBlock(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(entry.message),
+                      if (entry.time.isNotEmpty) ...[
+                        sizedBoxW4H4,
+                        Row(
+                          children: [
+                            Icon(Icons.schedule_outlined, size: 14, color: colorScheme.outline),
+                            sizedBoxW4H4,
+                            Flexible(
+                              child: Text(
+                                entry.time,
+                                style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            sizedBoxW8H8,
+            _BankPager(
+              page: state.logPage,
+              previousLabel: tr.previous,
+              nextLabel: tr.next,
+              onPrevious: disabled || state.logPage <= 1
+                  ? null
+                  : () => _cubit.loadLogs(received: state.received, page: state.logPage - 1),
+              onNext: disabled || !logs.hasNext
+                  ? null
+                  : () => _cubit.loadLogs(received: state.received, page: state.logPage + 1),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -422,87 +499,114 @@ class _BankPageState extends State<BankPage> {
               onRefresh: () async {
                 if (!disabled) await _cubit.refresh();
               },
-              child: ListView(
-                padding: const EdgeInsets.all(12),
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: [
-                  if (state.busy) const LinearProgressIndicator(),
-                  if (state.unconfirmed)
-                    Card(
-                      child: Padding(padding: const EdgeInsets.all(16), child: Text(tr.unconfirmed)),
-                    ),
-                  if (state.loginRequired)
-                    TextButton(
-                      onPressed: disabled
-                          ? null
-                          : () async {
-                              await context.pushNamed(ScreenPaths.login);
-                              if (mounted) await _cubit.load();
-                            },
-                      child: Text(tr.loginRequired),
-                    )
-                  else ...[
-                    if (state.uid != null) _services(state, disabled: disabled),
-                    if (state.failed)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(tr.loadFailed, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                      ),
-                    if (state.service != null)
-                      _serviceContent(state, disabled: disabled)
-                    else if (bank == null) ...[
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(tr.chooseBank, style: Theme.of(context).textTheme.titleMedium),
-                      ),
-                      for (final item in state.banks)
-                        Card(
-                          child: ListTile(
-                            key: ValueKey('bank-${item.id}'),
-                            leading: const Icon(Icons.account_balance_outlined),
-                            title: Text(item.name),
-                            subtitle: Text(
-                              [
-                                if (item.description.isNotEmpty) item.description,
-                                if (item.hasAccount) tr.opened else tr.notOpened,
-                              ].join('\n'),
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: disabled ? null : () => _cubit.selectBank(item),
+              child: AppCenteredList(
+                builder: (context, padding, width) {
+                  final columns = appColumnsFor(width);
+                  final gap = width < 600 ? appSurfaceGapCompact : appSurfaceGap;
+                  final banks = state.banks;
+                  return ListView(
+                    padding: padding.copyWith(top: 12, bottom: 12),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      if (state.busy)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: appSurfaceGapCompact),
+                          child: LinearProgressIndicator(),
+                        ),
+                      if (state.unconfirmed)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: appSurfaceGap),
+                          child: AppNoticeBanner(
+                            message: tr.unconfirmed,
+                            tone: AppNoticeTone.warning,
+                            icon: Icons.help_outline,
                           ),
                         ),
-                    ] else ...[
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: TextButton.icon(
-                          onPressed: disabled ? null : _cubit.load,
-                          icon: const Icon(Icons.arrow_back),
-                          label: Text(tr.backToBanks),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(bank.name, style: Theme.of(context).textTheme.titleLarge),
-                      ),
-                      if (!bank.hasAccount)
-                        Padding(padding: const EdgeInsets.all(12), child: Text(tr.notOpened))
+                      if (state.loginRequired)
+                        AppStateView(
+                          icon: Icons.login,
+                          message: tr.loginRequired,
+                          scrollable: false,
+                          action: FilledButton.tonalIcon(
+                            onPressed: disabled
+                                ? null
+                                : () async {
+                                    await context.pushNamed(ScreenPaths.login);
+                                    if (mounted) await _cubit.load();
+                                  },
+                            icon: const Icon(Icons.login),
+                            label: Text(context.t.loginPage.login),
+                          ),
+                        )
                       else ...[
-                        if (savings != null) _savings(bank, savings, disabled: disabled),
-                        _logs(state, disabled: disabled),
+                        if (state.uid != null) _services(state, disabled: disabled),
+                        if (state.failed)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: appSurfaceGap),
+                            child: AppNoticeBanner(message: tr.loadFailed, tone: AppNoticeTone.error),
+                          ),
+                        if (state.service != null)
+                          _serviceContent(state, disabled: disabled)
+                        else if (bank == null) ...[
+                          AppSectionHeader(tr.chooseBank, icon: Icons.account_balance_outlined),
+                          for (var row = 0; row < appRowCount(banks.length, columns); row++)
+                            Padding(
+                              padding: EdgeInsets.only(top: row == 0 ? 0 : gap),
+                              child: AppColumnsRow(
+                                row: row,
+                                columns: columns,
+                                count: banks.length,
+                                gap: gap,
+                                itemBuilder: (context, index) => _bankTile(banks[index], disabled: disabled),
+                              ),
+                            ),
+                        ] else ...[
+                          _BankHeader(
+                            icon: Icons.account_balance_outlined,
+                            title: bank.name,
+                            onBack: disabled ? null : _cubit.load,
+                            backLabel: tr.backToBanks,
+                          ),
+                          sizedBoxW12H12,
+                          if (!bank.hasAccount)
+                            AppNoticeBanner(message: tr.notOpened, icon: Icons.no_accounts_outlined)
+                          else if (columns > 1)
+                            // Savings and records side by side on wide windows.
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: savings == null ? sizedBoxEmpty : _savings(bank, savings, disabled: disabled),
+                                ),
+                                SizedBox(width: gap),
+                                Expanded(child: _logs(state, disabled: disabled)),
+                              ],
+                            )
+                          else ...[
+                            if (savings != null) ...[
+                              _savings(bank, savings, disabled: disabled),
+                              SizedBox(height: gap),
+                            ],
+                            _logs(state, disabled: disabled),
+                          ],
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: OutlinedButton.icon(
+                                onPressed: disabled
+                                    ? null
+                                    : () async => context.dispatchAsUrl(bankPageUrl(bankId: bank.id), external: true),
+                                icon: const Icon(Icons.open_in_browser_outlined),
+                                label: Text(tr.otherServices),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: OutlinedButton.icon(
-                          onPressed: disabled
-                              ? null
-                              : () async => context.dispatchAsUrl(bankPageUrl(bankId: bank.id), external: true),
-                          icon: const Icon(Icons.open_in_browser_outlined),
-                          label: Text(tr.otherServices),
-                        ),
-                      ),
                     ],
-                  ],
-                ],
+                  );
+                },
               ),
             ),
           ),
@@ -585,26 +689,56 @@ class _BankTransactionDialogState extends State<_BankTransactionDialog> {
       },
       child: AlertDialog(
         scrollable: true,
-        title: Text(_confirming ? tr.confirmTitle : operation),
+        title: _BankDialogTitle(
+          icon: _confirming
+              ? Icons.fact_check_outlined
+              : widget.operation == BankOperation.deposit
+              ? Icons.savings_outlined
+              : Icons.account_balance_wallet_outlined,
+          title: _confirming ? tr.confirmTitle : operation,
+        ),
         content: _confirming
             ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(widget.bankName, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 16),
-                  Text('$operation: ${_amount.text.trim()} ${widget.savings.currency}'.trim()),
-                  const SizedBox(height: 16),
-                  Text(tr.transactionNote),
+                  AppInsetBlock(
+                    outlined: true,
+                    padding: edgeInsetsL12T12R12B12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.bankName,
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        sizedBoxW8H8,
+                        Text(
+                          '$operation: ${_amount.text.trim()} ${widget.savings.currency}'.trim(),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  sizedBoxW12H12,
+                  AppNoticeBanner(message: tr.transactionNote, tone: AppNoticeTone.warning, icon: Icons.info_outline),
                 ],
               )
             : Form(
                 key: _formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(widget.bankName),
+                    Row(
+                      children: [
+                        Icon(Icons.account_balance_outlined, size: 18, color: Theme.of(context).colorScheme.outline),
+                        sizedBoxW8H8,
+                        Expanded(child: Text(widget.bankName)),
+                      ],
+                    ),
                     const SizedBox(height: 16),
                     TextFormField(
                       key: const ValueKey('bank-amount'),
@@ -619,7 +753,13 @@ class _BankTransactionDialogState extends State<_BankTransactionDialog> {
                           (previous, next) => RegExp(r'^[0-9]{0,18}$').hasMatch(next.text) ? next : previous,
                         ),
                       ],
-                      decoration: InputDecoration(labelText: tr.amount, suffixText: widget.savings.currency),
+                      decoration: InputDecoration(
+                        labelText: tr.amount,
+                        suffixText: widget.savings.currency,
+                        prefixIcon: const Icon(Icons.payments_outlined),
+                        filled: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+                      ),
                       validator: (value) =>
                           widget.savings.form?.accepts(value?.trim() ?? '') ?? false ? null : tr.invalidAmount,
                     ),
@@ -631,12 +771,22 @@ class _BankTransactionDialogState extends State<_BankTransactionDialog> {
                       enableSuggestions: false,
                       autocorrect: false,
                       textInputAction: TextInputAction.done,
-                      decoration: InputDecoration(labelText: tr.bankPassword),
+                      decoration: InputDecoration(
+                        labelText: tr.bankPassword,
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        filled: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+                      ),
                       validator: (value) => value == null || value.isEmpty ? tr.passwordRequired : null,
                       onFieldSubmitted: (_) => _continue(),
                     ),
                     const SizedBox(height: 8),
-                    Text(tr.passwordHint, style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      tr.passwordHint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),

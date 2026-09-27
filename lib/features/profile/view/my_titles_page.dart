@@ -16,6 +16,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Preferred width of a title card; the grid fits as many as the width allows.
@@ -76,44 +77,46 @@ class _MyTitlesPageState extends State<MyTitlesPage> {
               behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
               child: SingleChildScrollView(
                 padding: edgeInsetsL16T16R16B16,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _CurrentTitleHeader(state),
-                    sizedBoxW16H16,
-                    if (state.titles.isEmpty)
-                      Padding(
-                        padding: edgeInsetsT12,
-                        child: Text(
-                          tr.empty,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
+                child: AppContentWidth(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _CurrentTitleHeader(state),
+                      sizedBoxW16H16,
+                      if (state.titles.isEmpty)
+                        Padding(
+                          padding: edgeInsetsT12,
+                          child: Text(
+                            tr.empty,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
+                          ),
+                        )
+                      else
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final columns = ((constraints.maxWidth + _cardSpacing) / (_cardExtent + _cardSpacing))
+                                .floor()
+                                .clamp(1, 8);
+                            final width = (constraints.maxWidth - _cardSpacing * (columns - 1)) / columns;
+                            return Wrap(
+                              spacing: _cardSpacing,
+                              runSpacing: _cardSpacing,
+                              children: state.titles
+                                  .map(
+                                    (e) => SizedBox(
+                                      width: width,
+                                      child: SecondaryTitleCard(e, key: ValueKey(e.id)),
+                                    ),
+                                  )
+                                  .toList(),
+                            );
+                          },
                         ),
-                      )
-                    else
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final columns = ((constraints.maxWidth + _cardSpacing) / (_cardExtent + _cardSpacing))
-                              .floor()
-                              .clamp(1, 8);
-                          final width = (constraints.maxWidth - _cardSpacing * (columns - 1)) / columns;
-                          return Wrap(
-                            spacing: _cardSpacing,
-                            runSpacing: _cardSpacing,
-                            children: state.titles
-                                .map(
-                                  (e) => SizedBox(
-                                    width: width,
-                                    child: SecondaryTitleCard(e, key: ValueKey(e.id)),
-                                  ),
-                                )
-                                .toList(),
-                          );
-                        },
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -155,48 +158,63 @@ class _CurrentTitleHeader extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final current = state.titles.firstWhereOrNull((v) => v.activated);
-    return Card(
-      margin: EdgeInsets.zero,
+    final description = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          current == null ? tr.noneActivated : tr.activated(name: current.name),
+          style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (state.titles.isNotEmpty) ...[
+          sizedBoxW4H4,
+          Text(tr.tapToUse, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+        ],
+      ],
+    );
+    final unset = current == null
+        ? null
+        : TextButton(
+            onPressed: state.status == MyTitlesStatus.switchingTitle
+                ? null
+                : () async => context.read<MyTitlesCubit>().unsetSecondaryTitle(),
+            child: Text(tr.unset),
+          );
+    return AppSurface(
       color: colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: edgeInsetsL16T12R16B12,
-        child: Row(
-          children: [
-            if (current != null) ...[
-              SecondaryTitleBadge(current.imageUrl, width: 110, semanticLabel: current.name),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The title in use at its natural 184px width when there is room, complete in any case.
+          final badgeWidth = SecondaryTitleBadge.fitWidth(constraints.maxWidth);
+          final Widget leading = current != null
+              ? SecondaryTitleBadge(current.imageUrl, width: badgeWidth, semanticLabel: current.name)
+              : Icon(Icons.lightbulb_outline, color: colorScheme.onSurfaceVariant);
+          // Side by side only when the text keeps a readable width next to the badge.
+          if (current == null || constraints.maxWidth - badgeWidth >= 240) {
+            return Row(
+              children: [
+                leading,
+                sizedBoxW12H12,
+                Expanded(child: description),
+                if (unset != null) ...[sizedBoxW8H8, unset],
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              leading,
               sizedBoxW12H12,
-            ] else ...[
-              Icon(Icons.lightbulb_outline, color: colorScheme.onSurfaceVariant),
-              sizedBoxW12H12,
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Text(
-                    current == null ? tr.noneActivated : tr.activated(name: current.name),
-                    style: textTheme.titleSmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (state.titles.isNotEmpty) ...[
-                    sizedBoxW4H4,
-                    Text(tr.tapToUse, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-                  ],
+                  Expanded(child: description),
+                  if (unset != null) ...[sizedBoxW8H8, unset],
                 ],
               ),
-            ),
-            if (current != null) ...[
-              sizedBoxW8H8,
-              TextButton(
-                onPressed: state.status == MyTitlesStatus.switchingTitle
-                    ? null
-                    : () async => context.read<MyTitlesCubit>().unsetSecondaryTitle(),
-                child: Text(tr.unset),
-              ),
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }

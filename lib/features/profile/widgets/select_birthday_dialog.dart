@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/profile/models/birthday_info.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:wheel_choice/wheel_choice.dart';
 
@@ -122,32 +124,54 @@ class _SelectBirthdayDialogState extends State<_SelectBirthdayDialog> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.editUserProfilePage.birthday;
+    final colorScheme = Theme.of(context).colorScheme;
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {.touch, .mouse, .stylus, .trackpad}),
       child: CustomAlertDialog.sync(
         clipBehavior: .hardEdge,
         contentPadding: .zero,
-        title: Text(tr.title),
-        content: Row(
-          children: [(yearController, tr.year), (monthController, tr.month), (dayController, tr.day)]
-              .map(
-                (v) => Expanded(
-                  child: WheelChoice<_BirthdayComponent>.raw(
-                    controller: v.$1,
-                    header: WheelHeader(child: Text(v.$2)),
-                    overlay: WheelOverlay.outlined(inset: 12),
-                    effect: const WheelEffect(useMagnifier: true, magnification: 1.1),
+        title: AppDialogTitle(icon: Icons.cake_outlined, title: tr.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The chosen date in words, above the three wheels.
+            Padding(
+              padding: edgeInsetsL24R24,
+              child: AppInsetBlock(
+                outlined: true,
+                child: Center(
+                  child: Text(
+                    '${date.year ?? "-"} ${tr.year} ${date.month ?? "-"} ${tr.month} ${date.day ?? "-"} ${tr.day}',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleMedium?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
                   ),
                 ),
-              )
-              .toList(),
+              ),
+            ),
+            sizedBoxW8H8,
+            Row(
+              children: [(yearController, tr.year), (monthController, tr.month), (dayController, tr.day)]
+                  .map(
+                    (v) => Expanded(
+                      child: WheelChoice<_BirthdayComponent>.raw(
+                        controller: v.$1,
+                        header: WheelHeader(child: Text(v.$2)),
+                        overlay: WheelOverlay.outlined(inset: 12),
+                        effect: const WheelEffect(useMagnifier: true, magnification: 1.1),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => context.pop(),
             child: Text(context.t.general.cancel),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => context.pop(date),
             child: Text(context.t.general.ok),
           ),

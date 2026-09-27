@@ -1,10 +1,12 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
 
@@ -50,8 +52,15 @@ class _SelectPermDialogState extends State<_SelectPermDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return CustomAlertDialog.sync(
-      title: Text(context.t.postEditPage.permDialog.title),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.lock_outline, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(context.t.postEditPage.permDialog.title)),
+        ],
+      ),
       content: Column(
         children: groupMap.keys
             .sorted(
@@ -63,10 +72,25 @@ class _SelectPermDialogState extends State<_SelectPermDialog> {
             )
             .map(
               (e) => SelectableListTile(
-                title: Text('$e', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-                subtitle: Text(
+                // The permission value in a fixed width tile, the user groups reaching it beside.
+                leading: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 44),
+                  child: AppInsetBlock(
+                    color: currentPerm?.perm == '$e' ? colorScheme.primary : colorScheme.surfaceContainerHigh,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      '$e',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: currentPerm?.perm == '$e' ? colorScheme.onPrimary : colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                title: Text(
                   groupMap[e]!.map((p) => p.groupName).join(' '),
-                  style: Theme.of(context).textTheme.labelMedium,
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 selected: currentPerm?.perm == '$e',
                 onTap: () {

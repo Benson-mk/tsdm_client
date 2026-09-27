@@ -9,6 +9,7 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/fallback_picture.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -82,32 +83,39 @@ class _VerityImageState extends State<CaptchaImage> with LoggerMixin {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () async => reload(),
-      child: FutureBuilder(
-        future: f,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            // Impossible.
-            final message = t.loginPage.failedToGetCaptcha(err: snapshot.error!);
-            debug(message);
-            return Text(message);
-          }
+    // Rounded like the fields beside it; a tap reloads the image (pointer cursor on desktop).
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(appInnerRadius),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () async => reload(),
+          child: FutureBuilder(
+            future: f,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                // Impossible.
+                final message = t.loginPage.failedToGetCaptcha(err: snapshot.error!);
+                debug(message);
+                return Text(message);
+              }
 
-          if (snapshot.hasData && futureComplete) {
-            final either = snapshot.data!;
-            if (either.isLeft()) {
-              handle(either.unwrapErr());
-              return const FallbackPicture();
-            }
+              if (snapshot.hasData && futureComplete) {
+                final either = snapshot.data!;
+                if (either.isLeft()) {
+                  handle(either.unwrapErr());
+                  return const FallbackPicture();
+                }
 
-            final bytes = Uint8List.fromList(snapshot.data!.unwrap().data as List<int>);
-            debug('fetch login captcha finished, ${f.hashCode}');
-            // 130 x 60 -> 110.9 -> 52
-            return Image.memory(bytes, height: _renderHeight);
-          }
-          return const SizedBox(width: _indicatorBoxWidth, child: CenteredCircularIndicator());
-        },
+                final bytes = Uint8List.fromList(snapshot.data!.unwrap().data as List<int>);
+                debug('fetch login captcha finished, ${f.hashCode}');
+                // 130 x 60 -> 110.9 -> 52
+                return Image.memory(bytes, height: _renderHeight);
+              }
+              return const SizedBox(width: _indicatorBoxWidth, child: CenteredCircularIndicator());
+            },
+          ),
+        ),
       ),
     );
   }

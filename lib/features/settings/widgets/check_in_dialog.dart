@@ -4,6 +4,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
 
@@ -18,7 +19,7 @@ class CheckinFeelingDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomAlertDialog.sync(
-      title: Text(context.t.settingsPage.checkinSection.feeling),
+      title: AppDialogTitle(icon: Icons.emoji_emotions_outlined, title: context.t.settingsPage.checkinSection.feeling),
       content: Column(
         children: CheckinFeeling.values
             .map(
@@ -70,38 +71,39 @@ class _CheckinMessageDialogState extends State<CheckinMessageDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return CustomAlertDialog.sync(
-      title: Text(context.t.settingsPage.checkinSection.anythingToSay),
-      content: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Expanded(
-            child: Form(
-              key: formKey,
-              child: TextFormField(
-                autofocus: true,
-                validator: (_) {
-                  if (textRestLength >= 47) {
-                    return context.t.checkinForm.shouldMoreThan3;
-                  }
-                  if (textRestLength < 0) {
-                    return context.t.checkinForm.shouldNoMoreThan50;
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  setState(() {
-                    textRestLength = _maxTextLength - value.parseUtf8Length;
-                  });
-                },
-                controller: textController,
-                inputFormatters: [LengthLimitingTextInputFormatter(_maxTextLength)],
-              ),
+      title: AppDialogTitle(icon: Icons.textsms_outlined, title: context.t.settingsPage.checkinSection.anythingToSay),
+      content: Padding(
+        // Room for the floating label of the filled field.
+        padding: edgeInsetsT4,
+        child: Form(
+          key: formKey,
+          child: TextFormField(
+            autofocus: true,
+            // The remaining length sits in the field, it no longer takes a column beside it on narrow phones.
+            decoration: appFieldDecoration(icon: Icons.edit_note_outlined).copyWith(
+              counterText: '$textRestLength',
+              counterStyle: TextStyle(color: textRestLength < 0 ? colorScheme.error : colorScheme.onSurfaceVariant),
             ),
+            validator: (_) {
+              if (textRestLength >= 47) {
+                return context.t.checkinForm.shouldMoreThan3;
+              }
+              if (textRestLength < 0) {
+                return context.t.checkinForm.shouldNoMoreThan50;
+              }
+              return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                textRestLength = _maxTextLength - value.parseUtf8Length;
+              });
+            },
+            controller: textController,
+            inputFormatters: [LengthLimitingTextInputFormatter(_maxTextLength)],
           ),
-          sizedBoxW24H24,
-          Text('$textRestLength'),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -110,7 +112,7 @@ class _CheckinMessageDialogState extends State<CheckinMessageDialog> {
             Navigator.of(context).pop();
           },
         ),
-        TextButton(
+        FilledButton(
           child: Text(context.t.general.ok),
           onPressed: () async {
             // Validate

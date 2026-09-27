@@ -16,6 +16,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Localized text of [error].
 String websiteBlocklistErrorText(BuildContext context, WebsiteBlocklistError error) {
@@ -309,59 +310,72 @@ class _WebsiteBlocklistViewState extends State<_WebsiteBlocklistView> {
     final tr = context.t.userBlock.website;
     final loading = state.lookupStatus == WebsiteLookupStatus.loading;
     final found = state.lookup;
-    return Card(
-      child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return AppFormSection(
+      title: tr.addTitle,
+      icon: Icons.person_add_disabled_outlined,
+      children: [
+        TextField(
+          key: const ValueKey('website-lookup-input'),
+          controller: _input,
+          keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            labelText: tr.inputLabel,
+            hintText: tr.inputHint,
+            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+          ),
+          // A result, or a pending answer, belongs to the input it was asked for.
+          onChanged: (_) => _cubit.clearLookup(),
+          onSubmitted: loading || state.writing ? null : (_) async => _lookup(),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(tr.addTitle, style: Theme.of(context).textTheme.titleMedium),
-            sizedBoxW8H8,
-            TextField(
-              key: const ValueKey('website-lookup-input'),
-              controller: _input,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(labelText: tr.inputLabel, hintText: tr.inputHint),
-              // A result, or a pending answer, belongs to the input it was asked for.
-              onChanged: (_) => _cubit.clearLookup(),
-              onSubmitted: loading || state.writing ? null : (_) async => _lookup(),
-            ),
-            sizedBoxW8H8,
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                FilledButton.tonal(onPressed: loading || state.writing ? null : _lookup, child: Text(tr.lookup)),
-                if (loading) const SizedBox.square(dimension: 24, child: CircularProgressIndicator()),
-              ],
-            ),
-            if (state.lookupStatus == WebsiteLookupStatus.failed && state.lookupError != null) ...[
-              sizedBoxW8H8,
-              _ErrorLine(websiteBlocklistErrorText(context, state.lookupError!)),
-            ],
-            if (found != null) ...[
-              sizedBoxW8H8,
-              Text(
-                tr.lookupResult(name: found.displayName, uid: '${found.uid}'),
-                key: const ValueKey('website-lookup-result'),
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              sizedBoxW4H4,
-              if (found.alreadyListed)
-                Text(tr.alreadyListed)
-              else if (found.canAdd)
-                FilledButton(
-                  key: const ValueKey('website-add'),
-                  onPressed: state.writing ? null : () async => _add(found),
-                  child: Text(tr.add),
-                )
-              else
-                Text(tr.cannotAdd),
-            ],
+            FilledButton.tonal(onPressed: loading || state.writing ? null : _lookup, child: Text(tr.lookup)),
+            if (loading) const SizedBox.square(dimension: 24, child: CircularProgressIndicator()),
           ],
         ),
-      ),
+        if (state.lookupStatus == WebsiteLookupStatus.failed && state.lookupError != null)
+          _ErrorLine(websiteBlocklistErrorText(context, state.lookupError!)),
+        if (found != null)
+          AppInsetBlock(
+            outlined: true,
+            padding: edgeInsetsL12T12R12B12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const AppIconTile(Icons.person_outline, size: 32),
+                    sizedBoxW12H12,
+                    Expanded(
+                      child: Text(
+                        tr.lookupResult(name: found.displayName, uid: '${found.uid}'),
+                        key: const ValueKey('website-lookup-result'),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                sizedBoxW8H8,
+                if (found.alreadyListed)
+                  Text(tr.alreadyListed)
+                else if (found.canAdd)
+                  FilledButton(
+                    key: const ValueKey('website-add'),
+                    onPressed: state.writing ? null : () async => _add(found),
+                    child: Text(tr.add),
+                  )
+                else
+                  Text(tr.cannotAdd),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -378,49 +392,73 @@ class _WebsiteBlocklistViewState extends State<_WebsiteBlocklistView> {
     final label = localKnown ? (both ? tr.stateBoth : tr.stateWebsiteOnly) : null;
     final importing = state.importing.contains(row.uid);
     final canImport = localKnown && list.complete && !both;
-    return Card(
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return AppInsetBlock(
       key: ValueKey('website-row-${row.uid}'),
-      child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(row.displayName, style: Theme.of(context).textTheme.titleMedium),
-            Text(label == null ? 'UID ${row.uid}' : 'UID ${row.uid} · $label'),
-            sizedBoxW4H4,
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (canImport)
-                  OutlinedButton.icon(
-                    key: ValueKey('website-import-${row.uid}'),
-                    onPressed: importing ? null : () async => _import(row),
-                    icon: const Icon(Icons.download_outlined),
-                    label: Text(tr.import),
-                  ),
-                if (row.removable)
-                  TextButton(
-                    key: ValueKey('website-remove-${row.uid}'),
-                    onPressed: state.writing ? null : () async => _remove(row),
-                    child: Text(tr.remove),
-                  )
-                else
-                  Text(tr.cannotRemove, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ],
-        ),
+      outlined: true,
+      padding: edgeInsetsL12T12R12B12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppIconTile(
+                both ? Icons.phone_android_outlined : Icons.public_outlined,
+                size: 32,
+              ),
+              sizedBoxW12H12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(row.displayName, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(
+                      label == null ? 'UID ${row.uid}' : 'UID ${row.uid} · $label',
+                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          sizedBoxW8H8,
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (canImport)
+                OutlinedButton.icon(
+                  key: ValueKey('website-import-${row.uid}'),
+                  onPressed: importing ? null : () async => _import(row),
+                  icon: const Icon(Icons.download_outlined),
+                  label: Text(tr.import),
+                ),
+              if (row.removable)
+                TextButton(
+                  key: ValueKey('website-remove-${row.uid}'),
+                  onPressed: state.writing ? null : () async => _remove(row),
+                  child: Text(tr.remove),
+                )
+              else
+                Text(tr.cannotRemove, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  List<Widget> _buildList(BuildContext context, WebsiteBlocklistState state, UserBlockList local) {
+  Widget _buildList(BuildContext context, WebsiteBlocklistState state, UserBlockList local) {
     final tr = context.t.userBlock.website;
     final list = state.list;
     final localKnown = local.ownerUid == state.owner && local.status == UserBlockListStatus.ready;
-    return [
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final children = <Widget>[
+      AppSectionHeader(tr.title, icon: Icons.public_outlined, padding: EdgeInsets.zero),
       Wrap(
         spacing: 8,
         runSpacing: 4,
@@ -446,35 +484,64 @@ class _WebsiteBlocklistViewState extends State<_WebsiteBlocklistView> {
         ],
       ),
       // Never "empty" before the forum answered.
-      if (state.status == WebsiteBlocklistStatus.initial) ListTile(title: Text(tr.notLoaded)),
+      if (state.status == WebsiteBlocklistStatus.initial) _NoteLine(tr.notLoaded, icon: Icons.cloud_download_outlined),
       if (state.error != null) _ErrorLine(websiteBlocklistErrorText(context, state.error!)),
       if (list != null) ...[
-        ListTile(
-          // Only a complete list gives the total.
-          title: Text(
-            list.complete ? tr.count(count: '${list.rows.length}') : tr.countPartial(count: '${list.rows.length}'),
+        AppInsetBlock(
+          color: colorScheme.surfaceContainerHigh,
+          padding: edgeInsetsL12T12R12B12,
+          child: Row(
+            children: [
+              Icon(Icons.format_list_numbered_outlined, color: colorScheme.primary),
+              sizedBoxW12H12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Only a complete list gives the total.
+                    Text(
+                      list.complete
+                          ? tr.count(count: '${list.rows.length}')
+                          : tr.countPartial(count: '${list.rows.length}'),
+                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      switch (list.quota) {
+                        WebsiteBlocklistQuota(used: final used?, limit: final limit?) => tr.quotaUsed(
+                          used: '$used',
+                          limit: '$limit',
+                        ),
+                        WebsiteBlocklistQuota(limit: final limit?) => tr.quotaLimit(limit: '$limit'),
+                        _ => tr.quotaUnknown,
+                      },
+                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          subtitle: Text(switch (list.quota) {
-            WebsiteBlocklistQuota(used: final used?, limit: final limit?) => tr.quotaUsed(
-              used: '$used',
-              limit: '$limit',
-            ),
-            WebsiteBlocklistQuota(limit: final limit?) => tr.quotaLimit(limit: '$limit'),
-            _ => tr.quotaUnknown,
-          }),
         ),
-        if (!list.complete) _NoteLine(tr.incomplete),
+        if (!list.complete) _NoteLine(tr.incomplete, warning: true),
         if (!localKnown) _NoteLine(tr.localUnknown),
         if (localKnown && list.complete)
-          ListTile(
-            leading: const Icon(Icons.phone_android_outlined),
-            title: Text(tr.localOnly(count: '${local.uids.difference(list.uids).length}')),
+          _NoteLine(
+            tr.localOnly(count: '${local.uids.difference(list.uids).length}'),
+            icon: Icons.phone_android_outlined,
           ),
         // No rows on a partial page is not an empty list.
-        if (list.rows.isEmpty && list.complete) ListTile(title: Text(tr.empty)),
+        if (list.rows.isEmpty && list.complete) _NoteLine(tr.empty, icon: Icons.inbox_outlined),
         ...list.rows.map((row) => _buildRow(context, state, list, row, local, localKnown)),
       ],
     ];
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[if (i > 0) sizedBoxW8H8, children[i]],
+        ],
+      ),
+    );
   }
 
   @override
@@ -493,19 +560,22 @@ class _WebsiteBlocklistViewState extends State<_WebsiteBlocklistView> {
             bottom: false,
             child: BlocBuilder<WebsiteBlocklistCubit, WebsiteBlocklistState>(
               builder: (context, state) => BlocBuilder<UserBlockCubit, UserBlockList>(
-                builder: (context, local) => ListView(
-                  padding: edgeInsetsL12T4R12.add(context.safePadding()),
-                  children: [
-                    Card(
-                      child: Padding(padding: edgeInsetsL12T12R12B12, child: Text(tr.hint)),
-                    ),
-                    if (state.owner == null)
-                      ListTile(title: Text(context.t.userBlock.invalid))
-                    else ...[
-                      _buildAddSection(context, state),
-                      ..._buildList(context, state, local),
+                builder: (context, local) => AppCenteredList(
+                  maxWidth: appFormMaxWidth,
+                  builder: (context, side, _) => ListView(
+                    padding: side.copyWith(top: 12, bottom: 12).add(context.safePadding()),
+                    children: [
+                      AppNoticeBanner(message: tr.hint),
+                      const SizedBox(height: appSurfaceGap),
+                      if (state.owner == null)
+                        AppStateView(icon: Icons.login, message: context.t.userBlock.invalid, scrollable: false)
+                      else ...[
+                        _buildAddSection(context, state),
+                        const SizedBox(height: appSurfaceGap),
+                        _buildList(context, state, local),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -522,17 +592,37 @@ class _ErrorLine extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    leading: Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
-    title: Text(text),
-  );
+  Widget build(BuildContext context) => AppNoticeBanner(message: text, tone: AppNoticeTone.error);
 }
 
+/// A remark about the list (not loaded, incomplete, local only count); [warning] for a limit of the list.
 class _NoteLine extends StatelessWidget {
-  const _NoteLine(this.text);
+  const _NoteLine(this.text, {this.icon = Icons.info_outline, this.warning = false});
 
   final String text;
+  final IconData icon;
+  final bool warning;
 
   @override
-  Widget build(BuildContext context) => ListTile(leading: const Icon(Icons.info_outline), title: Text(text));
+  Widget build(BuildContext context) {
+    if (warning) {
+      return AppNoticeBanner(message: text, tone: AppNoticeTone.warning, icon: Icons.warning_amber_outlined);
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppInsetBlock(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: colorScheme.outline),
+          sizedBoxW12H12,
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

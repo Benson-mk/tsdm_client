@@ -7,6 +7,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 
 /// Ask for an image url (or `[img]` code) and an optional name, save it as a sticker (#5).
@@ -58,7 +59,9 @@ class _CustomImageAddDialogState extends State<_CustomImageAddDialog> {
   Widget build(BuildContext context) {
     final tr = context.t.bbcodeEditor.customImage;
     return AlertDialog(
+      icon: const Icon(Icons.add_photo_alternate_outlined),
       title: Text(tr.addTitle),
+      scrollable: true,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -78,7 +81,7 @@ class _CustomImageAddDialogState extends State<_CustomImageAddDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(context.t.general.cancel)),
-        TextButton(onPressed: _save, child: Text(context.t.general.ok)),
+        FilledButton(onPressed: _save, child: Text(context.t.general.ok)),
       ],
     );
   }
@@ -105,10 +108,7 @@ class CustomImageTab extends StatelessWidget {
             if (snapshot.hasData && images.isEmpty)
               Padding(
                 padding: edgeInsetsL12T4R12B12,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(tr.empty, style: Theme.of(context).textTheme.bodySmall),
-                ),
+                child: AppNoticeBanner(icon: Icons.collections_outlined, message: tr.empty),
               ),
             Flexible(
               child: GridView.builder(
@@ -128,7 +128,7 @@ class CustomImageTab extends StatelessWidget {
                       child: OutlinedButton(
                         // Same square with rounded corners as the thumbnails next to it.
                         style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
                           padding: EdgeInsets.zero,
                         ),
                         onPressed: () async => showCustomImageAddDialog(context),
@@ -140,6 +140,7 @@ class CustomImageTab extends StatelessWidget {
                   return Tooltip(
                     message: image.name.isEmpty ? image.url : image.name,
                     child: InkWell(
+                      borderRadius: BorderRadius.circular(appInnerRadius),
                       onTap: () => Navigator.of(context).pop(customImageBBCode(image.url)),
                       onLongPress: () async {
                         final confirmed = await showQuestionDialog(
@@ -153,7 +154,7 @@ class CustomImageTab extends StatelessWidget {
                         }
                       },
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(appInnerRadius),
                         child: CachedImage(image.url, width: 72, height: 72, fit: BoxFit.cover),
                       ),
                     ),

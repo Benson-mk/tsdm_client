@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/thread_visit_history/widgets/thread_visit_h
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/tips.dart';
 
@@ -55,42 +56,44 @@ class _ThreadVisitHistoryPageState extends State<ThreadVisitHistoryPage> {
         duplicated.contains(name) ? tr.accountWithUid(username: name, uid: uid) : name;
     final label = _selectedUid == null ? tr.allAccounts : labelOf(_selectedUid!, _selectedUsername);
 
-    return Padding(
-      padding: edgeInsetsL12T4R12B4,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: PopupMenuButton<int>(
-          key: _menuKey,
-          tooltip: tr.filterAccount,
-          initialValue: _selectedUid ?? _allAccounts,
-          onSelected: (value) => _select(value == _allAccounts ? null : value, accounts),
-          itemBuilder: (context) => [
-            CheckedPopupMenuItem(value: _allAccounts, checked: _selectedUid == null, child: Text(tr.allAccounts)),
-            for (final MapEntry(key: uid, value: name) in accounts.entries)
-              CheckedPopupMenuItem(
-                value: uid,
-                checked: uid == _selectedUid,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(
-                      tr.accountUid(uid: uid),
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-                    ),
-                  ],
+    return AppContentWidth(
+      child: Padding(
+        padding: edgeInsetsL12T4R12B4,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: PopupMenuButton<int>(
+            key: _menuKey,
+            tooltip: tr.filterAccount,
+            initialValue: _selectedUid ?? _allAccounts,
+            onSelected: (value) => _select(value == _allAccounts ? null : value, accounts),
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(value: _allAccounts, checked: _selectedUid == null, child: Text(tr.allAccounts)),
+              for (final MapEntry(key: uid, value: name) in accounts.entries)
+                CheckedPopupMenuItem(
+                  value: uid,
+                  checked: uid == _selectedUid,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(
+                        tr.accountUid(uid: uid),
+                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                      ),
+                    ],
+                  ),
                 ),
+            ],
+            // The chip handles the tap and opens the menu anchored at itself, so the ripple keeps the chip shape.
+            child: ActionChip(
+              avatar: const Icon(Icons.filter_list),
+              label: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
+                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
-          ],
-          // The chip handles the tap and opens the menu anchored at itself, so the ripple keeps the chip shape.
-          child: ActionChip(
-            avatar: const Icon(Icons.filter_list),
-            label: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onPressed: () => _menuKey.currentState?.showButtonMenu(),
             ),
-            onPressed: () => _menuKey.currentState?.showButtonMenu(),
           ),
         ),
       ),
@@ -193,26 +196,21 @@ class _BodyState extends State<_Body> {
             padding: edgeInsetsL12T4R12,
             children: [
               sizedBoxW32H32,
-              Center(
-                child: Text(
-                  widget.emptyText,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-              ),
+              AppStateView(icon: Icons.history_outlined, message: widget.emptyText),
             ],
           );
         }
-        return ListView.separated(
-          controller: _scrollController,
-          physics: physics,
-          padding: edgeInsetsL12T4R12,
-          itemCount: widget.models.length,
-          itemBuilder: (context, index) {
-            return ThreadVisitHistoryCard(widget.models[index]);
-          },
-          separatorBuilder: (_, _) => sizedBoxW4H4,
+        return AppCenteredList(
+          builder: (context, side, _) => ListView.separated(
+            controller: _scrollController,
+            physics: physics,
+            padding: side.copyWith(top: 4, bottom: 16),
+            itemCount: widget.models.length,
+            itemBuilder: (context, index) {
+              return ThreadVisitHistoryCard(widget.models[index]);
+            },
+            separatorBuilder: (_, _) => appListSeparator,
+          ),
         );
       },
     );

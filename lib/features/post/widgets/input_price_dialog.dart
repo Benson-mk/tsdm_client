@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 
 /// Show a dialog to let user input a price for current thread.
@@ -53,13 +55,24 @@ class _InputPriceDialogState extends State<_InputPriceDialog> {
   Widget build(BuildContext context) {
     final tr = context.t.postEditPage.priceDialog;
     return CustomAlertDialog.sync(
-      title: Text(tr.title),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.attach_money_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(tr.title)),
+        ],
+      ),
       content: Form(
         key: formKey,
         child: TextFormField(
           controller: priceController,
           autofocus: true,
-          decoration: InputDecoration(helperText: tr.maximum(maxPrice: widget.maxPrice ?? 65535)),
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.attach_money_outlined),
+            helperText: tr.maximum(maxPrice: widget.maxPrice ?? 65535),
+            helperMaxLines: 2,
+            errorMaxLines: 2,
+          ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (v) {
             if (v == null) {
@@ -82,7 +95,7 @@ class _InputPriceDialogState extends State<_InputPriceDialog> {
       ),
       actions: [
         TextButton(child: Text(context.t.general.cancel), onPressed: () => context.pop()),
-        TextButton(
+        FilledButton(
           child: Text(context.t.general.ok),
           onPressed: () {
             if (formKey.currentState?.validate() ?? false) {

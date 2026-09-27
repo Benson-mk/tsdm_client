@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/post_report/cubit/post_report_cubit.dart';
@@ -12,6 +13,7 @@ import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Open the report dialog of [post] (#127). Does nothing when the forum offered no report for it.
 ///
@@ -273,12 +275,16 @@ class _PostReportDialogState extends State<PostReportDialog> {
     };
   }
 
+  /// A status line: problems in an error banner, plain information as text.
   Widget _notice(BuildContext context, String text, {bool error = false}) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text,
-      style: error ? TextStyle(color: Theme.of(context).colorScheme.error) : null,
-    ),
+    child: error ? AppNoticeBanner(tone: AppNoticeTone.error, message: text) : Text(text),
+  );
+
+  /// Text the forum answered, quoted as is in an inset block so it reads apart from the app's own wording.
+  Widget _forumMessage(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: AppInsetBlock(child: Text(text)),
   );
 
   List<Widget> _buildForm(BuildContext context, PostReportState state, PostReportForm form) {
@@ -300,7 +306,7 @@ class _PostReportDialogState extends State<PostReportDialog> {
       if (state.formChanged) _notice(context, tr.formChanged, error: true),
       if (state.phase == PostReportPhase.notSent && state.problem != null) ...[
         _notice(context, _problemText(context.t, state.problem!), error: true),
-        if (state.message != null) _notice(context, state.message!),
+        if (state.message != null) _forumMessage(context, state.message!),
       ],
       if (state.phase == PostReportPhase.rejected) ...[
         _notice(
@@ -308,31 +314,36 @@ class _PostReportDialogState extends State<PostReportDialog> {
           state.problem == PostReportProblem.notLoggedIn ? tr.problem.notLoggedIn : tr.rejected,
           error: true,
         ),
-        if (state.message?.isNotEmpty ?? false) _notice(context, state.message!),
+        if (state.message?.isNotEmpty ?? false) _forumMessage(context, state.message!),
       ],
-      Text(tr.reason, style: Theme.of(context).textTheme.titleSmall),
-      RadioGroup<int>(
-        groupValue: _reason,
-        onChanged: (value) {
-          if (editable) {
-            setState(() => _reason = value);
-          }
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (index, label) in form.reasons.indexed)
-              RadioListTile<int>(
-                key: ValueKey('post-report-reason-$index'),
-                value: index,
-                enabled: editable,
-                contentPadding: EdgeInsets.zero,
-                title: Text(label),
-              ),
-          ],
+      Text(tr.reason, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+      sizedBoxW4H4,
+      AppInsetBlock(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: RadioGroup<int>(
+          groupValue: _reason,
+          onChanged: (value) {
+            if (editable) {
+              setState(() => _reason = value);
+            }
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (index, label) in form.reasons.indexed)
+                RadioListTile<int>(
+                  key: ValueKey('post-report-reason-$index'),
+                  value: index,
+                  enabled: editable,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(label),
+                ),
+            ],
+          ),
         ),
       ),
       if (customSelected) ...[
+        sizedBoxW12H12,
         TextField(
           key: const ValueKey('post-report-custom'),
           controller: _custom,
@@ -341,7 +352,7 @@ class _PostReportDialogState extends State<PostReportDialog> {
           maxLines: 5,
           decoration: InputDecoration(
             hintText: tr.customHint,
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
             errorText: error,
             helperText: error == null ? tr.remaining(count: remaining) : null,
             helperMaxLines: 3,
@@ -406,7 +417,7 @@ class _PostReportDialogState extends State<PostReportDialog> {
             final problem = state.problem ?? PostReportProblem.unsupported;
             content = [
               _notice(context, _problemText(context.t, problem), error: true),
-              if (state.message != null) _notice(context, state.message!),
+              if (state.message != null) _forumMessage(context, state.message!),
             ];
             actions = [
               browserButton,
@@ -435,8 +446,11 @@ class _PostReportDialogState extends State<PostReportDialog> {
             ];
           case PostReportPhase.succeeded:
             content = [
-              _notice(context, tr.succeeded),
-              if (state.message?.isNotEmpty ?? false) _notice(context, state.message!),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AppNoticeBanner(icon: Icons.check_circle_outline, message: tr.succeeded),
+              ),
+              if (state.message?.isNotEmpty ?? false) _forumMessage(context, state.message!),
             ];
             actions = [closeButton];
           case PostReportPhase.unknown:
@@ -457,12 +471,30 @@ class _PostReportDialogState extends State<PostReportDialog> {
           },
           child: AlertDialog(
             scrollable: true,
+            icon: const Icon(Icons.flag_outlined),
             title: Text(tr.title(floor: widget.floorLabel)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (!_accountLost) _notice(context, tr.author(name: widget.authorName)),
+                if (!_accountLost)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_outline, size: 18, color: Theme.of(context).colorScheme.outline),
+                        sizedBoxW8H8,
+                        Expanded(
+                          child: Text(
+                            tr.author(name: widget.authorName),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ...content,
                 if (_browserFailed) _notice(context, tr.browserFailed, error: true),
               ],

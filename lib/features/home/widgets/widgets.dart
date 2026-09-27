@@ -5,11 +5,31 @@ import 'package:tsdm_client/features/home/cubit/home_cubit.dart';
 import 'package:tsdm_client/features/root/stream/scroll_to_top_stream.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 part 'home_navigation_bar.dart';
 part 'home_navigation_drawer.dart';
 part 'home_navigation_rail.dart';
 part 'home_tab_tap.dart';
+
+/// Indicator of the selected destination in the bottom bar, the rail and the drawer: the inner radius of the app
+/// surfaces instead of the default pill.
+const _navigationIndicatorShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(Radius.circular(appInnerRadius)),
+);
+
+/// Hairline between the navigation and the content, the border color of the app surfaces.
+Color _navigationHairline(ColorScheme colorScheme) => colorScheme.outlineVariant.withValues(alpha: 0.6);
+
+/// Divider between the side navigation (rail or drawer) and the content.
+class HomeNavigationDivider extends StatelessWidget {
+  /// Constructor.
+  const HomeNavigationDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      VerticalDivider(width: 1, thickness: 1, color: _navigationHairline(Theme.of(context).colorScheme));
+}
 
 /// Bar item in app navigator.
 final class _NavigationItem {

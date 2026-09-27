@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:tsdm_client/constants/layout.dart';
-import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Type of editing the fast rate template.
@@ -99,7 +98,7 @@ class _FastRateTemplateEditPageState extends State<FastRateTemplateEditPage> wit
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           error('failed to load all fast rate templates: ${snapshot.error}');
-          return Center(child: Text(context.t.general.failedToLoad));
+          return AppStateView(error: true, icon: Icons.error_outline, message: context.t.general.failedToLoad);
         }
 
         if (!snapshot.hasData) {
@@ -109,131 +108,126 @@ class _FastRateTemplateEditPageState extends State<FastRateTemplateEditPage> wit
         final result = snapshot.data!;
         if (result.isLeft()) {
           error('failed to unpack fast rate all templates result: ${result.unwrapErr()}');
-          return Center(child: Text(context.t.general.failedToLoad));
+          return AppStateView(error: true, icon: Icons.error_outline, message: context.t.general.failedToLoad);
         }
 
         final allTemplates = result.unwrap();
 
+        Widget score(TextEditingController controller, String label) => TextFormField(
+          controller: controller,
+          decoration: InputDecoration(labelText: label),
+          keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+          inputFormatters: [numberInputFormatter],
+          validator: (v) => attributeValidator(v, context),
+        );
+
+        final scoreFields = [
+          score(editingControllerWw, tr.ww),
+          score(editingControllerTsb, tr.tsb),
+          score(editingControllerXc, tr.xc),
+          score(editingControllerTr, tr.tr),
+          score(editingControllerFh, tr.fh),
+          score(editingControllerJl, tr.jl),
+          score(editingControllerSpecial, tr.special),
+          score(editingControllerSpecial2, tr.special2),
+        ];
+
         return Form(
           key: _formKey,
-          child: ListView(
-            padding: edgeInsetsL12T4R12.add(context.safePadding()),
+          child: Column(
             children: [
-              TextFormField(
-                controller: editingControllerName,
-                autofocus: widget.editType == FastRateTemplateEditType.create,
-                decoration: InputDecoration(labelText: tr.name),
-                validator: (v) {
-                  if (v == null || v.isEmpty) {
-                    return tr.editPage.nameNotEmpty;
-                  }
+              Expanded(
+                child: AppCenteredList(
+                  maxWidth: appFormMaxWidth,
+                  // Not a lazy list: every field stays built, so the form validates all of them.
+                  builder: (context, horizontal, width) => SingleChildScrollView(
+                    padding: horizontal.add(const EdgeInsets.symmetric(vertical: 12)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AppFormSection(
+                          children: [
+                            TextFormField(
+                              controller: editingControllerName,
+                              autofocus: widget.editType == FastRateTemplateEditType.create,
+                              decoration: InputDecoration(labelText: tr.name),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return tr.editPage.nameNotEmpty;
+                                }
 
-                  // Duplicate check.
-                  if (widget.editType == FastRateTemplateEditType.create && !allowOverride) {
-                    // Uid equality is ignored here.
-                    if (allTemplates.any((e) => e.name == v)) {
-                      return tr.editPageAlreadyExists;
-                    }
-                  }
+                                // Duplicate check.
+                                if (widget.editType == FastRateTemplateEditType.create && !allowOverride) {
+                                  // Uid equality is ignored here.
+                                  if (allTemplates.any((e) => e.name == v)) {
+                                    return tr.editPageAlreadyExists;
+                                  }
+                                }
 
-                  return null;
-                },
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerWw,
-                decoration: InputDecoration(labelText: tr.ww),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerTsb,
-                decoration: InputDecoration(labelText: tr.tsb),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerXc,
-                decoration: InputDecoration(labelText: tr.xc),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerTr,
-                decoration: InputDecoration(labelText: tr.tr),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerFh,
-                decoration: InputDecoration(labelText: tr.fh),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerJl,
-                decoration: InputDecoration(labelText: tr.jl),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerSpecial,
-                decoration: InputDecoration(labelText: tr.special),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: editingControllerSpecial2,
-                decoration: InputDecoration(labelText: tr.special2),
-                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                inputFormatters: [numberInputFormatter],
-                validator: (v) => attributeValidator(v, context),
-              ),
-              if (widget.editType == FastRateTemplateEditType.create) ...[
-                // Only show override option if drafting new templates.
-                sizedBoxW8H8,
-                SwitchListTile(
-                  title: Text(tr.editPageOverride),
-                  value: allowOverride,
-                  onChanged: (v) => setState(() => allowOverride = v),
-                ),
-              ],
-              sizedBoxW8H8,
-              FilledButton(
-                child: Text(context.t.general.ok),
-                onPressed: () {
-                  if (!_formKey.currentState!.validate()) {
-                    return;
-                  }
-
-                  context.pop(
-                    FastRateTemplateModel(
-                      name: editingControllerName.text,
-                      ww: int.parse(editingControllerWw.text),
-                      tsb: int.parse(editingControllerTsb.text),
-                      xc: int.parse(editingControllerXc.text),
-                      tr: int.parse(editingControllerTr.text),
-                      fh: int.parse(editingControllerFh.text),
-                      jl: int.parse(editingControllerJl.text),
-                      special: int.parse(editingControllerSpecial.text),
-                      special2: int.parse(editingControllerSpecial2.text),
+                                return null;
+                              },
+                            ),
+                            // Only show override option if drafting new templates.
+                            if (widget.editType == FastRateTemplateEditType.create)
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(tr.editPageOverride),
+                                value: allowOverride,
+                                onChanged: (v) => setState(() => allowOverride = v),
+                              ),
+                          ],
+                        ),
+                        appListSeparator,
+                        AppFormSection(
+                          title: context.t.ratePostPage.title,
+                          icon: Icons.star_rate_outlined,
+                          children: [
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                // Two fields per row on phones, four once there is room; large text gets fewer.
+                                final fit = (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(150))
+                                    .floor();
+                                final perRow = fit < 1 ? 1 : (fit > 4 ? 4 : fit);
+                                final fieldWidth = (constraints.maxWidth - 12 * (perRow - 1)) / perRow;
+                                return Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    for (final field in scoreFields) SizedBox(width: fieldWidth, child: field),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                ),
+              ),
+              AppBottomActionBar(
+                child: FilledButton(
+                  child: Text(context.t.general.ok),
+                  onPressed: () {
+                    if (!_formKey.currentState!.validate()) {
+                      return;
+                    }
+
+                    context.pop(
+                      FastRateTemplateModel(
+                        name: editingControllerName.text,
+                        ww: int.parse(editingControllerWw.text),
+                        tsb: int.parse(editingControllerTsb.text),
+                        xc: int.parse(editingControllerXc.text),
+                        tr: int.parse(editingControllerTr.text),
+                        fh: int.parse(editingControllerFh.text),
+                        jl: int.parse(editingControllerJl.text),
+                        special: int.parse(editingControllerSpecial.text),
+                        special2: int.parse(editingControllerSpecial2.text),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),

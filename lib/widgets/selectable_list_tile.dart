@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/layout.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// List tile with selectable state, closer to the Android native component style.
 class SelectableListTile extends ListTile {
@@ -53,8 +54,9 @@ class SelectableListTile extends ListTile {
             child: Padding(
               padding: edgeInsetsL8R8,
               child: ClipRRect(
-                // The height of ListTile is default to 48, to get a smooth radius border, the height is 24.
-                borderRadius: const BorderRadius.all(Radius.circular(24)),
+                // Same inner radius as the other rounded blocks: a 24 radius only suits one line rows, the options of
+                // the pickers wrap to two or three lines at large text scales.
+                borderRadius: const BorderRadius.all(Radius.circular(appInnerRadius)),
                 child: ColoredBox(color: selectedTileColor ?? Theme.of(context).colorScheme.secondaryContainer),
               ),
             ),

@@ -275,6 +275,7 @@
           "threadType": "白日梦"
         },
         "showHelpTip": "查看帖子卡片内容的含义",
+        "preview": "预览",
         "attrs": {
           "help": "图标的含义",
           "closed": {
@@ -458,6 +459,7 @@
       },
       "exportData": "导出数据",
       "exportDataDetail": "默认不含任何账号的 Cookie 与密码；可选择用自设密码加密后一并导出",
+      "backupTitle": "备份与恢复",
       "exportBackup": {
         "title": "导出数据",
         "includeAccounts": "包含账号登录数据",
@@ -554,7 +556,9 @@
     "flutterVersion": "Flutter版本",
     "dartVersion": "Dart版本",
     "license": "版权",
-    "copyEnvironmentInfo": "复制环境信息"
+    "copyEnvironmentInfo": "复制环境信息",
+    "linksSection": "链接与支持",
+    "buildSection": "版本与构建"
   },
   "loginPage": {
     "title": "登录天使动漫",
@@ -817,6 +821,7 @@
       "title": "同步所有账户",
       "detail": "为本机保存的每个账户逐一抓取提醒、私人消息和公共消息。未读红点仍只反映当前账户。与平时同步一样，列出后论坛侧的“新”标记会被消耗。",
       "running": "进行中",
+      "finished": "已完成",
       "empty": "本机没有保存任何账户",
       "user": {
         "waiting": "等待中",
@@ -1066,7 +1071,8 @@
     "sizeValue": "${width: int} x ${height: int}",
     "cacheName": "缓存名称",
     "cacheSize": "缓存大小",
-    "usage": "用途"
+    "usage": "用途",
+    "fitToScreen": "适应屏幕"
   },
   "forumCard": {
     "links": "链接",
@@ -1788,7 +1794,14 @@
     },
     "customTitle": "自定义头衔",
     "signature": "个人签名",
-    "timezone": "时区"
+    "timezone": "时区",
+    "sections": {
+      "basic": "基本资料",
+      "contact": "联系方式",
+      "aboutMe": "关于我",
+      "forum": "论坛显示"
+    },
+    "uploadHint": "修改只保留在本页，点右上角的上传按钮才会提交到论坛。"
   },
   "urlInfoBottomSheet": {
     "title": "链接信息",
@@ -1882,6 +1895,7 @@
     "title": "屏蔽管理",
     "manageEntry": "屏蔽管理",
     "localHint": "已屏蔽用户（本机）：只对这台设备上的当前账号生效，不会通知对方。对方的主题、回复与可识别来源的提醒会被隐藏；私人消息仍会照常接收，也可以手动打开阅读，但本机不再为此人的消息弹出提醒或显示未读角标。好友关系与论坛权限不变。无法判断作者的内容仍可能显示，例如主页导读、收藏与浏览记录里的主题标题、更新前收到的提醒，以及引用其他页楼层的内容。例：账号 A 屏蔽了 X，同一设备上的账号 B 不会继承；切回账号 A 时名单仍在。",
+    "localTitle": "已屏蔽用户（本机）",
     "block": "屏蔽此用户（本机）",
     "unblock": "解除屏蔽",
     "blockConfirmTitle": "屏蔽 ${name}？",

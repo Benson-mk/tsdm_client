@@ -42,6 +42,7 @@ import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/error_card.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -410,94 +411,114 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
     );
   }
 
+  /// Height of the breadcrumb row under the app bar for the extra height of large text.
+  static double _breadcrumbsHeight(double extraHeight) => 26 + extraHeight;
+
+  /// Forum path (links separated by chevrons) followed by small pills: thread type, thread id (copy dialog),
+  /// statistics, draft and the local replied mark. Scrolls horizontally and starts scrolled to the end, where the
+  /// thread's own information is.
   Widget _buildBreadcrumbsRow(ThreadState state, double extraHeight, {required bool replied}) {
-    final infoTextStyle = Theme.of(
-      context,
-    ).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.outline);
+    final colorScheme = Theme.of(context).colorScheme;
+    final infoTextStyle = Theme.of(context).textTheme.labelLarge?.copyWith(color: colorScheme.outline);
+    final infoTextHighlightStyle = Theme.of(context).textTheme.labelLarge?.copyWith(color: colorScheme.primary);
 
-    final infoTextHighlightStyle = Theme.of(
-      context,
-    ).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary);
-
-    final breadFrags = state.breadcrumbs
-        .map(
-          (e) => [
-            MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: () async {
-                  final gid = e.link.tryGetQueryParameters()?['gid'];
-                  if (gid != null) {
-                    await context.pushNamed(
-                      ScreenPaths.forumGroup,
-                      pathParameters: {'gid': gid},
-                      queryParameters: {'title': e.description},
-                    );
-                    return;
-                  }
-                  await context.dispatchAsUrl(e.link.toString());
-                },
-                child: Text(e.description, style: infoTextHighlightStyle),
-              ),
-            ),
-            const Text(' > '),
+    Widget pill(String label, {IconData? icon, Color? color, VoidCallback? onTap}) {
+      final foreground = color ?? colorScheme.onSurfaceVariant;
+      final content = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[Icon(icon, size: 14, color: foreground), sizedBoxW4H4],
+            Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foreground)),
           ],
-        )
-        .flattenedToList;
+        ),
+      );
+      return Padding(
+        padding: const EdgeInsets.only(left: 6),
+        child: Material(
+          color: colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(appInnerRadius),
+          clipBehavior: Clip.antiAlias,
+          child: onTap == null
+              ? Center(child: content)
+              : InkWell(
+                  onTap: onTap,
+                  child: Center(child: content),
+                ),
+        ),
+      );
+    }
+
+    final breadFrags = <Widget>[
+      for (final (index, e) in state.breadcrumbs.indexed) ...[
+        if (index > 0) Icon(Icons.chevron_right, size: 16, color: colorScheme.outline),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () async {
+              final gid = e.link.tryGetQueryParameters()?['gid'];
+              if (gid != null) {
+                await context.pushNamed(
+                  ScreenPaths.forumGroup,
+                  pathParameters: {'gid': gid},
+                  queryParameters: {'title': e.description},
+                );
+                return;
+              }
+              await context.dispatchAsUrl(e.link.toString());
+            },
+            child: Center(child: Text(e.description, style: infoTextHighlightStyle)),
+          ),
+        ),
+      ],
+      if (state.breadcrumbs.isNotEmpty) sizedBoxW4H4,
+    ];
 
     return Padding(
       padding: edgeInsetsL12R12.add(edgeInsetsB4),
       child: DefaultTextStyle.merge(
         style: infoTextStyle,
         child: SizedBox(
-          height: 20 + extraHeight,
+          height: _breadcrumbsHeight(extraHeight) - 4,
           child: ListView(
             scrollDirection: Axis.horizontal,
             reverse: true,
             children: <Widget>[
               ...breadFrags,
               if (state.threadType?.typeID != null && state.fid != null)
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () async => context.pushNamed(
-                      ScreenPaths.forum,
-                      pathParameters: {'fid': '${state.fid}'},
-                      queryParameters: {
-                        'threadTypeName': state.threadType?.name,
-                        'threadTypeID': '${state.threadType?.typeID}',
-                      },
-                    ),
-                    child: Text('[${state.threadType!.name}]', style: infoTextHighlightStyle),
+                pill(
+                  state.threadType!.name,
+                  icon: Icons.label_outline,
+                  color: colorScheme.primary,
+                  onTap: () async => context.pushNamed(
+                    ScreenPaths.forum,
+                    pathParameters: {'fid': '${state.fid}'},
+                    queryParameters: {
+                      'threadTypeName': state.threadType?.name,
+                      'threadTypeID': '${state.threadType?.typeID}',
+                    },
                   ),
                 ),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () async {
-                    final id = state.tid ?? widget.threadID;
-                    final title = state.title ?? widget.title;
-                    await showCopyThreadInfoDialog(context: context, tid: id, title: title);
-                  },
-                  child: Text('[${context.t.threadPage.title} ${state.tid ?? ""}]', style: infoTextHighlightStyle),
-                ),
+              pill(
+                '${context.t.threadPage.title} ${state.tid ?? ""}',
+                icon: Icons.tag,
+                color: colorScheme.primary,
+                onTap: () async {
+                  final id = state.tid ?? widget.threadID;
+                  final title = state.title ?? widget.title;
+                  await showCopyThreadInfoDialog(context: context, tid: id, title: title);
+                },
               ),
               if (state.viewCount != null || state.replyCount != null)
-                Text('[${context.t.threadPage.statistics(view: state.viewCount ?? 0, reply: state.replyCount ?? 0)}]'),
-              if (state.isDraft) Text('[${context.t.threadPage.draft}]'),
+                pill(
+                  context.t.threadPage.statistics(view: state.viewCount ?? 0, reply: state.replyCount ?? 0),
+                  icon: Icons.bar_chart_outlined,
+                ),
+              if (state.isDraft) pill(context.t.threadPage.draft, icon: Icons.edit_note_outlined),
               // The current account replied in this thread (local mark, issue #21).
               if (replied)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.reply_outlined, size: 16, color: Theme.of(context).colorScheme.tertiary),
-                    sizedBoxW4H4,
-                    Text(
-                      context.t.threadPage.repliedMark,
-                      style: infoTextStyle?.copyWith(color: Theme.of(context).colorScheme.tertiary),
-                    ),
-                  ],
-                ),
+                pill(context.t.threadPage.repliedMark, icon: Icons.reply_outlined, color: colorScheme.tertiary),
             ].reversed.toList(),
           ),
         ),
@@ -551,22 +572,20 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
             latestModAct: state.latestModAct,
           ),
         ),
+        // Replies are still accepted but the thread is about to close: a banner right above the reply box, in the
+        // reading column.
         if (state.threadSoftClosed && !state.threadClosed)
           ColoredBox(
-            color: Theme.of(context).colorScheme.secondaryContainer,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             child: Padding(
-              padding: edgeInsetsL12T4R12B4,
-              child: Row(
-                children: [
-                  Icon(Icons.lock_outline, size: 16, color: Theme.of(context).colorScheme.onSecondaryContainer),
-                  sizedBoxW4H4,
-                  Expanded(
-                    child: Text(
-                      tr.softCloseHint,
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSecondaryContainer),
-                    ),
-                  ),
-                ],
+              padding: edgeInsetsL12T8R12,
+              child: AppContentWidth(
+                maxWidth: appReadingMaxWidth,
+                child: AppNoticeBanner(
+                  tone: AppNoticeTone.warning,
+                  icon: Icons.lock_clock_outlined,
+                  message: tr.softCloseHint,
+                ),
               ),
             ),
           ),
@@ -588,7 +607,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       if (state.permissionDeniedMessage != null) {
         return ErrorCard(child: munchElement(context, state.permissionDeniedMessage!));
       } else {
-        return Center(child: Text(context.t.general.noPermission));
+        return AppStateView(icon: Icons.lock_outline, message: context.t.general.noPermission);
       }
     }
 
@@ -759,7 +778,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
               appBar: ListAppBar(
                 title: title,
                 bottom: PreferredSize(
-                  preferredSize: Size.fromHeight(20 + textScaleExtraBreadHeight),
+                  preferredSize: Size.fromHeight(_breadcrumbsHeight(textScaleExtraBreadHeight)),
                   child: _buildBreadcrumbsRow(state, textScaleExtraBreadHeight, replied: replied),
                 ),
                 showReverseOrderAction: true,
@@ -830,29 +849,22 @@ class _AuthorLookupFailure extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: edgeInsetsL12T12R12B12,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48),
-            sizedBoxW8H8,
-            Text(context.t.general.failedToLoad, textAlign: TextAlign.center),
-            sizedBoxW8H8,
-            Wrap(
-              spacing: 8,
-              children: [
-                if (Navigator.of(context).canPop())
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: Text(context.t.userBlock.goBack),
-                  ),
-                FilledButton(onPressed: onRetry, child: Text(context.t.general.retry)),
-              ],
+    return AppStateView(
+      error: true,
+      icon: Icons.error_outline,
+      message: context.t.general.failedToLoad,
+      action: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.center,
+        children: [
+          if (Navigator.of(context).canPop())
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              child: Text(context.t.userBlock.goBack),
             ),
-          ],
-        ),
+          FilledButton(onPressed: onRetry, child: Text(context.t.general.retry)),
+        ],
       ),
     );
   }
