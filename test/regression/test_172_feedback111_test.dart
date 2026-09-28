@@ -384,8 +384,9 @@ void main() {
 
   group('3. author badges', () {
     test('the floor shows both badges the same height', () {
-      expect(postAuthorSecondBadgeWidth(), SecondaryTitleBadge.widthFor(postAuthorBadgeHeight));
-      expect(SecondaryTitleBadge.heightFor(postAuthorSecondBadgeWidth()), closeTo(postAuthorBadgeHeight, 0.001));
+      expect(postAuthorSecondBadgeWidth(360), SecondaryTitleBadge.widthFor(authorBadgeHeight));
+      expect(SecondaryTitleBadge.heightFor(postAuthorSecondBadgeWidth(360)), closeTo(authorBadgeHeight, 0.001));
+      expect(postAuthorSecondBadgeWidth(40), 40, reason: 'a narrow floor never overflows');
       expect(SecondaryTitleBadge.widthFor(100), 184);
       expect(SecondaryTitleBadge.widthFor(50), 92);
     });

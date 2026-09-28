@@ -35,14 +35,9 @@ import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Height of both badges in the author row of a floor: the user group badge and the secondary title.
-///
-/// One height for the two, so they read as one row of badges (feedback 111: the title at 120px wide dwarfed the
-/// group badge). The author dialog shows the title larger.
-const postAuthorBadgeHeight = 32.0;
-
-/// Width of the secondary title in the author row of a floor: [postAuthorBadgeHeight] high, natural 184:100 ratio.
-double postAuthorSecondBadgeWidth() => SecondaryTitleBadge.widthFor(postAuthorBadgeHeight);
+/// Width of the secondary title, capped by available room without enlarging on rotation.
+double postAuthorSecondBadgeWidth(double availableWidth) =>
+    SecondaryTitleBadge.fitWidth(availableWidth, preferred: SecondaryTitleBadge.widthFor(authorBadgeHeight));
 
 /// Actions in post context menu.
 ///
@@ -170,7 +165,6 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     final userGroup = widget.post.userBriefProfile?.userGroup;
     final publishTime = widget.post.publishTime;
     final floor = widget.post.postFloor;
-    final secondBadgeWidth = postAuthorSecondBadgeWidth();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
@@ -233,25 +227,30 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                   style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
                 ),
                 // Badges the forum renders in this floor's author column: the user group badge and the secondary title
-                // of this author, the same height. Nothing about the current account is used here. They wrap below
-                // each other on narrow windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
+                // of this author. Nothing about the current account is used here. They wrap below each other on narrow
+                // windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
                 if (widget.post.badge != null || widget.post.secondBadge != null) ...[
                   sizedBoxW8H8,
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (widget.post.badge != null)
-                        CachedImage(
-                          widget.post.badge!,
-                          height: postAuthorBadgeHeight,
-                          maxWidth: 160,
-                          fit: BoxFit.contain,
-                        ),
-                      if (widget.post.secondBadge != null)
-                        SecondaryTitleBadge(widget.post.secondBadge!, width: secondBadgeWidth),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) => Wrap(
+                      spacing: 10,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (widget.post.badge != null)
+                          CachedImage(
+                            widget.post.badge!,
+                            height: authorBadgeHeight,
+                            maxWidth: 160,
+                            fit: BoxFit.contain,
+                          ),
+                        if (widget.post.secondBadge != null)
+                          SecondaryTitleBadge(
+                            widget.post.secondBadge!,
+                            width: postAuthorSecondBadgeWidth(constraints.maxWidth),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ],
