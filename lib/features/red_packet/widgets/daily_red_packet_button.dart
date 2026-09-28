@@ -129,17 +129,20 @@ class DailyRedPacketClaimedButton extends StatelessWidget {
 /// * No account: says a login is needed and opens the login page.
 /// * A packet ([config]) and a [formHash] on the homepage: [DailyRedPacketButton], the real claim flow; it shows the
 ///   claimed state once the server answered "claimed" or "already claimed" for that packet.
-/// * No packet: "none to claim now" and a tap reloads the homepage ([onRefresh]); the tooltip says it may be claimed
-///   already or not open yet. An empty page may also mean the plugin is off or the page was incomplete, and the app
-///   has no source for the forum's day (no time zone of the site in the repo), so a page without a packet is never
-///   shown as "claimed today".
+/// * No packet: "none now" and a tap checks the packet again ([onCheck], only the packet of the greeting card is
+///   updated, never a reload of the whole homepage); the tooltip says it may be claimed already or not open yet. An
+///   empty page may also mean the plugin is off or the page was incomplete, and the app has no source for the forum's
+///   day (no time zone of the site in the repo), so a page without a packet is never shown as "claimed today".
+///
+/// The labels are short enough for one line in the half-width button of phones; the full explanation is the tooltip.
 class DailyRedPacketEntry extends StatelessWidget {
   /// Constructor.
   const DailyRedPacketEntry({
     required this.uid,
     required this.config,
     required this.formHash,
-    required this.onRefresh,
+    required this.onCheck,
+    this.checking = false,
     this.claim,
     super.key,
   });
@@ -153,8 +156,11 @@ class DailyRedPacketEntry extends StatelessWidget {
   /// Form hash of the homepage.
   final String? formHash;
 
-  /// Reload the homepage.
-  final VoidCallback? onRefresh;
+  /// Check whether the forum offers a packet now, updating only this entry.
+  final VoidCallback? onCheck;
+
+  /// A check started by [onCheck] is running: the entry waits for it instead of starting another one.
+  final bool checking;
 
   /// Claim request for [DailyRedPacketButton.claim].
   final DailyRedPacketClaim? claim;
@@ -187,9 +193,9 @@ class DailyRedPacketEntry extends StatelessWidget {
       message: tr.unavailableHint,
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
-        icon: const Icon(Icons.redeem_outlined),
+        icon: checking ? sizedCircularProgressIndicator : const Icon(Icons.redeem_outlined),
         label: Text(tr.unavailable),
-        onPressed: onRefresh,
+        onPressed: checking ? null : onCheck,
       ),
     );
   }

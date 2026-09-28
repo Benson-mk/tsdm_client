@@ -129,7 +129,10 @@ class _HomepagePageState extends State<HomepagePage> {
       dailyRedPacket: state.dailyRedPacket,
       formHash: state.formHash,
       compact: layout == _HomeLayout.compact,
-      onRefresh: () => _refresh(context),
+      // The red packet entry checks the packet alone: tapping it used to reload the whole homepage (feedback 110).
+      // Pull to refresh stays the way to reload everything.
+      onCheckDailyRedPacket: () => context.read<HomepageBloc>().add(const HomepageDailyRedPacketCheckRequested()),
+      checkingDailyRedPacket: state.checkingDailyRedPacket,
     );
     // The swiper block of the forum homepage is gone since Discuz! X5; kept in case it comes back.
     final swiper = state.swiperUrlList.isEmpty
@@ -323,9 +326,11 @@ class _HomepagePageState extends State<HomepagePage> {
             final username = state.loggedUserInfo?.username;
             final avatarUrl = state.loggedUserInfo?.avatarUrl;
 
-            // Check-in, the daily red packet and activities moved into the greeting card of the loaded page; while the
-            // page is not loaded they stay reachable here.
-            final showDailyActionsInBar = state.status != HomepageStatus.success;
+            // Check-in, the daily red packet and activities moved into the greeting card of the loaded page. Only a
+            // failed load, which has no greeting card, keeps them reachable here. While the page loads or refreshes
+            // the bar stays as it is around it (search, and the account actions once known) instead of flashing the
+            // old activity entry for the length of the refresh (feedback 110).
+            final showDailyActionsInBar = state.status == HomepageStatus.failure;
 
             return Scaffold(
               appBar: AppBar(

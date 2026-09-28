@@ -959,10 +959,10 @@
       "claimed": "Daily red packet: you got ${amount} ${unit}",
       "alreadyClaimed": "Already claimed today, come back tomorrow",
       "failed": "Failed to claim: ${err}",
-      "claimedToday": "Claimed today",
-      "unavailable": "Daily red packet: none to claim now",
-      "unavailableHint": "The homepage offers no red packet right now (maybe already claimed or not open yet). Tap to refresh.",
-      "needLogin": "Daily red packet: log in to claim"
+      "claimedToday": "Packet claimed",
+      "unavailable": "No packet now",
+      "unavailableHint": "The homepage offers no red packet right now (maybe already claimed or not open yet). Tap to check again.",
+      "needLogin": "Log in to claim"
     }
   },
   "latestThreadPage": {

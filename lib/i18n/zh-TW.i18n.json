@@ -959,10 +959,10 @@
       "claimed": "今日紅包：獲得 ${amount} ${unit}",
       "alreadyClaimed": "今天已經領過囉，明天再來",
       "failed": "領取失敗：${err}",
-      "claimedToday": "今日紅包已領取",
-      "unavailable": "每日紅包：目前無可領取",
-      "unavailableHint": "首頁目前沒有提供今日紅包（可能已領取或尚未開放），點一下重新整理",
-      "needLogin": "每日紅包：登入後可領取"
+      "claimedToday": "紅包已領取",
+      "unavailable": "紅包：暫無",
+      "unavailableHint": "首頁目前沒有提供今日紅包（可能已領取或尚未開放），點一下重新檢查",
+      "needLogin": "登入領紅包"
     }
   },
   "latestThreadPage": {

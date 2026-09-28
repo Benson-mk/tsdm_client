@@ -48,15 +48,26 @@ void main() {
       }
       // 412 wide: beside the greeting, which keeps at least 168px.
       expect(homeGreetingBadgeBeside(356, homeGreetingBadgeWidth(356, compact: true)), isTrue);
-      // 360 wide: below the greeting instead of squeezing it.
-      expect(homeGreetingBadgeBeside(304, homeGreetingBadgeWidth(304, compact: true)), isFalse);
+      expect(homeGreetingBadgeLayout(356, compact: true), (
+        width: homeGreetingBadgeWidth(356, compact: true),
+        beside: true,
+      ));
+      // 384 wide (feedback 110): beside at 160 instead of below with the right half of the card empty.
+      expect(homeGreetingBadgeLayout(328, compact: true), (width: 160.0, beside: true));
+      // 360 wide: beside with the room left, not below 144.
+      expect(homeGreetingBadgeLayout(304, compact: true), (width: 144.0, beside: true));
+      // The same 360 wide phone with 1.3x text: the greeting keeps its room, the badge goes below at 160.
+      expect(homeGreetingBadgeLayout(304, compact: true, textScale: 1.3), (width: 160.0, beside: false));
       expect(homeGreetingBadgeWidth(600, compact: true), 184);
+      // Wide layouts keep 240 beside the greeting.
+      expect(homeGreetingBadgeLayout(528, compact: false), (width: 240.0, beside: true));
     });
 
     test('homepage greeting: the badge wraps below the greeting on very narrow windows', () {
       final width = homeGreetingBadgeWidth(264, compact: true);
       expect(width, 160, reason: 'not shrunk below 160 to squeeze beside the text');
       expect(homeGreetingBadgeBeside(264, width), isFalse);
+      expect(homeGreetingBadgeLayout(264, compact: true), (width: 160.0, beside: false));
       // Never wider than the card.
       expect(homeGreetingBadgeWidth(150, compact: true), 150);
       expect(homeGreetingBadgeWidth(200, compact: false), 200);

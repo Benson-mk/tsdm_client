@@ -61,7 +61,7 @@
 | 自己的個人資料 | 個人資料頁本身若有稱號區塊則用之；否則（僅本人）用 `CurrentTitleCubit` | 最大 184，完整顯示 |
 | 別人的個人資料 | 只用該個人資料頁本身的稱號區塊（樣本尚未證實存在），絕不套目前帳號 | 同上；無資料不顯示 |
 | 帖子作者區 | 該樓層作者欄 `div.tsdmtitle-badges div.tsdmtitle-title > img`（X5 樣本 #011 已驗證），舊版 `img.tsdmtitles`／`img.tsdm_lv_title` 後備 | 手機 120、寬螢幕 138；與等級牌子 `Wrap` 換行，不硬塞 |
-| 作者彈窗 | 同一樓層資料 | 最大 184（依對話框內容寬度），與等級牌子 `Wrap` 換行 |
+| 作者彈窗 | 同一樓層資料；樓層沒有且作者 uid＝目前已驗證帳號時，改用 `CurrentTitleCubit`（2026-09-28 回饋 110），其他作者絕不套用 | 最大 184（依對話框內容寬度），與等級牌子 `Wrap` 換行 |
 | 我的稱號／勳章稱號中心 | 稱號頁／`CurrentTitleCubit` | 最大 184，空間不足時改直排 |
 
 狀態：讀取中保留牌子大小的佔位；讀取失敗顯示「重試」方塊（Tooltip／語意標籤為「第二稱號 · 載入失敗」），不顯示成「未佩戴」；成功且未佩戴才什麼都不顯示。狀態只對應同一 uid（`CurrentTitleState.statusFor`），其他使用者不會看到目前帳號的佔位或重試。
@@ -142,3 +142,16 @@ Codex 已執行格式、嚴格分析並通過完整 Flutter 測試：1654 通過
 - **strict**：`topics_page.dart` 別名補型別 `const double topicsPageMaxWidth`／`topicsPageLargeCardWidth`；`topicsPageUsesLargeCards` 改為 `(width, platform)`。
 - **生命週期**：`ForumPage` 原在 `BlocBuilder` builder 內呼叫 `tabController.animateTo(子版塊)`，TabController 同步通知 `_updateFabVisibilityByTabIndex` → build 中 `setState`（test_170 子版塊全敗的原因），且每次重建都把 tab 拉回子版塊。改為外層 `BlocListener`：`listenWhen` 為載入成功、無帖子、非篩選；listener 檢查 `mounted` 與目前不在子版塊 tab 才切。只在新狀態觸發，不在 build 中，使用者手動切回主題 tab 不再被拉回。
 - **測試**：test_169 桌面案例（1600、1000 中寬、1100@2x、1100@1x、導航）標 Windows，320@2x 標 Android，新增 Android 1600 寬仍精簡卡。test_170 兩頁各 8 項：Windows 1600 大卡、Android 1600 精簡、Windows 1100@2x、Windows 1140−inset44、Android 844×390@2x 安全區、Android 320@2x、Android 390 導航、Windows 1600 導航；另加「無帖子」群組：Android 390 自動切子版塊 → 點主題 tab 維持在主題 tab（顯示無帖子）→ 切回子版塊點卡片導航；Windows 1600 自動切子版塊且大卡。
+
+## Android 預覽 109 回饋（feedback 110，2026-09-28）— 程式已改，修正後的測試尚未重跑，未實機驗收
+
+逐項根因、測試與未解事項見 `work/pr135-feedback110/coverage.md`；新測試 `test/regression/test_171_feedback110_test.dart`。需要 slang（紅包文案）與 build_runner（`HomepageState`／新事件）。
+
+- **選擇器欄位**：新增共用 `appPickerDecoration(context, label:, icon:)`：填色＋圓角無線 `UnderlineInputBorder`（聚焦主色底線），各狀態邊框都明確設定，浮動標籤在填色區內。勳章中心分類、銀行業務改用它；銀行未選值時標籤作 placeholder（`isEmpty`），不再同時顯示同字 hint。
+- **rail**：上下 inset 移到捲動區外的同色帶，捲動只在兩帶之間裁切（`Clip.hardEdge`）；左 cutout 仍由 `NavigationRail` 處理。捲動高度改為量測 rail 的 intrinsic 高度（至少一個視窗高），不再用估算值：估算偏大時拖到底會留下空白，最後一項停在捲動區上緣被切掉一半。
+- **SafeArea 分工**：瀏覽紀錄篩選列與列表同一個 SafeArea，篩選列的左右留白直接用列表的 `appCenteredPadding`（同一寬度量測），所以 chip 與卡片起點一致。`ReplyBar` 背景延伸到螢幕邊緣，輸入框自加左右 inset 與底部 `safePadding()`；點開後的編輯器 sheet 本來就不在頁面的 SafeArea 內，這次也讓它的內容與按鈕（含手機工具列面板）避開左右 inset，背景仍到邊。帖子（含軟關閉橫幅）、私訊兩頁、通知詳情只把內容包 SafeArea，錯誤／需登入等狀態仍在 SafeArea 內。`resizeToAvoidBottomInset` 與 chat_bottom_container 的鍵盤處理不變。
+- **作者彈窗第二牌子**：解析改為稱號區塊內任何後代 `img`（例如被連結包住）；彈窗樓層無稱號且作者 uid 等於目前已驗證帳號時顯示 `CurrentAccountTitleBadge`（以作者 uid 為 key），他人樓層無資料就不顯示。已驗證的只有解析器與彈窗接線（樣本與合成樓層）；測試員截圖的名字被遮住，也沒有那一樓的原始 HTML，所以「截圖是本人樓層」「那一樓沒有稱號區塊」都只是假設，不是已確認的根因。他人樓層在真實頁面上為何沒有第二牌子，仍待測試員提供可重現的樓層。
+- **首頁**：AppBar 的活動／簽到只在 `failure`（沒有問候卡）時出現，載入／刷新不再閃出。問候卡牌子改用 `homeGreetingBadgeLayout`：手機問候至少 148×字級，旁邊空間 ≥ 偏好 160–184 就並排，≥ 144 就用剩餘寬並排，否則放下方（160）；桌面 240 不變；手機日期行可兩行。紅包「暫無」改送 `HomepageDailyRedPacketCheckRequested`：不進 loading、只重抓 `forum.php` 並只更新紅包與 formHash，頁面重載／換帳號／文件 uid 不符時丟棄；下拉仍是整頁刷新。紅包文案三語縮短（「紅包：暫無」「紅包已領取」「登入領紅包」），說明留在 tooltip。
+- **通知**：「未讀」改為 AppBar 切換鈕（選取 tonal 底色＋實心圖示、tooltip、`toggled` 語意），移除獨佔的篩選列。
+- **設定**：除錯區 `ExpansionTile` 的 `tilePadding` 改為與其他列相同的 16。
+- 手機維持精簡 `ForumCard`、桌面 ≥ 1100 才大卡（test169／170 不變）。

@@ -396,9 +396,11 @@ class Post with PostMappable {
     final badge = element.querySelector('div#$avatarId div.tsdm_norm_title > img')?._lazyImageUrl();
     // We can not use `:is(.tsdmtitles, .tsdm_lv_title)` here.
     //
-    // Discuz X5: `<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img></div></div>`.
+    // Discuz X5: `<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img></div></div>`. The image is looked
+    // up anywhere inside that same title block, so a link around it (`<a><img></a>`) still counts; nothing outside
+    // the block of this floor's author column is used.
     final secondBadge =
-        userProfileNode?.querySelector('div.tsdmtitle-badges div.tsdmtitle-title > img')?._lazyImageUrl() ??
+        userProfileNode?.querySelector('div.tsdmtitle-badges div.tsdmtitle-title img')?._lazyImageUrl() ??
         element.querySelector('div.tsdm_statbar > a > img.tsdmtitles')?._lazyImageUrl() ??
         element.querySelector('div.tsdm_statbar > a > img.tsdm_lv_title')?._lazyImageUrl();
     final signature = element.querySelector('div.sign_inner')?.innerHtml;

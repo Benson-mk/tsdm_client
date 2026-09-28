@@ -215,13 +215,20 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
           borderRadius: BorderRadius.circular(appSurfaceRadius),
           borderSide: BorderSide(color: colorScheme.outlineVariant),
         );
+        // The background reaches the screen edges; the field stays inside the side insets (cutout in landscape) and
+        // above the gesture bar. Hosts do not wrap the bar in a horizontal SafeArea, which left a blank strip beside
+        // the bar (feedback 110): with one, the insets are already consumed here and this adds nothing.
+        final sideInsets = MediaQuery.paddingOf(context);
         return DecoratedBox(
+          key: const ValueKey('reply-bar-background'),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLow,
             border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6))),
           ),
           child: Padding(
-            padding: edgeInsetsL12T8R12B8.add(context.safePadding()),
+            padding: edgeInsetsL12T8R12B8
+                .add(EdgeInsets.only(left: sideInsets.left, right: sideInsets.right))
+                .add(context.safePadding()),
             // Not AppContentWidth: its Align takes all the height it is offered, and a host that gives the bar a
             // bounded height (Scaffold.bottomNavigationBar) would get a bar as tall as the page, covering the editor
             // sheet above it. heightFactor 1 keeps the bar as tall as its field.
@@ -233,6 +240,7 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
                 // One rounded box: the same field whether it invites a reply, keeps an unsent one, or explains why
                 // replying is not possible (need login, thread closed).
                 child: TextField(
+                  key: const ValueKey('reply-bar-field'),
                   controller: controller,
                   readOnly: true,
                   enabled: onTapCallback != null,
@@ -676,10 +684,17 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
           null => sizedBoxEmpty,
           _BottomPanelType.none => sizedBoxEmpty,
           _BottomPanelType.keyboard => sizedBoxEmpty,
-          _BottomPanelType.toolbar => EditorToolbar(
-            bbcodeController: _replyRichController,
-            disabledFeatures: fullScreen ? widget.fullScreenDisabledEditorFeatures : widget.disabledEditorFeatures,
-            editorFocusNode: focusNode,
+          // The panel color reaches the screen edges, the toolbar buttons stay out of the side insets.
+          _BottomPanelType.toolbar => Padding(
+            padding: EdgeInsets.only(
+              left: MediaQuery.paddingOf(context).left,
+              right: MediaQuery.paddingOf(context).right,
+            ),
+            child: EditorToolbar(
+              bbcodeController: _replyRichController,
+              disabledFeatures: fullScreen ? widget.fullScreenDisabledEditorFeatures : widget.disabledEditorFeatures,
+              editorFocusNode: focusNode,
+            ),
           ),
         };
       },
@@ -721,15 +736,22 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
     );
   }
 
-  Widget _buildContent(BuildContext context, ReplyState state) => LayoutBuilder(
-    // The editor, its toolbar and buttons stay in the reading column of the page on wide windows; the sheet itself
-    // and the mobile panel keep the full width.
-    builder: (context, constraints) => _buildContentIn(
-      context,
-      state,
-      appCenteredPadding(constraints.maxWidth, maxWidth: appReadingMaxWidth, minPadding: 0),
-    ),
-  );
+  Widget _buildContent(BuildContext context, ReplyState state) {
+    // The sheet is not in the safe area of the page: like the bar, its background reaches the screen edges and its
+    // editor and buttons stay out of the side insets (cutout in landscape, feedback 110).
+    final insets = MediaQuery.paddingOf(context);
+    final sides = EdgeInsets.only(left: insets.left, right: insets.right);
+    return LayoutBuilder(
+      // The editor, its toolbar and buttons stay in the reading column of the page on wide windows; the sheet itself
+      // and the mobile panel keep the full width.
+      builder: (context, constraints) => _buildContentIn(
+        context,
+        state,
+        appCenteredPadding(constraints.maxWidth - sides.horizontal, maxWidth: appReadingMaxWidth, minPadding: 0) +
+            sides,
+      ),
+    );
+  }
 
   Widget _buildContentIn(BuildContext context, ReplyState state, EdgeInsets horizontal) {
     final tr = context.t.replyBar;

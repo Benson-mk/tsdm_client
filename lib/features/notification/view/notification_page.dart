@@ -75,23 +75,30 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
     );
   }
 
-  /// Filter row above the tabs, in the same centered column as the cards.
-  Widget _buildFilterRow(BuildContext context) {
+  /// "Unread only" toggle in the app bar, applied to all three tabs.
+  ///
+  /// It used to take a row of its own above the tabs, mostly empty (feedback 110). Selected, it gets a tonal
+  /// background and the filled icon; the tooltip and the semantics name it and tell its state.
+  Widget _buildUnreadFilterButton(BuildContext context) {
     final tr = context.t.noticePage;
-    return AppCenteredList(
-      builder: (context, side, _) => Padding(
-        padding: side.copyWith(top: 8, bottom: 4),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: FilterChip(
-            avatar: onlyShowUnread ? null : const Icon(Icons.mark_email_unread_outlined),
-            label: Text(tr.appBar.unread),
-            tooltip: tr.appBar.unreadDetail,
-            selected: onlyShowUnread,
-            onSelected: (_) {
-              setState(() => onlyShowUnread = !onlyShowUnread);
-            },
-          ),
+    final colorScheme = Theme.of(context).colorScheme;
+    // Merged so the toggled state belongs to the button's own node (its tooltip is the label).
+    return MergeSemantics(
+      child: Semantics(
+        toggled: onlyShowUnread,
+        child: IconButton(
+          key: const ValueKey('notice-unread-filter'),
+          isSelected: onlyShowUnread,
+          icon: const Icon(Icons.mark_email_unread_outlined),
+          selectedIcon: const Icon(Icons.mark_email_unread),
+          tooltip: '${tr.appBar.unread} · ${tr.appBar.unreadDetail}',
+          style: onlyShowUnread
+              ? IconButton.styleFrom(
+                  backgroundColor: colorScheme.secondaryContainer,
+                  foregroundColor: colorScheme.onSecondaryContainer,
+                )
+              : null,
+          onPressed: () => setState(() => onlyShowUnread = !onlyShowUnread),
         ),
       ),
     );
@@ -171,42 +178,35 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
 
           final body = switch (state.status) {
             NotificationStatus.initial || NotificationStatus.loading => const CenteredCircularIndicator(),
-            NotificationStatus.success => Column(
+            NotificationStatus.success => TabBarView(
+              controller: _tabController,
               children: [
-                _buildFilterRow(context),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildTab(
-                        context,
-                        controller: _noticeRefreshController,
-                        count: n.length,
-                        emptyIcon: Icons.notifications_none_outlined,
-                        itemBuilder: (_, idx) =>
-                            NoticeCardV2(key: ValueKey('NOTICE_${n.elementAt(idx).id}'), n.elementAt(idx)),
-                      ),
-                      _buildTab(
-                        context,
-                        controller: _personalMessageRefreshController,
-                        count: pm.length,
-                        emptyIcon: Icons.forum_outlined,
-                        itemBuilder: (_, idx) => PersonalMessageCardV2(
-                          key: ValueKey('PM_${pm.elementAt(idx).timestamp}'),
-                          pm.elementAt(idx),
-                        ),
-                      ),
-                      _buildTab(
-                        context,
-                        controller: _broadcastMessageRefreshController,
-                        count: bm.length,
-                        emptyIcon: Icons.campaign_outlined,
-                        itemBuilder: (_, idx) => BroadcastMessageCardV2(
-                          key: ValueKey('BM_${bm.elementAt(idx).timestamp}'),
-                          bm.elementAt(idx),
-                        ),
-                      ),
-                    ],
+                _buildTab(
+                  context,
+                  controller: _noticeRefreshController,
+                  count: n.length,
+                  emptyIcon: Icons.notifications_none_outlined,
+                  itemBuilder: (_, idx) =>
+                      NoticeCardV2(key: ValueKey('NOTICE_${n.elementAt(idx).id}'), n.elementAt(idx)),
+                ),
+                _buildTab(
+                  context,
+                  controller: _personalMessageRefreshController,
+                  count: pm.length,
+                  emptyIcon: Icons.forum_outlined,
+                  itemBuilder: (_, idx) => PersonalMessageCardV2(
+                    key: ValueKey('PM_${pm.elementAt(idx).timestamp}'),
+                    pm.elementAt(idx),
+                  ),
+                ),
+                _buildTab(
+                  context,
+                  controller: _broadcastMessageRefreshController,
+                  count: bm.length,
+                  emptyIcon: Icons.campaign_outlined,
+                  itemBuilder: (_, idx) => BroadcastMessageCardV2(
+                    key: ValueKey('BM_${bm.elementAt(idx).timestamp}'),
+                    bm.elementAt(idx),
                   ),
                 ),
               ],
@@ -220,6 +220,7 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
             appBar: AppBar(
               title: Text(tr.title),
               actions: [
+                if (state.status == NotificationStatus.success) _buildUnreadFilterButton(context),
                 const BackToHomeButton(),
                 IconButton(
                   icon: const Icon(Icons.block_outlined),

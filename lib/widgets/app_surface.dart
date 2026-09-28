@@ -839,6 +839,29 @@ InputDecoration appFieldDecoration({String? label, String? hint, String? helper,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
     );
 
+/// Borderless filled decoration of the pickers (dropdowns) on page surfaces.
+///
+/// The floating label stays inside the filled area (Material filled style) instead of straddling an invisible outline
+/// at the top edge; focus draws the usual bottom indicator. Every border state is set so the theme's outline borders
+/// do not come back.
+InputDecoration appPickerDecoration(BuildContext context, {required String label, IconData? icon}) {
+  final radius = BorderRadius.circular(appInnerRadius);
+  final none = UnderlineInputBorder(borderRadius: radius, borderSide: BorderSide.none);
+  return InputDecoration(
+    labelText: label,
+    prefixIcon: icon == null ? null : Icon(icon),
+    filled: true,
+    contentPadding: const EdgeInsetsDirectional.fromSTEB(12, 10, 12, 10),
+    border: none,
+    enabledBorder: none,
+    disabledBorder: none,
+    focusedBorder: UnderlineInputBorder(
+      borderRadius: radius,
+      borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+    ),
+  );
+}
+
 /// Page switcher of a paged result: previous, "current / total" (opens [onJump]) and next.
 ///
 /// A null callback disables its button. Tooltips come from [MaterialLocalizations], no extra translation is needed.

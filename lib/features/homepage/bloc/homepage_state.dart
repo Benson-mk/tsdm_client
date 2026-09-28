@@ -17,7 +17,8 @@ enum HomepageStatus {
   success,
 
   /// Failed to load data.
-  failure;
+  failure
+  ;
 
   /// Is [initial]?
   bool get isInitial => this == HomepageStatus.initial;
@@ -50,6 +51,7 @@ final class HomepageState with HomepageStateMappable {
     this.hasUnreadMessage = false,
     this.dailyRedPacket,
     this.formHash,
+    this.checkingDailyRedPacket = false,
   });
 
   /// Loading status.
@@ -87,4 +89,8 @@ final class HomepageState with HomepageStateMappable {
 
   /// Form hash of the current session found in the homepage, required to claim the daily red packet.
   final String? formHash;
+
+  /// A check of the daily red packet alone ([HomepageDailyRedPacketCheckRequested]) is running; the rest of the page
+  /// stays as it is.
+  final bool checkingDailyRedPacket;
 }

@@ -18,12 +18,6 @@ class _HomeNavigationRailState extends State<HomeNavigationRail> {
   Widget build(BuildContext context) {
     final barItems = _buildNavigationItems(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-    // Generous estimate of the height the destinations need (labels are one line); too much only adds room to scroll.
-    final contentHeight =
-        _railVerticalPadding +
-        _railGroupGap +
-        barItems.length * (_railDestinationHeight + _railLabelHeight * textScale);
 
     // Same look as the bottom bar and the drawer: low container color, rounded indicator, labels always shown.
     final rail = NavigationRail(
@@ -46,27 +40,38 @@ class _HomeNavigationRailState extends State<HomeNavigationRail> {
     );
 
     // NavigationRail does not scroll: nine destinations overflow a short window (landscape phone, small tablet, large
-    // text). It gets the window height, or more when its destinations need it, inside a scroll view.
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        primary: false,
-        child: SizedBox(
-          height: constraints.hasBoundedHeight ? math.max(constraints.maxHeight, contentHeight) : contentHeight,
-          child: rail,
+    // text). It gets the window height, or the height its destinations really need when that is more, inside a scroll
+    // view. The height is measured (intrinsic height of the rail), not estimated: a generous estimate left empty room
+    // at the end, and the last destination stopped half clipped at the top of the scroll area (feedback 110).
+    //
+    // The top and bottom insets (status bar, gesture bar) stay outside of the scroll view as bands of the rail color:
+    // inside, the rail padded them in its own content and scrolling to the end moved the destinations under the status
+    // bar (feedback 110). The scroll view clips to the area between the bands; the start inset (cutout in landscape)
+    // is still handled by the rail itself.
+    final padding = MediaQuery.paddingOf(context);
+    return ColoredBox(
+      color: colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: EdgeInsets.only(top: padding.top, bottom: padding.bottom),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              key: const ValueKey('home-navigation-rail-scroll'),
+              primary: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.hasBoundedHeight ? constraints.maxHeight : 0),
+                child: IntrinsicHeight(child: rail),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Space above and below the destinations of the rail.
-const _railVerticalPadding = 24.0;
-
 /// Gap before the first destination of the "more" group in the rail.
 const _railGroupGap = 16.0;
-
-/// Height of a rail destination without its label: indicator, spacings and touch padding.
-const _railDestinationHeight = 64.0;
-
-/// Height of the one line label of a rail destination at text scale 1.
-const _railLabelHeight = 24.0;

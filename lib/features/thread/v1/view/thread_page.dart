@@ -547,29 +547,34 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToPidOnReload = null);
     }
 
+    // The posts keep the safe area; the soft close banner and the reply bar paint their background to the screen
+    // edges and pad the side insets themselves (feedback 110: a blank strip beside the bar in landscape).
     return Column(
       children: [
         Expanded(
-          child: PostList(
-            threadID: state.tid ?? widget.threadID,
-            title: state.title ?? widget.title,
-            pageNumber: context.read<JumpPageCubit>().state.currentPage,
-            initialPostID: (_scrollToPidOnReload ?? widget.findPostID)?.parseToInt(),
-            scrollController: _listScrollController,
-            // Posts of locally blocked users become placeholders in place, the floors keep their positions.
-            widgetBuilder: (context, post) => BlockAwarePost(
-              post: post,
-              postList: state.postList,
-              builder: (context, post) => PostCard(
-                post,
-                replyCallback: replyPostCallback,
-                onEdited: () => _scrollToPidOnReload = post.postID,
+          child: SafeArea(
+            bottom: false,
+            child: PostList(
+              threadID: state.tid ?? widget.threadID,
+              title: state.title ?? widget.title,
+              pageNumber: context.read<JumpPageCubit>().state.currentPage,
+              initialPostID: (_scrollToPidOnReload ?? widget.findPostID)?.parseToInt(),
+              scrollController: _listScrollController,
+              // Posts of locally blocked users become placeholders in place, the floors keep their positions.
+              widgetBuilder: (context, post) => BlockAwarePost(
+                post: post,
+                postList: state.postList,
+                builder: (context, post) => PostCard(
+                  post,
+                  replyCallback: replyPostCallback,
+                  onEdited: () => _scrollToPidOnReload = post.postID,
+                ),
               ),
+              useDivider: true,
+              postList: state.postList,
+              canLoadMore: state.canLoadMore,
+              latestModAct: state.latestModAct,
             ),
-            useDivider: true,
-            postList: state.postList,
-            canLoadMore: state.canLoadMore,
-            latestModAct: state.latestModAct,
           ),
         ),
         // Replies are still accepted but the thread is about to close: a banner right above the reply box, in the
@@ -577,14 +582,18 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
         if (state.threadSoftClosed && !state.threadClosed)
           ColoredBox(
             color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: Padding(
-              padding: edgeInsetsL12T8R12,
-              child: AppContentWidth(
-                maxWidth: appReadingMaxWidth,
-                child: AppNoticeBanner(
-                  tone: AppNoticeTone.warning,
-                  icon: Icons.lock_clock_outlined,
-                  message: tr.softCloseHint,
+            child: SafeArea(
+              top: false,
+              bottom: false,
+              child: Padding(
+                padding: edgeInsetsL12T8R12,
+                child: AppContentWidth(
+                  maxWidth: appReadingMaxWidth,
+                  child: AppNoticeBanner(
+                    tone: AppNoticeTone.warning,
+                    icon: Icons.lock_clock_outlined,
+                    message: tr.softCloseHint,
+                  ),
                 ),
               ),
             ),
@@ -594,20 +603,24 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
     );
   }
 
+  /// Body of the page; everything but the content (which handles the insets per part) stays in the safe area.
   Widget _buildBody(BuildContext context, ThreadState state) {
+    Widget safe(Widget child) => SafeArea(bottom: false, child: child);
     if (state.needLogin) {
-      return NeedLoginPage(
-        backUri: GoRouterState.of(context).uri,
-        needPop: true,
-        popCallback: (context) {
-          context.read<ThreadBloc>().add(ThreadRefreshRequested());
-        },
+      return safe(
+        NeedLoginPage(
+          backUri: GoRouterState.of(context).uri,
+          needPop: true,
+          popCallback: (context) {
+            context.read<ThreadBloc>().add(ThreadRefreshRequested());
+          },
+        ),
       );
     } else if (!state.havePermission) {
       if (state.permissionDeniedMessage != null) {
-        return ErrorCard(child: munchElement(context, state.permissionDeniedMessage!));
+        return safe(ErrorCard(child: munchElement(context, state.permissionDeniedMessage!)));
       } else {
-        return AppStateView(icon: Icons.lock_outline, message: context.t.general.noPermission);
+        return safe(AppStateView(icon: Icons.lock_outline, message: context.t.general.noPermission));
       }
     }
 
@@ -615,9 +628,11 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       ThreadStatus.initial || ThreadStatus.loading => const CenteredCircularIndicator(),
       // A failed reload keeps the previous posts (see ThreadBloc); only an empty page gets the retry button.
       ThreadStatus.failure when state.postList.isNotEmpty => _buildContent(context, state),
-      ThreadStatus.failure => buildRetryButton(context, () {
-        context.read<ThreadBloc>().add(ThreadLoadMoreRequested(state.currentPage));
-      }),
+      ThreadStatus.failure => safe(
+        buildRetryButton(context, () {
+          context.read<ThreadBloc>().add(ThreadLoadMoreRequested(state.currentPage));
+        }),
+      ),
       ThreadStatus.success => _buildContent(context, state),
     };
   }
@@ -829,7 +844,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
                   ],
                 ],
               ),
-              body: SafeArea(bottom: false, child: _buildBody(context, state)),
+              body: _buildBody(context, state),
             );
           },
         ),

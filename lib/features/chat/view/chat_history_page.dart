@@ -80,9 +80,11 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
       ),
     );
 
+    // Only the messages keep the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
     return Column(
       children: [
-        Expanded(child: messageList),
+        Expanded(child: SafeArea(bottom: false, child: messageList)),
         ChatComposerFrame(
           child: ReplyBar(
             controller: _replyBarController,
@@ -176,10 +178,13 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
               ChatHistoryStatus.loading ||
               ChatHistoryStatus.success ||
               ChatHistoryStatus.loadingMore => _buildContent(context, state),
-              ChatHistoryStatus.failure => buildRetryButton(
-                context,
-                () => context.read<ChatHistoryBloc>().add(
-                  ChatHistoryLoadHistoryRequested(uid: widget.uid, page: state.pageNumber),
+              ChatHistoryStatus.failure => SafeArea(
+                bottom: false,
+                child: buildRetryButton(
+                  context,
+                  () => context.read<ChatHistoryBloc>().add(
+                    ChatHistoryLoadHistoryRequested(uid: widget.uid, page: state.pageNumber),
+                  ),
                 ),
               ),
             };
@@ -195,7 +200,7 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
               // Required by chat_bottom_container in reply bar.
               resizeToAvoidBottomInset: false,
               appBar: AppBar(title: Text(tr.title), bottom: bottom),
-              body: SafeArea(bottom: false, child: body),
+              body: body,
             );
           },
         ),

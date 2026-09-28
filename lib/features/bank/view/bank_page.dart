@@ -130,26 +130,20 @@ class _BankPageState extends State<BankPage> {
 
   Widget _services(BankState state, {required bool disabled}) {
     final bank = state.bank;
+    final value = state.service?.name ?? ((bank?.hasAccount ?? false) ? 'current' : null);
     return Padding(
       padding: const EdgeInsets.only(bottom: appSurfaceGap),
       child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: context.t.bank.services,
-          prefixIcon: const Icon(Icons.apps_outlined),
-          filled: true,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(appInnerRadius),
-            borderSide: BorderSide.none,
-          ),
-        ),
+        // Nothing picked: the label rests in the field as its placeholder instead of floating above a duplicate hint.
+        isEmpty: value == null,
+        decoration: appPickerDecoration(context, label: context.t.bank.services, icon: Icons.apps_outlined),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             key: const ValueKey('bank-service-picker'),
             isExpanded: true,
             isDense: true,
             borderRadius: BorderRadius.circular(appInnerRadius),
-            value: state.service?.name ?? ((bank?.hasAccount ?? false) ? 'current' : null),
-            hint: Text(context.t.bank.services),
+            value: value,
             onChanged: disabled
                 ? null
                 : (value) {

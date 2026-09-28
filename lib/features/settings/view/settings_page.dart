@@ -858,6 +858,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       children: [
         // Collapsed by default: these rows are only for troubleshooting.
         ExpansionTile(
+          key: const ValueKey('settings-debug-expansion'),
+          // Same side padding as the section rows (SectionListTile): the theme's 10px put the warning icon 6px left
+          // of every other icon of the page (feedback 110).
+          tilePadding: edgeInsetsL16R16,
           leading: const Icon(Icons.warning_amber_outlined),
           title: Text(tr.tip),
           shape: const Border(),

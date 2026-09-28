@@ -88,9 +88,11 @@ final class _ChatPageState extends State<ChatPage> {
       ),
     );
 
+    // Only the messages keep the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
     return Column(
       children: [
-        Expanded(child: messageList),
+        Expanded(child: SafeArea(bottom: false, child: messageList)),
         ChatComposerFrame(
           child: ReplyBar(
             controller: _replyBarController,
@@ -198,9 +200,12 @@ final class _ChatPageState extends State<ChatPage> {
               // A reload keeps the messages on screen instead of flashing a spinner.
               ChatStatus.loading when state.messageList.isEmpty => const CenteredCircularIndicator(),
               ChatStatus.loading || ChatStatus.success => _buildContent(context, state),
-              ChatStatus.failure => buildRetryButton(
-                context,
-                () => context.read<ChatBloc>().add(ChatFetchHistoryRequested(widget.uid)),
+              ChatStatus.failure => SafeArea(
+                bottom: false,
+                child: buildRetryButton(
+                  context,
+                  () => context.read<ChatBloc>().add(ChatFetchHistoryRequested(widget.uid)),
+                ),
               ),
             };
 
@@ -227,7 +232,7 @@ final class _ChatPageState extends State<ChatPage> {
                   online: state.online,
                 ),
               ),
-              body: SafeArea(bottom: false, child: body),
+              body: body,
             );
           },
         ),

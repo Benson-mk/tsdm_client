@@ -455,7 +455,7 @@ void main() {
 
       await pumpEntry(
         tester,
-        DailyRedPacketEntry(uid: 1000, config: _config, formHash: 'hash', onRefresh: () {}, claim: claim),
+        DailyRedPacketEntry(uid: 1000, config: _config, formHash: 'hash', onCheck: () {}, claim: claim),
       );
       final button = find.ancestor(of: find.text(tr.redPacket.daily.tooltip), matching: filledButtons());
       expect(button, findsOneWidget);
@@ -481,7 +481,7 @@ void main() {
       // Another account on the same page starts a new button: nothing of the claim above carries over.
       await pumpEntry(
         tester,
-        DailyRedPacketEntry(uid: 2000, config: _config, formHash: 'hash', onRefresh: () {}, claim: claim),
+        DailyRedPacketEntry(uid: 2000, config: _config, formHash: 'hash', onCheck: () {}, claim: claim),
       );
       expect(find.text(tr.redPacket.daily.claimedToday), findsNothing, reason: 'another account claimed nothing');
       expect(
@@ -500,7 +500,7 @@ void main() {
           uid: 1000,
           config: _config,
           formHash: 'hash',
-          onRefresh: () {},
+          onCheck: () {},
           claim: (_) {
             calls++;
             return TaskEither.right(const DailyRedPacketResult(ok: false, already: true));
@@ -523,7 +523,7 @@ void main() {
           uid: 1000,
           config: _config,
           formHash: 'hash',
-          onRefresh: () {},
+          onCheck: () {},
           claim: (_) {
             calls++;
             return TaskEither.left(HttpRequestFailedException(500));
@@ -540,11 +540,11 @@ void main() {
       await dispose(tester);
     });
 
-    testWidgets('no packet on the homepage: "none to claim now" with a refresh, never "claimed"', (tester) async {
+    testWidgets('no packet on the homepage: "none now" with a packet check, never "claimed"', (tester) async {
       var refreshes = 0;
       await pumpEntry(
         tester,
-        DailyRedPacketEntry(uid: 1000, config: null, formHash: 'hash', onRefresh: () => refreshes++),
+        DailyRedPacketEntry(uid: 1000, config: null, formHash: 'hash', onCheck: () => refreshes++),
       );
       expect(find.text(tr.redPacket.daily.unavailable), findsOneWidget);
       expect(find.text(tr.redPacket.daily.claimedToday), findsNothing);
@@ -554,7 +554,7 @@ void main() {
       expect(refreshes, 1);
 
       // A packet without a form hash cannot be claimed either.
-      await pumpEntry(tester, DailyRedPacketEntry(uid: 1000, config: _config, formHash: '', onRefresh: () {}));
+      await pumpEntry(tester, DailyRedPacketEntry(uid: 1000, config: _config, formHash: '', onCheck: () {}));
       expect(find.text(tr.redPacket.daily.unavailable), findsOneWidget);
       await dispose(tester);
     });
@@ -569,7 +569,7 @@ void main() {
           uid: 1000,
           config: _config,
           formHash: 'hash',
-          onRefresh: () => refreshes++,
+          onCheck: () => refreshes++,
           claim: (_) => TaskEither.right(const DailyRedPacketResult(ok: true, amount: '5', unit: 'coins')),
         ),
       );
@@ -582,7 +582,7 @@ void main() {
       // does not say "claimed today"; the hint says it may be claimed already.
       await pumpEntry(
         tester,
-        DailyRedPacketEntry(uid: 1000, config: null, formHash: null, onRefresh: () => refreshes++),
+        DailyRedPacketEntry(uid: 1000, config: null, formHash: null, onCheck: () => refreshes++),
       );
       expect(find.text(tr.redPacket.daily.claimedToday), findsNothing);
       expect(find.text(tr.redPacket.daily.unavailable), findsOneWidget);
@@ -594,7 +594,7 @@ void main() {
     });
 
     testWidgets('without an account: says a login is needed', (tester) async {
-      await pumpEntry(tester, DailyRedPacketEntry(uid: null, config: _config, formHash: 'hash', onRefresh: () {}));
+      await pumpEntry(tester, DailyRedPacketEntry(uid: null, config: _config, formHash: 'hash', onCheck: () {}));
       expect(find.text(tr.redPacket.daily.needLogin), findsOneWidget);
       expect(find.text(tr.redPacket.daily.tooltip), findsNothing);
       await dispose(tester);

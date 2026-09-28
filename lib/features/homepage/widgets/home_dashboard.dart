@@ -55,6 +55,40 @@ double homeGreetingBadgeWidth(double available, {required bool compact}) {
 bool homeGreetingBadgeBeside(double available, double badgeWidth) =>
     available - badgeWidth - _greetingBadgeGap >= _minGreetingWidth;
 
+/// Least width of the title badge beside the greeting on phones; with less room it goes below the greeting instead of
+/// shrinking further.
+const homeGreetingBadgeCompactBesideMinWidth = 144.0;
+
+/// Least width (at text scale 1) the phone greeting keeps beside the title badge; its date line may wrap there.
+const _minCompactGreetingWidth = 148.0;
+
+/// Width of the title badge in the greeting header whose content is [available] wide, and whether it sits beside the
+/// greeting.
+///
+/// Wide layouts: [homeGreetingBadgeWidth] and [homeGreetingBadgeBeside], unchanged. Phones: the greeting keeps
+/// [_minCompactGreetingWidth] scaled by [textScale]; the badge takes its preferred 160–184px beside it, or the room
+/// left when that is still at least [homeGreetingBadgeCompactBesideMinWidth] (a 384px phone used to put it below the
+/// greeting, leaving the right half of the card empty, feedback 110). Only a narrower room or large text moves it
+/// below, at its preferred width.
+({double width, bool beside}) homeGreetingBadgeLayout(
+  double available, {
+  required bool compact,
+  double textScale = 1,
+}) {
+  final preferred = homeGreetingBadgeWidth(available, compact: compact);
+  if (!compact) {
+    return (width: preferred, beside: homeGreetingBadgeBeside(available, preferred));
+  }
+  final room = available - _greetingBadgeGap - _minCompactGreetingWidth * textScale;
+  if (room >= preferred) {
+    return (width: preferred, beside: true);
+  }
+  if (room >= homeGreetingBadgeCompactBesideMinWidth) {
+    return (width: room, beside: true);
+  }
+  return (width: preferred, beside: false);
+}
+
 /// Greeting text for the local [hour].
 String homeGreeting(BuildContext context, int hour, String name) {
   final tr = context.t.homepage.greeting;
@@ -79,7 +113,8 @@ class HomeGreetingCard extends StatelessWidget {
     required this.dailyRedPacket,
     required this.formHash,
     required this.compact,
-    this.onRefresh,
+    this.onCheckDailyRedPacket,
+    this.checkingDailyRedPacket = false,
     this.claimDailyRedPacket,
     super.key,
   });
@@ -102,8 +137,11 @@ class HomeGreetingCard extends StatelessWidget {
   /// Narrow layout: actions stacked under the greeting.
   final bool compact;
 
-  /// Reload the homepage, offered by the daily red packet entry when the page had no packet.
-  final VoidCallback? onRefresh;
+  /// Check the daily red packet again, offered by its entry when the page had no packet; only the packet is updated.
+  final VoidCallback? onCheckDailyRedPacket;
+
+  /// The check of [onCheckDailyRedPacket] is running.
+  final bool checkingDailyRedPacket;
 
   /// Claim request of the daily red packet, the plugin's endpoint when null (tests pass a fake).
   final DailyRedPacketClaim? claimDailyRedPacket;
@@ -120,7 +158,8 @@ class HomeGreetingCard extends StatelessWidget {
       children: [
         Text(
           '${context.t.appName} · ${MaterialLocalizations.of(context).formatMediumDate(now)}',
-          maxLines: 1,
+          // Phones keep the greeting narrower beside the title badge: the date wraps instead of being cut.
+          maxLines: compact ? 2 : 1,
           overflow: TextOverflow.ellipsis,
           style: textTheme.labelMedium?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
         ),
@@ -147,7 +186,8 @@ class HomeGreetingCard extends StatelessWidget {
       uid: uid,
       config: dailyRedPacket,
       formHash: formHash,
-      onRefresh: onRefresh,
+      onCheck: onCheckDailyRedPacket,
+      checking: checkingDailyRedPacket,
       claim: claimDailyRedPacket,
     );
     final quickActions = Wrap(
@@ -232,7 +272,7 @@ class HomeGreetingCard extends StatelessWidget {
 }
 
 /// Top of the greeting card: the [greeting] and the title badge of the account [uid], beside the greeting when both
-/// fit ([homeGreetingBadgeBeside]) and below it otherwise, [homeGreetingBadgeWidth] wide.
+/// fit and below it otherwise ([homeGreetingBadgeLayout]).
 class HomeGreetingHeader extends StatelessWidget {
   /// Constructor.
   const HomeGreetingHeader({required this.greeting, required this.uid, required this.compact, super.key});
@@ -249,8 +289,12 @@ class HomeGreetingHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final badgeWidth = homeGreetingBadgeWidth(constraints.maxWidth, compact: compact);
-      if (homeGreetingBadgeBeside(constraints.maxWidth, badgeWidth)) {
+      final (width: badgeWidth, :beside) = homeGreetingBadgeLayout(
+        constraints.maxWidth,
+        compact: compact,
+        textScale: MediaQuery.textScalerOf(context).scale(14) / 14,
+      );
+      if (beside) {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

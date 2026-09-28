@@ -387,15 +387,7 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
               menuMaxHeight: 400,
               borderRadius: BorderRadius.circular(appInnerRadius),
               hint: query == null ? null : Text(tr.allResults, overflow: TextOverflow.ellipsis),
-              decoration: InputDecoration(
-                labelText: tr.category,
-                prefixIcon: const Icon(Icons.category_outlined),
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(appInnerRadius),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: appPickerDecoration(context, label: tr.category, icon: Icons.category_outlined),
               items: [
                 for (final category in catalog!.categories)
                   DropdownMenuItem(

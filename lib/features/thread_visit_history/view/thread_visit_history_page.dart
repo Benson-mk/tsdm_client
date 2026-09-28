@@ -56,9 +56,11 @@ class _ThreadVisitHistoryPageState extends State<ThreadVisitHistoryPage> {
         duplicated.contains(name) ? tr.accountWithUid(username: name, uid: uid) : name;
     final label = _selectedUid == null ? tr.allAccounts : labelOf(_selectedUid!, _selectedUsername);
 
-    return AppContentWidth(
-      child: Padding(
-        padding: edgeInsetsL12T4R12B4,
+    // Same start as the cards: the horizontal padding of the list below (at least the page padding, centered on wide
+    // windows), measured in the same safe area.
+    return AppCenteredList(
+      builder: (context, side, _) => Padding(
+        padding: side.copyWith(top: 4, bottom: 4),
         child: Align(
           alignment: Alignment.centerLeft,
           child: PopupMenuButton<int>(
@@ -134,16 +136,18 @@ class _ThreadVisitHistoryPageState extends State<ThreadVisitHistoryPage> {
 
           return Scaffold(
             appBar: AppBar(title: Text(tr.title), bottom: Tips(tr.localOnlyTip, sizePreferred: true)),
-            body: Column(
-              children: [
-                _buildFilter(context, accounts),
-                Expanded(
-                  child: SafeArea(
-                    top: false,
+            // The account filter shares the safe area of the list: outside of it the chip sat under the cutout in
+            // landscape, out of line with the tip and the cards (feedback 110).
+            body: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  _buildFilter(context, accounts),
+                  Expanded(
                     child: AnimatedSwitcher(duration: duration200, child: body),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },

@@ -61,11 +61,17 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
     // The post as a floor of the thread reader: a rounded surface at a readable width, phones keep most of the width
     // for the text.
     final side = MediaQuery.sizeOf(context).width < 600 ? 6.0 : 16.0;
-    final postView = SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(side, 8, side, 12),
-      child: AppContentWidth(
-        maxWidth: appReadingMaxWidth,
-        child: Card(margin: EdgeInsets.zero, shape: appSurfaceShape(context), child: PostCard(post)),
+    // Only the post keeps the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
+    final postView = SafeArea(
+      top: false,
+      bottom: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(side, 8, side, 12),
+        child: AppContentWidth(
+          maxWidth: appReadingMaxWidth,
+          child: Card(margin: EdgeInsets.zero, shape: appSurfaceShape(context), child: PostCard(post)),
+        ),
       ),
     );
     if (widget.noticeType == NoticeType.rate) {
@@ -142,9 +148,13 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
             final body = switch (state.status) {
               NotificationDetailStatus.initial || NotificationDetailStatus.loading => const CenteredCircularIndicator(),
               NotificationDetailStatus.success => _buildBody(context, state),
-              NotificationDetailStatus.failed => buildRetryButton(context, () async {
-                await context.read<NotificationDetailCubit>().fetchDetail(widget.url);
-              }),
+              NotificationDetailStatus.failed => SafeArea(
+                top: false,
+                bottom: false,
+                child: buildRetryButton(context, () async {
+                  await context.read<NotificationDetailCubit>().fetchDetail(widget.url);
+                }),
+              ),
             };
 
             // Update thread closed state to reply bar.
@@ -181,8 +191,8 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
                   ),
                 ],
               ),
-              // The reply bar pads itself for the bottom inset.
-              body: SafeArea(top: false, bottom: false, child: body),
+              // The post and the retry keep the side safe area; the reply bar pads itself for all its insets.
+              body: body,
             );
           },
         ),

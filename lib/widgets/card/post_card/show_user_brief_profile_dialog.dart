@@ -8,6 +8,7 @@ import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -130,6 +131,13 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
     // Measured like the badges below: the dialog content has no layout builder (the dialog sizes to intrinsics).
     final contentWidth = briefProfileDialogContentWidth(MediaQuery.sizeOf(context).width);
     final statWidth = (contentWidth - 8) / 2;
+    final secondBadgeWidth = SecondaryTitleBadge.fitWidth(contentWidth);
+    final authorUid = int.tryParse(widget.profile.uid);
+    // Only a verified current account counts; the uid is compared again by the badge against the title it holds.
+    final ownFloor =
+        widget.secondBadge == null &&
+        authorUid != null &&
+        authorUid == context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
 
     final titleContent = [
       Row(
@@ -295,7 +303,11 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
       // Badges from this author's own floor: the user group badge and the secondary title. Both keep their natural
       // aspect ratio and wrap below each other when the dialog is narrow; the secondary title is shown at up to its
       // natural 184px width.
-      if (widget.badge != null || widget.secondBadge != null) ...[
+      //
+      // When the floor carries no secondary title and the author is the current account, the title that account
+      // uses is shown instead (CurrentTitleCubit: read-only title page of that account, keyed by uid and dropped on
+      // account changes). The floor of anybody else never gets it: no data there means no second badge.
+      if (widget.badge != null || widget.secondBadge != null || ownFloor) ...[
         sectionTitle(tr.badges, Icons.military_tech_outlined),
         titleContentSeparator,
         Wrap(
@@ -303,11 +315,25 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
           runSpacing: 12,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (widget.badge != null) CachedImage(widget.badge!, maxWidth: 200, maxHeight: 80, fit: BoxFit.contain),
+            if (widget.badge != null)
+              CachedImage(
+                widget.badge!,
+                key: const ValueKey('brief-profile-group-badge'),
+                maxWidth: 200,
+                maxHeight: 80,
+                fit: BoxFit.contain,
+              ),
             if (widget.secondBadge != null)
               SecondaryTitleBadge(
                 widget.secondBadge!,
-                width: SecondaryTitleBadge.fitWidth(briefProfileDialogContentWidth(MediaQuery.sizeOf(context).width)),
+                key: const ValueKey('brief-profile-floor-title'),
+                width: secondBadgeWidth,
+              )
+            else if (ownFloor)
+              CurrentAccountTitleBadge(
+                key: const ValueKey('brief-profile-account-title'),
+                uid: authorUid,
+                width: secondBadgeWidth,
               ),
           ],
         ),
