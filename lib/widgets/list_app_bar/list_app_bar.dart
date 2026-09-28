@@ -188,143 +188,119 @@ class ListAppBar extends StatelessWidget implements PreferredSizeWidget {
 
         // Using three or more actions violates material design spec, but just do it.
         const NoticeButton(),
+        // Current page as a tonal pill ("3 / 12"), opening the jump dialog.
         if (onJumpPage != null)
-          TextButton(
-            onPressed: canJumpPage ? () async => _jumpPage(context, currentPage, totalPages) : null,
-            child: Text('${canJumpPage ? currentPage : "-"}'),
-          ),
-        PopupMenuButton<MenuItemId>(
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.refresh),
-              child: Row(
-                children: [
-                  const Icon(Icons.refresh_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.networkList.actionRefresh),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.copyUrl),
-              child: Row(
-                children: [
-                  const Icon(Icons.copy_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.networkList.actionCopyUrl),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.openInBrowser),
-              child: Row(
-                children: [
-                  const Icon(Icons.open_in_browser),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.networkList.actionOpenInBrowser),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.backToTop),
-              child: Row(
-                children: [
-                  const Icon(Icons.vertical_align_top_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.networkList.actionBackToTop),
-                ],
-              ),
-            ),
-            if (showReverseOrderAction)
-              PopupMenuItem(
-                value: MenuItemId.fixed(MenuActions.reverseOrder),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Tooltip(
+              message: context.t.jumpDialog.title,
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 36),
+                ),
+                onPressed: canJumpPage ? () async => _jumpPage(context, currentPage, totalPages) : null,
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(reverseOrder ? Icons.align_vertical_bottom_outlined : Icons.align_vertical_top_outlined),
-                    sizedBoxPopupMenuItemIconSpacing,
-                    Text(
-                      reverseOrder
-                          ? context.t.networkList.actionForwardOrder
-                          : context.t.networkList.actionReverseOrder,
-                    ),
+                    const Icon(Icons.auto_stories_outlined, size: 16),
+                    sizedBoxW4H4,
+                    Text('${canJumpPage ? currentPage : "-"}'),
+                    if (canJumpPage && totalPages > 0)
+                      Text(' / $totalPages', style: Theme.of(context).textTheme.labelSmall),
                   ],
                 ),
               ),
+            ),
+          ),
+        PopupMenuButton<MenuItemId>(
+          // Same items as before, grouped: this page (refresh, back to top, order), the page's own items, its link,
+          // then the app wide places, and the debug log when debug operations are on.
+          itemBuilder: (context) {
+            PopupMenuItem<MenuItemId> item(MenuItemId value, IconData icon, String text, {bool enabled = true}) =>
+                PopupMenuItem(
+                  enabled: enabled,
+                  value: value,
+                  child: Row(
+                    children: [
+                      Icon(icon),
+                      sizedBoxPopupMenuItemIconSpacing,
+                      Flexible(child: Text(text)),
+                    ],
+                  ),
+                );
+            const divider = PopupMenuDivider(height: 8);
+            return <PopupMenuEntry<MenuItemId>>[
+              /**
+               * Actions available in current page.
+               */
+              item(MenuItemId.fixed(MenuActions.refresh), Icons.refresh_outlined, context.t.networkList.actionRefresh),
+              item(
+                MenuItemId.fixed(MenuActions.backToTop),
+                Icons.vertical_align_top_outlined,
+                context.t.networkList.actionBackToTop,
+              ),
+              if (showReverseOrderAction)
+                item(
+                  MenuItemId.fixed(MenuActions.reverseOrder),
+                  reverseOrder ? Icons.align_vertical_bottom_outlined : Icons.align_vertical_top_outlined,
+                  reverseOrder ? context.t.networkList.actionForwardOrder : context.t.networkList.actionReverseOrder,
+                ),
 
-            // Custom items.
-            ...customMenuItems.mapIndexed(
-              (idx, e) => PopupMenuItem(
-                value: MenuItemId.custom(idx),
-                child: Row(children: [Icon(e.icon), sizedBoxPopupMenuItemIconSpacing, Text(e.description)]),
-              ),
-            ),
+              // Custom items.
+              if (customMenuItems.isNotEmpty) ...[
+                divider,
+                ...customMenuItems.mapIndexed((idx, e) => item(MenuItemId.custom(idx), e.icon, e.description)),
+              ],
 
-            const PopupMenuDivider(),
+              // Link of the page.
+              divider,
+              item(MenuItemId.fixed(MenuActions.copyUrl), Icons.copy_outlined, context.t.networkList.actionCopyUrl),
+              item(
+                MenuItemId.fixed(MenuActions.openInBrowser),
+                Icons.open_in_browser,
+                context.t.networkList.actionOpenInBrowser,
+              ),
 
-            /**
-             * Global actions
-             */
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.openInApp),
-              child: Row(
-                children: [
-                  const Icon(Symbols.open_in_phone),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.openInAppPage.entryTooltip),
-                ],
+              /**
+               * Global actions
+               */
+              divider,
+              item(
+                MenuItemId.fixed(MenuActions.openInApp),
+                Symbols.open_in_phone,
+                context.t.openInAppPage.entryTooltip,
               ),
-            ),
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.openSearchPage),
-              child: Row(
-                children: [
-                  const Icon(Icons.search_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.searchPage.title),
-                ],
+              item(MenuItemId.fixed(MenuActions.openSearchPage), Icons.search_outlined, context.t.searchPage.title),
+              item(
+                MenuItemId.fixed(MenuActions.profile),
+                Icons.person_outline,
+                context.t.profilePage.title,
+                enabled: isLogin,
               ),
-            ),
-            PopupMenuItem(
-              enabled: isLogin,
-              value: MenuItemId.fixed(MenuActions.profile),
-              child: Row(
-                children: [
-                  const Icon(Icons.person_outline),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.profilePage.title),
-                ],
+              item(
+                MenuItemId.fixed(MenuActions.openNoticePage),
+                Icons.notifications_outlined,
+                context.t.noticePage.title,
+                enabled: isLogin,
               ),
-            ),
-            PopupMenuItem(
-              enabled: isLogin,
-              value: MenuItemId.fixed(MenuActions.openNoticePage),
-              child: Row(
-                children: [
-                  const Icon(Icons.notifications_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.noticePage.title),
-                ],
+              item(
+                MenuItemId.fixed(MenuActions.openSettingsPage),
+                Icons.settings_outlined,
+                context.t.general.settings,
               ),
-            ),
-            PopupMenuItem(
-              value: MenuItemId.fixed(MenuActions.openSettingsPage),
-              child: Row(
-                children: [
-                  const Icon(Icons.settings_outlined),
-                  sizedBoxPopupMenuItemIconSpacing,
-                  Text(context.t.general.settings),
-                ],
-              ),
-            ),
 
-            if (context.read<SettingsBloc>().state.settingsMap.enableDebugOperations) ...<PopupMenuEntry<MenuItemId>>[
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: MenuItemId.fixed(MenuActions.debugViewLog),
-                child: Text(context.t.settingsPage.debugSection.viewLog.title),
-              ),
-            ],
-          ],
+              if (context.read<SettingsBloc>().state.settingsMap.enableDebugOperations) ...[
+                divider,
+                item(
+                  MenuItemId.fixed(MenuActions.debugViewLog),
+                  Icons.bug_report_outlined,
+                  context.t.settingsPage.debugSection.viewLog.title,
+                ),
+              ],
+            ];
+          },
           onSelected: (item) async {
             switch (item.action) {
               case MenuActions.refresh:

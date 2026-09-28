@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fpdart/fpdart.dart' show Left, Right;
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
@@ -14,6 +15,7 @@ import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -78,41 +80,60 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
     super.dispose();
   }
 
-  Widget _searchBar(MedalCenterState state, TranslationsMedalCenterEn tr) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-    child: TextField(
-      key: const ValueKey('medal-search'),
-      controller: _searchController,
-      enabled: state.searchForm != null,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: tr.searchHint,
-        prefixIcon: const Icon(Icons.search),
-        border: const OutlineInputBorder(),
-        isDense: true,
-        suffixIcon: state.query == null
-            ? null
-            : IconButton(
-                tooltip: tr.clearSearch,
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _searchController.clear();
-                  unawaited(_cubit.clearSearch());
-                },
-              ),
+  Widget _searchBar(MedalCenterState state, TranslationsMedalCenterEn tr) => AppCenteredList(
+    builder: (context, padding, _) => Padding(
+      padding: padding.copyWith(top: 8, bottom: 4),
+      child: TextField(
+        key: const ValueKey('medal-search'),
+        controller: _searchController,
+        enabled: state.searchForm != null,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: tr.searchHint,
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(appInnerRadius),
+            borderSide: BorderSide.none,
+          ),
+          isDense: true,
+          suffixIcon: state.query == null
+              ? null
+              : IconButton(
+                  tooltip: tr.clearSearch,
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    unawaited(_cubit.clearSearch());
+                  },
+                ),
+        ),
+        onSubmitted: (text) => unawaited(_cubit.search(text)),
       ),
-      onSubmitted: (text) => unawaited(_cubit.search(text)),
     ),
   );
 
-  Widget _image(String? url) => SizedBox(
-    width: 64,
-    height: 56,
-    child:
-        widget.imageBuilder?.call(url) ??
-        (url == null
-            ? const Icon(Icons.image_not_supported_outlined)
-            : CachedImage(url, width: 64, height: 56, fit: BoxFit.contain)),
+  /// Medal artwork in a fixed square, contained and never cropped.
+  Widget _image(String? url, {double size = 56}) => AppInsetBlock(
+    padding: const EdgeInsets.all(4),
+    child: SizedBox(
+      width: size,
+      height: size,
+      child:
+          widget.imageBuilder?.call(url) ??
+          (url == null
+              ? Icon(Icons.image_not_supported_outlined, color: Theme.of(context).colorScheme.outline)
+              : CachedImage(url, width: size, height: size, fit: BoxFit.contain)),
+    ),
+  );
+
+  /// Dialog title with the icon tile of the app's dialogs.
+  Widget _dialogTitle(IconData icon, String text) => Row(
+    children: [
+      AppIconTile(icon, size: 36),
+      sizedBoxW12H12,
+      Expanded(child: Text(text)),
+    ],
   );
 
   Future<void> _runAction(CatalogMedal medal, CatalogMedalAction action) async {
@@ -127,13 +148,29 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
           builder: (context) {
             final controller = TextEditingController();
             return AlertDialog(
-              title: Text(tr.applicationTitle),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                minLines: 3,
-                maxLines: 6,
-                decoration: InputDecoration(labelText: tr.applicationReason),
+              scrollable: true,
+              title: _dialogTitle(Icons.rate_review_outlined, tr.applicationTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    medal.name,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  sizedBoxW12H12,
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    minLines: 3,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      labelText: tr.applicationReason,
+                      filled: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
+                    ),
+                  ),
+                ],
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(context.t.general.cancel)),
@@ -155,9 +192,32 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
             await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
-                title: Text(tr.purchaseTitle),
-                content: Text(
-                  confirmText?.isNotEmpty ?? false ? confirmText! : tr.purchaseConfirm(name: medal.name),
+                scrollable: true,
+                title: _dialogTitle(Icons.shopping_cart_outlined, tr.purchaseTitle),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _image(medal.imageUrl, size: 48),
+                        sizedBoxW12H12,
+                        Expanded(
+                          child: Text(
+                            medal.name,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    sizedBoxW12H12,
+                    AppInsetBlock(
+                      outlined: true,
+                      child: Text(
+                        confirmText?.isNotEmpty ?? false ? confirmText! : tr.purchaseConfirm(name: medal.name),
+                      ),
+                    ),
+                  ],
                 ),
                 actions: [
                   TextButton(
@@ -205,6 +265,172 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
     return button;
   }
 
+  /// Name, image and method of a medal; tapping it shows the details and the acquisition actions.
+  Widget _medalCard(MedalCenterState state, CatalogMedal medal, TranslationsMedalCenterEn tr) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // The reasons of disabled actions are shown as text too: a tooltip alone is hard to find on touch screens.
+    final reasons = <String>{
+      for (final action in medal.actions)
+        if (action.disabledReason?.isNotEmpty ?? false) ?action.disabledReason,
+    };
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: ValueKey('${state.url}-${medal.id}'),
+        collapsedShape: const Border(),
+        shape: const Border(),
+        tilePadding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        leading: _image(medal.imageUrl),
+        title: Text(medal.name, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+        subtitle: Text(
+          medal.method.isEmpty ? tr.notProvided : medal.method,
+          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (medal.description.isNotEmpty) ...[
+            Text(medal.description, style: textTheme.bodyMedium),
+            sizedBoxW8H8,
+          ],
+          if (medal.accountStatus != null) ...[
+            AppNoticeBanner(message: medal.accountStatus!, icon: Icons.person_outline),
+            sizedBoxW8H8,
+          ],
+          AppInsetBlock(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (medal.details.isEmpty)
+                  Text(tr.noDetails, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                for (final (index, detail) in medal.details.indexed)
+                  Padding(
+                    padding: EdgeInsets.only(top: index == 0 ? 0 : 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Icon(Icons.chevron_right, size: 16, color: colorScheme.primary),
+                        ),
+                        sizedBoxW4H4,
+                        Expanded(child: Text(detail)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (medal.actions.isNotEmpty) ...[
+            sizedBoxW12H12,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final action in medal.actions) _actionButton(medal, action, tr)],
+            ),
+          ],
+          for (final reason in reasons) ...[
+            sizedBoxW8H8,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: colorScheme.error),
+                sizedBoxW4H4,
+                Expanded(
+                  child: Text(reason, style: textTheme.bodySmall?.copyWith(color: colorScheme.error)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Intro or search heading and the category picker.
+  Widget _header(MedalCenterState state, MedalCatalog? catalog, MedalCategory? selected, TranslationsMedalCenterEn tr) {
+    final query = state.query;
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (query == null)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AppIconTile(Icons.military_tech_outlined, size: 36),
+                sizedBoxW12H12,
+                Expanded(
+                  child: Text(
+                    tr.browserNotice,
+                    style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            )
+          else
+            AppSectionHeader(
+              tr.searchResults(query: query),
+              icon: Icons.search,
+              padding: EdgeInsets.zero,
+            ),
+          if (catalog?.categories.isNotEmpty ?? false) ...[
+            sizedBoxW12H12,
+            DropdownButtonFormField<String>(
+              key: ValueKey('category-${state.url}|$query'),
+              initialValue: selected?.url,
+              isExpanded: true,
+              menuMaxHeight: 400,
+              borderRadius: BorderRadius.circular(appInnerRadius),
+              hint: query == null ? null : Text(tr.allResults, overflow: TextOverflow.ellipsis),
+              decoration: appPickerDecoration(context, label: tr.category, icon: Icons.category_outlined),
+              items: [
+                for (final category in catalog!.categories)
+                  DropdownMenuItem(
+                    value: category.url,
+                    child: Text(category.name, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (url) {
+                if (url != null) unawaited(_cubit.load(url));
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _pager(MedalCatalog catalog, TranslationsMedalCenterEn tr) => Wrap(
+    alignment: WrapAlignment.center,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    spacing: 8,
+    runSpacing: 4,
+    children: [
+      TextButton.icon(
+        onPressed: catalog.previousUrl == null ? null : () => _cubit.load(catalog.previousUrl),
+        icon: const Icon(Icons.chevron_left),
+        label: Text(tr.previous),
+      ),
+      AppInsetBlock(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Text(tr.page(number: catalog.page)),
+      ),
+      TextButton(
+        onPressed: catalog.nextUrl == null ? null : () => _cubit.load(catalog.nextUrl),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [Text(tr.next), sizedBoxW4H4, const Icon(Icons.chevron_right, size: 18)],
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) => BlocConsumer<MedalCenterCubit, MedalCenterState>(
     bloc: _cubit,
@@ -239,13 +465,16 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
                 ),
               );
       } else if (state.needLogin) {
-        body = Center(
-          child: TextButton(
+        body = AppStateView(
+          icon: Icons.login,
+          message: tr.loginRequired,
+          action: FilledButton.tonalIcon(
             onPressed: () async {
               await context.pushNamed(ScreenPaths.login);
               if (mounted) await _cubit.load();
             },
-            child: Text(tr.loginRequired),
+            icon: const Icon(Icons.login),
+            label: Text(context.t.loginPage.login),
           ),
         );
       } else if (state.failed) {
@@ -255,97 +484,59 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
           message: query == null ? context.t.general.failedToLoad : tr.searchFailed(query: query),
         );
       } else {
+        final medals = catalog?.medals ?? const <CatalogMedal>[];
         body = RefreshIndicator(
           onRefresh: _cubit.load,
-          child: ListView(
-            key: ValueKey('${state.url}|$query'),
-            padding: const EdgeInsets.all(12),
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              if (query == null)
-                Text(tr.browserNotice)
-              else
-                Text(tr.searchResults(query: query), style: Theme.of(context).textTheme.titleSmall),
-              if (catalog?.categories.isNotEmpty ?? false)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('category-${state.url}|$query'),
-                    initialValue: selected?.url,
-                    isExpanded: true,
-                    menuMaxHeight: 400,
-                    hint: query == null ? null : Text(tr.allResults, overflow: TextOverflow.ellipsis),
-                    decoration: InputDecoration(labelText: tr.category),
-                    items: [
-                      for (final category in catalog!.categories)
-                        DropdownMenuItem(
-                          value: category.url,
-                          child: Text(category.name, overflow: TextOverflow.ellipsis),
-                        ),
-                    ],
-                    onChanged: (url) {
-                      if (url != null) unawaited(_cubit.load(url));
-                    },
-                  ),
-                ),
-              if (catalog?.supported == false)
-                Text(catalog!.message?.isNotEmpty ?? false ? catalog.message! : tr.unsupported)
-              else if (catalog?.medals.isEmpty ?? true)
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    [
-                      if (query != null) tr.searchEmpty(query: query),
-                      if (catalog?.message?.isNotEmpty ?? false) catalog!.message! else if (query == null) tr.empty,
-                    ].join('\n'),
-                  ),
-                ),
-              for (final medal in catalog?.medals ?? <CatalogMedal>[])
-                Card(
-                  child: ExpansionTile(
-                    key: ValueKey('${state.url}-${medal.id}'),
-                    collapsedShape: const Border(),
-                    shape: const Border(),
-                    leading: _image(medal.imageUrl),
-                    title: Text(medal.name),
-                    subtitle: Text(medal.method.isEmpty ? tr.notProvided : medal.method),
-                    childrenPadding: const EdgeInsets.all(16),
-                    expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (medal.description.isNotEmpty) Text(medal.description),
-                      if (medal.accountStatus != null) Text(medal.accountStatus!),
-                      if (medal.details.isEmpty) Text(tr.noDetails),
-                      for (final detail in medal.details)
-                        Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(detail)),
-                      if (medal.actions.isNotEmpty)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final action in medal.actions) _actionButton(medal, action, tr),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              if (catalog != null && catalog.supported)
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  children: [
-                    TextButton(
-                      onPressed: catalog.previousUrl == null ? null : () => _cubit.load(catalog.previousUrl),
-                      child: Text(tr.previous),
+          child: AppCenteredList(
+            builder: (context, padding, width) {
+              final columns = appColumnsFor(width);
+              final gap = width < 600 ? appSurfaceGapCompact : appSurfaceGap;
+              return ListView(
+                key: ValueKey('${state.url}|$query'),
+                padding: padding.copyWith(top: 8, bottom: 12),
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _header(state, catalog, selected, tr),
+                  SizedBox(height: gap),
+                  if (catalog?.supported == false)
+                    AppStateView(
+                      icon: Icons.military_tech_outlined,
+                      message: catalog!.message?.isNotEmpty ?? false ? catalog.message! : tr.unsupported,
+                      scrollable: false,
+                      action: TextButton.icon(
+                        onPressed: () async => context.dispatchAsUrl(state.url, external: true),
+                        icon: const Icon(Icons.open_in_browser_outlined),
+                        label: Text(tr.openBrowser),
+                      ),
+                    )
+                  else if (medals.isEmpty)
+                    AppStateView(
+                      icon: query == null ? Icons.military_tech_outlined : Icons.search_off_outlined,
+                      scrollable: false,
+                      message: [
+                        if (query != null) tr.searchEmpty(query: query),
+                        if (catalog?.message?.isNotEmpty ?? false) catalog!.message! else if (query == null) tr.empty,
+                      ].join('\n'),
                     ),
-                    Text(tr.page(number: catalog.page)),
-                    TextButton(
-                      onPressed: catalog.nextUrl == null ? null : () => _cubit.load(catalog.nextUrl),
-                      child: Text(tr.next),
+                  for (var row = 0; row < appRowCount(medals.length, columns); row++)
+                    Padding(
+                      padding: EdgeInsets.only(top: row == 0 ? 0 : gap),
+                      child: AppColumnsRow(
+                        row: row,
+                        columns: columns,
+                        count: medals.length,
+                        gap: gap,
+                        itemBuilder: (context, index) => _medalCard(state, medals[index], tr),
+                      ),
                     ),
-                  ],
-                ),
-            ],
+                  if (catalog != null && catalog.supported)
+                    Padding(
+                      padding: EdgeInsets.only(top: gap),
+                      child: _pager(catalog, tr),
+                    ),
+                ],
+              );
+            },
           ),
         );
       }

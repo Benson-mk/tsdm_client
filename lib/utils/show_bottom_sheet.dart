@@ -22,6 +22,7 @@ import 'package:tsdm_client/shared/providers/image_cache_provider/models/models.
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/network_indicator_image.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
 
@@ -79,23 +80,49 @@ Future<T?> showCustomBottomSheet<T>({
                 // preferredSize: const Size.fromHeight(kToolbarHeight),
                 child: Stack(
                   children: [
-                    Align(
-                      alignment: .topCenter,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 20),
-                        child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+                    // Drag handle: the sheet can be swiped down to close.
+                    Positioned(
+                      top: 6,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: const SizedBox(width: 32, height: 4),
+                        ),
+                      ),
+                    ),
+                    // Title and close button share one row: a long title (or a large text scale) is cut with an
+                    // ellipsis instead of running under the button.
+                    Positioned(
+                      top: 12,
+                      left: 16,
+                      right: 16,
+                      height: kToolbarHeight - 12,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 48),
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_outlined),
+                            tooltip: context.t.general.close,
+                            onPressed: () async => context.pop(),
+                          ),
+                        ],
                       ),
                     ),
                     if (topBar != null) Positioned(top: kToolbarHeight, child: topBar),
-                    Positioned(
-                      top: 12,
-                      right: 24,
-                      child: IconButton(
-                        icon: const Icon(Icons.close_outlined),
-                        tooltip: context.t.general.close,
-                        onPressed: () async => context.pop(),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -122,10 +149,13 @@ Future<T?> showCustomBottomSheet<T>({
 /// * Copy image url.
 /// * Jump to related href url (optional).
 /// * Reload image.
+///
+/// [showCheckDetail] is false when the sheet is opened from the full page viewer itself.
 Future<void> showImageActionBottomSheet({
   required BuildContext context,
   required String imageUrl,
   String? hrefUrl,
+  bool showCheckDetail = true,
 }) async {
   final tr = context.t.imageBottomSheet;
 
@@ -133,27 +163,32 @@ Future<void> showImageActionBottomSheet({
     context: context,
     title: tr.title,
     childrenBuilder: (context) => [
-      Align(
-        child: ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 100),
-            child: Padding(padding: edgeInsetsT4B4, child: NetworkIndicatorImage(imageUrl)),
+      Padding(
+        padding: edgeInsetsL16R16,
+        child: AppInsetBlock(
+          outlined: true,
+          padding: edgeInsetsT4B4,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 100),
+              child: NetworkIndicatorImage(imageUrl),
+            ),
           ),
         ),
       ),
       sizedBoxW12H12,
 
-      ListTile(
-        leading: const Icon(Icons.fullscreen_outlined),
-        title: Text(tr.checkDetail),
-        onTap: () async {
-          await context.pushNamed(ScreenPaths.imageDetail, pathParameters: {'imageUrl': imageUrl});
-          if (context.mounted) {
-            context.pop();
-          }
-        },
-      ),
+      if (showCheckDetail)
+        ListTile(
+          leading: const Icon(Icons.fullscreen_outlined),
+          title: Text(tr.checkDetail),
+          onTap: () async {
+            await context.pushNamed(ScreenPaths.imageDetail, pathParameters: {'imageUrl': imageUrl});
+            if (context.mounted) {
+              context.pop();
+            }
+          },
+        ),
       ListTile(
         leading: const Icon(Icons.copy_outlined),
         title: Text(tr.copyImageUrl),
@@ -265,25 +300,27 @@ Future<void> showUrlInfoBottomSheet({
     title: tr.title,
     childrenBuilder: (context) {
       return [
-        Container(
-          width: double.infinity,
-          padding: edgeInsetsL12T12R12B12.add(edgeInsetsL8R8),
-          color: theme.colorScheme.surfaceContainerHighest.withAlpha(160),
-          child: Column(
-            crossAxisAlignment: .start,
-            spacing: 8,
-            children: [
-              SingleLineText(url, style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.primary)),
-              Container(
-                padding: edgeInsetsL8R8.add(edgeInsetsL4R4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+        Padding(
+          padding: edgeInsetsL16R16,
+          child: AppInsetBlock(
+            outlined: true,
+            padding: edgeInsetsL12T12R12B12,
+            child: Column(
+              crossAxisAlignment: .start,
+              spacing: 8,
+              children: [
+                SingleLineText(url, style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.primary)),
+                Container(
+                  padding: edgeInsetsL8R8.add(edgeInsetsL4R4),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(appInnerRadius),
+                  ),
+                  child: Text(parseResultTitle, style: theme.textTheme.labelSmall),
                 ),
-                child: Text(parseResultTitle, style: theme.textTheme.labelSmall),
-              ),
-              Text(parseResultDetail, style: theme.textTheme.bodySmall),
-            ],
+                Text(parseResultDetail, style: theme.textTheme.bodySmall),
+              ],
+            ),
           ),
         ),
         sizedBoxW12H12,
@@ -335,11 +372,24 @@ Future<void> showEmailBottomSheet({required BuildContext context, required Strin
     title: tr.title,
     childrenBuilder: (context) {
       return [
-        Container(
-          width: double.infinity,
-          padding: edgeInsetsL12T12R12B12.add(edgeInsetsL8R8),
-          color: theme.colorScheme.surfaceContainerHighest.withAlpha(160),
-          child: SingleLineText(address, style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.primary)),
+        Padding(
+          padding: edgeInsetsL16R16,
+          child: AppInsetBlock(
+            outlined: true,
+            padding: edgeInsetsL12T12R12B12,
+            child: Row(
+              children: [
+                Icon(Icons.alternate_email_outlined, size: 20, color: theme.colorScheme.primary),
+                sizedBoxW8H8,
+                Expanded(
+                  child: SingleLineText(
+                    address,
+                    style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         sizedBoxW12H12,
         ListTile(

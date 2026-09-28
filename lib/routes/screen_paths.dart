@@ -86,6 +86,9 @@ class ScreenPaths {
   /// Read-only medal catalogue.
   static const String medalCenter = '/medalCenter';
 
+  /// Common entry of the medal centre, the current account's titles and the title shop.
+  static const String medalTitleHub = '/medalTitleHub';
+
   /// Community bank balances, records and current-account transactions.
   static const String bank = '/bank';
 
@@ -344,6 +347,9 @@ class DialogPaths {
 
   /// Dialog to let user picker a text scale factor.
   static const String textScalePicker = '/dialog/textScalePicker';
+
+  /// Dialog to let user pick the extra text scale of thread content.
+  static const String threadContentScalePicker = '/dialog/threadContentScalePicker';
 
   /// Dialog to let user select the duration between auto syncing notice events.
   static const String selectAutoSyncDuration = '/dialog/selectAutoSyncDuration';

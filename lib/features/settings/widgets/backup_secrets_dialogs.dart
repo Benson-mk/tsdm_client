@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Shortest password accepted for a backup.
 const backupPasswordMinLength = 8;
@@ -74,35 +75,48 @@ class _ExportBackupDialogState extends State<_ExportBackupDialog> {
       canPop: false,
       child: AlertDialog(
         scrollable: true,
-        title: Text(tr.title),
+        title: AppDialogTitle(icon: Icons.download_outlined, title: tr.title),
         content: Form(
           key: formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(tr.includeAccounts),
-                subtitle: Text(tr.includeAccountsDetail),
-                value: includeAccounts,
-                onChanged: (v) => setState(() => includeAccounts = v),
+              // What the backup holds by default, as on the settings row.
+              Text(
+                context.t.settingsPage.advancedSection.exportDataDetail,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              sizedBoxW12H12,
+              AppInsetBlock(
+                outlined: true,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(tr.includeAccounts),
+                  subtitle: Text(tr.includeAccountsDetail),
+                  value: includeAccounts,
+                  onChanged: (v) => setState(() => includeAccounts = v),
+                ),
               ),
               if (includeAccounts) ...[
-                sizedBoxW4H4,
+                sizedBoxW12H12,
                 TextFormField(
                   controller: password,
                   obscureText: obscure,
                   autofocus: true,
-                  decoration: InputDecoration(labelText: tr.password, suffixIcon: toggle),
+                  decoration: appFieldDecoration(label: tr.password, icon: Icons.lock_outline, suffix: toggle),
                   validator: (v) => (v == null || v.length < backupPasswordMinLength)
                       ? tr.passwordTooShort(min: backupPasswordMinLength)
                       : null,
                 ),
-                sizedBoxW4H4,
+                sizedBoxW12H12,
                 TextFormField(
                   controller: confirm,
                   obscureText: obscure,
-                  decoration: InputDecoration(labelText: tr.confirmPassword),
+                  decoration: appFieldDecoration(label: tr.confirmPassword, icon: Icons.lock_reset_outlined),
                   validator: (v) => v != password.text ? tr.passwordMismatch : null,
                   onFieldSubmitted: (_) => _submit(),
                 ),
@@ -151,25 +165,25 @@ class _UnlockBackupDialogState extends State<_UnlockBackupDialog> {
       canPop: false,
       child: AlertDialog(
         scrollable: true,
-        title: Text(tr.title),
+        title: AppDialogTitle(icon: Icons.lock_open_outlined, title: tr.title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(tr.tip),
-            sizedBoxW4H4,
+            AppNoticeBanner(message: tr.tip, icon: Icons.key_outlined),
+            sizedBoxW12H12,
             TextField(
               controller: password,
               obscureText: obscure,
               autofocus: true,
-              decoration: InputDecoration(
-                labelText: tr.password,
-                errorText: widget.wrongPassword ? tr.wrongPassword : null,
-                suffixIcon: IconButton(
+              decoration: appFieldDecoration(
+                label: tr.password,
+                icon: Icons.lock_outline,
+                suffix: IconButton(
                   icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   onPressed: () => setState(() => obscure = !obscure),
                 ),
-              ),
+              ).copyWith(errorText: widget.wrongPassword ? tr.wrongPassword : null),
               onSubmitted: (_) => _submit(),
             ),
           ],

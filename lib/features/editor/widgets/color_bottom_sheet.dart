@@ -14,6 +14,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/tips.dart';
 
 /// What type of color is the picker run for.
@@ -39,6 +40,41 @@ Future<PickColorResult?> showColorPicker(BuildContext context, Color? initialCol
     context: context,
     builder: (context) => RootPage(DialogPaths.colorPicker, _ColorBottomSheet(initialColor, recentColors)),
   );
+}
+
+/// One color to pick: a rounded swatch with a hairline border (so white and transparent-looking colors stay visible),
+/// ringed and checked when it is the current color.
+class _ColorSwatch extends StatelessWidget {
+  const _ColorSwatch({required this.color, required this.onTap, this.selected = false});
+
+  final Color color;
+  final VoidCallback? onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final onColor = ThemeData.estimateBrightnessForColor(color) == Brightness.dark ? Colors.white : Colors.black;
+    return Material(
+      color: color,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(appInnerRadius),
+        side: BorderSide(
+          color: selected ? colorScheme.primary : colorScheme.outlineVariant,
+          width: selected ? 2.5 : 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: selected ? Icon(Icons.check, size: 18, color: onColor) : null,
+        ),
+      ),
+    );
+  }
 }
 
 class _ColorBottomSheet extends StatefulWidget {
@@ -97,10 +133,11 @@ class _ColorBottomSheetState extends State<_ColorBottomSheet> with SingleTickerP
   Widget _buildNormalTab() {
     return GridView.builder(
       shrinkWrap: true,
+      padding: edgeInsetsT8,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 40,
-        mainAxisSpacing: 5,
-        crossAxisSpacing: 5,
+        maxCrossAxisExtent: 44,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
         mainAxisExtent: 40,
       ),
       itemCount: BBCodeEditorColor.values.length,
@@ -109,11 +146,10 @@ class _ColorBottomSheetState extends State<_ColorBottomSheet> with SingleTickerP
         final color = BBCodeEditorColor.values[index].color;
         return Tooltip(
           message: '${BBCodeEditorColor.values[index].name}(${color.hex})',
-          child: GestureDetector(
+          child: _ColorSwatch(
+            color: color,
+            selected: widget.initialColor?.toARGB32() == color.toARGB32(),
             onTap: () => Navigator.of(context).pop(PickColorResult.picked(color)),
-            child: Container(
-              decoration: BoxDecoration(borderRadius: const BorderRadius.all(Radius.circular(15)), color: color),
-            ),
           ),
         );
       },
@@ -195,43 +231,35 @@ class _ColorBottomSheetState extends State<_ColorBottomSheet> with SingleTickerP
               ),
             ),
             sizedBoxW12H12,
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.all(Radius.circular(15)),
-                color: _customTabColor,
-              ),
-            ),
+            // Preview of the typed value.
+            _ColorSwatch(color: _customTabColor, onTap: null),
           ],
         ),
         sizedBoxW4H4,
         Tips(tr.formatTip, enablePadding: false),
-        sizedBoxW4H4,
-        Text(tr.recentColor, style: Theme.of(context).textTheme.titleSmall),
-        sizedBoxW4H4,
-        Wrap(
-          spacing: 4,
-          children: _recentCustomColors
-              .map(
-                (e) => GestureDetector(
-                  onTap: () => setState(() {
-                    final value = e.hex.toLowerCase();
-                    _updateCustomColorPreview(value);
-                    _customColorValueController.text = value;
-                  }),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.all(Radius.circular(15)),
+        if (_recentCustomColors.isNotEmpty) ...[
+          AppSectionHeader(tr.recentColor, icon: Icons.history_outlined),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _recentCustomColors
+                  .map(
+                    (e) => _ColorSwatch(
                       color: e,
+                      onTap: () => setState(() {
+                        final value = e.hex.toLowerCase();
+                        _updateCustomColorPreview(value);
+                        _customColorValueController.text = value;
+                      }),
                     ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+        sizedBoxW8H8,
         sizedBoxW4H4,
         SizedBox(
           width: sizeButtonInCardMinWidth,
@@ -340,9 +368,10 @@ class _ColorBottomSheetState extends State<_ColorBottomSheet> with SingleTickerP
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
+              child: TextButton.icon(
+                icon: const Icon(Icons.format_color_reset_outlined),
                 onPressed: () => Navigator.of(context).pop(PickColorResult.clearColor()),
-                child: Text(context.t.general.reset),
+                label: Text(context.t.general.reset),
               ),
             ),
           ],

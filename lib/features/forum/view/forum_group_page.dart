@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_group_bloc.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -27,11 +27,28 @@ class ForumGroupPage extends StatefulWidget {
 
 class _ForumGroupPageState extends State<ForumGroupPage> {
   Widget _buildContent(BuildContext context, ForumGroup forumGroup) {
-    return ListView.separated(
-      padding: edgeInsetsL12T4R12.add(context.safePadding()),
-      itemCount: forumGroup.forumList.length,
-      itemBuilder: (_, index) => ForumCard(forumGroup.forumList[index]),
-      separatorBuilder: (_, _) => sizedBoxW4H4,
+    final forums = forumGroup.forumList;
+    // One column on phones, two on wide windows; large cards in a wider area on desktop windows, like the topics
+    // page (phones keep the compact cards at any width). The width is measured inside the page's SafeArea, so side
+    // insets are already excluded.
+    return AppCenteredList(
+      builder: (context, _, width) {
+        final layout = forumCardListLayout(width, Theme.of(context).platform);
+        return ListView.separated(
+          padding: layout.side
+              .copyWith(top: layout.large ? 16 : 8, bottom: layout.large ? 20 : 0)
+              .add(context.safePadding()),
+          itemCount: appRowCount(forums.length, layout.columns),
+          itemBuilder: (context, row) => AppColumnsRow(
+            row: row,
+            columns: layout.columns,
+            count: forums.length,
+            gap: layout.gap,
+            itemBuilder: (_, index) => ForumCard(forums[index], large: layout.large),
+          ),
+          separatorBuilder: (_, _) => layout.separator,
+        );
+      },
     );
   }
 

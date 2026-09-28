@@ -18,6 +18,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/git_info.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 
 /// The app wide singleton stands on top of all other pages to act on different events in app.
@@ -51,27 +52,57 @@ class _RootSingletonState extends State<RootSingleton> with LoggerMixin {
           return RootPage(
             DialogPaths.updateNotice,
             CustomAlertDialog.sync(
-              title: Text(tr.updatePage.availableDialog.title),
+              title: AppDialogTitle(icon: Icons.system_update_outlined, title: tr.updatePage.availableDialog.title),
               content: SizedBox(
                 width: math.min(size.width * 0.8, 800),
                 height: math.min(size.height * 0.6, 600),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      tr.updatePage.availableDialog.version(version: info.version),
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+                    // The new version as a pill, then the changelog in its own scrolling block.
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(appInnerRadius),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          child: Text(
+                            tr.updatePage.availableDialog.version(version: info.version),
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    sizedBoxW8H8,
-                    Expanded(child: Markdown(data: info.changelog)),
+                    sizedBoxW12H12,
+                    AppSectionHeader(
+                      tr.updatePage.availableDialog.changelog,
+                      icon: Icons.history_outlined,
+                      padding: const EdgeInsets.only(bottom: 8),
+                    ),
+                    Expanded(
+                      child: AppInsetBlock(
+                        outlined: true,
+                        padding: EdgeInsets.zero,
+                        child: Markdown(data: info.changelog),
+                      ),
+                    ),
                   ],
                 ),
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(tr.general.cancel)),
+                // Stays a text button (tests find it by type); the tonal colors mark it as the main action.
                 TextButton(
+                  style: TextButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                    foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                  ),
                   onPressed: () => Navigator.of(context).pop(true),
                   child: Text(tr.settingsPage.othersSection.update),
                 ),

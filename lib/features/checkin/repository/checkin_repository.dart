@@ -1,4 +1,5 @@
 import 'package:tsdm_client/features/checkin/models/models.dart';
+import 'package:tsdm_client/features/checkin/utils/checkin_day.dart';
 import 'package:tsdm_client/features/checkin/utils/do_checkin.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -11,6 +12,12 @@ final class CheckinRepository with LoggerMixin {
   const CheckinRepository({required StorageProvider storageProvider}) : _storageProvider = storageProvider;
 
   final StorageProvider _storageProvider;
+
+  /// Whether this app recorded a check-in of the account [uid] today (a manual or automatic check-in that succeeded
+  /// or was answered "already checked in").
+  ///
+  /// Only what the app did itself: a check-in made on the website is not known until the next attempt here.
+  Future<bool> checkedInToday(int uid) async => isCheckedInToday(await _storageProvider.getLastCheckinTime(uid));
 
   /// Perform a checkin for user [uid].
   Future<CheckinResult> checkin(int uid, CheckinFeeling feeling, String message) async {

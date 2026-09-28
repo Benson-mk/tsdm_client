@@ -14,6 +14,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/html/adaptive_color.dart';
 import 'package:tsdm_client/utils/html/css_parser.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 
 /// Candidates shared by every picker in the app, so reopening it does not fetch the lists again.
@@ -114,19 +115,21 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
     return Theme.of(context).brightness == Brightness.dark ? color.adaptiveDark() : color;
   }
 
-  Widget _header(String text, {Widget? trailing}) => Padding(
-    padding: edgeInsetsL16R16.add(edgeInsetsT4B4),
-    child: Row(
-      children: [
-        Expanded(child: Text(text, style: Theme.of(context).textTheme.labelLarge)),
-        ?trailing,
-      ],
-    ),
+  Widget _header(String text, {IconData? icon, Widget? trailing}) => AppSectionHeader(
+    text,
+    icon: icon,
+    trailing: trailing,
+    padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
   );
 
   Widget _note(String text) => Padding(
     padding: edgeInsetsL16R16.add(edgeInsetsT4B4),
-    child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+    child: AppInsetBlock(
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+    ),
   );
 
   Widget _friendTile(Friend friend) {
@@ -177,6 +180,7 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
     return [
       _header(
         tr.randomFriend,
+        icon: Icons.people_outline,
         trailing: IconButton(
           icon: const Icon(Icons.refresh),
           tooltip: tr.refreshRecommendTip,
@@ -202,7 +206,10 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
     if (visible.isEmpty) {
       return const [];
     }
-    return [_header(context.t.bbcodeEditor.userMention.others), ...visible.map(_nameTile)];
+    return [
+      _header(context.t.bbcodeEditor.userMention.others, icon: Icons.alternate_email),
+      ...visible.map(_nameTile),
+    ];
   }
 
   Widget _useTypedRow(UserMentionState state) {
@@ -232,6 +239,11 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
                   hintText: tr.filterHint,
                   prefixIcon: const Icon(Icons.alternate_email),
                   isDense: true,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(appSurfaceRadius),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
                 onChanged: _onFilterChanged,
                 onSubmitted: (v) {

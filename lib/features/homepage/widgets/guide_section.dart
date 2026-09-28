@@ -8,6 +8,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/homepage/cubit/guide_index_cubit.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
 import 'package:tsdm_client/features/homepage/repository/guide_index_repository.dart';
+import 'package:tsdm_client/features/homepage/widgets/home_dashboard.dart';
 import 'package:tsdm_client/features/replied_thread/cubit/replied_thread_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -19,10 +20,11 @@ Future<void> _openGuideList(BuildContext context, String url, String title) asyn
 
 /// Homepage section showing the modules of the forum guide index page (GitHub #12).
 ///
-/// `forum.php?mod=guide&view=index` lists 最新热门, 最新精华, 最新回复 and 最新发表 with a handful of threads each;
-/// every module becomes a [GuideModuleCard] and a chip row on top links the full list pages, including 抢沙发 which
-/// the page only offers in its nav row. The section owns its [GuideIndexCubit]: the homepage rebuilds this widget
-/// after every refresh, so the page is fetched again together with the rest of the homepage.
+/// `forum.php?mod=guide&view=index` lists 最新热门, 最新精华, 最新回复 and 最新发表 with a handful of threads each.
+/// The modules are tabs of one card so the threads start right below the tab row instead of four stacked cards; the
+/// 更多 button opens the full list page of the selected module and 抢沙发, which the page only offers in its nav row,
+/// opens its list page. The section owns its [GuideIndexCubit]: the homepage rebuilds this widget after every refresh,
+/// so the page is fetched again together with the rest of the homepage.
 class GuideSection extends StatelessWidget {
   /// Constructor.
   const GuideSection({this.maxCount = 10, this.repository, super.key});
@@ -42,74 +44,156 @@ class GuideSection extends StatelessWidget {
         return cubit;
       },
       child: BlocBuilder<GuideIndexCubit, GuideIndexState>(
-        builder: (context, state) {
-          final tr = context.t.homepage.guide;
-          final body = switch (state.status) {
-            GuideIndexStatus.initial || GuideIndexStatus.loading when state.modules.isEmpty => const Card(
-              margin: EdgeInsets.zero,
-              child: Padding(padding: edgeInsetsL12T12R12B12, child: CenteredCircularIndicator()),
-            ),
-            GuideIndexStatus.failure => Card(
-              margin: EdgeInsets.zero,
-              child: ListTile(
-                leading: const Icon(Icons.refresh_outlined),
-                title: Text(tr.failed),
-                onTap: () async => context.read<GuideIndexCubit>().load(),
-              ),
-            ),
-            _ => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final (i, module) in state.modules.indexed) ...[
-                  if (i > 0) sizedBoxW12H12,
-                  GuideModuleCard(module, maxCount: maxCount),
-                ],
-              ],
-            ),
-          };
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [_GuideNavRow(state.modules), sizedBoxW12H12, body],
-          );
-        },
+        builder: (context, state) => _GuideFeedCard(state, maxCount: maxCount),
       ),
     );
   }
 }
 
-/// Quick links to the full list pages: one chip per module plus 抢沙发, like the nav row of the guide page.
-class _GuideNavRow extends StatelessWidget {
-  const _GuideNavRow(this.modules);
+class _GuideFeedCard extends StatefulWidget {
+  const _GuideFeedCard(this.state, {required this.maxCount});
 
-  final List<GuideModule> modules;
+  final GuideIndexState state;
+  final int maxCount;
+
+  @override
+  State<_GuideFeedCard> createState() => _GuideFeedCardState();
+}
+
+class _GuideFeedCardState extends State<_GuideFeedCard> {
+  /// View key of the selected module, kept across reloads; the first module when unknown.
+  String? _selectedView;
 
   @override
   Widget build(BuildContext context) {
     final tr = context.t.homepage.guide;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: [
-        for (final module in modules)
-          ActionChip(
-            label: Text(module.title),
-            onPressed: () async => _openGuideList(context, module.moreUrl, module.title),
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    final state = widget.state;
+    final modules = state.modules;
+    final matching = modules.where((e) => e.view == _selectedView);
+    final selected = matching.isNotEmpty ? matching.first : (modules.isNotEmpty ? modules.first : null);
+
+    final Widget body;
+    if ((state.status == GuideIndexStatus.initial || state.status == GuideIndexStatus.loading) && modules.isEmpty) {
+      body = const Padding(padding: edgeInsetsL12T12R12B12, child: CenteredCircularIndicator());
+    } else if (state.status == GuideIndexStatus.failure) {
+      body = ListTile(
+        leading: const Icon(Icons.refresh_outlined),
+        title: Text(tr.failed),
+        onTap: () async => context.read<GuideIndexCubit>().load(),
+      );
+    } else if (selected == null) {
+      body = Padding(
+        padding: edgeInsetsL16T16R16B16,
+        child: Text(tr.empty, style: textTheme.bodyMedium?.copyWith(color: colorScheme.outline)),
+      );
+    } else {
+      body = GuideModuleList(selected, maxCount: widget.maxCount);
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      shape: homeCardShape(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    context.t.homepage.guideTitle,
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (selected != null)
+                  TextButton.icon(
+                    onPressed: () async => _openGuideList(context, selected.moreUrl, selected.title),
+                    icon: const Icon(Icons.chevron_right_outlined),
+                    iconAlignment: IconAlignment.end,
+                    label: Text(tr.more),
+                  ),
+              ],
+            ),
           ),
-        ActionChip(
-          key: const ValueKey('guide-sofa'),
-          avatar: const Icon(Icons.weekend_outlined),
-          label: Text(tr.sofa),
-          onPressed: () async => _openGuideList(context, guideUrl('sofa'), tr.sofa),
-        ),
-      ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: edgeInsetsL8R8,
+            child: Row(
+              children: [
+                for (final module in modules)
+                  _GuideTab(
+                    label: module.title,
+                    selected: module == selected,
+                    onTap: () => setState(() => _selectedView = module.view),
+                  ),
+                sizedBoxW8H8,
+                ActionChip(
+                  key: const ValueKey('guide-sofa'),
+                  avatar: const Icon(Icons.weekend_outlined),
+                  label: Text(tr.sofa),
+                  onPressed: () async => _openGuideList(context, guideUrl('sofa'), tr.sofa),
+                ),
+                sizedBoxW8H8,
+              ],
+            ),
+          ),
+          Divider(height: 1, color: colorScheme.outlineVariant),
+          body,
+        ],
+      ),
     );
   }
 }
 
-/// Card of one guide module: title, 更多 button and up to [maxCount] threads.
-class GuideModuleCard extends StatelessWidget {
+/// A module tab with an underline when selected.
+class _GuideTab extends StatelessWidget {
+  const _GuideTab({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 3),
+            ),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Threads of one guide module, up to [maxCount], or the page's own empty message.
+class GuideModuleList extends StatelessWidget {
   /// Constructor.
-  const GuideModuleCard(this.module, {this.maxCount = 10, super.key});
+  const GuideModuleList(this.module, {this.maxCount = 10, super.key});
 
   /// The module to show.
   final GuideModule module;
@@ -120,47 +204,27 @@ class GuideModuleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.homepage.guide;
-    final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: edgeInsetsT8,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                sizedBoxW12H12,
-                Expanded(
-                  child: Text(module.title, style: textTheme.titleLarge, overflow: TextOverflow.ellipsis),
-                ),
-                TextButton.icon(
-                  onPressed: () async => _openGuideList(context, module.moreUrl, module.title),
-                  icon: const Icon(Icons.chevron_right_outlined),
-                  iconAlignment: IconAlignment.end,
-                  label: Text(tr.more),
-                ),
-                sizedBoxW4H4,
-              ],
-            ),
-            if (module.items.isEmpty)
-              Padding(
-                padding: edgeInsetsL12R12B12,
-                child: Text(
-                  module.emptyMessage ?? tr.empty,
-                  style: textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
-                ),
-              )
-            else ...[
-              ...module.items.take(maxCount).map(_GuideItemTile.new),
-              sizedBoxW8H8,
-            ],
-          ],
+    if (module.items.isEmpty) {
+      return Padding(
+        padding: edgeInsetsL16T16R16B16,
+        child: Text(
+          module.emptyMessage ?? tr.empty,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
         ),
-      ),
+      );
+    }
+    final items = module.items.take(maxCount).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (i, item) in items.indexed) ...[
+          if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
+          _GuideItemTile(item),
+        ],
+        sizedBoxW4H4,
+      ],
     );
   }
 }
@@ -184,7 +248,7 @@ class _GuideItemTile extends StatelessWidget {
         queryParameters: {'tid': item.tid, 'appBarTitle': item.title},
       ),
       child: Padding(
-        padding: edgeInsetsL12T4R12B4,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -194,7 +258,8 @@ class _GuideItemTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: textTheme.bodyLarge?.copyWith(
                 color: item.highlighted ? colorScheme.error : null,
-                fontWeight: item.highlighted ? FontWeight.bold : null,
+                fontWeight: item.highlighted ? FontWeight.bold : FontWeight.w500,
+                height: 1.45,
               ),
             ),
             sizedBoxW4H4,

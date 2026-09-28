@@ -2,7 +2,6 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/open_in_app/models/openable_forum_resource_model.dart';
@@ -11,7 +10,7 @@ import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
-import 'package:tsdm_client/widgets/tips.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// A button opens route to [OpenInAppPage],
 class OpenInAppPageButton extends StatelessWidget {
@@ -162,86 +161,100 @@ class _OpenInAppPageState extends State<OpenInAppPage> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.openInAppPage;
+    final colorScheme = Theme.of(context).colorScheme;
+    final isUrl = availableResources[currentResourceIndex] is UrlResource;
     return Scaffold(
       appBar: AppBar(title: Text(tr.title)),
-      body: ListView(
-        padding: context.safePadding().add(edgeInsetsL12R12),
-        children: [
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: availableResources
-                .mapIndexed(
-                  (idx, v) => FilterChip(
-                    label: Text(v.typename(context)),
-                    onSelected: (selected) => selected
-                        ? setState(() {
-                            currentResourceIndex = idx;
-                            // A route recognized as another kind of resource is not what the input means now.
-                            currentRoute = null;
-                          })
-                        : null,
-                    selected: currentResourceIndex == idx,
+      // One form surface centered like the other forms: kind of input, what it accepts, the field, the actions.
+      body: SafeArea(
+        top: false,
+        child: AppCenteredList(
+          maxWidth: appFormMaxWidth,
+          builder: (context, padding, _) => ListView(
+            padding: padding.copyWith(top: 12, bottom: 24).add(context.safePadding()),
+            children: [
+              AppFormSection(
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: availableResources
+                        .mapIndexed(
+                          (idx, v) => FilterChip(
+                            label: Text(v.typename(context)),
+                            onSelected: (selected) => selected
+                                ? setState(() {
+                                    currentResourceIndex = idx;
+                                    // A route recognized as another kind of resource is not what the input means now.
+                                    currentRoute = null;
+                                  })
+                                : null,
+                            selected: currentResourceIndex == idx,
+                          ),
+                        )
+                        .toList(),
                   ),
-                )
-                .toList(),
-          ),
-          sizedBoxW8H8,
-          Tips(availableResources[currentResourceIndex].detail(context), enablePadding: false),
-          sizedBoxW16H16,
-          Form(
-            key: formKey,
-            child: TextFormField(
-              controller: targetController,
-              autofocus: true,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(labelText: availableResources[currentResourceIndex].typename(context)),
-              onChanged: (_) => currentRoute = null,
-              // Only [currentRoute] is updated here, it is not part of the build: no setState.
-              validator: (v) => availableResources[currentResourceIndex].validator()(context, v).match(
-                (e) {
-                  currentRoute = null;
-                  return e;
-                },
-                (v) {
-                  currentRoute = v;
-                  return null;
-                },
-              ),
-            ),
-          ),
-          sizedBoxW24H24,
-          FilledButton.icon(
-            label: Text(tr.open),
-            icon: const Icon(Icons.open_in_new),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) {
-                return;
-              }
-              if (currentRoute == null) {
-                return;
-              }
+                  AppNoticeBanner(message: availableResources[currentResourceIndex].detail(context)),
+                  Form(
+                    key: formKey,
+                    child: TextFormField(
+                      controller: targetController,
+                      autofocus: true,
+                      keyboardType: TextInputType.url,
+                      decoration: appFieldDecoration(
+                        label: availableResources[currentResourceIndex].typename(context),
+                        icon: isUrl ? Icons.link_outlined : Icons.tag,
+                      ),
+                      onChanged: (_) => currentRoute = null,
+                      // Only [currentRoute] is updated here, it is not part of the build: no setState.
+                      validator: (v) => availableResources[currentResourceIndex].validator()(context, v).match(
+                        (e) {
+                          currentRoute = null;
+                          return e;
+                        },
+                        (v) {
+                          currentRoute = v;
+                          return null;
+                        },
+                      ),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    label: Text(tr.open),
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) {
+                        return;
+                      }
+                      if (currentRoute == null) {
+                        return;
+                      }
 
-              // 手动点击也使用 pushReplacementNamed，保证路由栈干净
-              context.pushReplacementNamed(
-                currentRoute!.screenPath,
-                pathParameters: currentRoute!.pathParameters,
-                queryParameters: currentRoute!.queryParameters,
-              );
-            },
+                      // 手动点击也使用 pushReplacementNamed，保证路由栈干净
+                      context.pushReplacementNamed(
+                        currentRoute!.screenPath,
+                        pathParameters: currentRoute!.pathParameters,
+                        queryParameters: currentRoute!.queryParameters,
+                      );
+                    },
+                  ),
+                  if (isUrl) ...[
+                    OutlinedButton.icon(
+                      key: const ValueKey('open-in-app-browser'),
+                      label: Text(tr.openInBrowser),
+                      icon: const Icon(Icons.open_in_browser),
+                      onPressed: _launchingBrowser ? null : _openInBrowser,
+                    ),
+                    Text(
+                      tr.browserHint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
-          if (availableResources[currentResourceIndex] is UrlResource) ...[
-            sizedBoxW8H8,
-            OutlinedButton.icon(
-              key: const ValueKey('open-in-app-browser'),
-              label: Text(tr.openInBrowser),
-              icon: const Icon(Icons.open_in_browser),
-              onPressed: _launchingBrowser ? null : _openInBrowser,
-            ),
-            sizedBoxW8H8,
-            Tips(tr.browserHint, enablePadding: false),
-          ],
-        ],
+        ),
       ),
     );
   }

@@ -10,6 +10,7 @@ import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/section_list_tile.dart';
 import 'package:tsdm_client/widgets/section_title_text.dart';
@@ -29,42 +30,56 @@ class _SwitchUserGroupPageState extends State<SwitchUserGroupPage> with LoggerMi
     final colorScheme = Theme.of(context).colorScheme;
     final bodyTheme = Theme.of(context).textTheme.bodyMedium;
 
-    return ListView(
-      children: [
-        SectionTitleText(tr.currentGroup),
-        SectionListTile(
-          title: Text(state.currentUserGroup, style: bodyTheme?.copyWith(color: colorScheme.secondary)),
-        ),
-        if (state.status == SwitchUserGroupStatus.switching)
-          Row(children: [SectionTitleText(tr.availableGroups), sizedCircularProgressIndicator])
-        else
-          SectionTitleText(tr.availableGroups),
-        if (state.availableGroups.isEmpty)
-          SectionListTile(
-            title: Text(tr.nonAvailable, style: bodyTheme?.copyWith(color: colorScheme.outline)),
-          )
-        else
-          ...state.availableGroups.map(
-            (e) => SectionListTile(
-              title: Text(e.name),
-              subtitle: Text('GID: ${e.gid}'),
-              enabled: state.status != SwitchUserGroupStatus.switching,
-              onTap: () async {
-                final confirmed = await showQuestionDialog(
-                  context: context,
-                  title: tr.title,
-                  message: tr.confirmMessage(from: state.currentUserGroup, to: e.name),
-                );
-                if (confirmed != true || !context.mounted) {
-                  return;
-                }
-                context.read<SwitchUserGroupBloc>().add(
-                  SwitchUserGroupRunSwitchRequested(e.name, e.gid, state.formHash),
-                );
-              },
+    return AppCenteredList(
+      maxWidth: appFormMaxWidth,
+      builder: (context, side, _) => ListView(
+        padding: side.copyWith(top: 8, bottom: 24),
+        children: [
+          SectionTitleText(tr.currentGroup),
+          AppSurface(
+            padding: EdgeInsets.zero,
+            child: SectionListTile(
+              title: Text(state.currentUserGroup, style: bodyTheme?.copyWith(color: colorScheme.secondary)),
             ),
           ),
-      ],
+          if (state.status == SwitchUserGroupStatus.switching)
+            Row(children: [SectionTitleText(tr.availableGroups), sizedCircularProgressIndicator])
+          else
+            SectionTitleText(tr.availableGroups),
+          AppSurface(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                if (state.availableGroups.isEmpty)
+                  SectionListTile(
+                    title: Text(tr.nonAvailable, style: bodyTheme?.copyWith(color: colorScheme.outline)),
+                  )
+                else
+                  ...state.availableGroups.map(
+                    (e) => SectionListTile(
+                      title: Text(e.name),
+                      subtitle: Text('GID: ${e.gid}'),
+                      enabled: state.status != SwitchUserGroupStatus.switching,
+                      onTap: () async {
+                        final confirmed = await showQuestionDialog(
+                          context: context,
+                          title: tr.title,
+                          message: tr.confirmMessage(from: state.currentUserGroup, to: e.name),
+                        );
+                        if (confirmed != true || !context.mounted) {
+                          return;
+                        }
+                        context.read<SwitchUserGroupBloc>().add(
+                          SwitchUserGroupRunSwitchRequested(e.name, e.gid, state.formHash),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -9,7 +9,46 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/widgets/adaptive_ink_response.dart';
-import 'package:tsdm_client/widgets/attr_block.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
+
+/// A score of a rate: attribute name and signed value; positive in the primary color, negative in the error color,
+/// zero dimmed.
+class RateScoreChip extends StatelessWidget {
+  /// Constructor.
+  const RateScoreChip({required this.name, required this.value, super.key});
+
+  /// Attribute name.
+  final String name;
+
+  /// Score value.
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final valueColor = value > 0
+        ? colorScheme.primary
+        : value < 0
+        ? colorScheme.error
+        : colorScheme.outline;
+    return AppInsetBlock(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '$name '),
+            TextSpan(
+              text: '${value > 0 ? "+" : ""}$value',
+              style: TextStyle(color: valueColor, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        style: textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
 
 /// Actions in popup menu.
 enum _MenuAction {
@@ -118,46 +157,48 @@ class _FastRateTemplateCardState extends State<FastRateTemplateCard> {
   @override
   Widget build(BuildContext context) {
     final tr = context.t.fastRateTemplate;
-    final nameStyle = Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.outline);
-    final valueStyle = Theme.of(context).textTheme.labelMedium;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Card(
-      clipBehavior: Clip.hardEdge,
+      clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: AdaptiveInkResponse(
         onTapUp: widget.allowEdit ? (pos) async => openMenu(pos.globalPosition) : (_) async => popBack(),
         onAdaptiveContextTap: (pos) => openMenu(pos.globalPosition),
         child: Padding(
-          padding: edgeInsetsL12T12R12B12,
+          padding: edgeInsetsL16T12R16B12,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                rateTemplate.name,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+              Row(
+                children: [
+                  const AppIconTile(Icons.star_rate_outlined, size: 32),
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: Text(
+                      rateTemplate.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (widget.allowEdit) Icon(Icons.more_vert, size: 18, color: colorScheme.outline),
+                ],
               ),
               sizedBoxW8H8,
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
-                  AttrBlock(name: tr.ww, value: '${rateTemplate.ww}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(name: tr.tsb, value: '${rateTemplate.tsb}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(name: tr.xc, value: '${rateTemplate.xc}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(name: tr.tr, value: '${rateTemplate.tr}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(name: tr.fh, value: '${rateTemplate.fh}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(name: tr.jl, value: '${rateTemplate.jl}', nameStyle: nameStyle, valueStyle: valueStyle),
-                  AttrBlock(
-                    name: tr.special,
-                    value: '${rateTemplate.special}',
-                    nameStyle: nameStyle,
-                    valueStyle: valueStyle,
-                  ),
-                  AttrBlock(
-                    name: tr.special2,
-                    value: '${rateTemplate.special2}',
-                    nameStyle: nameStyle,
-                    valueStyle: valueStyle,
-                  ),
+                  RateScoreChip(name: tr.ww, value: rateTemplate.ww),
+                  RateScoreChip(name: tr.tsb, value: rateTemplate.tsb),
+                  RateScoreChip(name: tr.xc, value: rateTemplate.xc),
+                  RateScoreChip(name: tr.tr, value: rateTemplate.tr),
+                  RateScoreChip(name: tr.fh, value: rateTemplate.fh),
+                  RateScoreChip(name: tr.jl, value: rateTemplate.jl),
+                  RateScoreChip(name: tr.special, value: rateTemplate.special),
+                  RateScoreChip(name: tr.special2, value: rateTemplate.special2),
                 ],
               ),
             ],

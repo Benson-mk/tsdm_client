@@ -13,6 +13,7 @@ import 'package:tsdm_client/features/thread/v1/widgets/operation_log_card.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// A widget that retrieve data from network and supports refresh.
 class PostList extends StatefulWidget {
@@ -43,7 +44,7 @@ class PostList extends StatefulWidget {
   /// Build a list of [Widget].
   final Widget Function(BuildContext, Post) widgetBuilder;
 
-  /// Use [Divider] instead of [SizedBox] between list items.
+  /// Floors are separate rounded surfaces; a wider gap between them when true, a thin one otherwise.
   final bool useDivider;
 
   /// List of [Post] content.
@@ -220,20 +221,25 @@ class _PostListState extends State<PostList> with LoggerMixin {
       itemBuilder: (context, index) {
         final post = widget.postList[index];
         // Each floor paints into its own layer, so scrolling moves layers instead of repainting every card.
-        final card = RepaintBoundary(child: widget.widgetBuilder(context, post));
+        final card = RepaintBoundary(child: _FloorSurface(child: widget.widgetBuilder(context, post)));
         // Adding or removing the key is a structural change: that floor is rebuilt into a new element on the next
         // build after `initialPostID` changes (the thread page drops its scroll target one frame after a reload). A
         // card must therefore not rely on its own `context` across an async gap that may span such a rebuild; the
         // edit flow takes what it needs before opening the editor (GitHub #76).
         return post.postID == '${widget.initialPostID}' ? KeyedSubtree(key: _initialPostKey, child: card) : card;
       },
-      separatorBuilder: (context, index) => widget.useDivider ? const Divider(thickness: 0.5) : sizedBoxW4H4,
+      separatorBuilder: (context, index) => widget.useDivider ? sizedBoxW8H8 : sizedBoxW4H4,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    _refreshController.finishLoad();
+    // The bloc reloads the thread and this list is rebuilt with the result: both indicators are done by then. The
+    // refresh one used to be left "processing", so after a pull to refresh a blank of its height stayed above the
+    // title (feedback 113).
+    _refreshController
+      ..finishRefresh()
+      ..finishLoad();
 
     return EasyRefresh.builder(
       scrollBehaviorBuilder: (physics) {
@@ -274,18 +280,37 @@ class _PostListState extends State<PostList> with LoggerMixin {
               const HeaderLocator.sliver(),
               if (widget.latestModAct != null && widget.latestModAct!.isNotEmpty && widget.threadID != null)
                 SliverToBoxAdapter(
-                  child: Align(
-                    alignment: Alignment.bottomRight,
-                    child: Padding(
-                      padding: edgeInsetsL12T4R12B4,
+                  // Same column and side room as the floors below it.
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      MediaQuery.sizeOf(context).width < 600 ? 6 : 16,
+                      8,
+                      MediaQuery.sizeOf(context).width < 600 ? 6 : 16,
+                      0,
+                    ),
+                    child: AppContentWidth(
+                      maxWidth: appReadingMaxWidth,
                       child: OperationLogCard(latestAction: widget.latestModAct!, tid: widget.threadID!),
                     ),
                   ),
                 ),
-              SliverPadding(
-                padding: edgeInsetsL12T4R12B4,
-                sliver: SliverToBoxAdapter(
-                  child: Text(widget.title ?? '', style: Theme.of(context).textTheme.titleLarge),
+              SliverToBoxAdapter(
+                child: AppContentWidth(
+                  maxWidth: appReadingMaxWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    // Full width: the column centres its child, so a short title used to sit in the middle while a
+                    // long one wrapped from the left (feedback 113). Every title starts at the left.
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        widget.title ?? '',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, height: 1.35),
+                      ),
+                    ),
+                  ),
                 ),
               ),
               _buildPostList(),
@@ -293,6 +318,26 @@ class _PostListState extends State<PostList> with LoggerMixin {
           ),
         );
       },
+    );
+  }
+}
+
+/// A floor of the thread as a rounded surface, at most [appReadingMaxWidth] wide so lines stay readable on desktop.
+class _FloorSurface extends StatelessWidget {
+  const _FloorSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // Phones keep most of the width for the text.
+    final side = MediaQuery.sizeOf(context).width < 600 ? 6.0 : 16.0;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: side),
+      child: AppContentWidth(
+        maxWidth: appReadingMaxWidth,
+        child: Card(margin: EdgeInsets.zero, shape: appSurfaceShape(context), child: child),
+      ),
     );
   }
 }

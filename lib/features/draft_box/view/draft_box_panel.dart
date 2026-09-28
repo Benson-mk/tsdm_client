@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/constants/layout.dart';
+import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/draft_box/cubit/draft_cubit.dart';
@@ -13,6 +15,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// The drafts tab of My threads. Its loading failures do not affect other tabs.
 class DraftBoxPanel extends StatefulWidget {
@@ -82,40 +85,83 @@ class _DraftBoxPanelState extends State<DraftBoxPanel> {
     bloc: _cubit,
     builder: (context, state) {
       final tr = context.t.draftBox;
+      final colorScheme = Theme.of(context).colorScheme;
+      final textTheme = Theme.of(context).textTheme;
       return RefreshIndicator(
         onRefresh: _cubit.load,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(12),
-          children: [
-            if (state.loginRequired)
-              Text(tr.loginRequired)
-            else ...[
-              if (state.loading) const LinearProgressIndicator(),
-              if (state.failed) Padding(padding: const EdgeInsets.all(16), child: Text(tr.loadFailed)),
-              if (!state.loading && state.entries.isEmpty && !state.failed)
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(tr.empty, textAlign: TextAlign.center),
-                ),
-              for (final entry in state.entries)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.edit_note),
-                    title: Text(entry.title),
-                    subtitle: Text(entry.forumName),
-                    trailing: state.opening == entry.tid
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.chevron_right),
+        child: AppCenteredList(
+          builder: (context, horizontal, width) => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: horizontal.add(const EdgeInsets.symmetric(vertical: 12)).add(context.safePadding()),
+            children: [
+              if (state.loginRequired)
+                AppStateView(icon: Icons.login_outlined, message: tr.loginRequired, scrollable: false)
+              else ...[
+                if (state.loading) ...[
+                  ClipRRect(borderRadius: BorderRadius.circular(2), child: const LinearProgressIndicator()),
+                  sizedBoxW8H8,
+                ],
+                if (state.failed) ...[
+                  AppNoticeBanner(tone: AppNoticeTone.error, message: tr.loadFailed),
+                  sizedBoxW8H8,
+                ],
+                if (!state.loading && state.entries.isEmpty && !state.failed)
+                  AppStateView(icon: Icons.edit_note_outlined, message: tr.empty, scrollable: false),
+                for (final entry in state.entries) ...[
+                  AppSurface(
                     onTap: state.loading || state.opening != null ? null : () => _open(entry),
+                    child: Row(
+                      children: [
+                        const AppIconTile(Icons.edit_note),
+                        sizedBoxW12H12,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                entry.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              if (entry.forumName.isNotEmpty) ...[
+                                sizedBoxW4H4,
+                                Wrap(
+                                  children: [AppInfoPill(icon: Icons.forum_outlined, label: entry.forumName)],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        sizedBoxW8H8,
+                        if (state.opening == entry.tid)
+                          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        else
+                          Icon(Icons.chevron_right, color: colorScheme.outline),
+                      ],
+                    ),
                   ),
-                ),
-              if (!state.loading && state.nextPage != null)
-                TextButton(onPressed: () => _cubit.load(more: true), child: Text(tr.loadMore))
-              else if (!state.loading)
-                TextButton(onPressed: _cubit.load, child: Text(tr.refresh)),
+                  appListSeparator,
+                ],
+                if (!state.loading && state.nextPage != null)
+                  Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.expand_more),
+                      onPressed: () => _cubit.load(more: true),
+                      label: Text(tr.loadMore),
+                    ),
+                  )
+                else if (!state.loading)
+                  Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.refresh_outlined),
+                      onPressed: _cubit.load,
+                      label: Text(tr.refresh),
+                    ),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       );
     },

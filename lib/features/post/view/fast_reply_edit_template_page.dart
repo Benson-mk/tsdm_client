@@ -7,6 +7,7 @@ import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/bbcode_editor_controller.dart';
 import 'package:tsdm_client/extensions/fp.dart';
+import 'package:tsdm_client/features/editor/widgets/editor_frame.dart';
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/editor/widgets/toolbar.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -18,6 +19,7 @@ import 'package:tsdm_client/utils/bbcode/spoiler_normalizer.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Type of editing the fast reply template.
@@ -125,41 +127,30 @@ class _FastReplyTemplateEditPageState extends State<FastReplyTemplateEditPage> w
     );
   }
 
-  /// Build the row to control a
-  Widget _buildControlRow(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                sizedBoxW4H4,
-                // Only control expand or collapse on mobile platforms.
-                // For desktop, always expand the toolbar.
-                if (isMobile)
-                  IconButton(
-                    icon: const Icon(Icons.expand),
-                    tooltip: context.t.bbcodeEditor.toolbar,
-                    selectedIcon: Icon(Icons.expand_outlined, color: Theme.of(context).primaryColor),
-                    isSelected: fullScreen,
-                    onPressed: () {
-                      setState(() {
-                        fullScreen = !fullScreen;
-                      });
-                      if (fullScreen) {
-                        panelController.updatePanelType(ChatBottomPanelType.other, data: _BottomPanelType.toolbar);
-                      } else {
-                        panelController.updatePanelType(ChatBottomPanelType.keyboard);
-                      }
-                    },
-                  ),
-                sizedBoxW4H4,
-              ],
-            ),
+  /// Build the row of editor controls under the writing area.
+  Widget _buildControlRow(BuildContext context, EdgeInsets horizontalPadding) {
+    return EditorControlBar(
+      padding: horizontalPadding.add(edgeInsetsT4B4),
+      leading: [
+        // Only control expand or collapse on mobile platforms.
+        // For desktop, always expand the toolbar.
+        if (isMobile)
+          IconButton(
+            icon: const Icon(Icons.expand),
+            tooltip: context.t.bbcodeEditor.toolbar,
+            selectedIcon: Icon(Icons.expand_outlined, color: Theme.of(context).primaryColor),
+            isSelected: fullScreen,
+            onPressed: () {
+              setState(() {
+                fullScreen = !fullScreen;
+              });
+              if (fullScreen) {
+                panelController.updatePanelType(ChatBottomPanelType.other, data: _BottomPanelType.toolbar);
+              } else {
+                panelController.updatePanelType(ChatBottomPanelType.keyboard);
+              }
+            },
           ),
-        ),
       ],
     );
   }
@@ -174,7 +165,12 @@ class _FastReplyTemplateEditPageState extends State<FastReplyTemplateEditPage> w
         initialDelta: parseBBCodeTextToDelta(widget.initialValue?.data ?? '\n'),
       );
     } else {
-      dataController = buildBBCodeEditorController(initialText: switch (widget.initialValue?.data) { final d? => normalizeBlockMarkerNesting(d), null => null });
+      dataController = buildBBCodeEditorController(
+        initialText: switch (widget.initialValue?.data) {
+          final d? => normalizeBlockMarkerNesting(d),
+          null => null,
+        },
+      );
     }
     focusNode = FocusNode();
     fullScreen = isDesktop;
@@ -197,7 +193,7 @@ class _FastReplyTemplateEditPageState extends State<FastReplyTemplateEditPage> w
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           error('failed to load all fast reply templates: ${snapshot.error}');
-          return Center(child: Text(context.t.general.failedToLoad));
+          return AppStateView(error: true, icon: Icons.error_outline, message: context.t.general.failedToLoad);
         }
 
         if (!snapshot.hasData) {
@@ -207,78 +203,79 @@ class _FastReplyTemplateEditPageState extends State<FastReplyTemplateEditPage> w
         final result = snapshot.data!;
         if (result.isLeft()) {
           error('failed to unpack fast reply all templates result: ${result.unwrapErr()}');
-          return Center(child: Text(context.t.general.failedToLoad));
+          return AppStateView(error: true, icon: Icons.error_outline, message: context.t.general.failedToLoad);
         }
 
         final allTemplates = result.unwrap();
 
         return Form(
           key: _formKey,
-          child: Column(
-            children: [
-              if (widget.editType == FastReplyTemplateEditType.create)
-                Align(
-                  child: SwitchListTile(
-                    title: Text(tr.editPageOverride),
-                    value: allowOverride,
-                    onChanged: (v) => setState(() => allowOverride = v),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontal = appCenteredPadding(constraints.maxWidth, maxWidth: appReadingMaxWidth);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Template name.
+                  Padding(
+                    padding: horizontal.add(edgeInsetsT12),
+                    child: TextFormField(
+                      controller: nameController,
+                      decoration: InputDecoration(labelText: tr.name),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) {
+                          return tr.editPageNameNotEmpty;
+                        }
+
+                        // Duplicate check.
+                        if (widget.editType == FastReplyTemplateEditType.create && !allowOverride) {
+                          // Uid equality is ignored here.
+                          if (allTemplates.any((e) => e.name == v)) {
+                            return tr.editPageAlreadyExists;
+                          }
+                        }
+
+                        return null;
+                      },
+                    ),
                   ),
-                ),
-              // Template name.
-              Padding(
-                padding: edgeInsetsL8R8.add(edgeInsetsT8),
-                child: TextFormField(
-                  controller: nameController,
-                  decoration: InputDecoration(labelText: tr.name),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return tr.editPageNameNotEmpty;
-                    }
-
-                    // Duplicate check.
-                    if (widget.editType == FastReplyTemplateEditType.create && !allowOverride) {
-                      // Uid equality is ignored here.
-                      if (allTemplates.any((e) => e.name == v)) {
-                        return tr.editPageAlreadyExists;
-                      }
-                    }
-
-                    return null;
-                  },
-                ),
-              ),
-              sizedBoxW4H4,
-              Expanded(
-                child: Padding(
-                  padding: isMobile ? edgeInsetsL16R16 : edgeInsetsL4R4,
-                  child: RichEditor(autoFocus: true, controller: dataController, editorFocusNode: focusNode),
-                ),
-              ),
-              if (isDesktop)
-                // Expand and can not replace with Align.
-                Row(
-                  children: [
-                    Expanded(
-                      child: ColoredBox(
-                        color: Theme.of(context).colorScheme.surfaceContainerLow,
-                        child: Padding(
-                          padding: edgeInsetsL4R4.add(edgeInsetsT4),
-                          child: EditorToolbar(
-                            bbcodeController: dataController,
-                            disabledFeatures: disabledFeatures,
-                            editorFocusNode: focusNode,
-                          ),
+                  // Only offered while drafting a new template: overriding one with the same name.
+                  if (widget.editType == FastReplyTemplateEditType.create)
+                    Padding(
+                      padding: horizontal,
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(tr.editPageOverride),
+                        value: allowOverride,
+                        onChanged: (v) => setState(() => allowOverride = v),
+                      ),
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: horizontal.add(const EdgeInsets.symmetric(vertical: 12)),
+                      child: EditorFrame(
+                        focusNode: focusNode,
+                        child: RichEditor(autoFocus: true, controller: dataController, editorFocusNode: focusNode),
+                      ),
+                    ),
+                  ),
+                  if (isDesktop)
+                    ColoredBox(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      child: Padding(
+                        padding: horizontal.add(edgeInsetsT4),
+                        child: EditorToolbar(
+                          bbcodeController: dataController,
+                          disabledFeatures: disabledFeatures,
+                          editorFocusNode: focusNode,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ColoredBox(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: Padding(padding: edgeInsetsR4.add(edgeInsetsB4), child: _buildControlRow(context)),
-              ),
-              if (isMobile) _buildMobileToolbar(context),
-            ],
+                  _buildControlRow(context, horizontal),
+                  if (isMobile) _buildMobileToolbar(context),
+                ],
+              );
+            },
           ),
         );
       },

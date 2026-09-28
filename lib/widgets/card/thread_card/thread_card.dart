@@ -23,6 +23,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/themes/widget_themes.dart';
 import 'package:tsdm_client/widgets/adaptive_ink_response.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/quoted_text.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
@@ -266,52 +267,91 @@ class _CardLayout extends StatelessWidget {
       fontSize: Theme.of(context).textTheme.labelMedium?.fontSize,
     );
 
+    final textTheme = Theme.of(context).textTheme;
+    final nameStyle = textTheme.titleSmall?.merge(authorNameStyle);
+    // Marks at the end of the head: replied by the current account, thread states, thread type (or forum) tag.
+    final marks = <Widget>[
+      if (replied) _buildRepliedMark(context),
+      if (stateSet != null) ...stateSet!.map((e) => Icon(e.icon, size: 16)),
+      if (threadType?.name.isNotEmpty ?? false) _buildTypeTag(context, threadType!.name),
+    ];
+
+    // Head of the card: who (avatar and name, both open the user) or, without an author, the forum; then when and
+    // where on one wrapping line; the marks stay at the end. Replaces a ListTile whose fixed three line layout cut
+    // the forum name with a large font. The settings of the card (highlighted name, recent time) apply as before.
+    final Widget leading;
+    final Widget name;
     if (author != null) {
-      return ListTile(
-        leading: GestureDetector(
-          onTap: disableTap ? null : () async => context.dispatchAsUrl(author!.url),
-          child: _buildAvatar(context),
-        ),
-        title: Row(
-          children: [
-            GestureDetector(
-              onTap: disableTap ? null : () async => context.dispatchAsUrl(author!.url),
-              child: SingleLineText(author!.name, style: authorNameStyle),
-            ),
-            const Spacer(),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (publishTime != null) SingleLineText(publishTime!.yyyyMMDD(), style: timeStyle),
-            if (forum != null) SingleLineText(forum!, style: forumNameStyle),
-          ],
-        ),
-        trailing: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (replied) _buildRepliedMark(context),
-            if (stateSet != null) ...stateSet!.map((e) => Icon(e.icon, size: 16)),
-            Text(threadType?.name ?? ''),
-          ].insertBetween(sizedBoxW4H4),
+      Future<void> openAuthor() async => context.dispatchAsUrl(author!.url);
+      leading = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: disableTap ? null : openAuthor,
+        child: _buildAvatar(context),
+      );
+      name = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: disableTap ? null : openAuthor,
+        child: SingleLineText(author!.name, style: nameStyle),
+      );
+    } else {
+      final colorScheme = Theme.of(context).colorScheme;
+      leading = Tooltip(
+        message: context.t.myThreadPage.forum,
+        child: AppIconTile(
+          Icons.forum_outlined,
+          color: colorScheme.secondaryContainer,
+          foregroundColor: colorScheme.onSecondaryContainer,
         ),
       );
+      name = SingleLineText('$forum', style: nameStyle);
     }
+    final meta = <Widget>[
+      if (publishTime != null) SingleLineText(publishTime!.yyyyMMDD(), style: timeStyle),
+      // The forum is the title of the head already when there is no author.
+      if (author != null && forum != null) SingleLineText(forum!, style: forumNameStyle),
+    ];
 
-    return ListTile(
-      leading: Chip(label: Text(context.t.myThreadPage.forum)),
-      title: Text('$forum', style: authorNameStyle),
-      subtitle: publishTime != null ? SingleLineText(publishTime!.yyyyMMDD(), style: timeStyle) : null,
-      trailing: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (replied) _buildRepliedMark(context),
-          if (stateSet != null) ...stateSet!.map((e) => Icon(e.icon, size: 16)),
-          Text(threadType?.name ?? ''),
-        ].insertBetween(sizedBoxW4H4),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+      child: Row(
+        children: [
+          leading,
+          sizedBoxW12H12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                name,
+                if (meta.isNotEmpty) Wrap(spacing: 8, runSpacing: 2, children: meta),
+              ],
+            ),
+          ),
+          if (marks.isNotEmpty) ...[
+            sizedBoxW8H8,
+            Row(mainAxisSize: MainAxisSize.min, children: marks.insertBetween(sizedBoxW4H4)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Thread type (or forum, for the latest threads) as a small tag, like the forum tags of the homepage guide.
+  Widget _buildTypeTag(BuildContext context, String name) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 140),
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(6)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSecondaryContainer),
+          ),
+        ),
       ),
     );
   }
@@ -342,11 +382,16 @@ class _CardLayout extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
+                  // The thread title leads the card, as in the homepage guide; forum set colors and weights stay.
                   child: Text(
                     title,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: css?.color, fontWeight: css?.fontWeight),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: css?.color,
+                      fontWeight: css?.fontWeight ?? FontWeight.w500,
+                      height: 1.45,
+                    ),
                   ),
                 ),
               ],
@@ -363,7 +408,7 @@ class _CardLayout extends StatelessWidget {
             showLastReplyAuthor: showLastReplyAuthor,
             highlightInfoRow: highlightInfoRow,
           ),
-        ].insertBetween(sizedBoxW12H12),
+        ].insertBetween(sizedBoxW4H4),
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
@@ -31,43 +32,67 @@ class OperationLogCard extends StatelessWidget {
         return RootPage(
           DialogPaths.showOperationLog,
           CustomAlertDialog.future(
-            title: Text(tr.title),
+            title: Row(
+              children: [
+                const AppIconTile(Icons.manage_history_outlined, size: 36),
+                sizedBoxW12H12,
+                Expanded(child: Text(tr.title)),
+              ],
+            ),
             future: context.read<ThreadRepository>().fetchOperationLog(tid).run(),
             successBuilder: (context, data) {
               if (data.isLeft()) {
-                return Text(context.t.general.failedToLoad);
+                return AppNoticeBanner(tone: AppNoticeTone.error, message: context.t.general.failedToLoad);
               }
 
+              final colorScheme = Theme.of(context).colorScheme;
+              final textTheme = Theme.of(context).textTheme;
+              // One block per operation: operator (opens the profile), time, and the action in the primary color.
               final content = data.unwrap().map(
-                (e) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  isThreeLine: true,
-                  leading: GestureDetector(
-                    onTap: () async =>
-                        context.pushNamed(ScreenPaths.profile, queryParameters: {'username': e.username}),
-                    child: HeroUserAvatar(username: e.username, avatarUrl: null, disableHero: true),
-                  ),
-                  title: GestureDetector(
-                    onTap: () async =>
-                        context.pushNamed(ScreenPaths.profile, queryParameters: {'username': e.username}),
-                    child: Text(e.username),
-                  ),
-                  subtitle: Column(
+                (e) => AppInsetBlock(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SingleLineText(e.time.yyyyMMDDHHMMSS(), style: Theme.of(context).textTheme.labelMedium),
-                      SingleLineText(
-                        '${e.action}${e.duration != null ? "（${e.duration}）" : ""}',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+                      GestureDetector(
+                        onTap: () async =>
+                            context.pushNamed(ScreenPaths.profile, queryParameters: {'username': e.username}),
+                        child: HeroUserAvatar(username: e.username, avatarUrl: null, disableHero: true),
+                      ),
+                      sizedBoxW12H12,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () async =>
+                                  context.pushNamed(ScreenPaths.profile, queryParameters: {'username': e.username}),
+                              child: Text(
+                                e.username,
+                                style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            SingleLineText(
+                              e.time.yyyyMMDDHHMMSS(),
+                              style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                            ),
+                            sizedBoxW4H4,
+                            Text(
+                              '${e.action}${e.duration != null ? "（${e.duration}）" : ""}',
+                              style: textTheme.bodyMedium?.copyWith(color: colorScheme.primary),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               );
 
-              return Column(children: content.toList());
+              return Column(
+                spacing: 8,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: content.toList(),
+              );
             },
           ),
         );
@@ -77,21 +102,27 @@ class OperationLogCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.hardEdge,
-      shape: const OutlineInputBorder(borderSide: BorderSide.none),
+    // A tappable inset row: the latest moderation, the full log behind the chevron.
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(appInnerRadius),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () async => _showOperationLogDialog(context, tid),
         child: Padding(
-          padding: edgeInsetsL12T4R12B4,
+          padding: edgeInsetsL12T8R12B8,
           child: Row(
             children: [
-              Icon(Icons.manage_history_outlined, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              Icon(Icons.manage_history_outlined, size: 18, color: colorScheme.primary),
               sizedBoxW8H8,
               Expanded(
-                child: Text(latestAction, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                child: Text(
+                  latestAction,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
               ),
+              Icon(Icons.chevron_right, size: 18, color: colorScheme.outline),
             ],
           ),
         ),

@@ -10,6 +10,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/widgets/adaptive_ink_response.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Actions in popup menu.
 enum _MenuAction {
@@ -141,8 +142,10 @@ class _FastReplyTemplateCardState extends State<FastReplyTemplateCard> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Card(
-      clipBehavior: Clip.hardEdge,
+      clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: AdaptiveInkResponse(
         onTapUp: switch (widget.onTap) {
@@ -156,15 +159,34 @@ class _FastReplyTemplateCardState extends State<FastReplyTemplateCard> {
           .openMenu => (pos) async => openMenu(pos.globalPosition),
         },
         child: Padding(
-          padding: edgeInsetsL12T12R12B12,
+          padding: edgeInsetsL16T12R16B12,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                replyTemplate.name,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+              Row(
+                children: [
+                  const AppIconTile(Icons.quickreply_outlined, size: 32),
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: Text(
+                      replyTemplate.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (widget.allowEdit) Icon(Icons.more_vert, size: 18, color: colorScheme.outline),
+                ],
               ),
               sizedBoxW8H8,
-              Text(maxLines: 3, replyTemplate.data.truncate(40, ellipsis: true)),
+              AppInsetBlock(
+                child: Text(
+                  replyTemplate.data.truncate(120, ellipsis: true),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
             ],
           ),
         ),

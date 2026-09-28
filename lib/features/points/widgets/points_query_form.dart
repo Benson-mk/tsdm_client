@@ -9,6 +9,7 @@ import 'package:tsdm_client/features/points/models/models.dart';
 import 'package:tsdm_client/features/points/repository/model/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
 
 /// Form to make the user points changelog query filter.
@@ -151,69 +152,80 @@ final class _PointsQueryFormState extends State<PointsQueryForm> {
       );
     }
 
+    final extType = _picker(
+      label: context.t.pointsPage.changelogTab.extType,
+      icon: Icons.monetization_on_outlined,
+      value: pointsType?.name ?? '',
+      onTap: () async => pickExtType(context),
+    );
+    final change = _picker(
+      label: context.t.pointsPage.changelogTab.changeType,
+      icon: Icons.ssid_chart_outlined,
+      value: changeType?.name ?? '',
+      onTap: () async => pickChangeType(context),
+    );
     return [
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () async => pickExtType(context),
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: context.t.pointsPage.changelogTab.extType,
-                  prefixIcon: const Icon(Icons.monetization_on_outlined),
-                  suffixIcon: const Icon(Icons.arrow_drop_down_outlined),
-                ),
-                child: Text(pointsType?.name ?? ''),
+      // Side by side while both labels fit, stacked on narrow screens or with large fonts.
+      LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth >= 480 * MediaQuery.textScalerOf(context).scale(1)
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: extType),
+                  sizedBoxW8H8,
+                  Expanded(child: change),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [extType, sizedBoxW12H12, change],
               ),
-            ),
-          ),
-          sizedBoxW4H4,
-          Expanded(
-            child: GestureDetector(
-              onTap: () async => pickChangeType(context),
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: context.t.pointsPage.changelogTab.changeType,
-                  prefixIcon: const Icon(Icons.ssid_chart_outlined),
-                  suffixIcon: const Icon(Icons.arrow_drop_down_outlined),
-                ),
-                child: Text(changeType?.name ?? ''),
-              ),
-            ),
-          ),
-        ],
       ),
-      GestureDetector(
+      _picker(
+        label: context.t.pointsPage.changelogTab.operationType,
+        icon: Icons.select_all_outlined,
+        value: operationType?.name ?? '',
         onTap: () async => pickOperationType(context),
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: context.t.pointsPage.changelogTab.operationType,
-            prefixIcon: const Icon(Icons.select_all_outlined),
-            suffixIcon: const Icon(Icons.arrow_drop_down_outlined),
-          ),
-          child: Text(operationType?.name ?? ''),
-        ),
       ),
-      GestureDetector(
+      _picker(
+        label: context.t.pointsPage.changelogTab.dateRange,
+        icon: Icons.date_range_outlined,
+        value: '$startTime - $endTime',
         onTap: () async => pickDateRange(context),
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: context.t.pointsPage.changelogTab.dateRange,
-            prefixIcon: const Icon(Icons.date_range_outlined),
-          ),
-          child: Text('$startTime - $endTime'),
-        ),
+        dropdown: false,
       ),
-      Row(
-        children: [
-          Expanded(
-            child: FilledButton(onPressed: queryCallback, child: Text(context.t.pointsPage.changelogTab.query)),
-          ),
-        ],
+      FilledButton.icon(
+        onPressed: queryCallback,
+        icon: const Icon(Icons.search),
+        label: Text(context.t.pointsPage.changelogTab.query),
       ),
     ];
   }
+
+  /// A read-only field opening a picker; focusable and activated by Enter or Space too.
+  Widget _picker({
+    required String label,
+    required IconData icon,
+    required String value,
+    required VoidCallback onTap,
+    bool dropdown = true,
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(appInnerRadius),
+    child: InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixIcon: dropdown ? const Icon(Icons.arrow_drop_down_outlined) : null,
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(appInnerRadius),
+          borderSide: BorderSide.none,
+        ),
+      ),
+      child: Text(value),
+    ),
+  );
 
   @override
   void initState() {
@@ -232,29 +244,42 @@ final class _PointsQueryFormState extends State<PointsQueryForm> {
 
     return BlocBuilder<PointsChangelogBloc, PointsChangelogState>(
       builder: (context, state) {
-        return Column(
-          children: [
-            Row(
+        return AppSurface(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+          child: Padding(
+            padding: showQueryFilter ? const EdgeInsets.only(right: 8, bottom: 8) : EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(context.t.pointsPage.changelogTab.query, style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                IconButton(
-                  icon: showQueryFilter
-                      ? const Icon(Icons.expand_less_outlined)
-                      : const Icon(Icons.expand_more_outlined),
-                  tooltip: showQueryFilter
-                      ? context.t.pointsPage.changelogTab.hideFilterTip
-                      : context.t.pointsPage.changelogTab.showFilterTip,
-                  onPressed: () {
-                    setState(() {
-                      showQueryFilter = !showQueryFilter;
-                    });
-                  },
+                Row(
+                  children: [
+                    Icon(Icons.filter_list, size: 20, color: Theme.of(context).colorScheme.primary),
+                    sizedBoxW8H8,
+                    Expanded(
+                      child: Text(
+                        context.t.pointsPage.changelogTab.query,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: showQueryFilter
+                          ? const Icon(Icons.expand_less_outlined)
+                          : const Icon(Icons.expand_more_outlined),
+                      tooltip: showQueryFilter
+                          ? context.t.pointsPage.changelogTab.hideFilterTip
+                          : context.t.pointsPage.changelogTab.showFilterTip,
+                      onPressed: () {
+                        setState(() {
+                          showQueryFilter = !showQueryFilter;
+                        });
+                      },
+                    ),
+                  ],
                 ),
-              ],
+                if (showQueryFilter) ..._buildContent(context, state),
+              ].insertBetween(sizedBoxW12H12),
             ),
-            if (showQueryFilter) ..._buildContent(context, state),
-          ].insertBetween(sizedBoxW12H12),
+          ),
         );
       },
     );

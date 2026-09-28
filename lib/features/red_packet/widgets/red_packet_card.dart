@@ -5,6 +5,7 @@ import 'package:tsdm_client/features/red_packet/utils/parse_red_packet.dart';
 import 'package:tsdm_client/features/red_packet/widgets/red_packet_dialog.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Red envelope colors used by the forum, kept the same in both themes.
 const _envelopeTop = Color(0xFFD1302F);
@@ -33,7 +34,9 @@ class RedPacketCard extends StatelessWidget {
     final formHash = context.readOrNull<ThreadBloc>()?.state.replyParameters?.formHash;
     return Card(
       elevation: elevation,
-      margin: EdgeInsets.zero,
+      // Same inner radius and room as the other blocks embedded in a floor, no hairline on the envelope colors.
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(appInnerRadius)),
       clipBehavior: Clip.antiAlias,
       color: _envelopeBottom,
       child: InkWell(

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 import 'package:talker_flutter/talker_flutter.dart';
+import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/extensions/string.dart';
@@ -16,6 +17,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/log_redaction.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Colors of the talker screens (log list, the nested "Talker Monitor" page and their sheets) taken from [theme].
@@ -96,23 +98,61 @@ class DebugHistoricalLogPage extends StatelessWidget with LoggerMixin {
     final body = FutureBuilder(
       future: _loadLogFiles(),
       builder: (context, snapshot) {
+        // The error first: a failed future has no data and used to spin forever.
+        if (snapshot.hasError) {
+          error('failed to load logs: ${snapshot.error}');
+          return AppStateView(
+            icon: Icons.error_outline,
+            error: true,
+            message: '${context.t.general.failedToLoad}: ${snapshot.error}',
+          );
+        }
+
         if (!snapshot.hasData) {
           return const CenteredCircularIndicator();
         }
 
-        if (snapshot.hasError) {
-          error('failed to load logs: ${snapshot.error}');
-          return Center(child: Text('${context.t.general.failedToLoad}: ${snapshot.error}'));
+        // Newest day first.
+        final logFiles = snapshot.data!..sort((a, b) => b.time.compareTo(a.time));
+        if (logFiles.isEmpty) {
+          return AppStateView(icon: Icons.history_toggle_off_outlined, message: context.t.general.noData);
         }
 
-        final logFiles = snapshot.data!;
-
-        return ListView.builder(
-          padding: context.safePadding(),
-          itemCount: logFiles.length,
-          itemBuilder: (context, idx) => ListTile(
-            title: Text(logFiles[idx].time.yyyyMMDD()),
-            onTap: () async => context.pushNamed(ScreenPaths.debugHistoricalLogDetail, extra: logFiles[idx]),
+        return AppCenteredList(
+          maxWidth: appFormMaxWidth,
+          builder: (context, padding, _) => ListView.separated(
+            padding: padding.copyWith(top: 12).add(context.safePadding()),
+            itemCount: logFiles.length,
+            separatorBuilder: (_, _) => appListSeparator,
+            itemBuilder: (context, idx) => AppSurface(
+              onTap: () async => context.pushNamed(ScreenPaths.debugHistoricalLogDetail, extra: logFiles[idx]),
+              child: Row(
+                children: [
+                  const AppIconTile(Icons.description_outlined),
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          logFiles[idx].time.yyyyMMDD(),
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          path.basename(logFiles[idx].file.path),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -149,19 +189,34 @@ class _DebugHistoricalLogDetailPageState extends State<DebugHistoricalLogDetailP
     final body = FutureBuilder(
       future: File(widget.log.file.path).readAsString(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const CenteredCircularIndicator();
-        }
-
         if (snapshot.hasError) {
           error('failed to load log ${widget.log.time.yyyyMMDD()}: ${snapshot.error}');
-          return Center(child: Text('${context.t.general.failedToLoad}: ${snapshot.error}'));
+          return AppStateView(
+            icon: Icons.error_outline,
+            error: true,
+            message: '${context.t.general.failedToLoad}: ${snapshot.error}',
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const CenteredCircularIndicator();
         }
 
         // Older log files may predate redaction; never show or export a secret from them.
         _logData = redactSensitive(snapshot.data!);
 
-        return SingleChildScrollView(child: SelectableText(_logData!));
+        // Monospaced text in a rounded block; long lines wrap, the page scrolls.
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12).add(context.safePadding()),
+          child: AppInsetBlock(
+            outlined: true,
+            padding: edgeInsetsL12T12R12B12,
+            child: SelectableText(
+              _logData!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', height: 1.4),
+            ),
+          ),
+        );
       },
     );
 

@@ -2,13 +2,28 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_bloc.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/show_bottom_sheet.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
+
+/// Widest the option list of a filter sheet grows on wide windows.
+const _sheetMaxWidth = 640.0;
+
+/// One option of a filter sheet.
+///
+/// Every option has a radio mark (not only the selected one) so the names stay aligned and the sheet keeps its size
+/// when the selection changes.
+Widget _filterOption({required String title, required bool selected, required VoidCallback onTap}) =>
+    SelectableListTile(
+      leading: Icon(selected ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+      title: Text(title),
+      selected: selected,
+      onTap: onTap,
+    );
 
 /// Construct a chip that controlling and mutating thread filter state.
 class ThreadChip extends StatelessWidget {
@@ -38,7 +53,16 @@ class ThreadChip extends StatelessWidget {
     return BlocBuilder<ForumBloc, ForumState>(
       builder: (context, state) {
         return FilterChip(
-          label: Text(chipLabel),
+          // The chip opens a list of choices: say so with a drop down mark after the current choice. No flexible child:
+          // the chips sit in a horizontal scroll view and get an unbounded width.
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(chipLabel, maxLines: 1),
+              const Icon(Icons.arrow_drop_down, size: 18),
+            ],
+          ),
+          tooltip: sheetTitle,
           selected: chipSelected,
           onSelected: state.status.isLoading()
               ? null
@@ -55,7 +79,13 @@ class ThreadChip extends StatelessWidget {
                       value: forumBloc,
                       child: BlocBuilder<ForumBloc, ForumState>(
                         builder: (sheetContext, state) => ListView(
-                          padding: sheetContext.safePadding(),
+                          // Centered at a readable width on wide windows; the sheet is as wide as the window, so the
+                          // window width is the room (no layout builder: the sheet measures its content).
+                          padding: appCenteredPadding(
+                            MediaQuery.sizeOf(sheetContext).width,
+                            maxWidth: _sheetMaxWidth,
+                            minPadding: 0,
+                          ).copyWith(top: 4, bottom: 8).add(sheetContext.safePadding()),
                           shrinkWrap: true,
                           children: sheetItemBuilder(sheetContext, state),
                         ),
@@ -80,7 +110,7 @@ class ThreadTypeChip extends StatelessWidget {
       builder: (context, state) {
         // Show nothing if no filter available.
         if (state.filterTypeList.isEmpty) {
-          return sizedBoxEmpty;
+          return const SizedBox.shrink();
         }
 
         final currFilter = state.filterState.filterType?.name;
@@ -91,8 +121,8 @@ class ThreadTypeChip extends StatelessWidget {
           sheetTitle: context.t.forumPage.threadTab.threadType,
           sheetItemBuilder: (context, state) => state.filterTypeList
               .map(
-                (e) => SelectableListTile(
-                  title: Text(e.name),
+                (e) => _filterOption(
+                  title: e.name,
                   selected: e.name == currFilter,
                   onTap: () {
                     context.read<ForumBloc>().add(
@@ -122,7 +152,7 @@ class ThreadSpecialTypeChip extends StatelessWidget {
       builder: (context, state) {
         // Show nothing if no special filter available.
         if (state.filterSpecialTypeList.isEmpty) {
-          return sizedBoxEmpty;
+          return const SizedBox.shrink();
         }
         final currFilter = state.filterState.filterSpecialType?.name;
 
@@ -133,9 +163,9 @@ class ThreadSpecialTypeChip extends StatelessWidget {
           sheetTitle: context.t.forumPage.threadTab.threadSpecialType,
           sheetItemBuilder: (context, state) => state.filterSpecialTypeList
               .map(
-                (e) => SelectableListTile(
+                (e) => _filterOption(
+                  title: e.name,
                   selected: e.name == currFilter,
-                  title: Text(e.name),
                   onTap: () {
                     context.read<ForumBloc>().add(
                       ForumChangeThreadFilterStateRequested(
@@ -164,7 +194,7 @@ class ThreadDatelineChip extends StatelessWidget {
       builder: (context, state) {
         // Show nothing if no dateline filter available.
         if (state.filterDatelineList.isEmpty) {
-          return sizedBoxEmpty;
+          return const SizedBox.shrink();
         }
 
         final currFilter = state.filterState.filterDateline?.name;
@@ -175,8 +205,8 @@ class ThreadDatelineChip extends StatelessWidget {
           sheetTitle: context.t.forumPage.threadTab.threadDateline,
           sheetItemBuilder: (context, state) => state.filterDatelineList
               .map(
-                (e) => SelectableListTile(
-                  title: Text(e.name),
+                (e) => _filterOption(
+                  title: e.name,
                   selected: e.name == currFilter,
                   onTap: () {
                     context.read<ForumBloc>().add(
@@ -206,7 +236,7 @@ class ThreadOrderChip extends StatelessWidget {
       builder: (context, state) {
         // Show nothing if no order filter available.
         if (state.filterOrderList.isEmpty) {
-          return sizedBoxEmpty;
+          return const SizedBox.shrink();
         }
 
         final currFilter = state.filterState.filterOrder?.name;
@@ -217,8 +247,8 @@ class ThreadOrderChip extends StatelessWidget {
           sheetTitle: context.t.forumPage.threadTab.threadOrder,
           sheetItemBuilder: (context, state) => state.filterOrderList
               .map(
-                (e) => SelectableListTile(
-                  title: Text(e.name),
+                (e) => _filterOption(
+                  title: e.name,
                   selected: e.name == currFilter,
                   onTap: () {
                     context.read<ForumBloc>().add(
@@ -247,6 +277,7 @@ class ThreadDigestChip extends StatelessWidget {
     return BlocBuilder<ForumBloc, ForumState>(
       builder: (context, state) {
         return FilterChip(
+          avatar: state.filterState.filterDigest.digest ? null : const Icon(Icons.auto_awesome_outlined),
           label: Text(context.t.forumPage.threadTab.threadDigested),
           selected: state.filterState.filterDigest.digest,
           onSelected: state.status.isLoading()
@@ -277,11 +308,10 @@ class ThreadRecommendedChip extends StatelessWidget {
     return BlocBuilder<ForumBloc, ForumState>(
       builder: (context, state) {
         return FilterChip(
+          avatar: state.filterState.filterRecommend.recommend ? null : const Icon(Icons.thumb_up_outlined),
           label: Text(context.t.forumPage.threadTab.threadRecommended),
           selected: state.filterState.filterRecommend.recommend,
           onSelected: state.status.isLoading()
-              ? null
-              : state.status.isLoading()
               ? null
               : (v) async {
                   context.read<ForumBloc>().add(

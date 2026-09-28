@@ -55,6 +55,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> with LoggerMixin {
               userProfile: v,
               unreadNoticeCount: unreadNoticeCount,
               hasUnreadMessage: hasUnreadMessage,
+              secondaryTitleUrl: parseProfileSecondaryTitleUrl(_profileRepository.getCache()!),
             ),
           );
         },
@@ -88,6 +89,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> with LoggerMixin {
             userProfile: v,
             unreadNoticeCount: unreadNoticeCount,
             hasUnreadMessage: hasUnreadMessage,
+            secondaryTitleUrl: parseProfileSecondaryTitleUrl(document),
           ),
         );
       },
@@ -122,6 +124,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> with LoggerMixin {
             userProfile: v,
             unreadNoticeCount: unreadNoticeCount,
             hasUnreadMessage: hasUnreadMessage,
+            secondaryTitleUrl: parseProfileSecondaryTitleUrl(document),
           ),
         );
       },

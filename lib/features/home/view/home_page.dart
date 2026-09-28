@@ -19,6 +19,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/app_routes.dart';
 import 'package:tsdm_client/routes/page_stack.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 const _drawerWidth = 250.0;
@@ -107,31 +108,51 @@ class _HomePageState extends State<HomePage> with LoggerMixin {
   Widget _buildDrawerBody(BuildContext context) => Scaffold(
     body: Row(
       children: [
-        if (widget.showNavigationBar)
-          Column(
-            children: [
-              Container(
-                color: Theme.of(context).colorScheme.surface,
-                height: 100,
-                width: _drawerWidth,
-                child: Center(
-                  child: Text(
-                    context.t.appName,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.secondary,
+        if (widget.showNavigationBar) ...[
+          // One side panel: the brand block and the drawer share the low container color of the navigation.
+          ColoredBox(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: Column(
+              children: [
+                // Brand block of the side navigation, in the rounded style of the homepage cards.
+                SizedBox(
+                  height: 100,
+                  width: _drawerWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(appSurfaceRadius),
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: edgeInsetsL12R12,
+                          child: Text(
+                            context.t.appName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _drawerWidth),
-                  child: const HomeNavigationDrawer(),
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _drawerWidth),
+                    child: const HomeNavigationDrawer(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          const HomeNavigationDivider(),
+        ],
         Expanded(child: widget.child),
       ],
     ),
@@ -180,7 +201,10 @@ class _HomePageState extends State<HomePage> with LoggerMixin {
             return Scaffold(
               body: Row(
                 children: [
-                  if (widget.showNavigationBar) const HomeNavigationRail(),
+                  if (widget.showNavigationBar) ...[
+                    const HomeNavigationRail(),
+                    const HomeNavigationDivider(),
+                  ],
                   Expanded(child: widget.child),
                 ],
               ),

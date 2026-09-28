@@ -14,6 +14,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
 import 'package:tsdm_client/shared/providers/image_cache_provider/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
 import 'package:tsdm_client/widgets/tips.dart';
@@ -183,7 +184,13 @@ class _ImageDialogState extends State<_ImageDialog> with LoggerMixin, SingleTick
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(tr.title),
+          Row(
+            children: [
+              const AppIconTile(Icons.image_outlined, size: 36),
+              sizedBoxW12H12,
+              Expanded(child: Text(tr.title)),
+            ],
+          ),
           // TabBar(
           //   controller: tabController,
           //   tabs: [
@@ -205,8 +212,8 @@ class _ImageDialogState extends State<_ImageDialog> with LoggerMixin, SingleTick
         key: urlForm,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
             IndexedStack(
               index: index,
               children: [
@@ -214,95 +221,102 @@ class _ImageDialogState extends State<_ImageDialog> with LoggerMixin, SingleTick
                 // _buildSmmsField(context),
               ],
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: widthController,
-                    enabled: !autoScaleWidth,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.horizontal_distribute_outlined),
-                      labelText: tr.width,
-                    ),
-                    validator: (v) {
-                      if (autoScaleWidth) {
-                        return null;
-                      }
-                      if (v == null || v.trim().isEmpty) {
-                        return tr.errorEmpty;
-                      }
-                      final vv = double.tryParse(v);
-                      if (vv == null || vv <= 0) {
-                        return tr.errorInvalidNumber;
-                      }
-                      return null;
-                    },
+            // Size: each dimension can be left to the forum ("auto"), only one at a time.
+            AppInsetBlock(
+              padding: edgeInsetsL12T12R12B12,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: widthController,
+                          enabled: !autoScaleWidth,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.horizontal_distribute_outlined),
+                            labelText: tr.width,
+                          ),
+                          validator: (v) {
+                            if (autoScaleWidth) {
+                              return null;
+                            }
+                            if (v == null || v.trim().isEmpty) {
+                              return tr.errorEmpty;
+                            }
+                            final vv = double.tryParse(v);
+                            if (vv == null || vv <= 0) {
+                              return tr.errorInvalidNumber;
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      sizedBoxW8H8,
+                      FilterChip(
+                        label: Text(tr.auto),
+                        selected: autoScaleWidth,
+                        onSelected: (v) {
+                          setState(() {
+                            if (autoScaleHeight) {
+                              autoScaleHeight = false;
+                            }
+                            autoScaleWidth = v;
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                ),
-                Checkbox(
-                  value: autoScaleWidth,
-                  onChanged: (v) {
-                    if (v == null) {
-                      return;
-                    }
-
-                    setState(() {
-                      if (autoScaleHeight) {
-                        autoScaleHeight = false;
-                      }
-                      autoScaleWidth = v;
-                    });
-                  },
-                ),
-                Text(tr.auto),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: heightController,
-                    enabled: !autoScaleHeight,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
-                    decoration: InputDecoration(prefixIcon: const Icon(Icons.add), labelText: tr.height),
-                    validator: (v) {
-                      if (autoScaleHeight) {
-                        return null;
-                      }
-                      if (v == null || v.trim().isEmpty) {
-                        return tr.errorEmpty;
-                      }
-                      final vv = double.tryParse(v);
-                      if (vv == null || vv <= 0) {
-                        return tr.errorInvalidNumber;
-                      }
-                      return null;
-                    },
+                  sizedBoxW12H12,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: heightController,
+                          enabled: !autoScaleHeight,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
+                          decoration: InputDecoration(prefixIcon: const Icon(Icons.height), labelText: tr.height),
+                          validator: (v) {
+                            if (autoScaleHeight) {
+                              return null;
+                            }
+                            if (v == null || v.trim().isEmpty) {
+                              return tr.errorEmpty;
+                            }
+                            final vv = double.tryParse(v);
+                            if (vv == null || vv <= 0) {
+                              return tr.errorInvalidNumber;
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      sizedBoxW8H8,
+                      FilterChip(
+                        label: Text(tr.auto),
+                        selected: autoScaleHeight,
+                        onSelected: (v) {
+                          setState(() {
+                            if (autoScaleWidth) {
+                              autoScaleWidth = false;
+                            }
+                            autoScaleHeight = v;
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                ),
-                Checkbox(
-                  value: autoScaleHeight,
-                  onChanged: (v) {
-                    if (v == null) {
-                      return;
-                    }
-
-                    setState(() {
-                      if (autoScaleWidth) {
-                        autoScaleWidth = false;
-                      }
-                      autoScaleHeight = v;
-                    });
-                  },
-                ),
-                Text(tr.auto),
-              ],
+                  sizedBoxW8H8,
+                  Tips(tr.autoSingleDirectionSize),
+                ],
+              ),
             ),
-            Tips(tr.autoSingleDirectionSize),
             SectionSwitchListTile(
+              contentPadding: EdgeInsets.zero,
               title: Text(tr.autoFillSize),
               subtitle: Text(tr.autoFillSizeDetail),
               value: autoFillSize,
@@ -318,7 +332,7 @@ class _ImageDialogState extends State<_ImageDialog> with LoggerMixin, SingleTick
       actions: [
         if (fillingSize) sizedCircularProgressIndicator,
         TextButton(child: Text(context.t.general.cancel), onPressed: () => context.pop()),
-        TextButton(
+        FilledButton(
           child: Text(context.t.general.ok),
           onPressed: () async {
             if (urlForm.currentState == null || !(urlForm.currentState!).validate()) {

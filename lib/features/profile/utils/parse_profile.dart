@@ -50,6 +50,15 @@ String? parseProfileAvatarUrl(uh.Document document) {
   return node.imageUrl();
 }
 
+/// Parse the secondary title image of the profile owner in profile page [document], null when absent.
+///
+/// Only the markup the title plugin is known to render is recognized, the block also found in the author column of
+/// thread floors (`<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img></div></div>`), and only inside the
+/// profile content `div#ct`, never in the page header which describes the viewing account. Whether the forum renders
+/// that block on profile pages is not established by any sample; when it does not, nothing is shown.
+String? parseProfileSecondaryTitleUrl(uh.Document document) =>
+    document.querySelector('div#ct')?.querySelector('div.tsdmtitle-badges div.tsdmtitle-title > img')?.imageUrl();
+
 /// Check whether the page [document] is rendered for a logged in user.
 ///
 /// Logged in pages have the user block `div#um` with username in `strong.vwmy` while guest pages have the login form

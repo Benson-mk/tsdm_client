@@ -11,6 +11,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// Localized text of [failure].
 String noticeIgnoreFailureText(BuildContext context, NoticeIgnoreFailure failure) =>
@@ -105,17 +106,34 @@ Future<void> showNoticeIgnoreDialog(
   final everybody = await showDialog<bool>(
     context: navigator.context,
     builder: (context) => SimpleDialog(
-      title: Text(tr.title),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.notifications_paused_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(tr.title)),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(tr.hint)),
-        if (target.authorId > 0)
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(tr.ignoreThisUser(type: typeName)),
+        AppInsetBlock(
+          child: Text(
+            tr.hint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text(tr.ignoreEverybody(type: typeName)),
+        ),
+        sizedBoxW8H8,
+        if (target.authorId > 0)
+          _IgnoreOption(
+            icon: Icons.person_off_outlined,
+            text: tr.ignoreThisUser(type: typeName),
+            onTap: () => Navigator.of(context).pop(false),
+          ),
+        _IgnoreOption(
+          icon: Icons.groups_outlined,
+          text: tr.ignoreEverybody(type: typeName),
+          onTap: () => Navigator.of(context).pop(true),
         ),
       ],
     ),
@@ -162,6 +180,42 @@ Future<void> showNoticeIgnoreDialog(
   }
   // The messenger of the app, not of the card: shown even when the card is gone.
   showSnackBar(context: navigator.context, message: message);
+}
+
+/// One choice of the notice rule dialog: a rounded, focusable row with an icon.
+class _IgnoreOption extends StatelessWidget {
+  const _IgnoreOption({required this.icon, required this.text, required this.onTap});
+
+  final IconData icon;
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Material(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(appInnerRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: edgeInsetsL12T12R12B12,
+            child: Row(
+              children: [
+                Icon(icon, color: colorScheme.primary),
+                sizedBoxW12H12,
+                Expanded(child: Text(text)),
+                Icon(Icons.chevron_right, color: colorScheme.outline),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Show a progress dialog with [message] on [navigator]; call the returned function to close it.

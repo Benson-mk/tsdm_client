@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -6,12 +8,15 @@ import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/medal.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/html/adaptive_color.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/bubble.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
@@ -21,6 +26,14 @@ import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/medal_group_view.dart';
 import 'package:universal_html/parsing.dart';
+
+/// Width available to the content of the brief profile dialog in a window [windowWidth] wide.
+///
+/// Mirrors the constraint of [CustomAlertDialog] (70% of the window, at most 400) without its 24px side paddings.
+double briefProfileDialogContentWidth(double windowWidth) => math.min(windowWidth * 0.7, 400) - 48;
+
+/// Height the stacked dialog header needs: the avatar row, the name and the pills under it.
+const _stackedHeaderHeight = 132.0;
 
 /// Show a dialog to display user brief profile.
 ///
@@ -108,247 +121,368 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
     final textTheme = Theme.of(context).textTheme;
 
     final primaryColor = colorScheme.primary;
-    final sectionTitleStyle = textTheme.titleSmall?.copyWith(color: primaryColor);
     final pokemon = widget.pokemon;
     final checkin = widget.checkin;
 
-    const sectionSeparator = sizedBoxW24H24;
-    const titleContentSeparator = sizedBoxW8H8;
+    const sectionSeparator = sizedBoxW16H16;
+    const titleContentSeparator = sizedBoxW4H4;
+    Widget sectionTitle(String title, IconData icon) =>
+        AppSectionHeader(title, icon: icon, padding: const EdgeInsets.symmetric(vertical: 4));
 
     final inDarkTheme = Theme.of(context).brightness == Brightness.dark;
     final colorOffset = inDarkTheme ? 300 : 700;
+    // Measured like the badges below: the dialog content has no layout builder (the dialog sizes to intrinsics).
+    final contentWidth = briefProfileDialogContentWidth(MediaQuery.sizeOf(context).width);
+    final statWidth = (contentWidth - 8) / 2;
+    final secondBadgeWidth = SecondaryTitleBadge.fitWidth(
+      contentWidth,
+      preferred: SecondaryTitleBadge.widthFor(profileBadgeHeight),
+    );
+    final authorUid = int.tryParse(widget.profile.uid);
+    // Only a verified current account counts; the uid is compared again by the badge against the title it holds.
+    final ownFloor =
+        widget.secondBadge == null &&
+        authorUid != null &&
+        authorUid == context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
 
-    final titleContent = [
-      Row(
-        children: [
-          Hero(
-            tag: widget.avatarHeroTag,
-            child: CircleAvatar(
-              radius: 30,
-              backgroundImage: CachedImageProvider(
-                widget.profile.avatarUrl ?? noAvatarUrl,
-                usage: ImageUsageInfoUserAvatar(widget.profile.username),
-              ),
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.email_outlined),
-            tooltip: tr.pmTooltip,
-            onPressed: () => context.pushNamed(
-              ScreenPaths.chat,
-              pathParameters: {'uid': widget.profile.uid},
-              extra: <String, dynamic>{'username': widget.profile.username},
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.person_outlined),
-            tooltip: tr.profileTooltip,
-            onPressed: () async => context.dispatchAsUrl(widget.userSpaceUrl),
-          ),
-        ],
+    final avatar = Hero(
+      tag: widget.avatarHeroTag,
+      child: CircleAvatar(
+        radius: 30,
+        backgroundImage: CachedImageProvider(
+          widget.profile.avatarUrl ?? noAvatarUrl,
+          usage: ImageUsageInfoUserAvatar(widget.profile.username),
+        ),
       ),
-      sizedBoxW12H12,
+    );
 
-      // Fix text style lost.
-      // ref: https://github.com/flutter/flutter/issues/30647#issuecomment-480980280
-      Hero(
-        tag: widget.nameHeroTag,
-        flightShuttleBuilder: (_, _, _, _, toHeroContext) =>
-            DefaultTextStyle(style: DefaultTextStyle.of(toHeroContext).style, child: toHeroContext.widget),
-        child: Text(widget.profile.username, style: textTheme.titleLarge?.copyWith(color: primaryColor)),
+    // Fix text style lost.
+    // ref: https://github.com/flutter/flutter/issues/30647#issuecomment-480980280
+    final name = Hero(
+      tag: widget.nameHeroTag,
+      flightShuttleBuilder: (_, _, _, _, toHeroContext) =>
+          DefaultTextStyle(style: DefaultTextStyle.of(toHeroContext).style, child: toHeroContext.widget),
+      child: Text(widget.profile.username, style: textTheme.titleLarge?.copyWith(color: primaryColor)),
+    );
+
+    // Uid and online state as small pills next to the name.
+    final pills = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        AppInfoPill(icon: Icons.tag, label: 'UID ${widget.profile.uid}'),
+        AppInfoPill(
+          icon: widget.profile.online ? Icons.circle : Icons.circle_outlined,
+          label: widget.profile.online ? tr.status.online : tr.status.offline,
+          tooltip: tr.status.title,
+        ),
+      ],
+    );
+
+    final headerActions = <Widget>[
+      IconButton.filledTonal(
+        icon: const Icon(Icons.email_outlined),
+        tooltip: tr.pmTooltip,
+        onPressed: () => context.pushNamed(
+          ScreenPaths.chat,
+          pathParameters: {'uid': widget.profile.uid},
+          extra: <String, dynamic>{'username': widget.profile.username},
+        ),
       ),
-      sizedBoxW4H4,
-      Text('UID ${widget.profile.uid}', style: textTheme.labelMedium?.copyWith(color: colorScheme.outline)),
+      IconButton.filledTonal(
+        icon: const Icon(Icons.person_outlined),
+        tooltip: tr.profileTooltip,
+        onPressed: () async => context.dispatchAsUrl(widget.userSpaceUrl),
+      ),
     ];
 
-    final profileContent = [
-      // Basic user info.
-      Text(tr.tabName.info, style: sectionTitleStyle),
-      titleContentSeparator,
-      _UserProfilePair(
-        Icons.group_outlined,
-        tr.group,
-        widget.profile.userGroup,
-        inDarkTheme ? widget.profile.userGroupColor?.adaptiveDark() : widget.profile.userGroupColor,
-      ),
-      if (widget.profile.title != null)
-        _UserProfilePair(Icons.badge_outlined, tr.title, widget.profile.title, Colors.blue[colorOffset]),
-      _UserProfilePair(MdiIcons.idCard, tr.nickname, widget.profile.nickname, Colors.blue[colorOffset]),
-      _UserProfilePair(Icons.thumb_up_outlined, tr.recommended, widget.profile.recommended, Colors.red[colorOffset]),
-      _UserProfilePair(Icons.book_outlined, tr.thread, widget.profile.threadCount, Colors.green[colorOffset]),
-      _UserProfilePair(MdiIcons.commentEditOutline, tr.post, widget.profile.postCount, Colors.cyan[colorOffset]),
-      _UserProfilePair(Icons.emoji_people_outlined, tr.famous, widget.profile.famous, Colors.purple[colorOffset]),
-      _UserProfilePair(FontAwesomeIcons.coins, tr.coins, widget.profile.coins, Colors.purple[colorOffset]),
-      _UserProfilePair(Icons.campaign_outlined, tr.publicity, widget.profile.publicity, Colors.purple[colorOffset]),
-      _UserProfilePair(Icons.water_drop_outlined, tr.natural, widget.profile.natural, Colors.purple[colorOffset]),
-      _UserProfilePair(MdiIcons.dominoMask, tr.scheming, widget.profile.scheming, Colors.purple[colorOffset]),
-      _UserProfilePair(Icons.stream_outlined, tr.spirit, widget.profile.spirit, Colors.purple[colorOffset]),
-      // Special attr, dynamic and not translated.
-      _UserProfilePair(
-        MdiIcons.heartOutline,
-        widget.profile.specialAttrName,
-        widget.profile.specialAttr,
-        Colors.purple[colorOffset],
-      ),
-      // Optional special attr, dynamic and not tranlsated.
-      if (widget.profile.specialAttr2 != null && widget.profile.specialAttrName2 != null)
-        _UserProfilePair(
-          MdiIcons.heartOutline,
-          widget.profile.specialAttrName2!,
-          widget.profile.specialAttr2,
-          Colors.purple[colorOffset],
+    // The title of an AlertDialog is not flexible and CustomAlertDialog keeps it within 30% of the window height, so
+    // stacking the avatar, the name and the pills cut the pills off on a phone in landscape. One row fits there.
+    final titleContent = MediaQuery.sizeOf(context).height * 0.3 >= _stackedHeaderHeight
+        ? <Widget>[
+            Row(children: [avatar, const Spacer(), ...headerActions]),
+            sizedBoxW12H12,
+            name,
+            sizedBoxW4H4,
+            pills,
+          ]
+        : <Widget>[
+            Row(
+              children: [
+                avatar,
+                sizedBoxW12H12,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [name, sizedBoxW4H4, pills],
+                  ),
+                ),
+                ...headerActions,
+              ],
+            ),
+          ];
+
+    // Numbers of the author, two per row: value first (in its color), name under it.
+    Widget stat(IconData icon, String name, String? value, Color? color) => SizedBox(
+      width: statWidth,
+      child: AppInsetBlock(
+        padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color ?? colorScheme.secondary),
+            sizedBoxW8H8,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value ?? '-',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleSmall?.copyWith(color: color, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      if (widget.profile.couple != null && widget.profile.couple!.isNotEmpty)
-        _UserProfilePair(Icons.diversity_1_outlined, tr.cp, widget.profile.couple, Colors.pink[colorOffset]),
-      _UserProfilePair(Icons.feedback_outlined, tr.privilege, widget.profile.privilege, Colors.orange[colorOffset]),
-      _UserProfilePair(
-        Icons.event_note_outlined,
-        tr.registration,
-        widget.profile.registrationDate,
-        Colors.blue[colorOffset],
       ),
-      if (widget.profile.comeFrom != null)
-        _UserProfilePair(Icons.pin_drop_outlined, tr.from, widget.profile.comeFrom, Colors.teal[colorOffset]),
-      _UserProfilePair(
-        Icons.online_prediction_outlined,
-        tr.status.title,
-        widget.profile.online ? tr.status.online : tr.status.offline,
-        widget.profile.online ? Colors.green[colorOffset] : Colors.grey,
-      ),
+    );
 
-      sectionSeparator,
-
-      // Badge
-      Text(tr.badges, style: sectionTitleStyle),
+    final profileContent = [
+      // Who the author is: group, titles, names and dates, one line each.
+      sectionTitle(tr.tabName.info, Icons.badge_outlined),
       titleContentSeparator,
-      // Both the primary the secondary badge presents.
-      if (widget.badge != null && widget.secondBadge != null)
-        Row(
+      AppInsetBlock(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 6,
           children: [
-            Expanded(
-              child: CachedImage(widget.badge!, width: badgeImageSize.width, height: badgeImageSize.height),
+            _UserProfilePair(
+              Icons.group_outlined,
+              tr.group,
+              widget.profile.userGroup,
+              inDarkTheme ? widget.profile.userGroupColor?.adaptiveDark() : widget.profile.userGroupColor,
             ),
-            Expanded(
-              child: CachedImage(widget.secondBadge!, width: badgeImageSize.width, height: badgeImageSize.height),
+            if (widget.profile.title != null)
+              _UserProfilePair(Icons.badge_outlined, tr.title, widget.profile.title, Colors.blue[colorOffset]),
+            _UserProfilePair(MdiIcons.idCard, tr.nickname, widget.profile.nickname, Colors.blue[colorOffset]),
+            if (widget.profile.couple != null && widget.profile.couple!.isNotEmpty)
+              _UserProfilePair(Icons.diversity_1_outlined, tr.cp, widget.profile.couple, Colors.pink[colorOffset]),
+            _UserProfilePair(
+              Icons.feedback_outlined,
+              tr.privilege,
+              widget.profile.privilege,
+              Colors.orange[colorOffset],
             ),
+            _UserProfilePair(
+              Icons.event_note_outlined,
+              tr.registration,
+              widget.profile.registrationDate,
+              Colors.blue[colorOffset],
+            ),
+            if (widget.profile.comeFrom != null)
+              _UserProfilePair(Icons.pin_drop_outlined, tr.from, widget.profile.comeFrom, Colors.teal[colorOffset]),
+            // The online state is the pill under the name.
           ],
-        )
-      // Only the primary badge.
-      else if (widget.badge != null)
-        Row(
-          children: [
-            Expanded(
-              child: CachedImage(widget.badge!, width: badgeImageSize.width, height: badgeImageSize.height),
+        ),
+      ),
+      sizedBoxW8H8,
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          stat(Icons.thumb_up_outlined, tr.recommended, widget.profile.recommended, Colors.red[colorOffset]),
+          stat(Icons.book_outlined, tr.thread, widget.profile.threadCount, Colors.green[colorOffset]),
+          stat(MdiIcons.commentEditOutline, tr.post, widget.profile.postCount, Colors.cyan[colorOffset]),
+          stat(Icons.emoji_people_outlined, tr.famous, widget.profile.famous, Colors.purple[colorOffset]),
+          stat(FontAwesomeIcons.coins, tr.coins, widget.profile.coins, Colors.purple[colorOffset]),
+          stat(Icons.campaign_outlined, tr.publicity, widget.profile.publicity, Colors.purple[colorOffset]),
+          stat(Icons.water_drop_outlined, tr.natural, widget.profile.natural, Colors.purple[colorOffset]),
+          stat(MdiIcons.dominoMask, tr.scheming, widget.profile.scheming, Colors.purple[colorOffset]),
+          stat(Icons.stream_outlined, tr.spirit, widget.profile.spirit, Colors.purple[colorOffset]),
+          // Special attr, dynamic and not translated.
+          stat(
+            MdiIcons.heartOutline,
+            widget.profile.specialAttrName,
+            widget.profile.specialAttr,
+            Colors.purple[colorOffset],
+          ),
+          // Optional special attr, dynamic and not tranlsated.
+          if (widget.profile.specialAttr2 != null && widget.profile.specialAttrName2 != null)
+            stat(
+              MdiIcons.heartOutline,
+              widget.profile.specialAttrName2!,
+              widget.profile.specialAttr2,
+              Colors.purple[colorOffset],
             ),
-            const Spacer(),
-          ],
-        )
-      // Only the secondary badge.
-      else if (widget.secondBadge != null)
-        Row(
-          children: [
-            Expanded(
-              child: CachedImage(widget.secondBadge!, width: badgeImageSize.width, height: badgeImageSize.height),
-            ),
-            const Spacer(),
-          ],
-        )
-      // No badges at all, theoretically unreachable.
-      else
-        sizedBoxEmpty,
+        ],
+      ),
 
       sectionSeparator,
+
+      // Badges from this author's own floor: the user group badge and the secondary title. Both keep their natural
+      // aspect ratio and share a display height; narrow dialogs wrap instead of squeezing either image.
+      //
+      // When the floor carries no secondary title and the author is the current account, the title that account
+      // uses is shown instead (CurrentTitleCubit: read-only title page of that account, keyed by uid and dropped on
+      // account changes). The floor of anybody else never gets it: no data there means no second badge.
+      if (widget.badge != null || widget.secondBadge != null || ownFloor) ...[
+        sectionTitle(tr.badges, Icons.military_tech_outlined),
+        titleContentSeparator,
+        Wrap(
+          spacing: 16,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (widget.badge != null)
+              CachedImage(
+                widget.badge!,
+                key: const ValueKey('brief-profile-group-badge'),
+                maxWidth: contentWidth,
+                height: profileBadgeHeight,
+                fit: BoxFit.contain,
+              ),
+            if (widget.secondBadge != null)
+              SecondaryTitleBadge(
+                widget.secondBadge!,
+                key: const ValueKey('brief-profile-floor-title'),
+                width: secondBadgeWidth,
+              )
+            else if (ownFloor)
+              CurrentAccountTitleBadge(
+                key: const ValueKey('brief-profile-account-title'),
+                uid: authorUid,
+                width: secondBadgeWidth,
+              ),
+          ],
+        ),
+        sectionSeparator,
+      ],
 
       // Medal
       if (widget.medals.isNotEmpty) ...[
-        Text(tr.medals, style: sectionTitleStyle),
+        sectionTitle(tr.medals, Icons.workspace_premium_outlined),
         titleContentSeparator,
         MedalGroupView(widget.medals),
         sectionSeparator,
       ],
 
-      // Signature, if any. Size is unpredicted.
+      // Signature, if any. Size is unpredicted; the dialog body scrolls, so it is laid out at its natural height.
       if (widget.signature != null) ...[
-        Text(tr.tabName.signature, style: sectionTitleStyle),
+        sectionTitle(tr.tabName.signature, Icons.draw_outlined),
         titleContentSeparator,
-        // Wrap in Flexible because munchElement returns unbounded widget size.
-        Flexible(child: munchElement(context, parseHtmlDocument(widget.signature!).body!)),
+        AppInsetBlock(child: munchElement(context, parseHtmlDocument(widget.signature!).body!)),
         sectionSeparator,
       ],
 
-      // Pokemon
+      // Pokemon: the primary one large, the others as small chips.
       if (pokemon != null) ...[
-        Text(tr.pokemon, style: sectionTitleStyle),
+        sectionTitle(tr.pokemon, Icons.catching_pokemon),
         titleContentSeparator,
-        CachedImage(
-          pokemon.primaryPokemon.image,
-          width: pokemonPrimaryImageSize.width,
-          height: pokemonPrimaryImageSize.height,
-        ),
-        Text(pokemon.primaryPokemon.name, style: textTheme.titleSmall?.copyWith(color: colorScheme.secondary)),
-        if (pokemon.otherPokemon != null)
-          Column(
-            children: pokemon.otherPokemon!
-                .map(
-                  (e) => Row(
-                    children: [
-                      CachedImage(
-                        e.image,
-                        width: pokemonNotPrimaryImageSize.width,
-                        height: pokemonNotPrimaryImageSize.height,
-                      ),
-                      sizedBoxW4H4,
-                      Text(e.name),
-                    ],
+        AppInsetBlock(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CachedImage(
+                    pokemon.primaryPokemon.image,
+                    width: pokemonPrimaryImageSize.width,
+                    height: pokemonPrimaryImageSize.height,
                   ),
-                )
-                .toList(),
-          ),
-        sectionSeparator,
-      ],
-
-      // Checkin status.
-      if (checkin != null) ...[
-        Text(tr.checkin, style: sectionTitleStyle),
-        titleContentSeparator,
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Column(
-              children: [
-                CachedImage(checkin.feelingImage, width: feelingImageSize.width, height: feelingImageSize.height),
-                sizedBoxW4H4,
-                Text(
-                  checkin.feelingName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
+                  sizedBoxW8H8,
+                  Expanded(
+                    child: Text(
+                      pokemon.primaryPokemon.name,
+                      style: textTheme.titleSmall?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              if (pokemon.otherPokemon != null && pokemon.otherPokemon!.isNotEmpty) ...[
+                sizedBoxW8H8,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: pokemon.otherPokemon!
+                      .map(
+                        (e) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CachedImage(
+                              e.image,
+                              width: pokemonNotPrimaryImageSize.width,
+                              height: pokemonNotPrimaryImageSize.height,
+                            ),
+                            sizedBoxW4H4,
+                            Text(e.name, style: textTheme.bodySmall),
+                          ],
+                        ),
+                      )
+                      .toList(),
                 ),
               ],
-            ),
-            sizedBoxW8H8,
-            Flexible(
-              child: CustomPaint(
-                painter: BubblePainter(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  alignment: Alignment.topLeft,
-                  tail: true,
-                ),
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(14, 7, 7, 7),
-                  child: Text(
-                    checkin.words,
-                    style: textTheme.bodyMedium?.copyWith(color: colorScheme.onPrimaryContainer),
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-        sizedBoxW4H4,
-        // Checkin statistics info.
-        Text(checkin.statistics),
+        sectionSeparator,
+      ],
+
+      // Checkin status: feeling on the start side, the words in a bubble, statistics under them.
+      if (checkin != null) ...[
+        sectionTitle(tr.checkin, Icons.event_available_outlined),
+        titleContentSeparator,
+        AppInsetBlock(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    children: [
+                      CachedImage(
+                        checkin.feelingImage,
+                        width: feelingImageSize.width,
+                        height: feelingImageSize.height,
+                      ),
+                      sizedBoxW4H4,
+                      Text(checkin.feelingName, style: textTheme.bodyMedium?.copyWith(color: colorScheme.secondary)),
+                    ],
+                  ),
+                  sizedBoxW8H8,
+                  Flexible(
+                    child: CustomPaint(
+                      painter: BubblePainter(
+                        color: colorScheme.primaryContainer,
+                        alignment: Alignment.topLeft,
+                        tail: true,
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(14, 7, 7, 7),
+                        child: Text(
+                          checkin.words,
+                          style: textTheme.bodyMedium?.copyWith(color: colorScheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              sizedBoxW8H8,
+              // Checkin statistics info.
+              Text(checkin.statistics, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
       ],
     ];
 
@@ -379,14 +513,17 @@ class _UserProfilePair extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // Name in a muted label, value in its own color; long values wrap under themselves.
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(iconData, size: 18, color: colorScheme.secondary),
-        sizedBoxW4H4,
-        Text(name, style: TextStyle(color: colorScheme.secondary)),
+        Icon(iconData, size: 16, color: colorScheme.outline),
+        sizedBoxW8H8,
+        Text(name, style: textTheme.bodySmall?.copyWith(color: colorScheme.outline)),
         sizedBoxW12H12,
         Expanded(
-          child: Text(value ?? '', style: TextStyle(color: valueColor)),
+          child: Text(value ?? '', style: textTheme.bodyMedium?.copyWith(color: valueColor)),
         ),
       ],
     );

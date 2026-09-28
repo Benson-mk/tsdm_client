@@ -162,8 +162,14 @@
   },
   "navigation": {
     "homepage": "主页",
-    "topics": "分区",
+    "topics": "版块",
+    "activities": "活动",
+    "notice": "通知",
     "profile": "我的",
+    "moreSection": "更多功能",
+    "titleShop": "称号商店",
+    "medalCenter": "勋章中心",
+    "bank": "银行",
     "settings": "设置"
   },
   "home": {
@@ -176,6 +182,8 @@
       "history": "历史",
       "notice": "消息",
       "checkin": "签到",
+      "checkedIn": "已签到",
+      "checkedInHint": "本 App 记录到这个账号今天已签到",
       "myThread": "我的帖子",
       "latestThread": "最新帖子",
       "favorite": "收藏"
@@ -191,10 +199,31 @@
       "today": "今日",
       "yesterday": "昨日",
       "threads": "帖子"
-    }
+    },
+    "greeting": {
+      "morning": "早上好，${name}",
+      "afternoon": "下午好，${name}",
+      "evening": "晚上好，${name}",
+      "night": "夜深了，${name}"
+    },
+    "todayPosts": "今天已有 ${count} 篇新帖",
+    "forumActivity": "论坛动态",
+    "guideTitle": "论坛导读",
+    "tools": "我的工具",
+    "supportNote": "完全自愿，不支持也能使用全部功能"
+  },
+  "medalTitleHub": {
+    "title": "勋章与称号",
+    "entryDescription": "勋章中心、我的称号与称号商店",
+    "currentTitle": "当前称号",
+    "noTitle": "当前没有使用称号",
+    "loadFailed": "无法读取当前称号",
+    "medalCenterDescription": "浏览勋章与获取方式",
+    "myTitlesDescription": "使用、切换或摘下已拥有的称号",
+    "titleShopDescription": "浏览称号与价格，每次购买都会先确认"
   },
   "topicPage": {
-    "title": "分区",
+    "title": "版块",
     "threads": "主题: ",
     "posts": "帖数: ",
     "today": "今日: ",
@@ -254,6 +283,7 @@
           "threadType": "白日梦"
         },
         "showHelpTip": "查看帖子卡片内容的含义",
+        "preview": "预览",
         "attrs": {
           "help": "图标的含义",
           "closed": {
@@ -309,6 +339,11 @@
       "textScaleFactor": {
         "title": "文字缩放",
         "dialogTitle": "文字缩放系数"
+      },
+      "threadContentScale": {
+        "title": "帖子内容缩放",
+        "detail": "在文字缩放之上，额外放大帖子页面中的楼层内容",
+        "dialogTitle": "帖子内容缩放系数"
       }
     },
     "windowSection": {
@@ -437,6 +472,7 @@
       },
       "exportData": "导出数据",
       "exportDataDetail": "默认不含任何账号的 Cookie 与密码；可选择用自设密码加密后一并导出",
+      "backupTitle": "备份与恢复",
       "exportBackup": {
         "title": "导出数据",
         "includeAccounts": "包含账号登录数据",
@@ -533,7 +569,9 @@
     "flutterVersion": "Flutter版本",
     "dartVersion": "Dart版本",
     "license": "版权",
-    "copyEnvironmentInfo": "复制环境信息"
+    "copyEnvironmentInfo": "复制环境信息",
+    "linksSection": "链接与支持",
+    "buildSection": "版本与构建"
   },
   "loginPage": {
     "title": "登录天使动漫",
@@ -590,6 +628,7 @@
   "profilePage": {
     "title": "个人资料",
     "userNodeNotFound": "未找到用户信息节点",
+    "secondaryTitle": "称号",
     "checkin": {
       "title": "签到",
       "checkinFailed": "签到失败",
@@ -795,6 +834,7 @@
       "title": "同步所有账户",
       "detail": "为本机保存的每个账户逐一抓取提醒、私人消息和公共消息。未读红点仍只反映当前账户。与平时同步一样，列出后论坛侧的“新”标记会被消耗。",
       "running": "进行中",
+      "finished": "已完成",
       "empty": "本机没有保存任何账户",
       "user": {
         "waiting": "等待中",
@@ -925,7 +965,12 @@
       "tooltip": "今日红包",
       "claimed": "今日红包：获得 ${amount} ${unit}",
       "alreadyClaimed": "今天已经领过了，明天再来",
-      "failed": "领取失败：${err}"
+      "failed": "领取失败：${err}",
+      "claimedToday": "红包已领取",
+      "unavailable": "红包：暂无",
+      "unavailableHint": "首页目前没有提供今日红包（可能已领取或尚未开放），点一下重新检查",
+      "claimedRecordedHint": "本 App 记录到这个账号今天已领过红包；首页目前也没有提供红包",
+      "needLogin": "登录领红包"
     }
   },
   "latestThreadPage": {
@@ -1044,7 +1089,8 @@
     "sizeValue": "${width: int} x ${height: int}",
     "cacheName": "缓存名称",
     "cacheSize": "缓存大小",
-    "usage": "用途"
+    "usage": "用途",
+    "fitToScreen": "适应屏幕"
   },
   "forumCard": {
     "links": "链接",
@@ -1696,7 +1742,9 @@
     "unset": "摘下",
     "openTitleShop": "称号商店",
     "noneActivated": "当前尚未激活任何称号",
-    "activated": "使用中：${name: String}"
+    "activated": "使用中：${name: String}",
+    "empty": "目前还没有拥有任何称号",
+    "tapToUse": "点击称号即可使用"
   },
   "titleShop": {
     "title": "称号商店",
@@ -1764,7 +1812,14 @@
     },
     "customTitle": "自定义头衔",
     "signature": "个人签名",
-    "timezone": "时区"
+    "timezone": "时区",
+    "sections": {
+      "basic": "基本资料",
+      "contact": "联系方式",
+      "aboutMe": "关于我",
+      "forum": "论坛显示"
+    },
+    "uploadHint": "修改只保留在本页，点右上角的上传按钮才会提交到论坛。"
   },
   "urlInfoBottomSheet": {
     "title": "链接信息",
@@ -1858,6 +1913,7 @@
     "title": "屏蔽管理",
     "manageEntry": "屏蔽管理",
     "localHint": "已屏蔽用户（本机）：只对这台设备上的当前账号生效，不会通知对方。对方的主题、回复与可识别来源的提醒会被隐藏；私人消息仍会照常接收，也可以手动打开阅读，但本机不再为此人的消息弹出提醒或显示未读角标。好友关系与论坛权限不变。无法判断作者的内容仍可能显示，例如主页导读、收藏与浏览记录里的主题标题、更新前收到的提醒，以及引用其他页楼层的内容。例：账号 A 屏蔽了 X，同一设备上的账号 B 不会继承；切回账号 A 时名单仍在。",
+    "localTitle": "已屏蔽用户（本机）",
     "block": "屏蔽此用户（本机）",
     "unblock": "解除屏蔽",
     "blockConfirmTitle": "屏蔽 ${name}？",

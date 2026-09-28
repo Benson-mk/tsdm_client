@@ -24,6 +24,17 @@ final class HomepageRefreshRequested extends HomepageEvent with HomepageRefreshR
   UserLoginInfo? userLoginInfo;
 }
 
+/// User asks whether today's daily red packet is offered now, from its entry on the loaded homepage.
+///
+/// Only the packet and the form hash are updated; the loaded page stays on screen, no loading state, and a refresh or
+/// an account change meanwhile wins over the answer.
+@MappableClass()
+final class HomepageDailyRedPacketCheckRequested extends HomepageEvent
+    with HomepageDailyRedPacketCheckRequestedMappable {
+  /// Constructor.
+  const HomepageDailyRedPacketCheckRequested();
+}
+
 /// User requests to login.
 @MappableClass()
 final class HomepageLoginRequested extends HomepageEvent with HomepageLoginRequestedMappable {}

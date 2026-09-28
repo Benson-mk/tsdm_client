@@ -15,6 +15,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/back_to_home_button.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -57,8 +58,24 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
     // Post can not be null because we only call this function when in
     // success state.
     final post = state.post!;
+    // The post as a floor of the thread reader: a rounded surface at a readable width, phones keep most of the width
+    // for the text.
+    final side = MediaQuery.sizeOf(context).width < 600 ? 6.0 : 16.0;
+    // Only the post keeps the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
+    final postView = SafeArea(
+      top: false,
+      bottom: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(side, 8, side, 12),
+        child: AppContentWidth(
+          maxWidth: appReadingMaxWidth,
+          child: Card(margin: EdgeInsets.zero, shape: appSurfaceShape(context), child: PostCard(post)),
+        ),
+      ),
+    );
     if (widget.noticeType == NoticeType.rate) {
-      return SingleChildScrollView(child: PostCard(post));
+      return postView;
     }
 
     if (state.replyParameters != null) {
@@ -68,7 +85,7 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
 
     return Column(
       children: [
-        Expanded(child: SingleChildScrollView(child: PostCard(post))),
+        Expanded(child: postView),
         // Always show reply bar even thread is locked to keep the same UI as
         // visiting locked thread.
         ReplyBar(
@@ -131,9 +148,13 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
             final body = switch (state.status) {
               NotificationDetailStatus.initial || NotificationDetailStatus.loading => const CenteredCircularIndicator(),
               NotificationDetailStatus.success => _buildBody(context, state),
-              NotificationDetailStatus.failed => buildRetryButton(context, () async {
-                await context.read<NotificationDetailCubit>().fetchDetail(widget.url);
-              }),
+              NotificationDetailStatus.failed => SafeArea(
+                top: false,
+                bottom: false,
+                child: buildRetryButton(context, () async {
+                  await context.read<NotificationDetailCubit>().fetchDetail(widget.url);
+                }),
+              ),
             };
 
             // Update thread closed state to reply bar.
@@ -170,6 +191,7 @@ class _NoticeDetailPage extends State<NoticeDetailPage> with LoggerMixin {
                   ),
                 ],
               ),
+              // The post and the retry keep the side safe area; the reply bar pads itself for all its insets.
               body: body,
             );
           },

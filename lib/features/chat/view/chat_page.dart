@@ -3,24 +3,24 @@ import 'dart:async';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/chat/bloc/chat_bloc.dart';
 import 'package:tsdm_client/features/chat/models/editor_features.dart';
 import 'package:tsdm_client/features/chat/repository/chat_repository.dart';
+import 'package:tsdm_client/features/chat/widgets/chat_frame.dart';
 import 'package:tsdm_client/features/chat/widgets/chat_message_card.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 import 'package:tsdm_client/widgets/reply_bar/reply_bar.dart';
 import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
-import 'package:tsdm_client/widgets/single_line_text.dart';
 
 /// Chat page shows a page to let user chat with another user.
 ///
@@ -76,24 +76,31 @@ final class _ChatPageState extends State<ChatPage> {
         }
         context.read<ChatBloc>().add(ChatFetchHistoryRequested(state.uid));
       },
-      child: ListView.separated(
-        controller: _scrollController,
-        separatorBuilder: (context, index) => const Divider(thickness: 0.5),
-        itemCount: messages.length,
-        itemBuilder: (context, index) => ChatMessageCard(messages[index]),
+      // Bubbles centered at a readable width; the list keeps the full width for scrolling and pull to refresh.
+      child: AppCenteredList(
+        maxWidth: appReadingMaxWidth,
+        builder: (context, side, _) => ListView.builder(
+          controller: _scrollController,
+          padding: side.copyWith(top: 8, bottom: 8),
+          itemCount: messages.length,
+          itemBuilder: (context, index) => ChatMessageCard(messages[index]),
+        ),
       ),
     );
 
+    // Only the messages keep the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
     return Column(
       children: [
-        Expanded(child: messageList),
-        sizedBoxW12H12,
-        ReplyBar(
-          controller: _replyBarController,
-          replyType: ReplyTypes.chat,
-          chatSendTarget: state.chatSendTarget,
-          disabledEditorFeatures: chatPagesDisabledFeatures,
-          fullScreenDisabledEditorFeatures: chatPagesDisabledFeatures,
+        Expanded(child: SafeArea(bottom: false, child: messageList)),
+        ChatComposerFrame(
+          child: ReplyBar(
+            controller: _replyBarController,
+            replyType: ReplyTypes.chat,
+            chatSendTarget: state.chatSendTarget,
+            disabledEditorFeatures: chatPagesDisabledFeatures,
+            fullScreenDisabledEditorFeatures: chatPagesDisabledFeatures,
+          ),
         ),
       ],
     );
@@ -193,9 +200,12 @@ final class _ChatPageState extends State<ChatPage> {
               // A reload keeps the messages on screen instead of flashing a spinner.
               ChatStatus.loading when state.messageList.isEmpty => const CenteredCircularIndicator(),
               ChatStatus.loading || ChatStatus.success => _buildContent(context, state),
-              ChatStatus.failure => buildRetryButton(
-                context,
-                () => context.read<ChatBloc>().add(ChatFetchHistoryRequested(widget.uid)),
+              ChatStatus.failure => SafeArea(
+                bottom: false,
+                child: buildRetryButton(
+                  context,
+                  () => context.read<ChatBloc>().add(ChatFetchHistoryRequested(widget.uid)),
+                ),
               ),
             };
 
@@ -216,23 +226,13 @@ final class _ChatPageState extends State<ChatPage> {
                     onPressed: () async => context.dispatchAsUrl(state.chatHistoryUrl),
                   ),
                 ],
-                bottom: PreferredSize(
-                  preferredSize: const Size(kToolbarHeight / 2, kToolbarHeight / 2),
-                  child: Padding(
-                    padding: edgeInsetsL12R12B12,
-                    child: Row(
-                      children: [
-                        SingleLineText(
-                          '${tr.hint(user: widget.username ?? widget.uid)} '
-                          '${state.online ? tr.online : tr.offline}',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ],
-                    ),
-                  ),
+                bottom: ChatPeerHeader(
+                  text: tr.hint(user: widget.username ?? widget.uid),
+                  status: state.online ? context.t.profilePage.online : context.t.profilePage.offline,
+                  online: state.online,
                 ),
               ),
-              body: SafeArea(bottom: false, child: body),
+              body: body,
             );
           },
         ),

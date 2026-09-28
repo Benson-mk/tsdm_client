@@ -17,6 +17,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -203,9 +204,14 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
               CustomAlertDialog.sync(
                 title: Text(tr.reason),
                 content: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: state.info!.defaultReasonList
                       .map(
                         (e) => ListTile(
+                          leading: Icon(
+                            e == reasonController.text ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                            color: e == reasonController.text ? Theme.of(context).colorScheme.primary : null,
+                          ),
                           title: Text(e),
                           onTap: () {
                             context.pop();
@@ -224,88 +230,105 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
       );
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
     return Form(
       key: formKey,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          sizedBoxW12H12,
-          // Body title.
-          Row(
-            children: [
-              sizedBoxW12H12,
-              Expanded(
-                child: Text(
-                  tr.description(username: widget.username, floor: widget.floor),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
-                ),
-              ),
-              sizedBoxW12H12,
-            ],
-          ),
-          sizedBoxW12H12,
           Expanded(
-            child: GridView(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 240,
-                mainAxisExtent: 80,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              padding: edgeInsetsL12T8R12,
-              children: scoreWidgetList,
-            ),
-          ),
-          sizedBoxW8H8,
-          Row(
-            children: [
-              sizedBoxW12H12,
-              Expanded(
-                child: TextFormField(
-                  controller: reasonController,
-                  decoration: InputDecoration(labelText: tr.reason, suffixIcon: defaultReasonButton),
+            child: AppCenteredList(
+              maxWidth: appFormMaxWidth,
+              // Not a lazy list: every score field stays built, so the form validates all of them.
+              builder: (context, horizontal, width) => SingleChildScrollView(
+                padding: horizontal.add(const EdgeInsets.symmetric(vertical: 12)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Body title: whom and which floor is rated.
+                    AppSurface(
+                      child: Row(
+                        children: [
+                          const AppIconTile(Icons.star_rate_outlined),
+                          sizedBoxW12H12,
+                          Expanded(
+                            child: Text(
+                              tr.description(username: widget.username, floor: widget.floor),
+                              style: Theme.of(
+                                context,
+                              ).textTheme.titleMedium?.copyWith(color: colorScheme.secondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    appListSeparator,
+                    AppFormSection(
+                      children: [
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            // Score fields carry a helper and a range: one per row on phones, more on wide windows
+                            // and fewer again with large text. Heights follow the content, errors are never clipped.
+                            final fit = (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(220)).floor();
+                            final perRow = fit < 1 ? 1 : (fit > 3 ? 3 : fit);
+                            final fieldWidth = (constraints.maxWidth - 12 * (perRow - 1)) / perRow;
+                            return Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                for (final field in scoreWidgetList) SizedBox(width: fieldWidth, child: field),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    appListSeparator,
+                    AppFormSection(
+                      gap: 4,
+                      children: [
+                        TextFormField(
+                          controller: reasonController,
+                          decoration: InputDecoration(labelText: tr.reason, suffixIcon: defaultReasonButton),
+                        ),
+                        SectionSwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: noticeAuthor || state.info!.noticeAuthorForced,
+                          title: Text(tr.noticeAuthor),
+                          subtitle: state.info!.noticeAuthorForced ? Text(tr.noticeAuthorForced) : null,
+                          onChanged: state.info!.noticeAuthorForced
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    noticeAuthor = value;
+                                  });
+                                },
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              sizedBoxW12H12,
-            ],
-          ),
-          SectionSwitchListTile(
-            value: noticeAuthor || state.info!.noticeAuthorForced,
-            title: Text(tr.noticeAuthor),
-            subtitle: state.info!.noticeAuthorForced ? Text(tr.noticeAuthorForced) : null,
-            onChanged: state.info!.noticeAuthorForced
-                ? null
-                : (value) {
-                    setState(() {
-                      noticeAuthor = value;
-                    });
-                  },
-          ),
-          if (state.status == RateStatus.rateFailed)
-            Padding(
-              padding: edgeInsetsL12T4R12B4,
-              child: Text(
-                state.failedReason ?? tr.failedToRate,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.error),
-              ),
             ),
-          sizedBoxW12H12,
-          Row(
-            children: [
-              sizedBoxW12H12,
-              Expanded(
-                child: DebounceFilledButton(
+          ),
+          // Submit stays reachable above the keyboard; a refused rate shows the forum's reason right above it.
+          AppBottomActionBar(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (state.status == RateStatus.rateFailed) ...[
+                  AppNoticeBanner(tone: AppNoticeTone.error, message: state.failedReason ?? tr.failedToRate),
+                  sizedBoxW8H8,
+                ],
+                DebounceFilledButton(
                   shouldDebounce: state.status.isLoading(),
                   onPressed: () async => _rate(context, state.info!),
                   child: Text(tr.title),
                 ),
-              ),
-              sizedBoxW12H12,
-            ],
+              ],
+            ),
           ),
-          Padding(padding: context.safePadding()),
         ],
       ),
     );

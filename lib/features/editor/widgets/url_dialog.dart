@@ -9,6 +9,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/widgets/annimate/animated_visibility.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 
 /// Link prefix, originally in quill_flutter.
@@ -100,12 +101,18 @@ class _UrlDialogState extends State<UrlDialog> {
     final tr = context.t.bbcodeEditor.url;
     return CustomAlertDialog.sync(
       clipBehavior: Clip.antiAlias,
-      title: Text(context.t.bbcodeEditor.url.title),
+      title: Row(
+        children: [
+          const AppIconTile(Icons.link_outlined, size: 36),
+          sizedBoxW12H12,
+          Expanded(child: Text(context.t.bbcodeEditor.url.title)),
+        ],
+      ),
       content: Form(
         key: formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             TextFormField(
               controller: descController,
@@ -120,53 +127,65 @@ class _UrlDialogState extends State<UrlDialog> {
               decoration: InputDecoration(prefixIcon: const Icon(Icons.link_outlined), labelText: tr.link),
               validator: (v) => v!.trim().isNotEmpty ? null : tr.errorEmpty,
             ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    TextButton(
-                      child: Text(tr.autoPaste.action),
-                      onPressed: () async {
-                        final bilibiliText = await getPlainTextFromClipboard();
-                        if (bilibiliText == null) {
-                          return;
-                        }
+            // Paste a bilibili share text: a helper, kept apart from the fields.
+            AppInsetBlock(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.content_paste_outlined),
+                          label: Text(tr.autoPaste.action),
+                          onPressed: () async {
+                            final bilibiliText = await getPlainTextFromClipboard();
+                            if (bilibiliText == null) {
+                              return;
+                            }
 
-                        final reMatch = _bilibiliShareRe.firstMatch(bilibiliText);
-                        if (reMatch == null) {
-                          return;
-                        }
+                            final reMatch = _bilibiliShareRe.firstMatch(bilibiliText);
+                            if (reMatch == null) {
+                              return;
+                            }
 
-                        final desc = reMatch.namedGroup('desc')!;
-                        final url = reMatch.namedGroup('url')!;
-                        setState(() {
-                          descController.text = desc;
-                          urlController.text = url;
-                        });
-                      },
+                            final desc = reMatch.namedGroup('desc')!;
+                            final url = reMatch.namedGroup('url')!;
+                            setState(() {
+                              descController.text = desc;
+                              urlController.text = url;
+                            });
+                          },
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.info_outline),
+                        tooltip: tr.autoPaste.tip,
+                        isSelected: _bilibiliTipExpanded,
+                        onPressed: () => setState(() => _bilibiliTipExpanded = !_bilibiliTipExpanded),
+                      ),
+                    ],
+                  ),
+                  AnimatedVisibility(
+                    visible: _bilibiliTipExpanded,
+                    duration: duration200,
+                    child: Padding(
+                      padding: edgeInsetsL8R8,
+                      child: Text(tr.autoPaste.detail, style: Theme.of(context).textTheme.labelSmall),
                     ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.info_outline),
-                      tooltip: tr.autoPaste.tip,
-                      onPressed: () => setState(() => _bilibiliTipExpanded = !_bilibiliTipExpanded),
-                    ),
-                  ],
-                ),
-                AnimatedVisibility(
-                  visible: _bilibiliTipExpanded,
-                  duration: duration200,
-                  child: Text(tr.autoPaste.detail, style: Theme.of(context).textTheme.labelSmall),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
               children: [
                 TextButton(child: Text(context.t.general.cancel), onPressed: () => context.pop()),
-                TextButton(
+                FilledButton(
                   child: Text(context.t.general.ok),
                   onPressed: () async {
                     if (formKey.currentState == null || !(formKey.currentState!).validate()) {

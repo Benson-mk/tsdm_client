@@ -10,6 +10,7 @@ import 'package:tsdm_client/features/packet/repository/packet_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 
 /// 红包
 class PacketCard extends StatelessWidget {
@@ -32,7 +33,7 @@ class PacketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tid = _re.firstMatch(packetUrl)?.namedGroup('tid')?.parseToInt();
 
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final colorScheme = Theme.of(context).colorScheme;
     final tr = context.t.packetCard;
 
     return MultiBlocProvider(
@@ -78,41 +79,27 @@ class PacketCard extends StatelessWidget {
               PacketStatus.failed => () async => context.read<PacketCubit>().receivePacket(packetUrl),
             };
 
-            return Card(
-              child: Padding(
-                padding: edgeInsetsL16T16R16B16,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(FontAwesomeIcons.coins, color: primaryColor),
-                        sizedBoxW8H8,
-                        Text(tr.title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: primaryColor)),
-                        // Some spacing.
-                        sizedBoxW32H32,
-                        sizedBoxW32H32,
-                        sizedBoxW32H32,
-                        IconButton(
-                          icon: Icon(Icons.bar_chart_outlined, color: Theme.of(context).colorScheme.primary),
-                          tooltip: tr.viewReceiveHistory,
-                          onPressed: tid == null
-                              ? null
-                              : () async =>
-                                    context.pushNamed(ScreenPaths.packetDetail, pathParameters: {'tid': '$tid'}),
-                        ),
-                      ],
-                    ),
-                    sizedBoxW12H12,
-                    Text(tr.detail),
-                    sizedBoxW12H12,
-                    SizedBox(
-                      width: sizeButtonInCardMinWidth,
-                      child: OutlinedButton.icon(icon: body, label: label, onPressed: callback),
-                    ),
-                  ],
-                ),
+            // Header with the receive history at the end; the open button is the one filled action of the card.
+            return AppEmbedCard(
+              icon: FontAwesomeIcons.coins,
+              title: tr.title,
+              trailing: IconButton(
+                icon: Icon(Icons.bar_chart_outlined, color: colorScheme.primary),
+                tooltip: tr.viewReceiveHistory,
+                onPressed: tid == null
+                    ? null
+                    : () async => context.pushNamed(ScreenPaths.packetDetail, pathParameters: {'tid': '$tid'}),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr.detail, style: Theme.of(context).textTheme.bodyMedium),
+                  sizedBoxW12H12,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: sizeButtonInCardMinWidth),
+                    child: FilledButton.tonalIcon(icon: body, label: label, onPressed: callback),
+                  ),
+                ],
               ),
             );
           },

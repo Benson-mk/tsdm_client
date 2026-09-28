@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/bloc/authentication_bloc.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
@@ -10,15 +11,37 @@ import 'package:tsdm_client/features/authentication/widgets/captcha_image.dart';
 import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/logger.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
 
 // TODO: Fetch login questions dynamically from web server.
 final _loginQuestions = ['无安全问题', '母亲的名字', '爷爷的名字', '父亲出生的城市', '您其中一位老师的名字', '您个人计算机的型号', '您最喜欢的餐馆名称', '驾驶执照的最后四位数字'];
 
+/// Text telling why a login failed, for the [exception] the authentication bloc reports.
+String loginErrorText(BuildContext context, Object? exception) => switch (exception) {
+  LoginFormHashNotFoundException() => context.t.loginPage.hashValueNotFound,
+  LoginInvalidFormHashException() => context.t.loginPage.failedToGetFormHash,
+  LoginMessageNotFoundException() => context.t.loginPage.failedToLoginMessageNodeNotFound,
+  LoginIncorrectCaptchaException() => context.t.loginPage.loginResultIncorrectCaptcha,
+  LoginInvalidCredentialException() => context.t.loginPage.loginResultIncorrectUsernameOrPassword,
+  LoginIncorrectSecurityQuestionException() => context.t.loginPage.loginResultIncorrectQuestionOrAnswer,
+  LoginAttemptLimitException() => context.t.loginPage.loginResultTooManyLoginAttempts,
+  LoginUserInfoNotFoundException() => context.t.loginPage.loginFailed,
+  LoginOtherErrorException() => context.t.loginPage.loginResultOtherErrors,
+  _ => context.t.general.failedToLoad,
+};
+
 /// Form for user to fill login info.
 class LoginForm extends StatefulWidget {
   /// Constructor.
-  const LoginForm({this.redirectPath, this.redirectPathParameters, this.redirectExtra, this.username, super.key});
+  const LoginForm({
+    this.redirectPath,
+    this.redirectPathParameters,
+    this.redirectExtra,
+    this.username,
+    this.padding,
+    super.key,
+  });
 
   /// The url path to redirect back once login succeed.
   final String? redirectPath;
@@ -31,6 +54,9 @@ class LoginForm extends StatefulWidget {
 
   /// Optional autofilled username.
   final String? username;
+
+  /// Padding of the scroll view of the form, centers it on wide windows.
+  final EdgeInsetsGeometry? padding;
 
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -87,144 +113,191 @@ class _LoginFormState extends State<LoginForm> with LoggerMixin {
     context.read<AuthenticationBloc>().add(AuthenticationLoginRequested(credential));
   }
 
+  /// Icon and title above the fields.
+  Widget _buildHead(BuildContext context) {
+    final tr = context.t.loginPage;
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      children: [
+        const AppIconTile(Icons.lock_person_outlined, size: 56),
+        sizedBoxW12H12,
+        Text(
+          tr.title,
+          textAlign: TextAlign.center,
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  /// How the account is identified: chips that wrap on narrow screens, instead of a drop down squeezed into the
+  /// prefix of the field.
+  Widget _buildLoginFieldChips(BuildContext context) {
+    final tr = context.t.loginPage;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        for (final (field, label, icon) in [
+          (LoginField.username, tr.loginField.username, Icons.person_outline),
+          (LoginField.uid, tr.loginField.uid, Icons.tag),
+          (LoginField.email, tr.loginField.email, Icons.alternate_email_outlined),
+        ])
+          ChoiceChip(
+            avatar: Icon(icon, size: 18),
+            label: Text(label),
+            selected: loginField == field,
+            showCheckmark: false,
+            onSelected: (_) {
+              setState(() => loginField = field);
+              loginFieldFocus.requestFocus();
+            },
+          ),
+      ],
+    );
+  }
+
   Widget _buildForm(BuildContext context, AuthenticationState state) {
     // Only allow to press login button when got hash but not logged in.
     final pending = state.status != AuthenticationStatus.gotHash && state.status != AuthenticationStatus.failure;
     final tr = context.t.loginPage;
 
+    // Not a lazy list: every field and the login / retry button stay built, so `validate` checks all the fields
+    // (a lazy list skips the ones scrolled away) and the retry button can be reached at any text scale.
     return Form(
       key: formKey,
-      child: ListView(
-        children: [
-          Center(child: Text(tr.login, style: Theme.of(context).textTheme.titleLarge)),
-          sizedBoxW12H12,
-          TextFormField(
-            autofocus: widget.username == null,
-            focusNode: loginFieldFocus,
-            controller: usernameController,
-            decoration: InputDecoration(
-              // prefixIcon: const Icon(Icons.person),
-              labelText: switch (loginField) {
-                LoginField.username => tr.loginField.username,
-                LoginField.uid => tr.loginField.uid,
-                LoginField.email => tr.loginField.email,
-              },
-              // Follow M3 spec:
-              // https://m3.material.io/components/text-fields/specs
-              constraints: const BoxConstraints(maxHeight: specTextFieldHeight),
-              prefix: DropdownButtonHideUnderline(
-                child: DropdownButton<LoginField>(
-                  value: loginField,
-                  onChanged: (v) {
-                    if (v == null) {
-                      return;
-                    }
-                    setState(() {
-                      loginField = v;
-                    });
-                    loginFieldFocus.requestFocus();
-                  },
-                  items: [
-                    DropdownMenuItem(value: LoginField.username, child: Text(tr.loginField.username)),
-                    DropdownMenuItem(value: LoginField.uid, child: Text(tr.loginField.uid)),
-                    DropdownMenuItem(value: LoginField.email, child: Text(tr.loginField.email)),
-                  ],
-                ),
-              ),
-            ),
-            validator: (v) => v!.trim().isNotEmpty ? null : tr.usernameEmpty,
-          ),
-          sizedBoxW12H12,
-          TextFormField(
-            controller: passwordController,
-            focusNode: passwordFieldFocus,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.password),
-              labelText: tr.password,
-              suffixIcon: Focus(
-                canRequestFocus: false,
-                descendantsAreFocusable: false,
-                child: IconButton(
-                  icon: _showPassword ? const Icon(Icons.visibility) : const Icon(Icons.visibility_off),
-                  onPressed: () {
-                    setState(() {
-                      _showPassword = !_showPassword;
-                    });
-                  },
-                ),
-              ),
-            ),
-            obscureText: !_showPassword,
-            validator: (v) => v!.trim().isNotEmpty ? null : tr.passwordEmpty,
-          ),
-          // Captcha is only required when the server says so.
-          if (state.loginHash?.needCaptcha ?? false) ...[
-            sizedBoxW12H12,
-            Row(
+      child: SingleChildScrollView(
+        padding: widget.padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHead(context),
+            const SizedBox(height: 16),
+            AppFormSection(
+              title: context.t.settingsPage.accountSection.title,
+              icon: Icons.account_circle_outlined,
               children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: verifyCodeController,
-                    decoration: InputDecoration(prefixIcon: const Icon(Icons.pin), labelText: tr.verifyCode),
-                    validator: (v) => v!.trim().isNotEmpty ? null : tr.verifyCodeEmpty,
+                _buildLoginFieldChips(context),
+                TextFormField(
+                  autofocus: widget.username == null,
+                  focusNode: loginFieldFocus,
+                  controller: usernameController,
+                  decoration: appFieldDecoration(
+                    label: switch (loginField) {
+                      LoginField.username => tr.loginField.username,
+                      LoginField.uid => tr.loginField.uid,
+                      LoginField.email => tr.loginField.email,
+                    },
+                    icon: switch (loginField) {
+                      LoginField.username => Icons.person_outline,
+                      LoginField.uid => Icons.tag,
+                      LoginField.email => Icons.alternate_email_outlined,
+                    },
+                  ),
+                  validator: (v) => v!.trim().isNotEmpty ? null : tr.usernameEmpty,
+                ),
+                TextFormField(
+                  controller: passwordController,
+                  focusNode: passwordFieldFocus,
+                  decoration: appFieldDecoration(
+                    label: tr.password,
+                    icon: Icons.password,
+                    suffix: Focus(
+                      canRequestFocus: false,
+                      descendantsAreFocusable: false,
+                      child: IconButton(
+                        icon: _showPassword ? const Icon(Icons.visibility) : const Icon(Icons.visibility_off),
+                        onPressed: () {
+                          setState(() {
+                            _showPassword = !_showPassword;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  obscureText: !_showPassword,
+                  validator: (v) => v!.trim().isNotEmpty ? null : tr.passwordEmpty,
+                ),
+                // Captcha is only required when the server says so.
+                if (state.loginHash?.needCaptcha ?? false)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: verifyCodeController,
+                          decoration: appFieldDecoration(label: tr.verifyCode, icon: Icons.pin),
+                          validator: (v) => v!.trim().isNotEmpty ? null : tr.verifyCodeEmpty,
+                        ),
+                      ),
+                      sizedBoxW12H12,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 150),
+                        child: CaptchaImage(captchaImageController),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: appSurfaceGap),
+            AppFormSection(
+              title: tr.securityQuestion,
+              icon: Icons.shield_outlined,
+              children: [
+                InputDecorator(
+                  decoration: appFieldDecoration(label: tr.securityQuestion, icon: Icons.question_mark_outlined),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _question,
+                      isDense: true,
+                      // Long questions are cut with an ellipsis instead of overflowing on narrow phones.
+                      isExpanded: true,
+                      borderRadius: BorderRadius.circular(appInnerRadius),
+                      onChanged: (newValue) {
+                        if (newValue == null) {
+                          return;
+                        }
+                        setState(() {
+                          _question = newValue;
+                        });
+                      },
+                      items: _loginQuestions.map((value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                    ),
                   ),
                 ),
-                sizedBoxW12H12,
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 150),
-                  child: CaptchaImage(captchaImageController),
+                TextFormField(
+                  controller: answerController,
+                  decoration: appFieldDecoration(
+                    label: tr.answer,
+                    icon: Icons.question_answer_outlined,
+                  ).copyWith(enabled: _question != _loginQuestions.first),
+                  validator: (v) => _question == _loginQuestions.first || v!.trim().isNotEmpty ? null : tr.answerEmpty,
                 ),
               ],
             ),
-          ],
-          sizedBoxW12H12,
-          InputDecorator(
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.question_mark_outlined),
-              labelText: tr.securityQuestion,
+            if (state.status == AuthenticationStatus.failure) ...[
+              const SizedBox(height: appSurfaceGap),
+              AppNoticeBanner(message: loginErrorText(context, state.loginException), tone: AppNoticeTone.error),
+            ],
+            const SizedBox(height: 16),
+            DebounceFilledButton(
+              shouldDebounce: pending,
+              onPressed: () async => _login(context, loginField, state),
+              child: Text(state.status == AuthenticationStatus.failure ? context.t.general.retry : tr.login),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _question,
-                isDense: true,
-                onChanged: (newValue) {
-                  if (newValue == null) {
-                    return;
-                  }
-                  setState(() {
-                    _question = newValue;
-                  });
-                },
-                items: _loginQuestions.map((value) {
-                  return DropdownMenuItem<String>(value: value, child: Text(value));
-                }).toList(),
+            sizedBoxW12H12,
+            Center(
+              child: TextButton(
+                child: Text(tr.signUpHint, style: const TextStyle(decoration: TextDecoration.underline)),
+                onPressed: () async => context.dispatchAsUrl(signUpPage, external: true),
               ),
             ),
-          ),
-          sizedBoxW12H12,
-          TextFormField(
-            controller: answerController,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.question_answer_outlined),
-              labelText: tr.answer,
-              enabled: _question != _loginQuestions.first,
-            ),
-            validator: (v) => _question == _loginQuestions.first || v!.trim().isNotEmpty ? null : tr.answerEmpty,
-          ),
-          sizedBoxW12H12,
-          DebounceFilledButton(
-            shouldDebounce: pending,
-            onPressed: () async => _login(context, loginField, state),
-            child: Text(state.status == AuthenticationStatus.failure ? context.t.general.retry : tr.login),
-          ),
-          sizedBoxW12H12,
-          Center(
-            child: TextButton(
-              child: Text(tr.signUpHint, style: const TextStyle(decoration: TextDecoration.underline)),
-              onPressed: () async => context.dispatchAsUrl(signUpPage, external: true),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

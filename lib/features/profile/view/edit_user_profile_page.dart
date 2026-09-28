@@ -19,6 +19,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/selectable_list_tile.dart';
@@ -50,10 +51,12 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
     required List<(Value, String)> valueNamePairs,
     required eup.UserProfile Function(eup.UserProfile, Value) onValueUpdated,
     Value? currentValue,
+    IconData? icon,
   }) async {
     final newValue = await _showSelectionDialog<Value>(
       context: context,
       title: title,
+      icon: icon,
       currentValue: currentValue,
       valueNamePairs: valueNamePairs,
     );
@@ -78,10 +81,12 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
     InputDecoration? inputDecoration,
     int? maxLines = 1,
     int? minLines,
+    IconData? icon,
   }) async {
     final newValue = await _showTextFieldDialog(
       context: context,
       title: title,
+      icon: icon,
       profile: profile,
       initialText: currentValue,
       onValueUpdated: onValueUpdated,
@@ -101,346 +106,345 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
     );
   }
 
+  /// A text field of the profile: the row, and its dialog with the same icon.
+  Widget _textTile({
+    required BuildContext context,
+    required eup.UserProfile profile,
+    required IconData icon,
+    required String title,
+    required String? value,
+    required eup.UserProfile Function(eup.UserProfile, String) onValueUpdated,
+    eup.Visibility? visibility,
+    FutureOr<void> Function(eup.Visibility)? onVisibilityChanged,
+    bool multiline = false,
+  }) => _buildProfileListTile(
+    context: context,
+    icon: icon,
+    title: title,
+    subtitle: value ?? '',
+    value: value,
+    visibility: visibility,
+    onVisibilityChanged: onVisibilityChanged,
+    onTap: (v) async => _spawnTextFieldDialog(
+      context: context,
+      profile: profile,
+      title: title,
+      icon: icon,
+      currentValue: v ?? '',
+      onValueUpdated: onValueUpdated,
+      maxLines: multiline ? _profileFieldTextMaxLines : 1,
+      minLines: multiline ? _profileFieldTextMinLines : null,
+    ),
+  );
+
+  void _save(BuildContext context, eup.UserProfile profile) =>
+      context.read<EditUserProfileBloc>().add(EditUserProfileSaveProfileRequested(profile));
+
   Widget _buildBody(BuildContext context, eup.UserProfile profile) {
     final tr = context.t.editUserProfilePage;
 
+    // Same fields, dialogs and values as before, grouped by what they are about.
+    final basic = AppTileGroup(
+      title: tr.sections.basic,
+      icon: Icons.person_outline,
+      children: [
+        _buildProfileListTile(
+          context: context,
+          icon: Icons.badge_outlined,
+          title: tr.username,
+          value: tr.username,
+          subtitle: profile.usernameReadonly,
+        ),
+        _buildProfileListTile(
+          context: context,
+          icon: Icons.face_2_outlined,
+          title: tr.gender.title,
+          subtitle: switch (profile.gender) {
+            eup.Gender.private => tr.gender.hide,
+            eup.Gender.male => tr.gender.male,
+            eup.Gender.female => tr.gender.female,
+          },
+          value: profile.gender,
+          visibility: profile.genderVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(genderVisibility: visibility)),
+          onTap: (gender) async => _spawnSelectionDialog<eup.Gender>(
+            context: context,
+            profile: profile,
+            title: tr.gender.title,
+            icon: Icons.face_2_outlined,
+            currentValue: profile.gender,
+            valueNamePairs: [
+              (eup.Gender.private, tr.gender.hide),
+              (eup.Gender.male, tr.gender.male),
+              (eup.Gender.female, tr.gender.female),
+            ],
+            onValueUpdated: (p, v) => p.copyWith(gender: v),
+          ),
+        ),
+        _buildProfileListTile(
+          context: context,
+          icon: Icons.cake_outlined,
+          title: tr.birthday.title,
+          subtitle:
+              '${profile.birthdayYear ?? "-"} ${tr.birthday.year} '
+              '${profile.birthdayMonth ?? "-"} ${tr.birthday.month} '
+              '${profile.birthdayDay ?? "-"} ${tr.birthday.day}',
+          value: _BirthdayInfo(
+            year: profile.birthdayYear,
+            month: profile.birthdayMonth,
+            day: profile.birthdayDay,
+            availableYears: profile.birthdayAvailableYears,
+          ),
+          visibility: profile.birthdayVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(birthdayVisibility: visibility)),
+          onTap: (_) async {
+            final birthday = await showSelectBirthdayDialog(
+              context,
+              BirthdayInfo(
+                year: profile.birthdayYear,
+                month: profile.birthdayMonth,
+                day: profile.birthdayDay,
+              ),
+              profile.birthdayAvailableYears,
+            );
+            if (birthday == null || !context.mounted) {
+              return;
+            }
+            _save(
+              context,
+              profile.copyWith(
+                birthdayYear: birthday.year,
+                birthdayMonth: birthday.month,
+                birthdayDay: birthday.day,
+              ),
+            );
+          },
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.location_on_outlined,
+          title: tr.location,
+          value: profile.location,
+          visibility: profile.locationVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(locationVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(location: v),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.alternate_email_outlined,
+          title: tr.nickname,
+          value: profile.nickname,
+          visibility: profile.nicknameVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(nicknameVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(nickname: v),
+        ),
+        _buildProfileListTile(
+          context: context,
+          icon: Icons.schedule_outlined,
+          title: tr.timezone,
+          value: _TimeZoneInfo(profile.timeZone, profile.availableTimeZones),
+          subtitle: profile.timeZone?.name ?? '-',
+          onTap: (gender) async => _spawnSelectionDialog<String>(
+            context: context,
+            profile: profile,
+            title: tr.timezone,
+            icon: Icons.schedule_outlined,
+            currentValue: profile.timeZone?.value,
+            valueNamePairs: profile.availableTimeZones.map((v) => (v.value, v.name)).toList(),
+            onValueUpdated: (p, v) => p.copyWith(
+              timeZone: profile.availableTimeZones.firstWhereOrNull((e) => e.value == v),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final contact = AppTileGroup(
+      title: tr.sections.contact,
+      icon: Icons.contact_mail_outlined,
+      children: [
+        _buildProfileListTile(
+          context: context,
+          icon: Icons.chat_outlined,
+          title: tr.qq.title,
+          subtitle: '${profile.qq ?? ""}',
+          value: profile.qq,
+          visibility: profile.qqVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(qqVisibility: visibility)),
+          onTap: (v) async => _spawnTextFieldDialog(
+            context: context,
+            profile: profile,
+            title: tr.qq.title,
+            icon: Icons.chat_outlined,
+            currentValue: v == null ? '' : v.toString(),
+            onValueUpdated: (p, v) => p.copyWith(qq: v.parseToInt()),
+            validator: (v) {
+              if (v == null) {
+                return tr.qq.invalidQQ;
+              }
+
+              if (v.isEmpty) {
+                return null;
+              }
+
+              if (v.startsWith('0') || !RegExp('[0-9]{6,}').hasMatch(v)) {
+                return tr.qq.invalidQQ;
+              }
+
+              final vv = v.parseToInt();
+              if (vv == null || vv < 0) {
+                return tr.qq.invalidQQ;
+              }
+
+              return null;
+            },
+            keyboardType: .number,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
+          ),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.forum_outlined,
+          title: tr.msn,
+          value: profile.msn,
+          visibility: profile.msnVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(msnVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(msn: v),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.home_outlined,
+          title: tr.homepage,
+          value: profile.homepage,
+          visibility: profile.homepageVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(homepageVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(homepage: v),
+        ),
+      ],
+    );
+
+    final aboutMe = AppTileGroup(
+      title: tr.sections.aboutMe,
+      icon: Icons.notes_outlined,
+      children: [
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.description_outlined,
+          title: tr.bio,
+          value: profile.bio,
+          visibility: profile.bioVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(bioVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(bio: v),
+          multiline: true,
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.interests_outlined,
+          title: tr.hobby,
+          value: profile.hobby,
+          visibility: profile.hobbyVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(hobbyVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(hobby: v),
+          multiline: true,
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.format_quote_outlined,
+          title: tr.wordsToSay,
+          value: profile.wordsToSay,
+          visibility: profile.wordsToSayVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(wordsToSayVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(wordsToSay: v),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.construction_outlined,
+          title: tr.skills,
+          value: profile.skill,
+          visibility: profile.skillVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(skillVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(skill: v),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.live_tv_outlined,
+          title: tr.favoriteBangumi,
+          value: profile.favoriteBangumi,
+          visibility: profile.favoriteBangumiVisibility,
+          onVisibilityChanged: (visibility) => _save(context, profile.copyWith(favoriteBangumiVisibility: visibility)),
+          onValueUpdated: (p, v) => p.copyWith(favoriteBangumi: v),
+        ),
+      ],
+    );
+
+    final forum = AppTileGroup(
+      title: tr.sections.forum,
+      icon: Icons.forum_outlined,
+      children: [
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.military_tech_outlined,
+          title: tr.customTitle,
+          value: profile.customTitle,
+          onValueUpdated: (p, v) => p.copyWith(customTitle: v),
+        ),
+        _textTile(
+          context: context,
+          profile: profile,
+          icon: Icons.draw_outlined,
+          title: tr.signature,
+          value: profile.signature,
+          onValueUpdated: (p, v) => p.copyWith(signature: v),
+          multiline: true,
+        ),
+        // Page style is not editable on Discuz X5 (no "styleid" select in form), hide it if no style available.
+        if (profile.availablePageStyles.isNotEmpty)
+          _buildProfileListTile(
+            context: context,
+            icon: Icons.palette_outlined,
+            title: tr.pageStyle.title,
+            value: _PageStyleInfo(profile.pageStyle, profile.availablePageStyles),
+            subtitle: '${profile.pageStyle?.name ?? '-'} · ${tr.pageStyle.tip}',
+            onTap: (gender) async => _spawnSelectionDialog<int>(
+              context: context,
+              profile: profile,
+              title: tr.pageStyle.title,
+              icon: Icons.palette_outlined,
+              currentValue: profile.pageStyle?.value ?? 0,
+              valueNamePairs: profile.availablePageStyles.map((v) => (v.value, v.name)).toList(),
+              onValueUpdated: (p, v) => p.copyWith(
+                pageStyle: profile.availablePageStyles.firstWhereOrNull((e) => e.value == v),
+              ),
+            ),
+          ),
+      ],
+    );
+
     return Form(
       key: formKey,
-      child: ListView(
-        padding: context.safePadding(),
-        children: [
-          _buildProfileListTile(
-            context: context,
-            title: tr.username,
-            value: tr.username,
-            subtitle: profile.usernameReadonly,
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.gender.title,
-            subtitle: switch (profile.gender) {
-              eup.Gender.private => tr.gender.hide,
-              eup.Gender.male => tr.gender.male,
-              eup.Gender.female => tr.gender.female,
-            },
-            value: profile.gender,
-            visibility: profile.genderVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(genderVisibility: visibility)),
-            ),
-            onTap: (gender) async => _spawnSelectionDialog<eup.Gender>(
-              context: context,
-              profile: profile,
-              title: tr.gender.title,
-              currentValue: profile.gender,
-              valueNamePairs: [
-                (eup.Gender.private, tr.gender.hide),
-                (eup.Gender.male, tr.gender.male),
-                (eup.Gender.female, tr.gender.female),
-              ],
-              onValueUpdated: (p, v) => p.copyWith(gender: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.birthday.title,
-            subtitle:
-                '${profile.birthdayYear ?? "-"} ${tr.birthday.year} '
-                '${profile.birthdayMonth ?? "-"} ${tr.birthday.month} '
-                '${profile.birthdayDay ?? "-"} ${tr.birthday.day}',
-            value: _BirthdayInfo(
-              year: profile.birthdayYear,
-              month: profile.birthdayMonth,
-              day: profile.birthdayDay,
-              availableYears: profile.birthdayAvailableYears,
-            ),
-            visibility: profile.birthdayVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(birthdayVisibility: visibility)),
-            ),
-            onTap: (_) async {
-              final birthday = await showSelectBirthdayDialog(
-                context,
-                BirthdayInfo(
-                  year: profile.birthdayYear,
-                  month: profile.birthdayMonth,
-                  day: profile.birthdayDay,
-                ),
-                profile.birthdayAvailableYears,
-              );
-              if (birthday == null || !context.mounted) {
-                return;
-              }
-              context.read<EditUserProfileBloc>().add(
-                EditUserProfileSaveProfileRequested(
-                  profile.copyWith(
-                    birthdayYear: birthday.year,
-                    birthdayMonth: birthday.month,
-                    birthdayDay: birthday.day,
-                  ),
-                ),
-              );
-            },
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.qq.title,
-            subtitle: '${profile.qq ?? ""}',
-            value: profile.qq,
-            visibility: profile.qqVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(qqVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.qq.title,
-              currentValue: v == null ? '' : v.toString(),
-              onValueUpdated: (p, v) => p.copyWith(qq: v.parseToInt()),
-              validator: (v) {
-                if (v == null) {
-                  return tr.qq.invalidQQ;
-                }
-
-                if (v.isEmpty) {
-                  return null;
-                }
-
-                if (v.startsWith('0') || !RegExp('[0-9]{6,}').hasMatch(v)) {
-                  return tr.qq.invalidQQ;
-                }
-
-                final vv = v.parseToInt();
-                if (vv == null || vv < 0) {
-                  return tr.qq.invalidQQ;
-                }
-
-                return null;
-              },
-              keyboardType: .number,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]+'))],
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.msn,
-            subtitle: profile.msn ?? '',
-            value: profile.msn,
-            visibility: profile.msnVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(msnVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.msn,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(msn: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.homepage,
-            subtitle: profile.homepage ?? '',
-            value: profile.homepage,
-            visibility: profile.homepageVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(homepageVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.homepage,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(homepage: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.bio,
-            subtitle: profile.bio,
-            value: profile.bio,
-            visibility: profile.bioVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(bioVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.bio,
-              currentValue: v,
-              onValueUpdated: (p, v) => p.copyWith(bio: v),
-              maxLines: _profileFieldTextMaxLines,
-              minLines: _profileFieldTextMinLines,
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.hobby,
-            subtitle: profile.hobby ?? '',
-            value: profile.hobby,
-            visibility: profile.hobbyVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(hobbyVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.hobby,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(hobby: v),
-              maxLines: _profileFieldTextMaxLines,
-              minLines: _profileFieldTextMinLines,
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.location,
-            subtitle: profile.location ?? '',
-            value: profile.location,
-            visibility: profile.locationVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(locationVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.location,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(location: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.nickname,
-            subtitle: profile.nickname ?? '',
-            value: profile.nickname,
-            visibility: profile.nicknameVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(nicknameVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.nickname,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(nickname: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.wordsToSay,
-            subtitle: profile.wordsToSay ?? '',
-            value: profile.wordsToSay,
-            visibility: profile.wordsToSayVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(wordsToSayVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.wordsToSay,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(wordsToSay: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.skills,
-            subtitle: profile.skill ?? '',
-            value: profile.skill,
-            visibility: profile.skillVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(skillVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.skills,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(skill: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.favoriteBangumi,
-            subtitle: profile.favoriteBangumi ?? '',
-            value: profile.favoriteBangumi,
-            visibility: profile.favoriteBangumiVisibility,
-            onVisibilityChanged: (visibility) => context.read<EditUserProfileBloc>().add(
-              EditUserProfileSaveProfileRequested(profile.copyWith(favoriteBangumiVisibility: visibility)),
-            ),
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.favoriteBangumi,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(favoriteBangumi: v),
-            ),
-          ),
-          // Page style is not editable on Discuz X5 (no "styleid" select in form), hide it if no style available.
-          if (profile.availablePageStyles.isNotEmpty)
-            _buildProfileListTile(
-              context: context,
-              title: tr.pageStyle.title,
-              value: _PageStyleInfo(profile.pageStyle, profile.availablePageStyles),
-              subtitle: profile.pageStyle?.name ?? '-',
-              onTap: (gender) async => _spawnSelectionDialog<int>(
-                context: context,
-                profile: profile,
-                title: tr.pageStyle.title,
-                currentValue: profile.pageStyle?.value ?? 0,
-                valueNamePairs: profile.availablePageStyles.map((v) => (v.value, v.name)).toList(),
-                onValueUpdated: (p, v) => p.copyWith(
-                  pageStyle: profile.availablePageStyles.firstWhereOrNull((e) => e.value == v),
-                ),
-              ),
-            ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.customTitle,
-            value: profile.customTitle,
-            subtitle: profile.customTitle ?? '',
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.customTitle,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(customTitle: v),
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.signature,
-            value: profile.signature,
-            subtitle: profile.signature ?? '',
-            onTap: (v) async => _spawnTextFieldDialog(
-              context: context,
-              profile: profile,
-              title: tr.signature,
-              currentValue: v ?? '',
-              onValueUpdated: (p, v) => p.copyWith(signature: v),
-              maxLines: _profileFieldTextMaxLines,
-              minLines: _profileFieldTextMinLines,
-            ),
-          ),
-          _buildProfileListTile(
-            context: context,
-            title: tr.timezone,
-            value: _TimeZoneInfo(profile.timeZone, profile.availableTimeZones),
-            subtitle: profile.timeZone?.name ?? '-',
-            onTap: (gender) async => _spawnSelectionDialog<String>(
-              context: context,
-              profile: profile,
-              title: tr.timezone,
-              currentValue: profile.timeZone?.value,
-              valueNamePairs: profile.availableTimeZones.map((v) => (v.value, v.name)).toList(),
-              onValueUpdated: (p, v) => p.copyWith(
-                timeZone: profile.availableTimeZones.firstWhereOrNull((e) => e.value == v),
-              ),
-            ),
-          ),
-        ],
+      child: AppCenteredList(
+        maxWidth: appFormMaxWidth,
+        builder: (context, padding, _) => ListView(
+          padding: padding.copyWith(top: 12, bottom: 24).add(context.safePadding()),
+          children: [
+            // Edits stay on this page until uploaded with the button of the app bar.
+            AppNoticeBanner(message: tr.uploadHint, icon: Icons.cloud_upload_outlined),
+            for (final group in [basic, contact, aboutMe, forum]) ...[
+              const SizedBox(height: appSurfaceGap),
+              group,
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -472,6 +476,7 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
               context,
               () => context.read<EditUserProfileBloc>().add(const EditUserProfileLoadProfileRequested()),
             ),
+            // Form pages stay at most [appFormMaxWidth] wide, centered on wide windows.
             _ => _buildBody(context, state.profile!),
           };
 
@@ -492,7 +497,7 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
                 ),
               ],
             ),
-            body: body,
+            body: SafeArea(top: false, bottom: false, child: body),
           );
         },
       ),
@@ -502,55 +507,64 @@ class _EditUserProfilePageState extends State<EditUserProfilePage> {
 
 Widget _buildProfileListTile<T>({
   required BuildContext context,
+  required IconData icon,
   required String title,
   required String subtitle,
   required T value,
   eup.Visibility? visibility,
   FutureOr<void> Function(eup.Visibility)? onVisibilityChanged,
   FutureOr<void> Function(T)? onTap,
-}) => ListTile(
-  title: Text(title),
-  subtitle: SingleLineText(subtitle),
-  titleTextStyle: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
-  subtitleTextStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.onSurface),
-  onTap: onTap == null || context.read<EditUserProfileBloc>().state.status == .submitting
-      ? null
-      : () async => onTap.call(value),
-  contentPadding: edgeInsetsL16R16,
-  trailing: visibility == null
-      ? null
-      : IconButton(
-          icon: Icon(switch (visibility) {
-            eup.Visibility.public => Symbols.visibility,
-            eup.Visibility.friendsOnly => Symbols.visibility_lock,
-            eup.Visibility.private => Symbols.visibility_off,
-          }),
-          onPressed: context.read<EditUserProfileBloc>().state.status == .submitting
-              ? null
-              : () async {
-                  final tr = context.t.editUserProfilePage.visibility;
-                  final v = await _showSelectionDialog(
-                    context: context,
-                    title: '${tr.title} - $title',
-                    currentValue: visibility,
-                    valueNamePairs: [
-                      (eup.Visibility.public, tr.public),
-                      (eup.Visibility.friendsOnly, tr.friendsOnly),
-                      (eup.Visibility.private, tr.private),
-                    ],
-                  );
-                  if (v == null || !context.mounted) {
-                    return;
-                  }
-                  await onVisibilityChanged?.call(v);
-                },
-          tooltip: switch (visibility) {
-            eup.Visibility.public => context.t.editUserProfilePage.visibility.public,
-            eup.Visibility.friendsOnly => context.t.editUserProfilePage.visibility.friendsOnly,
-            eup.Visibility.private => context.t.editUserProfilePage.visibility.private,
-          },
-        ),
-);
+}) {
+  final colorScheme = Theme.of(context).colorScheme;
+  return ListTile(
+    leading: Icon(icon),
+    title: Text(title),
+    // An empty field says so instead of leaving a blank line.
+    subtitle: SingleLineText(subtitle.trim().isEmpty ? '-' : subtitle),
+    titleTextStyle: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.secondary),
+    subtitleTextStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+      color: subtitle.trim().isEmpty ? colorScheme.outline : colorScheme.onSurface,
+    ),
+    onTap: onTap == null || context.read<EditUserProfileBloc>().state.status == .submitting
+        ? null
+        : () async => onTap.call(value),
+    contentPadding: edgeInsetsL16R16,
+    trailing: visibility == null
+        ? null
+        : IconButton(
+            icon: Icon(switch (visibility) {
+              eup.Visibility.public => Symbols.visibility,
+              eup.Visibility.friendsOnly => Symbols.visibility_lock,
+              eup.Visibility.private => Symbols.visibility_off,
+            }),
+            onPressed: context.read<EditUserProfileBloc>().state.status == .submitting
+                ? null
+                : () async {
+                    final tr = context.t.editUserProfilePage.visibility;
+                    final v = await _showSelectionDialog(
+                      context: context,
+                      title: '${tr.title} - $title',
+                      icon: Symbols.visibility_lock,
+                      currentValue: visibility,
+                      valueNamePairs: [
+                        (eup.Visibility.public, tr.public),
+                        (eup.Visibility.friendsOnly, tr.friendsOnly),
+                        (eup.Visibility.private, tr.private),
+                      ],
+                    );
+                    if (v == null || !context.mounted) {
+                      return;
+                    }
+                    await onVisibilityChanged?.call(v);
+                  },
+            tooltip: switch (visibility) {
+              eup.Visibility.public => context.t.editUserProfilePage.visibility.public,
+              eup.Visibility.friendsOnly => context.t.editUserProfilePage.visibility.friendsOnly,
+              eup.Visibility.private => context.t.editUserProfilePage.visibility.private,
+            },
+          ),
+  );
+}
 
 /// Show a dialog provides a list of choices.
 ///
@@ -565,6 +579,7 @@ Future<Value?> _showSelectionDialog<Value>({
   required String title,
   required List<(Value, String)> valueNamePairs,
   Value? currentValue,
+  IconData? icon,
 }) async => showDialog<Value>(
   context: context,
   builder: (context) => RootPage(
@@ -572,7 +587,7 @@ Future<Value?> _showSelectionDialog<Value>({
     CustomAlertDialog.sync(
       clipBehavior: Clip.hardEdge,
       contentPadding: .zero,
-      title: Text(title),
+      title: icon == null ? Text(title) : AppDialogTitle(icon: icon, title: title),
       content: Column(
         children: valueNamePairs
             .map(
@@ -606,6 +621,7 @@ Future<String?> _showTextFieldDialog({
   InputDecoration? inputDecoration,
   int? maxLines,
   int? minLines,
+  IconData? icon,
 }) async => showDialog<String>(
   context: context,
   builder: (context) => RootPage(
@@ -613,6 +629,7 @@ Future<String?> _showTextFieldDialog({
     _TextFieldDialog(
       profile: profile,
       title: title,
+      icon: icon,
       initialText: initialText,
       onValueUpdated: onValueUpdated,
       validator: validator,
@@ -631,6 +648,7 @@ class _TextFieldDialog extends StatefulWidget {
     required this.title,
     required this.initialText,
     required this.onValueUpdated,
+    this.icon,
     this.validator,
     this.keyboardType,
     this.inputFormatters,
@@ -644,6 +662,9 @@ class _TextFieldDialog extends StatefulWidget {
 
   /// Dialog title.
   final String title;
+
+  /// Icon of the field, shown in the title.
+  final IconData? icon;
 
   /// Initial text.
   final String initialText;
@@ -684,7 +705,7 @@ class _TextFieldDialogState extends State<_TextFieldDialog> {
   Widget build(BuildContext context) {
     return CustomAlertDialog.sync(
       clipBehavior: Clip.hardEdge,
-      title: Text(widget.title),
+      title: widget.icon == null ? Text(widget.title) : AppDialogTitle(icon: widget.icon!, title: widget.title),
       content: Form(
         key: formKey,
         child: Padding(
@@ -695,7 +716,8 @@ class _TextFieldDialogState extends State<_TextFieldDialog> {
             validator: widget.validator,
             keyboardType: widget.keyboardType,
             inputFormatters: widget.inputFormatters,
-            decoration: widget.inputDecoration,
+            // Filled and rounded like the other forms; a caller's decoration still wins.
+            decoration: widget.inputDecoration ?? appFieldDecoration(),
             maxLines: widget.maxLines,
             minLines: widget.minLines,
           ),
@@ -706,7 +728,7 @@ class _TextFieldDialogState extends State<_TextFieldDialog> {
           child: Text(context.t.general.cancel),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        TextButton(
+        FilledButton(
           child: Text(context.t.general.ok),
           onPressed: () async {
             // Validate

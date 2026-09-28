@@ -33,6 +33,7 @@ class ProfileState with ProfileStateMappable {
     this.failedToLogoutReason,
     this.unreadNoticeCount = 0,
     this.hasUnreadMessage = false,
+    this.secondaryTitleUrl,
   });
 
   /// Status.
@@ -59,7 +60,12 @@ class ProfileState with ProfileStateMappable {
   /// Flag indicating has unread messages or not.
   final bool hasUnreadMessage;
 
+  /// Secondary title image of the profile owner as rendered in the profile page, null when the page has none.
+  final String? secondaryTitleUrl;
+
   /// Copy with.
+  ///
+  /// [secondaryTitleUrl] is kept when not given; pass it (null included) with every parsed page.
   ProfileState copyWith({
     ProfileStatus? status,
     String? username,
@@ -68,6 +74,7 @@ class ProfileState with ProfileStateMappable {
     AppException? failedToLogoutReason,
     int? unreadNoticeCount,
     bool? hasUnreadMessage,
+    Object? secondaryTitleUrl = _keep,
   }) {
     return ProfileState(
       status: status ?? this.status,
@@ -78,6 +85,10 @@ class ProfileState with ProfileStateMappable {
       failedToLogoutReason: failedToLogoutReason,
       unreadNoticeCount: unreadNoticeCount ?? this.unreadNoticeCount,
       hasUnreadMessage: hasUnreadMessage ?? this.hasUnreadMessage,
+      secondaryTitleUrl: identical(secondaryTitleUrl, _keep) ? this.secondaryTitleUrl : secondaryTitleUrl as String?,
     );
   }
 }
+
+/// Marks an argument of [ProfileState.copyWith] that was not given.
+const Object _keep = Object();

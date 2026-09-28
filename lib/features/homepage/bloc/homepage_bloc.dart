@@ -11,6 +11,7 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
@@ -54,6 +55,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
        ) {
     on<HomepageLoadRequested>(_onHomepageLoadRequested);
     on<HomepageRefreshRequested>(_onHomepageRefreshRequested);
+    on<HomepageDailyRedPacketCheckRequested>(_onDailyRedPacketCheckRequested);
     on<HomepageAuthChanged>(_onHomepageAuthChanged);
     on<HomepagePauseSwiper>(_onHomepagePauseSwiper);
     on<HomepageResumeSwiper>(_onHomepageResumeSwiper);
@@ -73,6 +75,10 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   /// Do not dispose this repo because it is not the owner.
   final AuthenticationRepository _authenticationRepository;
   late final StreamSubscription<List<AuthStatus>> _authStatusSub;
+
+  /// Bumped whenever the whole page is loaded again or the account changes; a daily red packet check that finishes
+  /// under another generation is stale and dropped.
+  int _pageGeneration = 0;
 
   /// Build the swiper picture list from the `Kahrpba` plugin block.
   ///
@@ -158,6 +164,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   }
 
   Future<void> _onHomepageLoadRequested(HomepageLoadRequested event, Emitter<HomepageState> emit) async {
+    _pageGeneration++;
     if (_forumHomeRepository.hasCache()) {
       final s = _parseStateFromDocument(
         _forumHomeRepository.getCache()!,
@@ -209,6 +216,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   }
 
   Future<void> _onHomepageRefreshRequested(HomepageRefreshRequested event, Emitter<HomepageState> emit) async {
+    _pageGeneration++;
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
 
@@ -244,8 +252,56 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     }
   }
 
+  /// Ask the forum again for today's daily red packet only (its entry on the greeting card had none).
+  ///
+  /// The homepage document is fetched like a refresh does (same identity checks and daily rewards handling in
+  /// [ForumHomeRepository]), but only [HomepageState.dailyRedPacket] and [HomepageState.formHash] change: the loaded
+  /// page stays on screen, nothing else is reloaded. The answer is dropped when the page was reloaded or the account
+  /// changed meanwhile, or when the document belongs to another account.
+  Future<void> _onDailyRedPacketCheckRequested(
+    HomepageDailyRedPacketCheckRequested event,
+    Emitter<HomepageState> emit,
+  ) async {
+    final uid = _authenticationRepository.currentUser?.uid;
+    if (uid == null || state.status != HomepageStatus.success || state.checkingDailyRedPacket) {
+      return;
+    }
+    final generation = _pageGeneration;
+    bool stillCurrent() =>
+        generation == _pageGeneration &&
+        state.status == HomepageStatus.success &&
+        _authenticationRepository.currentUser?.uid == uid;
+
+    emit(state.copyWith(checkingDailyRedPacket: true));
+    final result = await _forumHomeRepository.fetchHomePage(force: true).run();
+    if (!stillCurrent()) {
+      debug('drop the daily red packet check for uid $uid: the page or the account changed meanwhile');
+      if (state.checkingDailyRedPacket) {
+        emit(state.copyWith(checkingDailyRedPacket: false));
+      }
+      return;
+    }
+    switch (result) {
+      case Left(:final value):
+        handle(value);
+        emit(state.copyWith(checkingDailyRedPacket: false));
+      case Right(:final value) when parseLoggedUidFromDocument(value) != uid:
+        debug('drop the daily red packet check for uid $uid: the page belongs to another account');
+        emit(state.copyWith(checkingDailyRedPacket: false));
+      case Right(:final value):
+        emit(
+          state.copyWith(
+            checkingDailyRedPacket: false,
+            dailyRedPacket: parseDailyRedPacketConfig(value),
+            formHash: parseFormHash(value),
+          ),
+        );
+    }
+  }
+
   Future<void> _onHomepageAuthChanged(HomepageAuthChanged event, Emitter<HomepageState> emit) async {
     if (event.prev != event.curr) {
+      _pageGeneration++;
       // The cached `forum.php` was served to the previous user (or guest); nobody may show it again, and the
       // forced refresh below can fail (rate limit, offline), so drop it now rather than after the refresh.
       _forumHomeRepository.invalidate();

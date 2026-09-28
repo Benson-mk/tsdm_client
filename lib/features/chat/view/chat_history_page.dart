@@ -1,24 +1,24 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/chat/bloc/chat_history_bloc.dart';
 import 'package:tsdm_client/features/chat/models/editor_features.dart';
 import 'package:tsdm_client/features/chat/repository/chat_repository.dart';
+import 'package:tsdm_client/features/chat/widgets/chat_frame.dart';
 import 'package:tsdm_client/features/chat/widgets/chat_message_card.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 import 'package:tsdm_client/widgets/reply_bar/reply_bar.dart';
 import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
-import 'package:tsdm_client/widgets/single_line_text.dart';
 
 /// Chat history page shows full chat history with another user [uid] and an
 /// area to send new messages.
@@ -63,29 +63,36 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
         }
         context.read<ChatHistoryBloc>().add(ChatHistoryLoadHistoryRequested(uid: widget.uid, page: state.previousPage));
       },
-      child: ListView.separated(
-        // Reverse the list view and data received from server to let scroll
-        // position keep the same after new pages of data.
-        // See `messages` in `ChatHistoryState` for details.
-        reverse: true,
-        shrinkWrap: true,
-        controller: _scrollController,
-        separatorBuilder: (context, index) => const Divider(thickness: 0.5),
-        itemCount: messages.length,
-        itemBuilder: (context, index) => ChatMessageCard(messages[index]),
+      // Bubbles centered at a readable width; the list keeps the full width for scrolling and loading older pages.
+      child: AppCenteredList(
+        maxWidth: appReadingMaxWidth,
+        builder: (context, side, _) => ListView.builder(
+          // Reverse the list view and data received from server to let scroll
+          // position keep the same after new pages of data.
+          // See `messages` in `ChatHistoryState` for details.
+          reverse: true,
+          shrinkWrap: true,
+          controller: _scrollController,
+          padding: side.copyWith(top: 8, bottom: 8),
+          itemCount: messages.length,
+          itemBuilder: (context, index) => ChatMessageCard(messages[index]),
+        ),
       ),
     );
 
+    // Only the messages keep the side safe area: the reply bar pads the insets itself so its background reaches the
+    // screen edges in landscape.
     return Column(
       children: [
-        Expanded(child: messageList),
-        sizedBoxW12H12,
-        ReplyBar(
-          controller: _replyBarController,
-          replyType: ReplyTypes.chatHistory,
-          chatHistorySendTarget: state.sendTarget,
-          disabledEditorFeatures: chatPagesDisabledFeatures,
-          fullScreenDisabledEditorFeatures: chatPagesDisabledFeatures,
+        Expanded(child: SafeArea(bottom: false, child: messageList)),
+        ChatComposerFrame(
+          child: ReplyBar(
+            controller: _replyBarController,
+            replyType: ReplyTypes.chatHistory,
+            chatHistorySendTarget: state.sendTarget,
+            disabledEditorFeatures: chatPagesDisabledFeatures,
+            fullScreenDisabledEditorFeatures: chatPagesDisabledFeatures,
+          ),
         ),
       ],
     );
@@ -171,29 +178,21 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
               ChatHistoryStatus.loading ||
               ChatHistoryStatus.success ||
               ChatHistoryStatus.loadingMore => _buildContent(context, state),
-              ChatHistoryStatus.failure => buildRetryButton(
-                context,
-                () => context.read<ChatHistoryBloc>().add(
-                  ChatHistoryLoadHistoryRequested(uid: widget.uid, page: state.pageNumber),
+              ChatHistoryStatus.failure => SafeArea(
+                bottom: false,
+                child: buildRetryButton(
+                  context,
+                  () => context.read<ChatHistoryBloc>().add(
+                    ChatHistoryLoadHistoryRequested(uid: widget.uid, page: state.pageNumber),
+                  ),
                 ),
               ),
             };
 
-            PreferredSize? bottom;
+            PreferredSizeWidget? bottom;
             if ((state.user.username != null || state.user.uid != null) && state.messageCount > 0) {
-              bottom = PreferredSize(
-                preferredSize: const Size(kToolbarHeight / 2, kToolbarHeight / 2),
-                child: Padding(
-                  padding: edgeInsetsL12R12B12,
-                  child: Row(
-                    children: [
-                      SingleLineText(
-                        tr.info(user: state.user.username ?? state.user.uid ?? '', count: state.messageCount),
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                    ],
-                  ),
-                ),
+              bottom = ChatPeerHeader(
+                text: tr.info(user: state.user.username ?? state.user.uid ?? '', count: state.messageCount),
               );
             }
 
@@ -201,7 +200,7 @@ final class _ChatHistoryPageState extends State<ChatHistoryPage> {
               // Required by chat_bottom_container in reply bar.
               resizeToAvoidBottomInset: false,
               appBar: AppBar(title: Text(tr.title), bottom: bottom),
-              body: SafeArea(bottom: false, child: body),
+              body: body,
             );
           },
         ),

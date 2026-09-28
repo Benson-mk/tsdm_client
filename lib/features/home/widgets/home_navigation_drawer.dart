@@ -17,12 +17,37 @@ class _HomeNavigationDrawerState extends State<HomeNavigationDrawer> {
   @override
   Widget build(BuildContext context) {
     final barItems = _buildNavigationItems(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    // Same look as the bottom bar and the rail: low container color (shared with the brand block above it), rounded
+    // indicator.
+    //
+    // Grouped like the reference sidebar: the main entries, then the "more" entries under their header. The header is
+    // not a destination, so the indices of onDestinationSelected and selectedIndex stay those of barItems. The drawer
+    // is a list and scrolls when the window is short.
     return NavigationDrawer(
-      selectedIndex: context.watch<HomeCubit>().state.tab.index,
+      backgroundColor: colorScheme.surfaceContainerLow,
+      elevation: 0,
+      indicatorShape: _navigationIndicatorShape,
+      selectedIndex: _selectedIndexOf(barItems, context.watch<HomeCubit>().state.tab),
       onDestinationSelected: (index) => _onHomeDestinationSelected(context, _doubleTap, barItems, index),
-      children: barItems
-          .map((e) => NavigationDrawerDestination(icon: e.icon, selectedIcon: e.selectedIcon, label: Text(e.label)))
-          .toList(),
+      children: [
+        for (final (i, e) in barItems.indexed) ...[
+          if (i > 0 && e.group != barItems[i - 1].group) _NavigationSectionHeader(context.t.navigation.moreSection),
+          NavigationDrawerDestination(
+            icon: _destinationIcon(e),
+            selectedIcon: _destinationIcon(e, selected: true),
+            // The label sits in a row of unbounded width: bound it so a long label (large text) is cut instead of
+            // overflowing the 250px side panel.
+            label: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _drawerLabelMaxWidth),
+              child: Text(e.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
+
+/// Room of a drawer label in the 250px side panel, after the tile padding, the icon and the gaps.
+const _drawerLabelMaxWidth = 150.0;

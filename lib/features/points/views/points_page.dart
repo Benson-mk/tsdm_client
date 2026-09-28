@@ -10,9 +10,8 @@ import 'package:tsdm_client/features/points/widgets/points_card.dart';
 import 'package:tsdm_client/features/points/widgets/points_query_form.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
-import 'package:tsdm_client/widgets/attr_block.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
-import 'package:tsdm_client/widgets/single_line_text.dart';
 
 /// Page to show current logged user's points statistics and changelog.
 class PointsPage extends StatefulWidget {
@@ -45,44 +44,79 @@ class _PointsPageState extends State<PointsPage> with SingleTickerProviderStateM
       onRefresh: () {
         context.read<PointsStatisticsBloc>().add(PointsStatisticsRefreshRequested());
       },
-      child: SingleChildScrollView(
-        controller: _statisticsScrollController,
-        child: Padding(
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              sizedBoxW4H4,
-              GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisExtent: 70),
-                itemCount: attrList.length,
-                itemBuilder: (context, index) {
-                  final attr = attrList[index];
-                  return AttrBlock(name: attr.key, value: attr.value);
-                },
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-              ),
-              Row(
-                children: [
-                  SingleLineText(
-                    context.t.pointsPage.statisticsTab.recentChangelog,
-                    style: Theme.of(context).textTheme.titleMedium,
+      child: AppCenteredList(
+        builder: (context, side, width) {
+          // Value tiles size with the text instead of a fixed 70px grid cell, so large fonts are not clipped.
+          final scale = MediaQuery.textScalerOf(context).scale(1);
+          // Room inside the surface: page width minus the centering padding and the surface padding.
+          final contentWidth = width - side.horizontal - 32;
+          final columns = (contentWidth / (150 * scale)).floor().clamp(1, 4);
+          final rows = appRowCount(attrList.length, columns);
+          return SingleChildScrollView(
+            controller: _statisticsScrollController,
+            padding: side.copyWith(top: 12, bottom: 12).add(context.safePadding()),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (attrList.isEmpty)
+                  AppStateView(icon: Icons.bar_chart_outlined, message: context.t.general.noData, scrollable: false)
+                else
+                  AppSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AppSectionHeader(
+                          context.t.pointsPage.statisticsTab.title,
+                          icon: Icons.bar_chart_outlined,
+                          padding: const EdgeInsets.only(bottom: 8),
+                        ),
+                        for (var row = 0; row < rows; row++)
+                          Padding(
+                            padding: EdgeInsets.only(top: row == 0 ? 0 : 8),
+                            child: IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (var column = 0; column < columns; column++) ...[
+                                    if (column > 0) sizedBoxW8H8,
+                                    Expanded(
+                                      child: row * columns + column < attrList.length
+                                          ? _PointsValue(
+                                              name: attrList[row * columns + column].key,
+                                              value: attrList[row * columns + column].value,
+                                            )
+                                          : sizedBoxEmpty,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
-                  TextButton(
+                sizedBoxW12H12,
+                AppSectionHeader(
+                  context.t.pointsPage.statisticsTab.recentChangelog,
+                  icon: Icons.history_outlined,
+                  trailing: TextButton(
                     child: Text(context.t.general.more),
                     onPressed: () {
                       _tabController.animateTo(1);
                     },
                   ),
-                ],
-              ),
-              sizedBoxW12H12,
-              ...state.recentChangelog.map(PointsChangeCard.new).toList().cast<Widget>().insertBetween(sizedBoxW4H4),
-            ],
-          ),
-        ),
+                ),
+                if (state.recentChangelog.isEmpty)
+                  AppStateView(icon: Icons.history_outlined, message: context.t.general.noData, scrollable: false),
+                ...state.recentChangelog
+                    .map(PointsChangeCard.new)
+                    .toList()
+                    .cast<Widget>()
+                    .insertBetween(appListSeparator),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -108,12 +142,21 @@ class _PointsPageState extends State<PointsPage> with SingleTickerProviderStateM
         onRefresh: () {
           context.read<PointsChangelogBloc>().add(PointsChangelogRefreshRequested());
         },
-        child: ListView.separated(
-          shrinkWrap: true,
-          padding: edgeInsetsL12T4R12.add(context.safePadding()),
-          itemCount: state.fullChangelog.length,
-          itemBuilder: (_, index) => PointsChangeCard(state.fullChangelog[index]),
-          separatorBuilder: (_, _) => sizedBoxW4H4,
+        child: AppCenteredList(
+          builder: (context, side, _) => state.fullChangelog.isEmpty
+              ? ListView(
+                  padding: side.copyWith(top: 8, bottom: 12).add(context.safePadding()),
+                  children: [
+                    AppStateView(icon: Icons.history_outlined, message: context.t.general.noData, scrollable: false),
+                  ],
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  padding: side.copyWith(top: 8, bottom: 12).add(context.safePadding()),
+                  itemCount: state.fullChangelog.length,
+                  itemBuilder: (_, index) => PointsChangeCard(state.fullChangelog[index]),
+                  separatorBuilder: (_, _) => appListSeparator,
+                ),
         ),
       );
 
@@ -124,12 +167,23 @@ class _PointsPageState extends State<PointsPage> with SingleTickerProviderStateM
       ..finishLoad()
       ..finishRefresh();
 
-    return Column(
-      children: [
-        Padding(padding: edgeInsetsL12T4R12, child: PointsQueryForm(state.allParameters)),
-        sizedBoxW4H4,
-        body,
-      ],
+    // The opened filter form scrolls on its own within 60% of the height (landscape phones, large fonts), so the
+    // records below always keep some room.
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.6),
+            child: AppCenteredList(
+              builder: (context, side, _) => SingleChildScrollView(
+                padding: side.copyWith(top: 12, bottom: 4),
+                child: PointsQueryForm(state.allParameters),
+              ),
+            ),
+          ),
+          body,
+        ],
+      ),
     );
   }
 
@@ -189,6 +243,34 @@ class _PointsPageState extends State<PointsPage> with SingleTickerProviderStateM
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One kind of points: name above, the value in bold; both wrap with large fonts.
+class _PointsValue extends StatelessWidget {
+  const _PointsValue({required this.name, required this.value});
+
+  final String name;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return AppInsetBlock(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(name, style: textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+          sizedBoxW4H4,
+          Text(
+            value,
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary),
+          ),
+        ],
       ),
     );
   }

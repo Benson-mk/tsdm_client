@@ -17,8 +17,18 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
+
+/// Widest the rows of the topics page grow on desktop windows, shared with every forum list: [forumCardListMaxWidth].
+const double topicsPageMaxWidth = forumCardListMaxWidth;
+
+/// Width the topics page must really have to show its forum cards large on desktop: [forumCardListLargeWidth].
+const double topicsPageLargeCardWidth = forumCardListLargeWidth;
+
+/// Whether the topics page shows large cards in a page of [width] on [platform] (desktop only).
+bool topicsPageUsesLargeCards(double width, TargetPlatform platform) => forumCardListUsesLargeCards(width, platform);
 
 /// App topic page.
 class TopicsPage extends StatefulWidget {
@@ -93,14 +103,29 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
       _tabScrollControllers.putIfAbsent(e.name, ScrollController.new);
 
       final head = e.moderators.isEmpty ? 0 : 1;
-      return ListView.separated(
-        controller: _tabScrollControllers[e.name],
-        padding: edgeInsetsL12T4R12,
-        itemCount: e.forumList.length + head,
-        itemBuilder: (context, index) => head == 1 && index == 0
-            ? GroupModeratorsRow(moderators: e.moderators)
-            : ForumCard(e.forumList[index - head]),
-        separatorBuilder: (context, index) => sizedBoxW4H4,
+      final forums = e.forumList;
+      // One column on phones, two on wide windows; rows stay centered. Desktop windows get a wider content area
+      // with large cards, see forumCardListLayout; phones keep the compact cards at any width.
+      return AppCenteredList(
+        builder: (context, _, width) {
+          final layout = forumCardListLayout(width, Theme.of(context).platform);
+          final large = layout.large;
+          return ListView.separated(
+            controller: _tabScrollControllers[e.name],
+            padding: layout.side.copyWith(top: large ? 16 : 8, bottom: large ? 24 : 16),
+            itemCount: appRowCount(forums.length, layout.columns) + head,
+            itemBuilder: (context, index) => head == 1 && index == 0
+                ? GroupModeratorsRow(moderators: e.moderators, large: large)
+                : AppColumnsRow(
+                    row: index - head,
+                    columns: layout.columns,
+                    count: forums.length,
+                    gap: layout.gap,
+                    itemBuilder: (_, i) => ForumCard(forums[i], large: large),
+                  ),
+            separatorBuilder: (context, index) => layout.separator,
+          );
+        },
       );
     }).toList();
 
@@ -177,7 +202,10 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
                 header: const MaterialHeader(),
                 child: const CenteredCircularIndicator(),
               ),
-              TopicsStatus.failed => buildRetryButton(context, () => context.read<TopicsBloc>().add(const TopicsRefreshRequested())),
+              TopicsStatus.failed => buildRetryButton(
+                context,
+                () => context.read<TopicsBloc>().add(const TopicsRefreshRequested()),
+              ),
               TopicsStatus.success when state.forumGroupList.isNotEmpty => _buildContent(context, state),
               TopicsStatus.success => NeedLoginPage(
                 backUri: GoRouterState.of(context).uri,

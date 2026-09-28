@@ -11,6 +11,7 @@ import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/packet_card.dart';
 import 'package:tsdm_client/widgets/card/rate_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
@@ -70,12 +71,22 @@ class _DebugShowcasePageState extends State<DebugShowcasePage> with SingleTicker
           ),
         ],
       ),
-      body: TabBarView(
-        controller: tabController,
-        children: const [
-          SingleChildScrollView(child: _HtmlFragment()),
-          _SampleThreadV2Page(),
-        ],
+      body: SafeArea(
+        top: false,
+        child: TabBarView(
+          controller: tabController,
+          children: const [
+            // The rendered blocks inside a reading width surface, like a floor of a thread.
+            SingleChildScrollView(
+              padding: edgeInsetsL12T12R12B12,
+              child: AppContentWidth(
+                maxWidth: appReadingMaxWidth,
+                child: AppSurface(child: _HtmlFragment()),
+              ),
+            ),
+            _SampleThreadV2Page(),
+          ],
+        ),
       ),
     );
   }
@@ -269,74 +280,80 @@ class _SampleThreadV2PageState extends State<_SampleThreadV2Page> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Form(
-          key: formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: tidController,
-                decoration: const InputDecoration(labelText: 'Thread id'),
-                validator: (v) =>
-                    v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0 ? 'invalid thread id' : null,
-              ),
-              sizedBoxW8H8,
-              TextFormField(
-                controller: pageController,
-                decoration: const InputDecoration(labelText: 'Page number'),
-                validator: (v) => v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0
-                    ? 'invalid page number'
-                    : null,
-              ),
-              sizedBoxW8H8,
-              FilledButton(
-                child: const Text('Fetch page'),
-                onPressed: () {
-                  if (!formKey.currentState!.validate()) {
-                    return;
-                  }
+    return Padding(
+      padding: edgeInsetsL12T12R12B12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Form(
+            key: formKey,
+            child: AppFormSection(
+              children: [
+                TextFormField(
+                  controller: tidController,
+                  keyboardType: TextInputType.number,
+                  decoration: appFieldDecoration(label: 'Thread id', icon: Icons.tag),
+                  validator: (v) => v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0
+                      ? 'invalid thread id'
+                      : null,
+                ),
+                TextFormField(
+                  controller: pageController,
+                  keyboardType: TextInputType.number,
+                  decoration: appFieldDecoration(label: 'Page number', icon: Icons.menu_book_outlined),
+                  validator: (v) => v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0
+                      ? 'invalid page number'
+                      : null,
+                ),
+                FilledButton(
+                  child: const Text('Fetch page'),
+                  onPressed: () {
+                    if (!formKey.currentState!.validate()) {
+                      return;
+                    }
 
-                  setState(() {
-                    tid = int.parse(tidController.text);
-                    page = int.parse(pageController.text);
-                  });
-                },
-              ),
-            ],
+                    setState(() {
+                      tid = int.parse(tidController.text);
+                      page = int.parse(pageController.text);
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-        sizedBoxW8H8,
-        Expanded(
-          child: FutureBuilder(
-            key: ValueKey('ThreadContent_$tid'),
-            future: _fetchThreadPage(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const CenteredCircularIndicator();
-              }
+          sizedBoxW8H8,
+          Expanded(
+            child: FutureBuilder(
+              key: ValueKey('ThreadContent_$tid'),
+              future: _fetchThreadPage(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const CenteredCircularIndicator();
+                }
 
-              if (snapshot.hasError) {
-                return Center(child: Text('Failed (tid=$tid, page=$page): ${snapshot.error!}'));
-              }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Failed (tid=$tid, page=$page): ${snapshot.error!}'));
+                }
 
-              if (!snapshot.hasData) {
-                return const CenteredCircularIndicator();
-              }
+                if (!snapshot.hasData) {
+                  return const CenteredCircularIndicator();
+                }
 
-              // Remove CR and LF
-              // The CR is useless and remove it is safe.
-              // The LF only follows "<br />" which is useless and can be safely removed, too.
-              final content = (snapshot.data!.data as String).replaceAll(RegExp('\u000a|\u000d'), '');
+                // Remove CR and LF
+                // The CR is useless and remove it is safe.
+                // The LF only follows "<br />" which is useless and can be safely removed, too.
+                final content = (snapshot.data!.data as String).replaceAll(RegExp('\u000a|\u000d'), '');
 
-              final x = jsonDecode(content) as Map<String, dynamic>;
+                final x = jsonDecode(content) as Map<String, dynamic>;
 
-              return SingleChildScrollView(child: Text(x.toString()));
-            },
+                return SingleChildScrollView(
+                  child: AppInsetBlock(outlined: true, child: SelectableText(x.toString())),
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

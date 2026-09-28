@@ -52,6 +52,7 @@ class SettingsMap with SettingsMapMappable {
     required this.collapseAppBarWhenScroll,
     required this.threadFloorInteractionMode,
     required this.textScaleFactor,
+    required this.threadContentScale,
     this.windowMaximized = false,
     this.enableBackgroundMessageService = false,
     this.autoDailyRedPacket = false,
@@ -106,6 +107,7 @@ class SettingsMap with SettingsMapMappable {
   final bool collapseAppBarWhenScroll;
   final ThreadFloorInteractionMode threadFloorInteractionMode;
   final double textScaleFactor;
+  final double threadContentScale;
 
   SettingsMap copyWithKey<T>(SettingsKeys<T> key, T? value) {
     assert(
@@ -164,6 +166,7 @@ class SettingsMap with SettingsMapMappable {
         threadFloorInteractionMode: value as ThreadFloorInteractionMode?,
       ),
       SettingsKeys.textScaleFactor => copyWith(textScaleFactor: value as double?),
+      SettingsKeys.threadContentScale => copyWith(threadContentScale: value as double?),
     };
   }
 }

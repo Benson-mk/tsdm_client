@@ -9,7 +9,7 @@ import 'package:tsdm_client/utils/show_toast.dart';
 /// Widget provides ability to checkin.
 class CheckinButton extends StatelessWidget {
   /// Constructor.
-  const CheckinButton({this.enableSnackBar = false, this.useIcon = false, super.key});
+  const CheckinButton({this.enableSnackBar = false, this.useIcon = false, this.label, super.key});
 
   /// Enable snack bar feedback after checkin action.
   ///
@@ -22,6 +22,18 @@ class CheckinButton extends StatelessWidget {
   ///
   /// Enabling this field will make the widget not pressable.
   final bool useIcon;
+
+  /// Show a filled button with this label instead of an icon button, e.g. on the homepage greeting card.
+  final String? label;
+
+  /// The filled button used when [label] is set.
+  Widget _buildLabeled(BuildContext context, {required Widget icon, required VoidCallback? onPressed}) =>
+      FilledButton.icon(
+        style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+        icon: icon,
+        label: Text(label!),
+        onPressed: onPressed,
+      );
 
   Future<void> _showCheckinFailedSnackBar(BuildContext context, CheckinResult result) async {
     if (!context.mounted) {
@@ -54,6 +66,9 @@ class CheckinButton extends StatelessWidget {
             if (useIcon) {
               return sizedCircularProgressIndicator;
             }
+            if (label != null) {
+              return _buildLabeled(context, icon: sizedCircularProgressIndicator, onPressed: null);
+            }
             return IconButton(icon: sizedCircularProgressIndicator, tooltip: tooltip, onPressed: null);
           }
 
@@ -61,8 +76,41 @@ class CheckinButton extends StatelessWidget {
             return const Icon(Icons.domain_verification_outlined);
           }
 
+          // Checked in today: recorded by this app (this run, an earlier run or the auto check-in). A check-in made
+          // on the website is not known until the next tap, which then answers "already checked in" and records it.
+          final checked =
+              state is CheckinStateChecked ||
+              state is CheckinStateSuccess ||
+              (state is CheckinStateFailed && state.result is CheckinResultAlreadyChecked);
+          if (checked) {
+            final checkedTr = context.t.homepage.welcome;
+            if (label != null) {
+              return Tooltip(
+                message: checkedTr.checkedInHint,
+                child: FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                  icon: const Icon(Icons.task_alt_outlined),
+                  label: Text(checkedTr.checkedIn),
+                  onPressed: null,
+                ),
+              );
+            }
+            return IconButton(icon: const Icon(Icons.task_alt_outlined), tooltip: checkedTr.checkedIn, onPressed: null);
+          }
+
           if (state is CheckinStateNeedLogin) {
+            if (label != null) {
+              return _buildLabeled(context, icon: const Icon(Icons.domain_verification_outlined), onPressed: null);
+            }
             return IconButton(icon: const Icon(Icons.domain_verification_outlined), tooltip: tooltip, onPressed: null);
+          }
+
+          if (label != null) {
+            return _buildLabeled(
+              context,
+              icon: const Icon(Icons.domain_verification_outlined),
+              onPressed: () => context.read<CheckinBloc>().add(const CheckinRequested()),
+            );
           }
 
           return IconButton(

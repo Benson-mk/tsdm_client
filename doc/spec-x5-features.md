@@ -1244,3 +1244,44 @@ B. 論壇提醒屏蔽規則
 - 購買：確認框優先引用 `data-c` 原句、註明不自動佩戴；確認後以同帳號 repository 重讀當頁，核對 UID、表單、ID、名稱、價格、確認句，變動則不送出並要求重新確認；再以 `singleAttempt` POST 一次，之後 GET 商店，該列成為「已拥有」才算成功，`.alert_error` 且未擁有為被拒，其餘一律「結果未確認」且不重送。購買中鎖住連點、翻頁與重新整理；切帳號作廢流程、不顯示舊結果。購買表單只接受同源 `action=buy` POST、恰好 `formhash`／`tsdmtitle_return`（只回商店）／`buyid`（等於該列）三個隱藏欄位及 `buysubmit=true`。
 - 設計見 `docs/specs/2026-09-27-medal-search-title-shop-design.md`。測試：`test_126`（搜尋連結／表單／狀態／畫面）、`test_127`（商店解析與表單驗證）、`test_128`（購買狀態、重驗、單次 POST、切帳號）、`test_129`（商店畫面、取消、鎖定、窄螢幕）。樣本皆為合成資料。
 - 尚未實機驗證：真實購買的成功／失敗回應頁（未做購買），成功只以購買後商店狀態判定。
+
+## 40. 全 App UI 預覽 110 回饋修正（PR #135、GitHub #139，2026-09-28）
+
+### 40.1 回覆編輯器
+
+- Material 3 預設把 bottom sheet 限制在 640dp 寬；手機橫向（792dp）時展開的編輯器比頁面窄，底部收合的回覆框從兩側露出來，看起來像兩個輸入框。`ReplyBar` 開 sheet 時改傳空的 `BoxConstraints`，sheet 與回覆列一樣貫穿整頁，內容仍靠自己置中到閱讀欄寬。
+- 編輯器頂部的拖動條移除（#139）：與右下角「收起」按鈕功能重複，只佔空間；向下滑仍可關閉。
+
+### 40.2 首頁簽到／紅包狀態
+
+- 簽到：`CheckinBloc` 新增 `CheckinStatusRequested`，讀 `CheckinRepository.checkedInToday(uid)`（cookie 表的 `lastCheckin` 是否為本機今天），是則進 `CheckinStateChecked`；首頁載入成功後送出。按鈕在 `CheckinStateChecked`、`CheckinStateSuccess`、`CheckinStateFailed(CheckinResultAlreadyChecked)` 時顯示「已簽到」並停用，tooltip 說明是本 App 的記錄。只知道 App 自己做過的簽到（手動或自動）；網頁上簽到的要再點一下，論壇回「已經簽到」後才會記錄。
+- 紅包：論壇首頁只有在尚未領取時才嵌 `hongbaoDailyInit`，領過後頁面與沒有紅包時一樣。App 在領取成功或論壇回「已領過」時，把該帳號的 `dateflag` 存到設定表 `dailyRedPacketClaimed.<uid>`；首頁沒有紅包時，若記錄的 `dateflag` 等於本機今天（`YYYYMMDD`），顯示「紅包已領取」，tooltip 說明是 App 的記錄。頁面上有紅包時一律以頁面為準。站方的日界未知，以本機日期近似，跨午夜前後可能差幾小時。
+- 不會為了狀態多打任何請求；不會把「沒有紅包」直接說成「已領取」。
+
+### 40.3 作者牌子
+
+- 樓層作者列：用戶組牌子與第二牌子同高 `postAuthorBadgeHeight`（32dp），第二牌子依 184:100 比例約 59dp 寬（原本 120／138dp，明顯大過用戶組牌子）。
+- 作者彈窗：兩枚牌子同高 72dp；個人資料頁的稱號區塊改為置中，與用戶組區塊一致。
+
+### 40.4 驗證
+
+- `test/regression/test_172_feedback111_test.dart`：三種視窗（橫向含瀏海、直向、寬視窗）編輯器貫穿整頁且無拖動條、收起後回覆列回來；簽到記錄今天／昨天／換帳號／未登入；紅包記錄今天／別天／別帳號、頁面有紅包優先、領取成功與「已領過」會記錄、失敗不記錄；牌子尺寸換算。
+- 未實機驗證：Android 橫向鍵盤面板、真實論壇簽到與紅包流程。
+
+### 40.5 第二輪（preview112 回饋）
+
+- 首頁排版：`homeLayoutFor(width, platform)` 與版塊列表同一原則——Android／iOS 任何寬度都是 compact；只有桌面平台依寬度進 medium（≥600）／wide（≥960）。橫屏手機原本被當成寬視窗，問候卡片的稱號牌子放大到 240dp、簽到／紅包／活動／勳章四顆按鈕排成不整齊兩行。
+- 設定「主題模式」：三段式切換鈕改為列尾 `trailing`，與標題同列；副標仍顯示目前模式。2 倍字級下仍在視窗內（test_172 第 4 組）。
+
+### 40.6 第三輪（preview113 回饋）
+
+- 首頁問候卡片（compact）：內容寬 ≥ 560×字級 時四顆按鈕（簽到、紅包、活動總覽、勳章與稱號）排一行；≥ 300×字級 維持簽到／紅包一行＋入口第二行；更窄全部直疊。
+- 帖子標題：`AppContentWidth` 置中子元件，短標題原本因此看起來置中、長標題靠左；標題改包 `SizedBox(width: double.infinity)` 一律靠左。
+- 標題上方空白：`EasyRefreshController(controlFinishRefresh: true)` 但從未呼叫 `finishRefresh()`，下拉更新後 header 停在 processing、在 locator 位置留下 100dp 空白（新 UI 重新載入時列表不再被拆掉重建，所以顯露出來）。改為 build 時 `finishRefresh()` 與 `finishLoad()` 一起結束。test_171 加下拉更新案例（測試環境下修正前後都沒有空白，未能重現回報畫面；此修正依 EasyRefresh 的 API 契約補上，實機效果待測試者確認）。
+
+## 41. 貼文內容縮放、桌面端 Esc／滑鼠返回鍵（GitHub #137、#138，2026-09-28）
+
+- 貼文內容縮放：設定 → 外觀新增 `threadContentScale`（double，預設 1.0，範圍 1.0–2.0、步進 0.1），存於 drift `settings` 表既有的 `double_value` 欄位，不需 migration。貼文頁（`ThreadPage`）只對樓層列表（`PostList`／`PostCard`）套用 `MediaQuery.textScaler = 全域文字縮放 × 貼文內容縮放`，乘積上限 3.0；標題列、軟關閉提示與回覆列維持全域縮放。所有平台皆可用。
+- 桌面返回鍵：`DesktopBackHandler` 掛在 `MaterialApp.router` 的 builder（`lib/app.dart`），只在 `isDesktop` 生效。Esc（按下）與滑鼠返回側鍵（`kBackMouseButton`）以主焦點所在的路由判定：只處理 `PageRoute` 且非該 navigator 首頁的情況，呼叫 `Navigator.maybePop`，因此頁面的 `PopScope`（例如草稿確認）仍然生效，主頁各分頁（首頁／主題／設定的殼路由）不會觸發退出 App。對話框、彈出選單、modal bottom sheet 不是 `PageRoute`，Esc 交還給路由自身的 dismiss 動作（可點遮罩關閉者才關閉）；焦點在文字輸入（`EditableText` 或任何實作 `TextInputClient` 的編輯器，含 BBCode 編輯器）時 Esc 與側鍵都不動作；展開的回覆編輯器是頁面的 local history entry，`maybePop` 會先收起編輯器、再按一次才離開頁面。右鍵不使用。
+- 測試：`test_173`（設定套用到樓層、不影響標題列與回覆列、與全域縮放相乘與上限）、`test_174`（可返回時 Esc／側鍵 pop、根頁不動、輸入框有焦點不動、對話框與持久 bottom sheet 先關閉、`PopScope` 拒絕時不 pop、非桌面停用）。
+- 尚未實機驗證：未在 Windows 實機測 Esc／滑鼠側鍵（含 BBCode 編輯器焦點下的行為）與放大後的實際觀感；測試以 Linux 桌面環境的 widget test 為準。

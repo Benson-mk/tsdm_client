@@ -1,12 +1,12 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/latest_thread/bloc/latest_thread_bloc.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
@@ -52,28 +52,16 @@ class _LatestThreadPageState extends State<LatestThreadPage> {
       },
       child: state.threadList.isEmpty
           // The guide page can be empty (最新精华 has no threads); say so instead of showing a blank list.
-          ? ListView(
-              padding: edgeInsetsL12T4R12.add(context.safePadding()),
-              children: [
-                Padding(
-                  padding: edgeInsetsL12T12R12B12,
-                  child: Text(
-                    context.t.latestThreadPage.empty,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
-                  ),
-                ),
-              ],
-            )
-          : ListView.separated(
-              padding: edgeInsetsL12T4R12.add(context.safePadding()),
-              itemCount: state.threadList.length,
-              itemBuilder: (context, index) {
-                return LatestThreadCard(state.threadList[index]);
-              },
-              separatorBuilder: (context, index) => sizedBoxW4H4,
+          ? AppStateView(icon: Icons.article_outlined, message: context.t.latestThreadPage.empty)
+          : AppCenteredList(
+              builder: (context, side, _) => ListView.separated(
+                padding: side.copyWith(top: 8).add(context.safePadding()),
+                itemCount: state.threadList.length,
+                itemBuilder: (context, index) {
+                  return LatestThreadCard(state.threadList[index]);
+                },
+                separatorBuilder: (context, index) => appListSeparator,
+              ),
             ),
     );
   }
