@@ -29,6 +29,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
+import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/notice_button.dart';
@@ -48,7 +49,32 @@ const _mediumLayoutWidth = 600.0;
 const _railWidth = 320.0;
 
 /// Arrangement of the homepage cards.
-enum _HomeLayout { compact, medium, wide }
+enum HomeLayout {
+  /// One column, phone cards.
+  compact,
+
+  /// One column, statistics and support side by side.
+  medium,
+
+  /// Threads with a side column.
+  wide,
+}
+
+/// Arrangement of the homepage in a content area [width] wide on [platform] (`Theme.of(context).platform`).
+///
+/// Phones keep the compact layout at any width: a landscape phone (feedback 111) is not a wide window, its greeting
+/// card would grow a huge title badge and stack the day's actions oddly. Like the forum lists
+/// ([forumCardListIsDesktop]), only desktop platforms get the medium and wide layouts.
+HomeLayout homeLayoutFor(double width, TargetPlatform platform) {
+  if (!forumCardListIsDesktop(platform)) {
+    return HomeLayout.compact;
+  }
+  return width >= _wideLayoutWidth
+      ? HomeLayout.wide
+      : width >= _mediumLayoutWidth
+      ? HomeLayout.medium
+      : HomeLayout.compact;
+}
 
 /// Homepage page.
 ///
@@ -117,11 +143,7 @@ class _HomepagePageState extends State<HomepagePage> {
   /// * Compact: one column; the greeting carries the day's actions and the today count, the threads come right after
   ///   it and the utility cards follow them, so no tall card pushes the threads down.
   Widget _buildDashboard(BuildContext context, HomepageState state, double width) {
-    final layout = width >= _wideLayoutWidth
-        ? _HomeLayout.wide
-        : width >= _mediumLayoutWidth
-        ? _HomeLayout.medium
-        : _HomeLayout.compact;
+    final layout = homeLayoutFor(width, Theme.of(context).platform);
     final hasStatus = state.forumStatus != const ForumStatus.empty();
     final greeting = HomeGreetingCard(
       username: state.loggedUserInfo?.username ?? '',
@@ -129,7 +151,7 @@ class _HomepagePageState extends State<HomepagePage> {
       forumStatus: state.forumStatus,
       dailyRedPacket: state.dailyRedPacket,
       formHash: state.formHash,
-      compact: layout == _HomeLayout.compact,
+      compact: layout == HomeLayout.compact,
       // The red packet entry checks the packet alone: tapping it used to reload the whole homepage (feedback 110).
       // Pull to refresh stays the way to reload everything.
       onCheckDailyRedPacket: () => context.read<HomepageBloc>().add(const HomepageDailyRedPacketCheckRequested()),
@@ -157,14 +179,14 @@ class _HomepagePageState extends State<HomepagePage> {
     final List<Widget?> main;
     List<Widget?>? rail;
     switch (layout) {
-      case _HomeLayout.wide:
+      case HomeLayout.wide:
         main = [greeting, swiper, pinned, guide];
         rail = [
           if (hasStatus) HomeForumStatsCard(state.forumStatus),
           const HomeToolsCard(columns: 2),
           support,
         ];
-      case _HomeLayout.medium:
+      case HomeLayout.medium:
         main = [
           greeting,
           if (hasStatus)
@@ -183,7 +205,7 @@ class _HomepagePageState extends State<HomepagePage> {
           guide,
           const HomeToolsCard(columns: 4),
         ];
-      case _HomeLayout.compact:
+      case HomeLayout.compact:
         main = [
           greeting,
           swiper,
@@ -194,7 +216,7 @@ class _HomepagePageState extends State<HomepagePage> {
           support,
         ];
     }
-    final gap = layout == _HomeLayout.compact ? 12.0 : 16.0;
+    final gap = layout == HomeLayout.compact ? 12.0 : 16.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

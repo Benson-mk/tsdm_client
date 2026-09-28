@@ -140,43 +140,41 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
   Widget _buildThemeModeTile(BuildContext context, int themeModeIndex) {
     final tr = context.t.settingsPage.appearanceSection;
+    // The switch sits at the end of the row, in one line with the title (feedback 111: below the text it left the
+    // right side of the row empty). Icons only: three labels do not fit a phone at a large text scale; each segment
+    // has a tooltip.
     return SectionListTile(
       leading: const Icon(Icons.contrast_outlined),
       title: Text(tr.themeMode.title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(<String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex]),
-          sizedBoxW8H8,
-          // Icons only: three labels do not fit a phone at a large text scale; each segment has a tooltip.
-          SegmentedButton<int>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(
-                value: ThemeMode.light.index,
-                icon: const Icon(Icons.light_mode_outlined),
-                tooltip: tr.themeMode.light,
-              ),
-              ButtonSegment(
-                value: ThemeMode.system.index,
-                icon: const Icon(Icons.auto_mode_outlined),
-                tooltip: tr.themeMode.system,
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark.index,
-                icon: const Icon(Icons.dark_mode_outlined),
-                tooltip: tr.themeMode.dark,
-              ),
-            ],
-            selected: {themeModeIndex},
-            onSelectionChanged: (selection) {
-              final themeIndex = selection.first;
-              context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
-              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
-            },
-          ),
-          sizedBoxW4H4,
-        ],
+      subtitle: Text(<String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex]),
+      trailing: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: SegmentedButton<int>(
+          showSelectedIcon: false,
+          segments: [
+            ButtonSegment(
+              value: ThemeMode.light.index,
+              icon: const Icon(Icons.light_mode_outlined),
+              tooltip: tr.themeMode.light,
+            ),
+            ButtonSegment(
+              value: ThemeMode.system.index,
+              icon: const Icon(Icons.auto_mode_outlined),
+              tooltip: tr.themeMode.system,
+            ),
+            ButtonSegment(
+              value: ThemeMode.dark.index,
+              icon: const Icon(Icons.dark_mode_outlined),
+              tooltip: tr.themeMode.dark,
+            ),
+          ],
+          selected: {themeModeIndex},
+          onSelectionChanged: (selection) {
+            final themeIndex = selection.first;
+            context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
+          },
+        ),
       ),
     );
   }

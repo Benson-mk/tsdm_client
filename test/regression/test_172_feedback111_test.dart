@@ -7,11 +7,15 @@
 ///    once it recorded a claim of the daily red packet today, instead of "check in" / "none" until the next attempt.
 /// 3. The two badges of a floor author (user group, secondary title) are the same height, in the floor and in the
 ///    author dialog.
+/// 4. Second round: a landscape phone is not a wide window, the homepage keeps its phone layout on Android and iOS at
+///    any width; the theme mode switch of the settings page sits in one line with its title.
 library;
 
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,18 +28,28 @@ import 'package:tsdm_client/features/authentication/repository/models/models.dar
 import 'package:tsdm_client/features/checkin/bloc/checkin_bloc.dart';
 import 'package:tsdm_client/features/checkin/repository/checkin_repository.dart';
 import 'package:tsdm_client/features/checkin/widgets/checkin_button.dart';
+import 'package:tsdm_client/features/homepage/models/models.dart';
+import 'package:tsdm_client/features/homepage/view/homepage_page.dart';
+import 'package:tsdm_client/features/homepage/widgets/home_dashboard.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/red_packet/models/models.dart';
 import 'package:tsdm_client/features/red_packet/utils/daily_red_packet_record.dart';
 import 'package:tsdm_client/features/red_packet/widgets/daily_red_packet_button.dart';
+import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/settings/view/settings_page.dart';
+import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
@@ -61,6 +75,16 @@ final class _Auth extends Fake implements AuthenticationRepository {
   int? get effectiveCurrentUid => currentUser?.uid;
 
   Future<void> close() => _controller.close();
+}
+
+/// No network at all.
+final class _OfflineAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) =>
+      throw DioException.connectionError(requestOptions: options, reason: 'offline');
+
+  @override
+  void close({bool force = false}) {}
 }
 
 /// A page like the thread page: the reply bar is the last child of the body column.
@@ -390,5 +414,114 @@ void main() {
       expect(SecondaryTitleBadge.widthFor(100), 184);
       expect(SecondaryTitleBadge.widthFor(50), 92);
     });
+  });
+
+  group('4. second round', () {
+    // The settings page reads the database schema version and the image cache (debug section, avatar row); the
+    // image cache is disposed by the getIt reset of the file.
+    late SettingsBloc settingsBloc;
+    late ThemeCubit theme;
+
+    setUp(() {
+      settingsBloc = SettingsBloc(settingsRepository: settings, fragmentsRepository: FragmentsRepository());
+      theme = ThemeCubit();
+      getIt
+        ..registerSingleton<AppDatabase>(db)
+        ..registerSingleton<NetErrorSaver>(NetErrorSaver())
+        ..registerSingleton<ImageCacheProvider>(
+          ImageCacheProvider(NetClientProvider.buildNoCookie(dio: Dio()..httpClientAdapter = _OfflineAdapter())),
+        );
+    });
+
+    tearDown(() async {
+      await settingsBloc.close();
+      await theme.close();
+    });
+
+    test('phones keep the compact homepage at any width, desktop windows grow', () {
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        for (final width in [360.0, 792.0, 1280.0, 1600.0]) {
+          expect(homeLayoutFor(width, platform), HomeLayout.compact, reason: '$platform $width');
+        }
+      }
+      for (final platform in [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS]) {
+        expect(homeLayoutFor(500, platform), HomeLayout.compact, reason: '$platform narrow');
+        expect(homeLayoutFor(700, platform), HomeLayout.medium, reason: '$platform medium');
+        expect(homeLayoutFor(1280, platform), HomeLayout.wide, reason: '$platform wide');
+      }
+    });
+
+    testWidgets('the greeting card of a landscape phone: compact, actions side by side, no overflow', (tester) async {
+      final auth = _Auth(_alice);
+      final checkin = CheckinBloc(
+        checkinRepository: CheckinRepository(storageProvider: storage),
+        authenticationRepository: auth,
+        settingsRepository: settings,
+      );
+      addTearDown(() async {
+        await checkin.close();
+        await auth.close();
+      });
+      const size = Size(792, 384);
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        BlocProvider<CheckinBloc>.value(
+          value: checkin,
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: HomeGreetingCard(
+                    username: 'Alice',
+                    uid: _alice.uid,
+                    forumStatus: const ForumStatus.empty(),
+                    dailyRedPacket: null,
+                    formHash: 'XXXXXXXX',
+                    compact: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester, rounds: 3);
+      final checkinRect = tester.getRect(find.text(tr.homepage.welcome.checkin));
+      final packetRect = tester.getRect(find.text(tr.redPacket.daily.unavailable));
+      expect(checkinRect.top, closeTo(packetRect.top, 1), reason: 'check-in and red packet on one row');
+      expect(tester.getRect(find.byType(HomeGreetingCard)).height, lessThan(260), reason: 'no tall card');
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('${scale}x text: the theme mode switch is in one line with its title', (tester) async {
+        tester.view.physicalSize = const Size(384, 792);
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(() {
+          tester.view.reset();
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        await tester.pumpWidget(
+          MultiBlocProvider(
+            providers: [
+              BlocProvider<SettingsBloc>.value(value: settingsBloc),
+              BlocProvider<ThemeCubit>.value(value: theme),
+            ],
+            child: TranslationProvider(child: const MaterialApp(home: SettingsPage())),
+          ),
+        );
+        await _settle(tester, rounds: 3);
+        final title = tester.getRect(find.text(tr.settingsPage.appearanceSection.themeMode.title));
+        debugPrint('DBG switchers ${find.byType(SegmentedButton<int>).evaluate().length}');
+        final switcher = tester.getRect(find.byType(SegmentedButton<int>));
+        expect(switcher.left, greaterThan(title.right), reason: 'at the end of the row, not below the text');
+        expect(switcher.top, lessThan(title.bottom + 8), reason: 'in the same row');
+        expect(switcher.right, lessThanOrEqualTo(384), reason: 'inside the window');
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }
