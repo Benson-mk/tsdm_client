@@ -32,6 +32,9 @@ import 'package:universal_html/parsing.dart';
 /// Mirrors the constraint of [CustomAlertDialog] (70% of the window, at most 400) without its 24px side paddings.
 double briefProfileDialogContentWidth(double windowWidth) => math.min(windowWidth * 0.7, 400) - 48;
 
+/// Height the stacked dialog header needs: the avatar row, the name and the pills under it.
+const _stackedHeaderHeight = 132.0;
+
 /// Show a dialog to display user brief profile.
 ///
 /// Data only available in thread page on all replied users.
@@ -142,61 +145,83 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
         authorUid != null &&
         authorUid == context.readOrNull<AuthenticationRepository>()?.currentUser?.uid;
 
-    final titleContent = [
-      Row(
-        children: [
-          Hero(
-            tag: widget.avatarHeroTag,
-            child: CircleAvatar(
-              radius: 30,
-              backgroundImage: CachedImageProvider(
-                widget.profile.avatarUrl ?? noAvatarUrl,
-                usage: ImageUsageInfoUserAvatar(widget.profile.username),
-              ),
-            ),
-          ),
-          const Spacer(),
-          IconButton.filledTonal(
-            icon: const Icon(Icons.email_outlined),
-            tooltip: tr.pmTooltip,
-            onPressed: () => context.pushNamed(
-              ScreenPaths.chat,
-              pathParameters: {'uid': widget.profile.uid},
-              extra: <String, dynamic>{'username': widget.profile.username},
-            ),
-          ),
-          IconButton.filledTonal(
-            icon: const Icon(Icons.person_outlined),
-            tooltip: tr.profileTooltip,
-            onPressed: () async => context.dispatchAsUrl(widget.userSpaceUrl),
-          ),
-        ],
+    final avatar = Hero(
+      tag: widget.avatarHeroTag,
+      child: CircleAvatar(
+        radius: 30,
+        backgroundImage: CachedImageProvider(
+          widget.profile.avatarUrl ?? noAvatarUrl,
+          usage: ImageUsageInfoUserAvatar(widget.profile.username),
+        ),
       ),
-      sizedBoxW12H12,
+    );
 
-      // Fix text style lost.
-      // ref: https://github.com/flutter/flutter/issues/30647#issuecomment-480980280
-      Hero(
-        tag: widget.nameHeroTag,
-        flightShuttleBuilder: (_, _, _, _, toHeroContext) =>
-            DefaultTextStyle(style: DefaultTextStyle.of(toHeroContext).style, child: toHeroContext.widget),
-        child: Text(widget.profile.username, style: textTheme.titleLarge?.copyWith(color: primaryColor)),
+    // Fix text style lost.
+    // ref: https://github.com/flutter/flutter/issues/30647#issuecomment-480980280
+    final name = Hero(
+      tag: widget.nameHeroTag,
+      flightShuttleBuilder: (_, _, _, _, toHeroContext) =>
+          DefaultTextStyle(style: DefaultTextStyle.of(toHeroContext).style, child: toHeroContext.widget),
+      child: Text(widget.profile.username, style: textTheme.titleLarge?.copyWith(color: primaryColor)),
+    );
+
+    // Uid and online state as small pills next to the name.
+    final pills = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        AppInfoPill(icon: Icons.tag, label: 'UID ${widget.profile.uid}'),
+        AppInfoPill(
+          icon: widget.profile.online ? Icons.circle : Icons.circle_outlined,
+          label: widget.profile.online ? tr.status.online : tr.status.offline,
+          tooltip: tr.status.title,
+        ),
+      ],
+    );
+
+    final headerActions = <Widget>[
+      IconButton.filledTonal(
+        icon: const Icon(Icons.email_outlined),
+        tooltip: tr.pmTooltip,
+        onPressed: () => context.pushNamed(
+          ScreenPaths.chat,
+          pathParameters: {'uid': widget.profile.uid},
+          extra: <String, dynamic>{'username': widget.profile.username},
+        ),
       ),
-      sizedBoxW4H4,
-      // Uid and online state as small pills under the name.
-      Wrap(
-        spacing: 6,
-        runSpacing: 4,
-        children: [
-          AppInfoPill(icon: Icons.tag, label: 'UID ${widget.profile.uid}'),
-          AppInfoPill(
-            icon: widget.profile.online ? Icons.circle : Icons.circle_outlined,
-            label: widget.profile.online ? tr.status.online : tr.status.offline,
-            tooltip: tr.status.title,
-          ),
-        ],
+      IconButton.filledTonal(
+        icon: const Icon(Icons.person_outlined),
+        tooltip: tr.profileTooltip,
+        onPressed: () async => context.dispatchAsUrl(widget.userSpaceUrl),
       ),
     ];
+
+    // The title of an AlertDialog is not flexible and CustomAlertDialog keeps it within 30% of the window height, so
+    // stacking the avatar, the name and the pills cut the pills off on a phone in landscape. One row fits there.
+    final titleContent = MediaQuery.sizeOf(context).height * 0.3 >= _stackedHeaderHeight
+        ? <Widget>[
+            Row(children: [avatar, const Spacer(), ...headerActions]),
+            sizedBoxW12H12,
+            name,
+            sizedBoxW4H4,
+            pills,
+          ]
+        : <Widget>[
+            Row(
+              children: [
+                avatar,
+                sizedBoxW12H12,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [name, sizedBoxW4H4, pills],
+                  ),
+                ),
+                ...headerActions,
+              ],
+            ),
+          ];
 
     // Numbers of the author, two per row: value first (in its color), name under it.
     Widget stat(IconData icon, String name, String? value, Color? color) => SizedBox(
