@@ -54,8 +54,6 @@ const _appBarBackgroundImageHeight = 80.0;
 const _appBarAvatarHeight = 80.0;
 const double _appBarExpandHeight = _appBarBackgroundImageHeight + _appBarAvatarHeight + _appBarBackgroundTopPadding;
 
-const _groupAvatarHeight = 100.0;
-
 /// All checking days required from current level to next level.
 ///
 /// Data:
@@ -664,20 +662,18 @@ class _ProfilePageState extends State<ProfilePage> {
       return null;
     }
 
-    Widget group(String image, String name, Color? color) => AppInsetBlock(
-      padding: edgeInsetsL12T12R12B12,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CachedImage(image, maxWidth: 200, maxHeight: _groupAvatarHeight),
-          sizedBoxW8H8,
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
+    Widget group(String image, String name, Color? color) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CachedImage(image, maxWidth: 200, height: profileBadgeHeight, fit: BoxFit.contain),
+        sizedBoxW8H8,
+        Text(
+          name,
+          textAlign: TextAlign.start,
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        ),
+      ],
     );
 
     return _ProfileSection(
@@ -1029,16 +1025,17 @@ class _ProfileSecondaryTitleState extends State<_ProfileSecondaryTitle> {
     title: context.t.profilePage.secondaryTitle,
     icon: Icons.badge_outlined,
     children: [
-      // Centred like the user group badge above it (feedback 111: the two sat at different sides).
-      Align(child: badge),
+      Align(alignment: AlignmentDirectional.centerStart, child: badge),
     ],
   );
 
   @override
   Widget build(BuildContext context) {
-    // Up to the natural 184px width of the image, complete on every phone: the room is the page width less the page
-    // and surface paddings (12 + 16 on each side).
-    final width = SecondaryTitleBadge.fitWidth(math.min(MediaQuery.sizeOf(context).width, appFormMaxWidth) - 56);
+    // Match the group badge height while leaving room for the page and surface paddings.
+    final width = SecondaryTitleBadge.fitWidth(
+      math.min(MediaQuery.sizeOf(context).width, appFormMaxWidth) - 56,
+      preferred: SecondaryTitleBadge.widthFor(profileBadgeHeight),
+    );
     final parsedUrl = widget.parsedUrl;
     if (parsedUrl != null) {
       return _section(context, SecondaryTitleBadge(parsedUrl, width: width));

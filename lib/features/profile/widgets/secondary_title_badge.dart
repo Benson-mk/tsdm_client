@@ -10,6 +10,12 @@ import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 
+/// Shared height of badges beside a post author, independent of orientation.
+const authorBadgeHeight = 32.0;
+
+/// Shared height of badges in profile pages and dialogs.
+const profileBadgeHeight = 64.0;
+
 /// Image of a secondary title (the forum's second badge, natively [badgeImageSize]).
 ///
 /// The image is contained in a box of [width] with the natural aspect ratio, so it is never cropped nor stretched and
@@ -30,7 +36,7 @@ class SecondaryTitleBadge extends StatelessWidget {
   /// Height of a badge [width] wide.
   static double heightFor(double width) => width * badgeImageSize.height / badgeImageSize.width;
 
-  /// Width of a badge [height] high.
+  /// Width preserving the title aspect ratio at the requested display height.
   static double widthFor(double height) => height * badgeImageSize.width / badgeImageSize.height;
 
   /// Width of a badge that should be about [preferred] wide in [available] room: never wider than the room, nor than

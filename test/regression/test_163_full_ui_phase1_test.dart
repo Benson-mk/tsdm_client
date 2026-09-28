@@ -81,9 +81,16 @@ void main() {
     });
 
     test('floor author row and author dialog', () {
-      expect(postAuthorSecondBadgeWidth(), closeTo(58.88, 0.01), reason: '${postAuthorBadgeHeight}px high, 184:100');
-      expect(SecondaryTitleBadge.fitWidth(briefProfileDialogContentWidth(360)), 184);
-      expect(SecondaryTitleBadge.fitWidth(briefProfileDialogContentWidth(320)), 176);
+      expect(SecondaryTitleBadge.heightFor(postAuthorSecondBadgeWidth(360)), closeTo(32, 0.001));
+      expect(postAuthorSecondBadgeWidth(1280), postAuthorSecondBadgeWidth(360));
+      expect(postAuthorSecondBadgeWidth(40), 40);
+      for (final windowWidth in [320.0, 360.0, 1280.0]) {
+        final width = SecondaryTitleBadge.fitWidth(
+          briefProfileDialogContentWidth(windowWidth),
+          preferred: SecondaryTitleBadge.widthFor(profileBadgeHeight),
+        );
+        expect(SecondaryTitleBadge.heightFor(width), closeTo(64, 0.001));
+      }
     });
   });
 

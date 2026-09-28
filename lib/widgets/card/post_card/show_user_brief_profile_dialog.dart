@@ -27,9 +27,6 @@ import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/medal_group_view.dart';
 import 'package:universal_html/parsing.dart';
 
-/// Height of the user group badge and the secondary title in the badges section of the dialog.
-const _dialogBadgeHeight = 72.0;
-
 /// Width available to the content of the brief profile dialog in a window [windowWidth] wide.
 ///
 /// Mirrors the constraint of [CustomAlertDialog] (70% of the window, at most 400) without its 24px side paddings.
@@ -134,11 +131,9 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
     // Measured like the badges below: the dialog content has no layout builder (the dialog sizes to intrinsics).
     final contentWidth = briefProfileDialogContentWidth(MediaQuery.sizeOf(context).width);
     final statWidth = (contentWidth - 8) / 2;
-    // Both badges of the author are [_dialogBadgeHeight] high, the title as wide as that allows (feedback 111: at its
-    // natural 184px it towered over the group badge).
     final secondBadgeWidth = SecondaryTitleBadge.fitWidth(
       contentWidth,
-      preferred: SecondaryTitleBadge.widthFor(_dialogBadgeHeight),
+      preferred: SecondaryTitleBadge.widthFor(profileBadgeHeight),
     );
     final authorUid = int.tryParse(widget.profile.uid);
     // Only a verified current account counts; the uid is compared again by the badge against the title it holds.
@@ -309,8 +304,7 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
       sectionSeparator,
 
       // Badges from this author's own floor: the user group badge and the secondary title. Both keep their natural
-      // aspect ratio and wrap below each other when the dialog is narrow; the secondary title is shown at up to its
-      // natural 184px width.
+      // aspect ratio and share a display height; narrow dialogs wrap instead of squeezing either image.
       //
       // When the floor carries no secondary title and the author is the current account, the title that account
       // uses is shown instead (CurrentTitleCubit: read-only title page of that account, keyed by uid and dropped on
@@ -327,8 +321,8 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
               CachedImage(
                 widget.badge!,
                 key: const ValueKey('brief-profile-group-badge'),
-                height: _dialogBadgeHeight,
-                maxWidth: 200,
+                maxWidth: contentWidth,
+                height: profileBadgeHeight,
                 fit: BoxFit.contain,
               ),
             if (widget.secondBadge != null)
