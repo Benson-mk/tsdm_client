@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- 首页：「赞助与功能许愿」卡片改名为「支援开发与功能许愿」（「关于」页同步）。
+- 首页：桌面版问候卡片的称号牌子改回原图尺寸 184px 显示，不再放大到 240px；论坛只提供 184×100 的原图，放大后会模糊。
+
 ## [1.29.0] - 2026-09-28
 
 ### Changed

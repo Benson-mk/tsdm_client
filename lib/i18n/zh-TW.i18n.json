@@ -545,7 +545,7 @@
     }
   },
   "aboutPage": {
-    "supportDevelopment": "贊助與功能許願",
+    "supportDevelopment": "支援開發與功能許願",
     "supportDevelopmentSubtitle": "支持 Carinoasd 開發，也能提出想要的功能",
     "featureRequestTitle": "功能許願",
     "featureRequestDescription": "歡迎贊助支持開發，並告訴我你希望新增的功能。請先提出需求，說明使用情境與預期效果，我會依可行性與維護成本評估。贊助不保證功能一定會實作，是否採納與時程需另行確認。",

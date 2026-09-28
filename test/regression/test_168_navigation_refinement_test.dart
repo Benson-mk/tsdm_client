@@ -37,7 +37,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 ///   returns to the selected tab; the phone bar keeps its three tabs;
 /// * the notifications entry shows the real unread count by the rules of the app bar notice icon;
 /// * the homepage greeting always shows a daily red packet entry with an honest state and submits at most once;
-/// * the title badge of the greeting is 240px wide on wide layouts and 160 to 184px on phones.
+/// * the title badge of the greeting is its natural 184px on wide layouts and 160 to 184px on phones.
 ///
 /// Synthetic accounts and answers only: no network, nothing is claimed, no login.
 Translations get tr => LocaleSettings.instance.currentTranslations;
@@ -675,9 +675,9 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('desktop: 240px wide, complete 184:100 box, beside the greeting', (tester) async {
+    testWidgets('desktop: the natural 184px wide, complete 184:100 box, beside the greeting', (tester) async {
       await pumpHeader(tester, window: const Size(1000, 600), compact: false);
-      final expected = Size(240, SecondaryTitleBadge.heightFor(240));
+      final expected = Size(184, SecondaryTitleBadge.heightFor(184));
       expect(tester.getSize(find.byType(SecondaryTitlePlaceholder)), expected, reason: 'room kept while loading');
 
       await completeTitle(tester);

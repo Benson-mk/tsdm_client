@@ -545,7 +545,7 @@
     }
   },
   "aboutPage": {
-    "supportDevelopment": "Support & feature requests",
+    "supportDevelopment": "Support development & feature requests",
     "supportDevelopmentSubtitle": "Support Carinoasd and suggest features",
     "featureRequestTitle": "Suggest a feature",
     "featureRequestDescription": "You are welcome to support development and suggest a feature. Please describe your request, how you would use it, and the expected result first. I will assess feasibility and maintenance effort. A donation does not guarantee implementation; acceptance and timing need to be discussed separately.",
