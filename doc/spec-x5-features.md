@@ -1268,3 +1268,9 @@ B. 論壇提醒屏蔽規則
 - `test/regression/test_172_feedback111_test.dart`：三種視窗（橫向含瀏海、直向、寬視窗）編輯器貫穿整頁且無拖動條、收起後回覆列回來；簽到記錄今天／昨天／換帳號／未登入；紅包記錄今天／別天／別帳號、頁面有紅包優先、領取成功與「已領過」會記錄、失敗不記錄；牌子尺寸換算。
 - 未實機驗證：Android 橫向鍵盤面板、真實論壇簽到與紅包流程。
 
+## 41. 貼文內容縮放、桌面端 Esc／滑鼠返回鍵（GitHub #137、#138，2026-09-28）
+
+- 貼文內容縮放：設定 → 外觀新增 `threadContentScale`（double，預設 1.0，範圍 1.0–2.0、步進 0.1），存於 drift `settings` 表既有的 `double_value` 欄位，不需 migration。貼文頁（`ThreadPage`）只對樓層列表（`PostList`／`PostCard`）套用 `MediaQuery.textScaler = 全域文字縮放 × 貼文內容縮放`，乘積上限 3.0；標題列、軟關閉提示與回覆列維持全域縮放。所有平台皆可用。
+- 桌面返回鍵：`DesktopBackHandler` 掛在 `MaterialApp.router` 的 builder（`lib/app.dart`），只在 `isDesktop` 生效。Esc（按下）與滑鼠返回側鍵（`kBackMouseButton`）以主焦點所在的路由判定：只處理 `PageRoute` 且非該 navigator 首頁的情況，呼叫 `Navigator.maybePop`，因此頁面的 `PopScope`（例如草稿確認）仍然生效，主頁各分頁（首頁／主題／設定的殼路由）不會觸發退出 App。對話框、彈出選單、modal bottom sheet 不是 `PageRoute`，Esc 交還給路由自身的 dismiss 動作（可點遮罩關閉者才關閉）；焦點在文字輸入（`EditableText` 或任何實作 `TextInputClient` 的編輯器，含 BBCode 編輯器）時 Esc 與側鍵都不動作；展開的回覆編輯器是頁面的 local history entry，`maybePop` 會先收起編輯器、再按一次才離開頁面。右鍵不使用。
+- 測試：`test_173`（設定套用到樓層、不影響標題列與回覆列、與全域縮放相乘與上限）、`test_174`（可返回時 Esc／側鍵 pop、根頁不動、輸入框有焦點不動、對話框與持久 bottom sheet 先關閉、`PopScope` 拒絕時不 pop、非桌面停用）。
+- 尚未實機驗證：未在 Windows 實機測 Esc／滑鼠側鍵（含 BBCode 編輯器焦點下的行為）與放大後的實際觀感；測試以 Linux 桌面環境的 widget test 為準。

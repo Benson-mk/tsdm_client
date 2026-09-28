@@ -38,6 +38,7 @@ import 'package:tsdm_client/features/settings/widgets/font_scale_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/language_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/proxy_settings_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/select_thread_floor_interaction_mode_dialog.dart';
+import 'package:tsdm_client/features/settings/widgets/thread_content_scale_dialog.dart';
 import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
@@ -191,6 +192,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final accentColorFollowSystem = state.settingsMap.accentColorFollowSystem;
     final fontFamily = state.settingsMap.fontFamily;
     final textScaleFactor = state.settingsMap.textScaleFactor;
+    final threadContentScale = state.settingsMap.threadContentScale;
 
     return AppTileGroup(
       title: tr.title,
@@ -287,6 +289,21 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             );
             if (!context.mounted || selectedScale == null) return;
             context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.textScaleFactor, selectedScale));
+          },
+        ),
+        SectionListTile(
+          leading: const Icon(Icons.format_size_outlined),
+          title: Text(tr.threadContentScale.title),
+          subtitle: Text(tr.threadContentScale.detail),
+          trailing: _trailingValue(context, '${threadContentScale.toStringAsFixed(1)}x'),
+          onTap: () async {
+            final selectedScale = await showDialog<double>(
+              context: context,
+              builder: (_) =>
+                  RootPage(DialogPaths.threadContentScalePicker, ThreadContentScaleDialog(threadContentScale)),
+            );
+            if (!context.mounted || selectedScale == null) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.threadContentScale, selectedScale));
           },
         ),
         SectionListTile(

@@ -339,6 +339,11 @@
       "textScaleFactor": {
         "title": "Text scale",
         "dialogTitle": "Text scale factor"
+      },
+      "threadContentScale": {
+        "title": "Thread content scale",
+        "detail": "Extra scale for post content in thread page, on top of text scale",
+        "dialogTitle": "Thread content scale factor"
       }
     },
     "windowSection": {

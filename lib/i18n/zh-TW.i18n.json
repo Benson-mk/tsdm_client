@@ -339,6 +339,11 @@
       "textScaleFactor": {
         "title": "文字縮放",
         "dialogTitle": "文字縮放係數"
+      },
+      "threadContentScale": {
+        "title": "貼文內容縮放",
+        "detail": "在文字縮放之上，額外放大貼文頁面中的樓層內容",
+        "dialogTitle": "貼文內容縮放係數"
       }
     },
     "windowSection": {

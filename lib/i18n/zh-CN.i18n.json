@@ -339,6 +339,11 @@
       "textScaleFactor": {
         "title": "文字缩放",
         "dialogTitle": "文字缩放系数"
+      },
+      "threadContentScale": {
+        "title": "帖子内容缩放",
+        "detail": "在文字缩放之上，额外放大帖子页面中的楼层内容",
+        "dialogTitle": "帖子内容缩放系数"
       }
     },
     "windowSection": {
