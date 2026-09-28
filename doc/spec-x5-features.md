@@ -1285,3 +1285,9 @@ B. 論壇提醒屏蔽規則
 - 桌面返回鍵：`DesktopBackHandler` 掛在 `MaterialApp.router` 的 builder（`lib/app.dart`），只在 `isDesktop` 生效。Esc（按下）與滑鼠返回側鍵（`kBackMouseButton`）以主焦點所在的路由判定：只處理 `PageRoute` 且非該 navigator 首頁的情況，呼叫 `Navigator.maybePop`，因此頁面的 `PopScope`（例如草稿確認）仍然生效，主頁各分頁（首頁／主題／設定的殼路由）不會觸發退出 App。對話框、彈出選單、modal bottom sheet 不是 `PageRoute`，Esc 交還給路由自身的 dismiss 動作（可點遮罩關閉者才關閉）；焦點在文字輸入（`EditableText` 或任何實作 `TextInputClient` 的編輯器，含 BBCode 編輯器）時 Esc 與側鍵都不動作；展開的回覆編輯器是頁面的 local history entry，`maybePop` 會先收起編輯器、再按一次才離開頁面。右鍵不使用。
 - 測試：`test_173`（設定套用到樓層、不影響標題列與回覆列、與全域縮放相乘與上限）、`test_174`（可返回時 Esc／側鍵 pop、根頁不動、輸入框有焦點不動、對話框與持久 bottom sheet 先關閉、`PopScope` 拒絕時不 pop、非桌面停用）。
 - 尚未實機驗證：未在 Windows 實機測 Esc／滑鼠側鍵（含 BBCode 編輯器焦點下的行為）與放大後的實際觀感；測試以 Linux 桌面環境的 widget test 為準。
+
+## 42. 1.29.0 後續小修（2026-09-29）
+
+- 首頁／關於：「贊助與功能許願」改名「支援開發與功能許願」（三語）。
+- 首頁桌面版稱號牌子：`homeGreetingBadgeWideWidth` 240 → 184。論壇的稱號圖只有 184×100（`img.tsdm39.com/img01/title/*.gif`，無 @2x），放大顯示必然模糊；改回原圖尺寸。手機端本來就 ≤184。
+

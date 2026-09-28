@@ -32,9 +32,11 @@ const _dailyActionsRowWidth = 300.0;
 /// (check-in, red packet, activities, medals and titles): a phone in landscape (feedback 113).
 const _allActionsRowWidth = 560.0;
 
-/// Width of the title badge in the greeting card on wide layouts, larger than the natural 184px of the image (user
-/// request of 2026-09-27, replacing the former 184px target).
-const homeGreetingBadgeWideWidth = 240.0;
+/// Width of the title badge in the greeting card on wide layouts: the natural 184px of the image.
+///
+/// It was 240px for a day (user request of 2026-09-27): the forum only serves the 184x100 original, so the enlarged
+/// image was blurry on desktop (user report of 2026-09-29).
+const homeGreetingBadgeWideWidth = 184.0;
 
 /// Least width of the title badge in the greeting card on phones, unless the card is narrower.
 const homeGreetingBadgeCompactMinWidth = 160.0;
@@ -44,9 +46,9 @@ const homeGreetingBadgeCompactMaxWidth = 184.0;
 
 /// Width of the title badge in the greeting card whose content is [available] wide.
 ///
-/// Wide layouts show the image 240px wide; phones give it 160 to 184px depending on the room. Only in this card the
-/// image is enlarged past its natural 184px ([SecondaryTitleBadge.fitWidth] is not used here, it caps at the natural
-/// width); it stays contained in its 184:100 box, never cropped nor stretched, and never wider than the card. When the
+/// Wide layouts show the image at its natural 184px; phones give it 160 to 184px depending on the room. The image
+/// is never enlarged past its natural width (the forum serves 184x100 only, larger looked blurry); it stays contained
+/// in its 184:100 box, never cropped nor stretched, and never wider than the card. When the
 /// greeting would be left too little room beside it, the badge goes below the greeting ([homeGreetingBadgeBeside]).
 double homeGreetingBadgeWidth(double available, {required bool compact}) {
   final preferred = compact
