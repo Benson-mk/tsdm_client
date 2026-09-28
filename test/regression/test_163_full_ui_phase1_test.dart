@@ -81,8 +81,7 @@ void main() {
     });
 
     test('floor author row and author dialog', () {
-      expect(postAuthorSecondBadgeWidth(360), 120);
-      expect(postAuthorSecondBadgeWidth(1280), 138);
+      expect(postAuthorSecondBadgeWidth(), closeTo(58.88, 0.01), reason: '${postAuthorBadgeHeight}px high, 184:100');
       expect(SecondaryTitleBadge.fitWidth(briefProfileDialogContentWidth(360)), 184);
       expect(SecondaryTitleBadge.fitWidth(briefProfileDialogContentWidth(320)), 176);
     });

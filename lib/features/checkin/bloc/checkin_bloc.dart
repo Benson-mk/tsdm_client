@@ -28,6 +28,7 @@ final class CheckinBloc extends Bloc<CheckinEvent, CheckinState> {
        super(const CheckinStateInitial()) {
     on<CheckinRequested>(_onCheckinRequested);
     on<CheckinAuthChanged>(_onCheckinAuthChanged);
+    on<CheckinStatusRequested>(_onCheckinStatusRequested);
     _authStreamSub = _authenticationRepository.status.listen(
       (status) => add(CheckinAuthChanged(authed: status is AuthStatusAuthed)),
     );
@@ -57,6 +58,28 @@ final class CheckinBloc extends Bloc<CheckinEvent, CheckinState> {
       return;
     }
     emit(CheckinStateFailed(result));
+  }
+
+  Future<void> _onCheckinStatusRequested(CheckinStatusRequested event, Emitter<CheckinState> emit) async {
+    final uid = _authenticationRepository.currentUser?.uid;
+    if (uid == null) {
+      emit(const CheckinStateNeedLogin());
+      return;
+    }
+    if (state is CheckinStateLoading) {
+      return;
+    }
+    final checked = await _checkinRepository.checkedInToday(uid);
+    // The account may have changed while reading.
+    if (_authenticationRepository.currentUser?.uid != uid || state is CheckinStateLoading) {
+      return;
+    }
+    if (checked) {
+      emit(const CheckinStateChecked());
+    } else if (state is CheckinStateChecked) {
+      // A new day, or another account without a record.
+      emit(const CheckinStateInitial());
+    }
   }
 
   void _onCheckinAuthChanged(CheckinAuthChanged event, Emitter<CheckinState> emit) {

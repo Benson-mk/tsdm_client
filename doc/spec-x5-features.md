@@ -1244,3 +1244,27 @@ B. 論壇提醒屏蔽規則
 - 購買：確認框優先引用 `data-c` 原句、註明不自動佩戴；確認後以同帳號 repository 重讀當頁，核對 UID、表單、ID、名稱、價格、確認句，變動則不送出並要求重新確認；再以 `singleAttempt` POST 一次，之後 GET 商店，該列成為「已拥有」才算成功，`.alert_error` 且未擁有為被拒，其餘一律「結果未確認」且不重送。購買中鎖住連點、翻頁與重新整理；切帳號作廢流程、不顯示舊結果。購買表單只接受同源 `action=buy` POST、恰好 `formhash`／`tsdmtitle_return`（只回商店）／`buyid`（等於該列）三個隱藏欄位及 `buysubmit=true`。
 - 設計見 `docs/specs/2026-09-27-medal-search-title-shop-design.md`。測試：`test_126`（搜尋連結／表單／狀態／畫面）、`test_127`（商店解析與表單驗證）、`test_128`（購買狀態、重驗、單次 POST、切帳號）、`test_129`（商店畫面、取消、鎖定、窄螢幕）。樣本皆為合成資料。
 - 尚未實機驗證：真實購買的成功／失敗回應頁（未做購買），成功只以購買後商店狀態判定。
+
+## 40. 全 App UI 預覽 110 回饋修正（PR #135、GitHub #139，2026-09-28）
+
+### 40.1 回覆編輯器
+
+- Material 3 預設把 bottom sheet 限制在 640dp 寬；手機橫向（792dp）時展開的編輯器比頁面窄，底部收合的回覆框從兩側露出來，看起來像兩個輸入框。`ReplyBar` 開 sheet 時改傳空的 `BoxConstraints`，sheet 與回覆列一樣貫穿整頁，內容仍靠自己置中到閱讀欄寬。
+- 編輯器頂部的拖動條移除（#139）：與右下角「收起」按鈕功能重複，只佔空間；向下滑仍可關閉。
+
+### 40.2 首頁簽到／紅包狀態
+
+- 簽到：`CheckinBloc` 新增 `CheckinStatusRequested`，讀 `CheckinRepository.checkedInToday(uid)`（cookie 表的 `lastCheckin` 是否為本機今天），是則進 `CheckinStateChecked`；首頁載入成功後送出。按鈕在 `CheckinStateChecked`、`CheckinStateSuccess`、`CheckinStateFailed(CheckinResultAlreadyChecked)` 時顯示「已簽到」並停用，tooltip 說明是本 App 的記錄。只知道 App 自己做過的簽到（手動或自動）；網頁上簽到的要再點一下，論壇回「已經簽到」後才會記錄。
+- 紅包：論壇首頁只有在尚未領取時才嵌 `hongbaoDailyInit`，領過後頁面與沒有紅包時一樣。App 在領取成功或論壇回「已領過」時，把該帳號的 `dateflag` 存到設定表 `dailyRedPacketClaimed.<uid>`；首頁沒有紅包時，若記錄的 `dateflag` 等於本機今天（`YYYYMMDD`），顯示「紅包已領取」，tooltip 說明是 App 的記錄。頁面上有紅包時一律以頁面為準。站方的日界未知，以本機日期近似，跨午夜前後可能差幾小時。
+- 不會為了狀態多打任何請求；不會把「沒有紅包」直接說成「已領取」。
+
+### 40.3 作者牌子
+
+- 樓層作者列：用戶組牌子與第二牌子同高 `postAuthorBadgeHeight`（32dp），第二牌子依 184:100 比例約 59dp 寬（原本 120／138dp，明顯大過用戶組牌子）。
+- 作者彈窗：兩枚牌子同高 72dp；個人資料頁的稱號區塊改為置中，與用戶組區塊一致。
+
+### 40.4 驗證
+
+- `test/regression/test_172_feedback111_test.dart`：三種視窗（橫向含瀏海、直向、寬視窗）編輯器貫穿整頁且無拖動條、收起後回覆列回來；簽到記錄今天／昨天／換帳號／未登入；紅包記錄今天／別天／別帳號、頁面有紅包優先、領取成功與「已領過」會記錄、失敗不記錄；牌子尺寸換算。
+- 未實機驗證：Android 橫向鍵盤面板、真實論壇簽到與紅包流程。
+

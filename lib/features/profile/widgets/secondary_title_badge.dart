@@ -30,6 +30,9 @@ class SecondaryTitleBadge extends StatelessWidget {
   /// Height of a badge [width] wide.
   static double heightFor(double width) => width * badgeImageSize.height / badgeImageSize.width;
 
+  /// Width of a badge [height] high.
+  static double widthFor(double height) => height * badgeImageSize.width / badgeImageSize.height;
+
   /// Width of a badge that should be about [preferred] wide in [available] room: never wider than the room, nor than
   /// the natural width of the image (a larger box would only upscale it).
   static double fitWidth(double available, {double preferred = 184}) =>

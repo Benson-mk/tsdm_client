@@ -10,6 +10,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/blocking/utils/block_filter.dart';
+import 'package:tsdm_client/features/checkin/bloc/checkin_bloc.dart';
 import 'package:tsdm_client/features/checkin/widgets/checkin_button.dart';
 import 'package:tsdm_client/features/home/cubit/home_cubit.dart';
 import 'package:tsdm_client/features/homepage/bloc/homepage_bloc.dart';
@@ -271,6 +272,8 @@ class _HomepagePageState extends State<HomepagePage> {
                 hasPersonalMessage: allowHint ? state.hasUnreadMessage : null,
               );
               context.read<NotificationBloc>().add(NotificationUpdateAllRequested());
+              // The greeting card shows whether this account checked in today, from the record of this app.
+              context.read<CheckinBloc>().add(const CheckinStatusRequested());
             },
           ),
         ],

@@ -46,3 +46,13 @@ final class CheckinStateSuccess extends CheckinState with CheckinStateSuccessMap
   /// Error text.
   final String message;
 }
+
+/// The current account checked in today: recorded by this app in an earlier run or by the auto check-in.
+///
+/// A check-in of this run ends in [CheckinStateSuccess] (or [CheckinStateFailed] with an "already checked in"
+/// answer) instead, which count as checked in as well.
+@MappableClass()
+final class CheckinStateChecked extends CheckinState with CheckinStateCheckedMappable {
+  /// Constructor.
+  const CheckinStateChecked() : super();
+}

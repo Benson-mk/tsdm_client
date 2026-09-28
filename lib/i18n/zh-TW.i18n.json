@@ -182,6 +182,8 @@
       "history": "歷史",
       "notice": "訊息",
       "checkin": "簽到",
+      "checkedIn": "已簽到",
+      "checkedInHint": "本 App 記錄到這個帳號今天已簽到",
       "myThread": "我的貼文",
       "latestThread": "最新貼文",
       "favorite": "收藏"
@@ -962,6 +964,7 @@
       "claimedToday": "紅包已領取",
       "unavailable": "紅包：暫無",
       "unavailableHint": "首頁目前沒有提供今日紅包（可能已領取或尚未開放），點一下重新檢查",
+      "claimedRecordedHint": "本 App 記錄到這個帳號今天已領過紅包；首頁目前也沒有提供紅包",
       "needLogin": "登入領紅包"
     }
   },

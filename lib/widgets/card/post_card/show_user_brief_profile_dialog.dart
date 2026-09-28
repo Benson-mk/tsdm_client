@@ -27,6 +27,9 @@ import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/medal_group_view.dart';
 import 'package:universal_html/parsing.dart';
 
+/// Height of the user group badge and the secondary title in the badges section of the dialog.
+const _dialogBadgeHeight = 72.0;
+
 /// Width available to the content of the brief profile dialog in a window [windowWidth] wide.
 ///
 /// Mirrors the constraint of [CustomAlertDialog] (70% of the window, at most 400) without its 24px side paddings.
@@ -131,7 +134,12 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
     // Measured like the badges below: the dialog content has no layout builder (the dialog sizes to intrinsics).
     final contentWidth = briefProfileDialogContentWidth(MediaQuery.sizeOf(context).width);
     final statWidth = (contentWidth - 8) / 2;
-    final secondBadgeWidth = SecondaryTitleBadge.fitWidth(contentWidth);
+    // Both badges of the author are [_dialogBadgeHeight] high, the title as wide as that allows (feedback 111: at its
+    // natural 184px it towered over the group badge).
+    final secondBadgeWidth = SecondaryTitleBadge.fitWidth(
+      contentWidth,
+      preferred: SecondaryTitleBadge.widthFor(_dialogBadgeHeight),
+    );
     final authorUid = int.tryParse(widget.profile.uid);
     // Only a verified current account counts; the uid is compared again by the badge against the title it holds.
     final ownFloor =
@@ -319,8 +327,8 @@ class _UserBriefProfileDialogState extends State<_UserBriefProfileDialog> {
               CachedImage(
                 widget.badge!,
                 key: const ValueKey('brief-profile-group-badge'),
+                height: _dialogBadgeHeight,
                 maxWidth: 200,
-                maxHeight: 80,
                 fit: BoxFit.contain,
               ),
             if (widget.secondBadge != null)

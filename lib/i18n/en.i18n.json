@@ -182,6 +182,8 @@
       "history": "History",
       "notice": "Notification",
       "checkin": "Checkin",
+      "checkedIn": "Checked in",
+      "checkedInHint": "This app recorded a check-in of this account today",
       "myThread": "My thread",
       "latestThread": "Latest thread",
       "favorite": "Favorites"
@@ -962,6 +964,7 @@
       "claimedToday": "Packet claimed",
       "unavailable": "No packet now",
       "unavailableHint": "The homepage offers no red packet right now (maybe already claimed or not open yet). Tap to check again.",
+      "claimedRecordedHint": "This app recorded a claim of this account today; the homepage offers no packet either",
       "needLogin": "Log in to claim"
     }
   },

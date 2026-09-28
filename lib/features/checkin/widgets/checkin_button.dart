@@ -76,6 +76,28 @@ class CheckinButton extends StatelessWidget {
             return const Icon(Icons.domain_verification_outlined);
           }
 
+          // Checked in today: recorded by this app (this run, an earlier run or the auto check-in). A check-in made
+          // on the website is not known until the next tap, which then answers "already checked in" and records it.
+          final checked =
+              state is CheckinStateChecked ||
+              state is CheckinStateSuccess ||
+              (state is CheckinStateFailed && state.result is CheckinResultAlreadyChecked);
+          if (checked) {
+            final checkedTr = context.t.homepage.welcome;
+            if (label != null) {
+              return Tooltip(
+                message: checkedTr.checkedInHint,
+                child: FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                  icon: const Icon(Icons.task_alt_outlined),
+                  label: Text(checkedTr.checkedIn),
+                  onPressed: null,
+                ),
+              );
+            }
+            return IconButton(icon: const Icon(Icons.task_alt_outlined), tooltip: checkedTr.checkedIn, onPressed: null);
+          }
+
           if (state is CheckinStateNeedLogin) {
             if (label != null) {
               return _buildLabeled(context, icon: const Icon(Icons.domain_verification_outlined), onPressed: null);

@@ -623,6 +623,10 @@ class StorageProvider with LoggerMixin {
     return;
   });
 
+  /// Time of the last check-in this app made for the account [uid], null when none is recorded or the account is not
+  /// stored.
+  Future<DateTime?> getLastCheckinTime(int uid) async => (await CookieDao(_db).selectCookieByUid(uid))?.lastCheckin;
+
   /// Update the last checkin success datetime in storage for user [uid].
   VoidTask updateLastCheckinTime(int uid, DateTime datetime) => VoidTask(() async {
     await CookieDao(_db).updateLastCheckinTime(uid, datetime);

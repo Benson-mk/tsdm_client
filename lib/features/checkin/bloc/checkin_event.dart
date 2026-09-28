@@ -27,3 +27,13 @@ final class CheckinAuthChanged extends CheckinEvent with CheckinAuthChangedMappa
   /// Latest auth status.
   final bool authed;
 }
+
+/// Ask whether the current account already checked in today, from the record of this app.
+///
+/// Sent when a page showing the check-in state opens or reloads; the answer is [CheckinStateChecked] or the initial
+/// state, a running check-in is left alone.
+@MappableClass()
+final class CheckinStatusRequested extends CheckinEvent with CheckinStatusRequestedMappable {
+  /// Constructor.
+  const CheckinStatusRequested() : super();
+}

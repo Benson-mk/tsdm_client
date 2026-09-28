@@ -111,6 +111,10 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
 
     final c = showBottomSheet(
       context: context,
+      // Material 3 limits a bottom sheet to 640dp: on a phone in landscape the sheet was narrower than the page and
+      // the collapsed bar showed on both sides of it, as a second reply box (feedback 111). The sheet spans the page
+      // like the bar; its content keeps to the reading column by itself.
+      constraints: const BoxConstraints(),
       builder: (_) => _ReplyBar(
         controller: widget.controller,
         outerTextController: controller,
@@ -607,29 +611,18 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
   /// Currently showing the floor user is replying to (if any), and a button to
   /// set to reply to thread (not any floor).
   Widget _buildHintTextRow(BuildContext context) {
-    // Grip of the sheet: shows the editor is a panel over the page.
+    // No grip above the editor: the collapse button below is the one control that closes the sheet (#139), a second
+    // one for the same thing only took room. Swiping the sheet down still works without it.
     final colorScheme = Theme.of(context).colorScheme;
-    final grip = Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colorScheme.outlineVariant,
-            borderRadius: BorderRadius.circular(2),
-          ),
-          child: const SizedBox(width: 32, height: 4),
-        ),
-      ),
-    );
     if (_hintText == null || _closed || !_hasLogin) {
-      return grip;
+      return sizedBoxW12H12;
     }
     // The floor this reply goes to, as a pill that can be dropped to reply to the thread instead.
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        grip,
+        sizedBoxW12H12,
         Padding(
           padding: edgeInsetsL12R12,
           child: AppInsetBlock(

@@ -182,6 +182,8 @@
       "history": "历史",
       "notice": "消息",
       "checkin": "签到",
+      "checkedIn": "已签到",
+      "checkedInHint": "本 App 记录到这个账号今天已签到",
       "myThread": "我的帖子",
       "latestThread": "最新帖子",
       "favorite": "收藏"
@@ -962,6 +964,7 @@
       "claimedToday": "红包已领取",
       "unavailable": "红包：暂无",
       "unavailableHint": "首页目前没有提供今日红包（可能已领取或尚未开放），点一下重新检查",
+      "claimedRecordedHint": "本 App 记录到这个账号今天已领过红包；首页目前也没有提供红包",
       "needLogin": "登录领红包"
     }
   },

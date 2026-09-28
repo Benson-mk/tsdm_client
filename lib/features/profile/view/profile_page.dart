@@ -1029,7 +1029,8 @@ class _ProfileSecondaryTitleState extends State<_ProfileSecondaryTitle> {
     title: context.t.profilePage.secondaryTitle,
     icon: Icons.badge_outlined,
     children: [
-      Align(alignment: AlignmentDirectional.centerStart, child: badge),
+      // Centred like the user group badge above it (feedback 111: the two sat at different sides).
+      Align(child: badge),
     ],
   );
 

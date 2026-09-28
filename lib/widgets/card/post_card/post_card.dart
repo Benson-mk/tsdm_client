@@ -35,13 +35,14 @@ import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Height of the user group badge in the author row; the forum renders it 20px high as well.
-const _groupBadgeHeight = 20.0;
-
-/// Width of the secondary title in the author row of a floor in a window [windowWidth] wide.
+/// Height of both badges in the author row of a floor: the user group badge and the secondary title.
 ///
-/// The image is natively 184x100; phones show it 120px wide (120x65), wider windows 138px, both complete.
-double postAuthorSecondBadgeWidth(double windowWidth) => windowWidth < 600 ? 120 : 138;
+/// One height for the two, so they read as one row of badges (feedback 111: the title at 120px wide dwarfed the
+/// group badge). The author dialog shows the title larger.
+const postAuthorBadgeHeight = 32.0;
+
+/// Width of the secondary title in the author row of a floor: [postAuthorBadgeHeight] high, natural 184:100 ratio.
+double postAuthorSecondBadgeWidth() => SecondaryTitleBadge.widthFor(postAuthorBadgeHeight);
 
 /// Actions in post context menu.
 ///
@@ -169,7 +170,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     final userGroup = widget.post.userBriefProfile?.userGroup;
     final publishTime = widget.post.publishTime;
     final floor = widget.post.postFloor;
-    final secondBadgeWidth = postAuthorSecondBadgeWidth(MediaQuery.sizeOf(context).width);
+    final secondBadgeWidth = postAuthorSecondBadgeWidth();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
@@ -232,8 +233,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                   style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
                 ),
                 // Badges the forum renders in this floor's author column: the user group badge and the secondary title
-                // of this author. Nothing about the current account is used here. They wrap below each other on narrow
-                // windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
+                // of this author, the same height. Nothing about the current account is used here. They wrap below
+                // each other on narrow windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
                 if (widget.post.badge != null || widget.post.secondBadge != null) ...[
                   sizedBoxW8H8,
                   Wrap(
@@ -242,7 +243,12 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (widget.post.badge != null)
-                        CachedImage(widget.post.badge!, height: _groupBadgeHeight, maxWidth: 160, fit: BoxFit.contain),
+                        CachedImage(
+                          widget.post.badge!,
+                          height: postAuthorBadgeHeight,
+                          maxWidth: 160,
+                          fit: BoxFit.contain,
+                        ),
                       if (widget.post.secondBadge != null)
                         SecondaryTitleBadge(widget.post.secondBadge!, width: secondBadgeWidth),
                     ],
