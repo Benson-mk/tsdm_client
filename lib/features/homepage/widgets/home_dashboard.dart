@@ -28,6 +28,10 @@ const _greetingBadgeGap = 12.0;
 /// Least width (at text scale 1) of the phone greeting card content showing check-in and red packet on one row.
 const _dailyActionsRowWidth = 300.0;
 
+/// Least width (at text scale 1) of the phone greeting card content showing all four actions of the day on one row
+/// (check-in, red packet, activities, medals and titles): a phone in landscape (feedback 113).
+const _allActionsRowWidth = 560.0;
+
 /// Width of the title badge in the greeting card on wide layouts, larger than the natural 184px of the image (user
 /// request of 2026-09-27, replacing the former 184px target).
 const homeGreetingBadgeWideWidth = 240.0;
@@ -190,22 +194,20 @@ class HomeGreetingCard extends StatelessWidget {
       checking: checkingDailyRedPacket,
       claim: claimDailyRedPacket,
     );
+    final activities = _QuickAction(
+      icon: Icons.event_outlined,
+      label: context.t.activitiesPage.title,
+      onPressed: () async => context.pushNamed(ScreenPaths.activities),
+    );
+    final medals = _QuickAction(
+      icon: Icons.workspace_premium_outlined,
+      label: context.t.medalTitleHub.title,
+      onPressed: () async => context.pushNamed(ScreenPaths.medalTitleHub),
+    );
     final quickActions = Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: [
-        if (!compact) redPacket,
-        _QuickAction(
-          icon: Icons.event_outlined,
-          label: context.t.activitiesPage.title,
-          onPressed: () async => context.pushNamed(ScreenPaths.activities),
-        ),
-        _QuickAction(
-          icon: Icons.workspace_premium_outlined,
-          label: context.t.medalTitleHub.title,
-          onPressed: () async => context.pushNamed(ScreenPaths.medalTitleHub),
-        ),
-      ],
+      children: [if (!compact) redPacket, activities, medals],
     );
 
     final checkin = CheckinButton(enableSnackBar: true, label: context.t.homepage.welcome.checkin);
@@ -231,30 +233,51 @@ class HomeGreetingCard extends StatelessWidget {
             children: [
               HomeGreetingHeader(greeting: greeting, uid: uid, compact: compact),
               SizedBox(height: compact ? 14 : 20),
-              if (compact) ...[
-                // Check-in and red packet side by side when both fit, stacked otherwise (narrow window, large text).
+              if (compact)
+                // All four actions on one row when they fit (a phone in landscape); check-in and red packet side by
+                // side with the two entries below them on a portrait phone; everything stacked when even those two do
+                // not fit (narrow window, large text).
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-                    if (constraints.maxWidth >= _dailyActionsRowWidth * textScale) {
+                    if (constraints.maxWidth >= _allActionsRowWidth * textScale) {
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(child: checkin),
                           sizedBoxW8H8,
                           Expanded(child: redPacket),
+                          sizedBoxW8H8,
+                          activities,
+                          sizedBoxW8H8,
+                          medals,
+                        ],
+                      );
+                    }
+                    if (constraints.maxWidth >= _dailyActionsRowWidth * textScale) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: checkin),
+                              sizedBoxW8H8,
+                              Expanded(child: redPacket),
+                            ],
+                          ),
+                          sizedBoxW12H12,
+                          quickActions,
                         ],
                       );
                     }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [checkin, sizedBoxW8H8, redPacket],
+                      children: [checkin, sizedBoxW8H8, redPacket, sizedBoxW12H12, quickActions],
                     );
                   },
-                ),
-                sizedBoxW12H12,
-                quickActions,
-              ] else
+                )
+              else
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

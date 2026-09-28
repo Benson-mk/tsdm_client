@@ -451,7 +451,9 @@ void main() {
       }
     });
 
-    testWidgets('the greeting card of a landscape phone: compact, actions side by side, no overflow', (tester) async {
+    testWidgets('the greeting card of a landscape phone: compact, all four actions on one row, no overflow', (
+      tester,
+    ) async {
       final auth = _Auth(_alice);
       final checkin = CheckinBloc(
         checkinRepository: CheckinRepository(storageProvider: storage),
@@ -490,8 +492,56 @@ void main() {
       await _settle(tester, rounds: 3);
       final checkinRect = tester.getRect(find.text(tr.homepage.welcome.checkin));
       final packetRect = tester.getRect(find.text(tr.redPacket.daily.unavailable));
+      final activitiesRect = tester.getRect(find.text(tr.activitiesPage.title));
+      final medalsRect = tester.getRect(find.text(tr.medalTitleHub.title));
       expect(checkinRect.top, closeTo(packetRect.top, 1), reason: 'check-in and red packet on one row');
-      expect(tester.getRect(find.byType(HomeGreetingCard)).height, lessThan(260), reason: 'no tall card');
+      expect(activitiesRect.top, closeTo(packetRect.top, 1), reason: 'activities on the same row (feedback 113)');
+      expect(medalsRect.top, closeTo(packetRect.top, 1), reason: 'medals and titles on the same row');
+      expect(medalsRect.right, lessThanOrEqualTo(size.width), reason: 'inside the card');
+      expect(tester.getRect(find.byType(HomeGreetingCard)).height, lessThan(200), reason: 'one row of actions');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the greeting card of a portrait phone keeps two rows of actions', (tester) async {
+      final auth = _Auth(_alice);
+      final checkin = CheckinBloc(
+        checkinRepository: CheckinRepository(storageProvider: storage),
+        authenticationRepository: auth,
+        settingsRepository: settings,
+      );
+      addTearDown(() async {
+        await checkin.close();
+        await auth.close();
+      });
+      tester.view.physicalSize = const Size(384, 792);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        BlocProvider<CheckinBloc>.value(
+          value: checkin,
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: HomeGreetingCard(
+                    username: 'Alice',
+                    uid: _alice.uid,
+                    forumStatus: const ForumStatus.empty(),
+                    dailyRedPacket: null,
+                    formHash: 'XXXXXXXX',
+                    compact: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester, rounds: 3);
+      final packetRect = tester.getRect(find.text(tr.redPacket.daily.unavailable));
+      final activitiesRect = tester.getRect(find.text(tr.activitiesPage.title));
+      expect(tester.getRect(find.text(tr.homepage.welcome.checkin)).top, closeTo(packetRect.top, 1));
+      expect(activitiesRect.top, greaterThan(packetRect.bottom), reason: 'the entries wrap below on a portrait phone');
       expect(tester.takeException(), isNull);
     });
 

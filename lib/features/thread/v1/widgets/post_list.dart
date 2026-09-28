@@ -234,7 +234,12 @@ class _PostListState extends State<PostList> with LoggerMixin {
 
   @override
   Widget build(BuildContext context) {
-    _refreshController.finishLoad();
+    // The bloc reloads the thread and this list is rebuilt with the result: both indicators are done by then. The
+    // refresh one used to be left "processing", so after a pull to refresh a blank of its height stayed above the
+    // title (feedback 113).
+    _refreshController
+      ..finishRefresh()
+      ..finishLoad();
 
     return EasyRefresh.builder(
       scrollBehaviorBuilder: (physics) {
@@ -294,11 +299,16 @@ class _PostListState extends State<PostList> with LoggerMixin {
                   maxWidth: appReadingMaxWidth,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Text(
-                      widget.title ?? '',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, height: 1.35),
+                    // Full width: the column centres its child, so a short title used to sit in the middle while a
+                    // long one wrapped from the left (feedback 113). Every title starts at the left.
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        widget.title ?? '',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, height: 1.35),
+                      ),
                     ),
                   ),
                 ),

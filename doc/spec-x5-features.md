@@ -1273,6 +1273,12 @@ B. 論壇提醒屏蔽規則
 - 首頁排版：`homeLayoutFor(width, platform)` 與版塊列表同一原則——Android／iOS 任何寬度都是 compact；只有桌面平台依寬度進 medium（≥600）／wide（≥960）。橫屏手機原本被當成寬視窗，問候卡片的稱號牌子放大到 240dp、簽到／紅包／活動／勳章四顆按鈕排成不整齊兩行。
 - 設定「主題模式」：三段式切換鈕改為列尾 `trailing`，與標題同列；副標仍顯示目前模式。2 倍字級下仍在視窗內（test_172 第 4 組）。
 
+### 40.6 第三輪（preview113 回饋）
+
+- 首頁問候卡片（compact）：內容寬 ≥ 560×字級 時四顆按鈕（簽到、紅包、活動總覽、勳章與稱號）排一行；≥ 300×字級 維持簽到／紅包一行＋入口第二行；更窄全部直疊。
+- 帖子標題：`AppContentWidth` 置中子元件，短標題原本因此看起來置中、長標題靠左；標題改包 `SizedBox(width: double.infinity)` 一律靠左。
+- 標題上方空白：`EasyRefreshController(controlFinishRefresh: true)` 但從未呼叫 `finishRefresh()`，下拉更新後 header 停在 processing、在 locator 位置留下 100dp 空白（新 UI 重新載入時列表不再被拆掉重建，所以顯露出來）。改為 build 時 `finishRefresh()` 與 `finishLoad()` 一起結束。test_171 加下拉更新案例（測試環境下修正前後都沒有空白，未能重現回報畫面；此修正依 EasyRefresh 的 API 契約補上，實機效果待測試者確認）。
+
 ## 41. 貼文內容縮放、桌面端 Esc／滑鼠返回鍵（GitHub #137、#138，2026-09-28）
 
 - 貼文內容縮放：設定 → 外觀新增 `threadContentScale`（double，預設 1.0，範圍 1.0–2.0、步進 0.1），存於 drift `settings` 表既有的 `double_value` 欄位，不需 migration。貼文頁（`ThreadPage`）只對樓層列表（`PostList`／`PostCard`）套用 `MediaQuery.textScaler = 全域文字縮放 × 貼文內容縮放`，乘積上限 3.0；標題列、軟關閉提示與回覆列維持全域縮放。所有平台皆可用。

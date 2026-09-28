@@ -861,6 +861,25 @@ void main() {
       ),
     ];
 
+    testWidgets('thread: a pull to refresh leaves no blank of the refresh indicator above the title', (tester) async {
+      _window(tester, _portrait, padding: _portraitInsets);
+      final (_, page, _, _) = hosts[1];
+      await pumpPage(tester, page());
+      expect(find.byType(PostCard), findsWidgets);
+      final appBarBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final gapBefore = tester.getRect(find.byType(PostCard).first).top - appBarBottom;
+      final reads = pages.requests.length;
+
+      await tester.drag(find.byType(PostCard).first, const Offset(0, 320));
+      await _settle(tester, rounds: 30);
+
+      expect(pages.requests.length, greaterThan(reads), reason: 'the thread was reloaded');
+      expect(find.byType(RefreshProgressIndicator), findsNothing, reason: 'the refresh indicator is finished');
+      final gapAfter = tester.getRect(find.byType(PostCard).first).top - appBarBottom;
+      expect(gapAfter, closeTo(gapBefore, 4), reason: 'no blank of the refresh indicator stays above the title');
+      expect(tester.takeException(), isNull);
+    });
+
     for (final (host, page, content, _) in hosts) {
       for (final (name, size, padding) in [
         ('landscape, cutout on the left', _landscape, _landscapeInsets),
