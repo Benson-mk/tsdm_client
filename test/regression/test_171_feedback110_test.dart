@@ -73,6 +73,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
+import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -90,6 +91,7 @@ import 'package:universal_html/parsing.dart';
 /// 7. the "unread only" filter of the notifications is in the app bar;
 /// 8. the daily red packet entry checks the packet alone, the homepage is not reloaded;
 /// 9. the warning icon of the debug section lines up with the other icons of the settings.
+/// 10. the author dialog keeps the uid and online pills of its header inside a phone in landscape.
 ///
 /// Synthetic accounts and pages only: no network, no login, nothing is claimed, bought or sent.
 Translations get tr => LocaleSettings.instance.currentTranslations;
@@ -1059,6 +1061,28 @@ void main() {
       }
       expect(images.requested, contains(url), reason: 'asked from the local image host');
       expect(painted(), isTrue, reason: '$url is decoded and painted in the dialog');
+    }
+
+    for (final size in [_landscape, const Size(640, 360)]) {
+      testWidgets('landscape ${size.width}x${size.height}: the uid and online pills stay in the header', (
+        tester,
+      ) async {
+        _window(tester, size, padding: _landscapeInsets);
+        await openDialog(tester, _post(), uid: 1000, accountTitle: _ownTitle);
+        final pills = find.byType(AppInfoPill);
+        expect(pills, findsNWidgets(2), reason: '${size.width}x${size.height}: uid and online state');
+        final header = find.ancestor(of: pills.first, matching: find.byType(SingleChildScrollView)).first;
+        final headerRect = tester.getRect(header);
+        for (var i = 0; i < 2; i++) {
+          final pill = tester.getRect(pills.at(i));
+          expect(
+            pill.bottom,
+            lessThanOrEqualTo(headerRect.bottom),
+            reason: '${size.width}x${size.height}: pill $i is not cut by the title viewport',
+          );
+          expect(pill.top, greaterThanOrEqualTo(headerRect.top));
+        }
+      });
     }
 
     test('the title image is found in its block also when a link wraps it', () {
