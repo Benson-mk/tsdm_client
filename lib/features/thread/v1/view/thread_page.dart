@@ -860,7 +860,9 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
                   ],
                 ],
               ),
-              body: _buildBody(context, state),
+              // Read the body's MediaQuery after Scaffold has consumed the app bar's top inset.
+              // The content's text-scale override must not restore the outer status-bar padding.
+              body: Builder(builder: (bodyContext) => _buildBody(bodyContext, state)),
             );
           },
         ),
