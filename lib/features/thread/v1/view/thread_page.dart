@@ -145,6 +145,9 @@ bool _firstFloorNamesNoUser(uh.Document document) {
   return first != null && first.querySelector('td.pls a[href*="uid="], div.authi a[href*="uid="]') == null;
 }
 
+/// Upper bound of the combined text scale (global text scale times thread content scale) applied to floors.
+const threadContentMaxTextScale = 3.0;
+
 class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateMixin, LoggerMixin {
   /// Controller of thread tab.
   final _listScrollController = ScrollController();
@@ -552,28 +555,33 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
     return Column(
       children: [
         Expanded(
-          child: SafeArea(
-            bottom: false,
-            child: PostList(
-              threadID: state.tid ?? widget.threadID,
-              title: state.title ?? widget.title,
-              pageNumber: context.read<JumpPageCubit>().state.currentPage,
-              initialPostID: (_scrollToPidOnReload ?? widget.findPostID)?.parseToInt(),
-              scrollController: _listScrollController,
-              // Posts of locally blocked users become placeholders in place, the floors keep their positions.
-              widgetBuilder: (context, post) => BlockAwarePost(
-                post: post,
-                postList: state.postList,
-                builder: (context, post) => PostCard(
-                  post,
-                  replyCallback: replyPostCallback,
-                  onEdited: () => _scrollToPidOnReload = post.postID,
+          // Floors get the extra thread content scale on top of the global text scale (GitHub #137); the app bar,
+          // the hints below and the reply bar keep the global scale.
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: _threadContentScaler(context)),
+            child: SafeArea(
+              bottom: false,
+              child: PostList(
+                threadID: state.tid ?? widget.threadID,
+                title: state.title ?? widget.title,
+                pageNumber: context.read<JumpPageCubit>().state.currentPage,
+                initialPostID: (_scrollToPidOnReload ?? widget.findPostID)?.parseToInt(),
+                scrollController: _listScrollController,
+                // Posts of locally blocked users become placeholders in place, the floors keep their positions.
+                widgetBuilder: (context, post) => BlockAwarePost(
+                  post: post,
+                  postList: state.postList,
+                  builder: (context, post) => PostCard(
+                    post,
+                    replyCallback: replyPostCallback,
+                    onEdited: () => _scrollToPidOnReload = post.postID,
+                  ),
                 ),
+                useDivider: true,
+                postList: state.postList,
+                canLoadMore: state.canLoadMore,
+                latestModAct: state.latestModAct,
               ),
-              useDivider: true,
-              postList: state.postList,
-              canLoadMore: state.canLoadMore,
-              latestModAct: state.latestModAct,
             ),
           ),
         ),
@@ -601,6 +609,14 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
         _buildReplyBar(context, state),
       ],
     );
+  }
+
+  /// Text scaler of the floors: global text scale times the thread content scale setting, capped at
+  /// [threadContentMaxTextScale].
+  TextScaler _threadContentScaler(BuildContext context) {
+    final threadScale = context.select<SettingsBloc, double>((bloc) => bloc.state.settingsMap.threadContentScale);
+    final globalScale = MediaQuery.textScalerOf(context).scale(1);
+    return TextScaler.linear(math.min(globalScale * threadScale, threadContentMaxTextScale));
   }
 
   /// Body of the page; everything but the content (which handles the insets per part) stays in the safe area.

@@ -216,6 +216,16 @@ enum SettingsKeys<T> implements Comparable<SettingsKeys<T>> {
     type: double,
     defaultValue: 1,
   ),
+
+  /// Extra text scale applied on top of [textScaleFactor] to the floors in thread page only.
+  ///
+  /// Users reading long posts on a large screen asked for post content larger than the global scale allows
+  /// (GitHub #137). Ranges from 1.0 (no extra scale) to 2.0 in steps of 0.1.
+  threadContentScale<double>(
+    name: 'threadContentScale',
+    type: double,
+    defaultValue: 1,
+  ),
   ;
 
   const SettingsKeys({required this.name, required this.type, required this.defaultValue});

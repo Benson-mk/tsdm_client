@@ -60,6 +60,7 @@ import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
 import 'package:tsdm_client/utils/tray_helper.dart';
 import 'package:tsdm_client/utils/window_events.dart';
+import 'package:tsdm_client/widgets/desktop_back_handler.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Main app for tsdm_client.
@@ -594,7 +595,7 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
                           textScaler: TextScaler.linear(textScaleFactor)
                             ..clamp(minScaleFactor: 0.7, maxScaleFactor: 1.5),
                         ),
-                        child: child ?? sizedBoxEmpty,
+                        child: DesktopBackHandler(child: child ?? sizedBoxEmpty),
                       );
                     },
                   );
