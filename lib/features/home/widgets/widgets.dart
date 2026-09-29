@@ -14,6 +14,7 @@ import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 
+part 'animated_branch_page_view.dart';
 part 'home_navigation_bar.dart';
 part 'home_navigation_drawer.dart';
 part 'home_navigation_rail.dart';

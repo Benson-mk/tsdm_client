@@ -17,6 +17,7 @@ import 'package:tsdm_client/features/forum/view/forum_group_page.dart';
 import 'package:tsdm_client/features/forum/view/forum_page.dart';
 import 'package:tsdm_client/features/friend/view/friend_page.dart';
 import 'package:tsdm_client/features/home/view/home_page.dart';
+import 'package:tsdm_client/features/home/widgets/widgets.dart';
 import 'package:tsdm_client/features/homepage/view/homepage_page.dart';
 import 'package:tsdm_client/features/image/view/image_detail_page.dart';
 import 'package:tsdm_client/features/latest_thread/view/latest_thread_page.dart';
@@ -79,12 +80,15 @@ final router = GoRouter(
 
 /// All named routes in app.
 final List<RouteBase> _appRoutes = [
-  StatefulShellRoute.indexedStack(
+  StatefulShellRoute(
     builder: (context, router, navigator) {
       final hideNavigationBarPages = [ScreenPaths.settingsThreadAppearance.fullPath];
       // Partial global singleton page here.
       return HomePage(showNavigationBar: !hideNavigationBarPages.contains(router.fullPath), child: navigator);
     },
+    // Slide horizontally between the shell branches instead of switching instantly.
+    navigatorContainerBuilder: (context, navigationShell, children) =>
+        AnimatedBranchPageView(navigationShell: navigationShell, children: children),
     branches: [
       StatefulShellBranch(
         routes: [AppRoute(path: ScreenPaths.homepage, builder: (_) => const HomepagePage())],
