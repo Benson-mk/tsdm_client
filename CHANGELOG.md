@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.29.2] - 2026-09-29
+
 ### Changed
 
 - 底栏切换：点底栏切换首页／版块／设置等分页时改为水平滑动；分页状态保留，隐藏分页的动画会暂停，系统开启「减少动态效果」时直接切换。(#145)
@@ -13,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - 窄屏手机（约 360dp 宽）：设置「主题模式」的标题不再被挤成竖排，放不下时切换按钮自动移到文字下方；首页「活动总览」「勋章与称号」两个按钮改为同一行；「支援开发与功能许愿」弹窗标题与「到 GitHub 提出功能需求」按钮保持单行。
+- Android：内部版本号提高至 117。
 
 ## [1.29.1] - 2026-09-29
 
