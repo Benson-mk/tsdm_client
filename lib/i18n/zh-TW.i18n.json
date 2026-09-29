@@ -1364,10 +1364,13 @@
       "refreshRecommendTip": "重新載入好友名單",
       "noFriends": "@ 名單裡還沒有好友，可直接輸入使用者名稱",
       "noMatch": "好友裡沒有符合的使用者",
-      "filterHint": "篩選或輸入使用者名稱",
+      "filterHint": "篩選、搜尋用戶名或 UID",
       "others": "其他 @ 名單",
       "useTyped": "提醒「${name}」",
-      "friendsUnavailable": "無法讀取好友名單：${message}"
+      "friendsUnavailable": "無法讀取好友名單：${message}",
+      "recent": "最近 @ 過",
+      "siteSearch": "全站搜尋",
+      "noSearchResult": "全站沒有找到「${name}」"
     },
     "customImage": {
       "tab": "我的圖片",

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -40,7 +41,18 @@ String _data(String name) => File('test/data/$name').readAsStringSync();
 
 /// Serves the friends list (first page and `page=2`) and the official `@` list, recording every request.
 final class _RoutingAdapter implements HttpClientAdapter {
-  _RoutingAdapter({this.friendsFirst = 'friend_list_own_x5.html', this.friendsStatus = 200, this.atStatus = 200});
+  _RoutingAdapter({
+    this.friendsFirst = 'friend_list_own_x5.html',
+    this.friendsStatus = 200,
+    this.atStatus = 200,
+    this.atplus = false,
+  });
+
+  /// Whether the forum has the `atplus` plugin: `plugin.php?id=atplus:search` answers its JSON.
+  bool atplus;
+
+  /// Form fields of every `atplus` request, in order.
+  final atplusForms = <Map<String, String>>[];
 
   static const friendsNext = 'friend_list_last_x5.html';
   static const String atUsers = _atUserXml;
@@ -56,6 +68,7 @@ final class _RoutingAdapter implements HttpClientAdapter {
 
   Iterable<Uri> get friendRequests => requests.where((u) => u.path == '/home.php');
   Iterable<Uri> get atRequests => requests.where((u) => u.path == '/misc.php');
+  Iterable<Uri> get atplusRequests => requests.where((u) => u.path == '/plugin.php');
 
   @override
   Future<ResponseBody> fetch(
@@ -67,6 +80,23 @@ final class _RoutingAdapter implements HttpClientAdapter {
     requests.add(uri);
     if (gate != null) {
       await gate!.future;
+    }
+    if (atplus && uri.path == '/plugin.php' && uri.queryParameters['id'] == 'atplus:search') {
+      final data = options.data;
+      final form = data is Map ? data.map((k, v) => MapEntry('$k', '$v')) : Uri.splitQueryString('${data ?? ''}');
+      atplusForms.add(form);
+      final body = switch (form['op']) {
+        'init' => _atplusInit,
+        'search' => form['q'] == 'dave' ? _atplusSearchDave : '{"ok":1,"list":[]}',
+        _ => '{"ok":0}',
+      };
+      return ResponseBody.fromString(
+        body,
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/json; charset=utf-8'],
+        },
+      );
     }
     if (uri.path == '/misc.php' && uri.queryParameters['mod'] == 'getatuser') {
       return ResponseBody.fromString(
@@ -93,6 +123,17 @@ final class _RoutingAdapter implements HttpClientAdapter {
   @override
   void close({bool force = false}) {}
 }
+
+/// `op=init` of the `atplus` plugin: one recent user, one friend (shape of the live answer, fake users).
+const _atplusInit =
+    '{"ok":1,"recent":[{"uid":1002,"username":"Carol","avatar":"./data/avatar/000/00/10/02_avatar_small.jpg",'
+    '"group":"使者","friend":0}],"friends":[{"uid":1001,"username":"Bob",'
+    '"avatar":"./data/avatar/000/00/10/01_avatar_small.jpg","group":"梦幻","friend":1}],"groups":[]}';
+
+/// `op=search` of the `atplus` plugin for `dave`.
+const _atplusSearchDave =
+    '{"ok":1,"list":[{"uid":1003,"username":"Dave","avatar":"./data/avatar/000/00/10/03_avatar_small.jpg",'
+    '"group":"使者","friend":0},{"uid":1001,"username":"Bob","avatar":"","group":"梦幻","friend":1}]}';
 
 /// Never answers: avatars are not fetched in tests.
 final class _OfflineAdapter implements HttpClientAdapter {
@@ -159,10 +200,15 @@ void main() {
 
       final again = (await repo.loadCandidates(selfUid: '1000').run()).toNullable()!;
       expect(again.friends.single.username, 'Bob');
-      expect(adapter.requests, hasLength(2), reason: 'reopening the picker uses the cache');
+      expect(
+        adapter.atplusRequests,
+        hasLength(1),
+        reason: 'the atplus plugin is asked first, it is not installed here',
+      );
+      expect(adapter.requests, hasLength(3), reason: 'reopening the picker uses the cache');
 
       await repo.loadCandidates(selfUid: '1000', force: true).run();
-      expect(adapter.requests, hasLength(4), reason: 'the reload button asks both sources again');
+      expect(adapter.requests, hasLength(6), reason: 'the reload button asks the plugin and both sources again');
     });
 
     test('follows the next page link and keeps friends unique by uid', () async {
@@ -360,7 +406,7 @@ void main() {
       expect(ops[0].data, 'hi ');
       expect(ops[1].data, {'bbcodeUserMention': '{"username":"Alice"}'});
       expect(controller.toForumBBCode(), 'hi [@]Alice[/@]');
-      expect(toOfficialMentions(controller.toForumBBCode()), 'hi @Alice ');
+      expect(toOfficialMentions(controller.toForumBBCode()), 'hi @\u2063Alice\u2063 ');
       expect(controller.selection, const TextSelection.collapsed(offset: 4));
     });
 
@@ -472,8 +518,72 @@ void main() {
         expect(embeds.single.data, {'bbcodeUserMention': '{"username":"$name"}'}, reason: name);
         expect(controller.document.toPlainText(), isNot(contains('@')), reason: name);
         expect(controller.toForumBBCode(), 'hi [@]$name[/@]', reason: name);
-        expect(toOfficialMentions(controller.toForumBBCode()), 'hi @$name ', reason: name);
+        expect(toOfficialMentions(controller.toForumBBCode()), 'hi @\u2063$name\u2063 ', reason: name);
       }
+    });
+  });
+
+  group('atplus plugin (web @ panel since 2026-09)', () {
+    tearDown(() async => unregisterNet());
+
+    test('parses its user lists, avatars made absolute; anything else is not an answer', () {
+      final init = jsonDecode(_atplusInit);
+      final friends = parseAtplusUsers(init, 'friends', base: baseUrl)!;
+      expect(friends.map((e) => (e.uid, e.username, e.groupName)), [('1001', 'Bob', '梦幻')]);
+      expect(friends.single.avatarUrl, '$baseUrl/data/avatar/000/00/10/01_avatar_small.jpg');
+      expect(parseAtplusUsers(init, 'recent', base: baseUrl)!.single.username, 'Carol');
+      expect(parseAtplusUsers(init, 'groups', base: baseUrl), isEmpty);
+      expect(parseAtplusUsers(init, 'missing', base: baseUrl), isEmpty);
+      expect(parseAtplusUsers(const {'ok': 0}, 'list', base: baseUrl), isNull);
+      expect(parseAtplusUsers('not found', 'list', base: baseUrl), isNull);
+      expect(parseAtplusUsers(null, 'list', base: baseUrl), isNull);
+    });
+
+    test('with the plugin: recent and friends come from it, the stock sources are not asked', () async {
+      await registerNet(_RoutingAdapter(atplus: true));
+      final repo = MentionRepository();
+      final result = (await repo.loadCandidates(selfUid: '1000').run()).toNullable()!;
+      expect(result.siteSearch, isTrue);
+      expect(result.recent.map((e) => e.username), ['Carol']);
+      expect(result.friends.map((e) => e.username), ['Bob']);
+      expect(result.others, isEmpty);
+      expect(adapter.atplusForms, [
+        {'op': 'init'},
+      ]);
+      expect(adapter.friendRequests, isEmpty);
+      expect(adapter.atRequests, isEmpty);
+
+      final found = (await repo.searchUsers('dave').run()).toNullable()!;
+      expect(found.map((e) => e.username), ['Dave', 'Bob']);
+      expect(adapter.atplusForms.last, {'op': 'search', 'q': 'dave'});
+    });
+
+    test('a guest does not ask the plugin', () async {
+      await registerNet(_RoutingAdapter(atplus: true));
+      await MentionRepository().loadCandidates(selfUid: null).run();
+      expect(adapter.atplusForms, isEmpty);
+    });
+
+    test('the cubit searches the site for the keyword, results not already shown', () async {
+      await registerNet(_RoutingAdapter(atplus: true));
+      final cubit = UserMentionCubit(MentionRepository(), selfUid: '1000');
+      addTearDown(cubit.close);
+      await cubit.load();
+      cubit.setKeyword('dave');
+      await pumpEventQueue();
+      expect(cubit.state.searchStatus, UserMentionStatus.success);
+      expect(
+        cubit.state.visibleSearchResults.map((e) => e.username),
+        ['Dave', 'Bob'],
+        reason: 'the server matched Bob too; he is not listed under friends for this keyword, so he is shown here',
+      );
+      expect(cubit.state.hasExactMatch, isTrue, reason: 'Dave was found');
+
+      cubit.setKeyword('bo');
+      await pumpEventQueue();
+      expect(cubit.state.visibleFriends.map((e) => e.username), ['Bob']);
+      expect(cubit.state.visibleSearchResults, isEmpty);
+      expect(adapter.atplusForms.map((e) => e['q']).whereType<String>(), ['dave', 'bo']);
     });
   });
 
@@ -520,6 +630,30 @@ void main() {
         return picked;
       };
     }
+
+    testWidgets('with the atplus plugin: recent, friends, and a site search result that can be picked', (
+      tester,
+    ) async {
+      adapter.atplus = true;
+      final repo = MentionRepository();
+      final picked = await pumpHost(tester, repo);
+      await tester.tap(find.text('open'));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pumpAndSettle();
+      final tr = LocaleSettings.instance.currentTranslations.bbcodeEditor.userMention;
+      expect(find.text(tr.recent), findsOneWidget);
+      expect(find.text('Carol'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'dave');
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pumpAndSettle();
+      expect(find.text(tr.siteSearch), findsOneWidget);
+      await tester.tap(find.text('Dave'));
+      await tester.pumpAndSettle();
+      expect(picked(), 'Dave');
+    });
 
     testWidgets('lists the friend under Friends, tapping it picks the name', (tester) async {
       final repo = MentionRepository();
