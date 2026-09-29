@@ -1291,3 +1291,11 @@ B. 論壇提醒屏蔽規則
 - 首頁／關於：「贊助與功能許願」改名「支援開發與功能許願」（三語）。
 - 首頁桌面版稱號牌子：`homeGreetingBadgeWideWidth` 240 → 184。論壇的稱號圖只有 184×100（`img.tsdm39.com/img01/title/*.gif`，無 @2x），放大顯示必然模糊；改回原圖尺寸。手機端本來就 ≤184。
 
+## 43. 窄屏版面修正、底欄滑動（GitHub #145，2026-09-29）
+
+- 底欄滑動（#145，bbtu1）：`StatefulShellRoute` 改用 `AnimatedBranchPageView`（PageView，關閉手勢），非當前分頁包 `TickerMode(enabled: false)`，`MediaQuery.disableAnimations` 時 `jumpToPage`。
+- 設定「主題模式」：切換鈕固定 156dp（compact 三段），`LayoutBuilder` 以 `TextPainter` 量標題與目前模式的寬度，放得下才放列尾，否則放文字下方。原因：720×1600（360dp）手機上列尾放不下，標題被擠成一字一行。
+- 首頁問候卡片：手機直向兩種排版（簽到／紅包並排或直疊）下，「活動總覽」「勳章與稱號」都改為一行各佔一半，標籤 `FittedBox` 縮字不換行。回報的手機（360dp、系統字級略大）落在直疊排版。
+- `AppDialogTitle(singleLine: true)`：標題單行、過長縮字；贊助彈窗與其 GitHub 按鈕、首頁贊助卡片標題都保持單行。
+- 驗證：test_172 第 4 組新增 320／360／384dp × 1／1.15／2 倍字級案例；主題模式與彈窗 6 項、首頁 1 項在修正前失敗。
+

@@ -38,6 +38,7 @@ import 'package:tsdm_client/features/red_packet/widgets/daily_red_packet_button.
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/settings/view/settings_page.dart';
+import 'package:tsdm_client/features/settings/widgets/support_development_dialog.dart';
 import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
@@ -545,9 +546,74 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    for (final scale in [1.0, 2.0]) {
-      testWidgets('${scale}x text: the theme mode switch is in one line with its title', (tester) async {
-        tester.view.physicalSize = const Size(384, 792);
+    Future<void> pumpSettings(WidgetTester tester, double width, double scale) async {
+      tester.view.physicalSize = Size(width, 792);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(() {
+        tester.view.reset();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<SettingsBloc>.value(value: settingsBloc),
+            BlocProvider<ThemeCubit>.value(value: theme),
+          ],
+          child: TranslationProvider(child: const MaterialApp(home: SettingsPage())),
+        ),
+      );
+      await _settle(tester, rounds: 3);
+    }
+
+    testWidgets('384dp phone: the theme mode switch is in one line with its title', (tester) async {
+      await pumpSettings(tester, 384, 1);
+      final title = tester.getRect(find.text(tr.settingsPage.appearanceSection.themeMode.title));
+      final switcher = tester.getRect(find.byType(SegmentedButton<int>));
+      expect(switcher.left, greaterThan(title.right), reason: 'at the end of the row, not below the text');
+      expect(switcher.top, lessThan(title.bottom + 8), reason: 'in the same row');
+      expect(switcher.right, lessThanOrEqualTo(384), reason: 'inside the window');
+      expect(tester.takeException(), isNull);
+    });
+
+    // Feedback on 1.29.1: on a 360dp phone the title was squeezed into one character per line.
+    for (final (width, scale) in [(320.0, 1.0), (360.0, 1.0), (384.0, 2.0), (360.0, 2.0)]) {
+      testWidgets('${width}dp, ${scale}x text: the theme mode title stays on one line, the switch in the window', (
+        tester,
+      ) async {
+        await pumpSettings(tester, width, scale);
+        final titleFinder = find.text(tr.settingsPage.appearanceSection.themeMode.title);
+        final title = tester.getRect(titleFinder);
+        final lineHeight = tester.widget<Text>(titleFinder).style?.fontSize ?? 16;
+        expect(title.height, lessThan(lineHeight * scale * 2), reason: 'one line, not one character per line');
+        final switcher = tester.getRect(find.byType(SegmentedButton<int>));
+        expect(switcher.right, lessThanOrEqualTo(width), reason: 'inside the window');
+        expect(
+          switcher.left >= title.right || switcher.top >= title.bottom,
+          isTrue,
+          reason: 'beside the text when it fits, below it otherwise; never over it',
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    // The phone of the report is 360dp wide with a slightly larger system font; the test font is narrower than the
+    // real one, so 320dp at 1.15x stands in for it.
+    for (final (width, scale) in [(360.0, 1.0), (320.0, 1.15)]) {
+      testWidgets('${width}dp, ${scale}x text: activities and medals share one row under check-in and red packet', (
+        tester,
+      ) async {
+        final auth = _Auth(_alice);
+        final checkin = CheckinBloc(
+          checkinRepository: CheckinRepository(storageProvider: storage),
+          authenticationRepository: auth,
+          settingsRepository: settings,
+        );
+        addTearDown(() async {
+          await checkin.close();
+          await auth.close();
+        });
+        tester.view.physicalSize = Size(width, 800);
         tester.view.devicePixelRatio = 1;
         tester.platformDispatcher.textScaleFactorTestValue = scale;
         addTearDown(() {
@@ -555,21 +621,55 @@ void main() {
           tester.platformDispatcher.clearTextScaleFactorTestValue();
         });
         await tester.pumpWidget(
-          MultiBlocProvider(
-            providers: [
-              BlocProvider<SettingsBloc>.value(value: settingsBloc),
-              BlocProvider<ThemeCubit>.value(value: theme),
-            ],
-            child: TranslationProvider(child: const MaterialApp(home: SettingsPage())),
+          BlocProvider<CheckinBloc>.value(
+            value: checkin,
+            child: TranslationProvider(
+              child: MaterialApp(
+                home: Scaffold(
+                  body: SingleChildScrollView(
+                    padding: const EdgeInsets.all(12),
+                    child: HomeGreetingCard(
+                      username: 'Alice',
+                      uid: _alice.uid,
+                      forumStatus: const ForumStatus.empty(),
+                      dailyRedPacket: null,
+                      formHash: 'XXXXXXXX',
+                      compact: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         );
         await _settle(tester, rounds: 3);
-        final title = tester.getRect(find.text(tr.settingsPage.appearanceSection.themeMode.title));
-        debugPrint('DBG switchers ${find.byType(SegmentedButton<int>).evaluate().length}');
-        final switcher = tester.getRect(find.byType(SegmentedButton<int>));
-        expect(switcher.left, greaterThan(title.right), reason: 'at the end of the row, not below the text');
-        expect(switcher.top, lessThan(title.bottom + 8), reason: 'in the same row');
-        expect(switcher.right, lessThanOrEqualTo(384), reason: 'inside the window');
+        final packet = tester.getRect(find.text(tr.redPacket.daily.unavailable));
+        final activities = tester.getRect(find.text(tr.activitiesPage.title));
+        final medals = tester.getRect(find.text(tr.medalTitleHub.title));
+        expect(activities.top, greaterThan(packet.bottom), reason: 'second row');
+        expect(medals.center.dy, closeTo(activities.center.dy, 1), reason: 'the two entries on one row');
+        expect(medals.right, lessThanOrEqualTo(width));
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    for (final width in [320.0, 360.0]) {
+      testWidgets('${width}dp phone: the support dialog title and the GitHub button stay on one line', (tester) async {
+        tester.view.physicalSize = Size(width, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: const MaterialApp(home: Scaffold(body: SupportDevelopmentDialog())),
+          ),
+        );
+        await _settle(tester, rounds: 3);
+        final titleFinder = find.text(tr.aboutPage.supportDevelopment);
+        final title = tester.getRect(titleFinder);
+        final titleStyle = DefaultTextStyle.of(tester.element(titleFinder)).style;
+        expect(title.height, lessThan((titleStyle.fontSize ?? 24) * 2), reason: 'the title is one line');
+        final action = tester.getRect(find.text(tr.aboutPage.featureRequestAction));
+        expect(action.height, lessThan(32), reason: 'the GitHub button label is one line');
         expect(tester.takeException(), isNull);
       });
     }

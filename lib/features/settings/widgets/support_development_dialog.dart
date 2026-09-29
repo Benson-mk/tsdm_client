@@ -100,7 +100,8 @@ class _SupportDevelopmentDialogState extends State<SupportDevelopmentDialog> wit
     // Same texts, order and actions as before; only grouped: the voluntary nature first, then the feature request
     // block, then the donation code on a white ground so it stays scannable in the dark theme.
     return AlertDialog(
-      title: AppDialogTitle(icon: Icons.volunteer_activism_outlined, title: tr.supportDevelopment),
+      // One line: the longer name wrapped to two lines on a narrow phone (feedback on 1.29.1).
+      title: AppDialogTitle(icon: Icons.volunteer_activism_outlined, title: tr.supportDevelopment, singleLine: true),
       scrollable: true,
       content: SizedBox(
         width: 360,
@@ -124,7 +125,7 @@ class _SupportDevelopmentDialogState extends State<SupportDevelopmentDialog> wit
                     onPressed: _openingRequest ? null : _openFeatureRequest,
                     // No spinner while the browser opens: the disabled button is the pending state.
                     icon: const Icon(Icons.open_in_new),
-                    label: Text(tr.featureRequestAction),
+                    label: FittedBox(fit: BoxFit.scaleDown, child: Text(tr.featureRequestAction, maxLines: 1)),
                   ),
                   if (_requestOpenFailed) ...[
                     const SizedBox(height: 8),

@@ -741,7 +741,13 @@ class AppBottomActionBar extends StatelessWidget {
 /// [AlertDialog]. [error] uses the error container colors (destructive confirmations).
 class AppDialogTitle extends StatelessWidget {
   /// Constructor.
-  const AppDialogTitle({required this.icon, required this.title, this.error = false, super.key});
+  const AppDialogTitle({
+    required this.icon,
+    required this.title,
+    this.error = false,
+    this.singleLine = false,
+    super.key,
+  });
 
   /// Icon of the tile.
   final IconData icon;
@@ -752,9 +758,19 @@ class AppDialogTitle extends StatelessWidget {
   /// Use the error colors.
   final bool error;
 
+  /// Keep the title on one line, shrinking its text when the dialog is too narrow, instead of wrapping.
+  final bool singleLine;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final text = singleLine
+        ? FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(title, maxLines: 1),
+          )
+        : Text(title);
     return Row(
       children: [
         AppIconTile(
@@ -764,7 +780,7 @@ class AppDialogTitle extends StatelessWidget {
           foregroundColor: error ? colorScheme.onErrorContainer : null,
         ),
         sizedBoxW12H12,
-        Expanded(child: Text(title)),
+        Expanded(child: text),
       ],
     );
   }
