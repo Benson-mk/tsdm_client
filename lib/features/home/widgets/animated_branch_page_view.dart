@@ -26,9 +26,15 @@ class _AnimatedBranchPageViewState extends State<AnimatedBranchPageView> {
   void didUpdateWidget(AnimatedBranchPageView oldWidget) {
     super.didUpdateWidget(oldWidget);
     final index = widget.navigationShell.currentIndex;
-    if (index != oldWidget.navigationShell.currentIndex) {
-      unawaited(_controller.animateToPage(index, duration: _branchSlideDuration, curve: Curves.easeInOut));
+    if (index == oldWidget.navigationShell.currentIndex) {
+      return;
     }
+    // Respect the system "reduce motion" setting: the switch is instant instead of a slide.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.jumpToPage(index);
+      return;
+    }
+    unawaited(_controller.animateToPage(index, duration: _branchSlideDuration, curve: Curves.easeInOut));
   }
 
   @override
@@ -38,10 +44,21 @@ class _AnimatedBranchPageViewState extends State<AnimatedBranchPageView> {
   }
 
   @override
-  Widget build(BuildContext context) => PageView(
-    controller: _controller,
-    // The navigation bar drives the tab. Not swipeable, so the scrollables inside the branches keep their own gestures.
-    physics: const NeverScrollableScrollPhysics(),
-    children: widget.children,
-  );
+  Widget build(BuildContext context) {
+    // The shell reports the new branch before the slide starts, so the branch being slid to is the current one as
+    // well; deciding by `_controller.page` would freeze the target until the slide is over.
+    final currentIndex = widget.navigationShell.currentIndex;
+    return PageView(
+      controller: _controller,
+      // The navigation bar drives the tab. Not swipeable, so the scrollables inside the branches keep their own gestures.
+      physics: const NeverScrollableScrollPhysics(),
+      // The pages stay mounted, so a branch that is off screen has to stop its own animations: the `indexedStack`
+      // container this replaced did that for us by wrapping every hidden branch in an `Offstage` with a disabled
+      // `TickerMode`.
+      children: [
+        for (final (index, child) in widget.children.indexed)
+          TickerMode(enabled: index == currentIndex, child: child),
+      ],
+    );
+  }
 }
