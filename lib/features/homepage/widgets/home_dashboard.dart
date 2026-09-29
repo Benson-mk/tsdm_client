@@ -257,6 +257,8 @@ class HomeGreetingCard extends StatelessWidget {
                       );
                     }
                     if (constraints.maxWidth >= _dailyActionsRowWidth * textScale) {
+                      // The two entries share the second row half and half: as a wrap they went below each other on
+                      // a 360dp phone (feedback on 1.29.1).
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -268,14 +270,36 @@ class HomeGreetingCard extends StatelessWidget {
                               Expanded(child: redPacket),
                             ],
                           ),
-                          sizedBoxW12H12,
-                          quickActions,
+                          sizedBoxW8H8,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: activities),
+                              sizedBoxW8H8,
+                              Expanded(child: medals),
+                            ],
+                          ),
                         ],
                       );
                     }
+                    // The two entries stay side by side here too, their labels shrink a little when needed: the
+                    // phone of the report (360dp, larger system font) lands in this layout.
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [checkin, sizedBoxW8H8, redPacket, sizedBoxW12H12, quickActions],
+                      children: [
+                        checkin,
+                        sizedBoxW8H8,
+                        redPacket,
+                        sizedBoxW8H8,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: activities),
+                            sizedBoxW8H8,
+                            Expanded(child: medals),
+                          ],
+                        ),
+                      ],
                     );
                   },
                 )
@@ -359,7 +383,8 @@ class _QuickAction extends StatelessWidget {
   Widget build(BuildContext context) => OutlinedButton.icon(
     style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
     icon: Icon(icon),
-    label: Text(label),
+    // One line: in a half width button the label shrinks a little instead of wrapping.
+    label: FittedBox(fit: BoxFit.scaleDown, child: Text(label, maxLines: 1)),
     onPressed: onPressed,
   );
 }
@@ -460,9 +485,14 @@ class HomeSupportCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      context.t.aboutPage.supportDevelopment,
-                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        context.t.aboutPage.supportDevelopment,
+                        maxLines: 1,
+                        style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
                     ),
                     sizedBoxW2H2,
                     Text(

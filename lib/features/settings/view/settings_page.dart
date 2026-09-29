@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
@@ -59,6 +60,13 @@ import 'package:tsdm_client/widgets/color_palette.dart';
 import 'package:tsdm_client/widgets/section_list_tile.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
 import 'package:tsdm_client/widgets/shutdown.dart';
+
+/// Width of the theme mode switch: three compact icon segments.
+const _themeSwitchWidth = 156.0;
+
+/// Width of a settings row that is not text: side paddings (16 + 16), leading icon with its gap (24 + 16) and the gap
+/// before the trailing widget (16), plus a little slack.
+const _themeTileChromeWidth = 96.0;
 
 /// Window width from which the settings groups are laid out in two columns.
 const _settingsTwoColumnWidth = 1200.0;
@@ -140,42 +148,82 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
   Widget _buildThemeModeTile(BuildContext context, int themeModeIndex) {
     final tr = context.t.settingsPage.appearanceSection;
-    // The switch sits at the end of the row, in one line with the title (feedback 111: below the text it left the
-    // right side of the row empty). Icons only: three labels do not fit a phone at a large text scale; each segment
-    // has a tooltip.
-    return SectionListTile(
-      leading: const Icon(Icons.contrast_outlined),
-      title: Text(tr.themeMode.title),
-      subtitle: Text(<String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex]),
-      trailing: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: SegmentedButton<int>(
-          showSelectedIcon: false,
-          segments: [
-            ButtonSegment(
-              value: ThemeMode.light.index,
-              icon: const Icon(Icons.light_mode_outlined),
-              tooltip: tr.themeMode.light,
-            ),
-            ButtonSegment(
-              value: ThemeMode.system.index,
-              icon: const Icon(Icons.auto_mode_outlined),
-              tooltip: tr.themeMode.system,
-            ),
-            ButtonSegment(
-              value: ThemeMode.dark.index,
-              icon: const Icon(Icons.dark_mode_outlined),
-              tooltip: tr.themeMode.dark,
-            ),
-          ],
-          selected: {themeModeIndex},
-          onSelectionChanged: (selection) {
-            final themeIndex = selection.first;
-            context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
-            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
-          },
+    final title = tr.themeMode.title;
+    final subtitle = <String>[tr.themeMode.system, tr.themeMode.light, tr.themeMode.dark][themeModeIndex];
+    // Icons only: three labels do not fit a phone at a large text scale; each segment has a tooltip. Compact and of a
+    // fixed width, so the row can tell whether the title still fits beside it.
+    final themeSwitch = SizedBox(
+      width: _themeSwitchWidth,
+      child: SegmentedButton<int>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
+        segments: [
+          ButtonSegment(
+            value: ThemeMode.light.index,
+            icon: const Icon(Icons.light_mode_outlined),
+            tooltip: tr.themeMode.light,
+          ),
+          ButtonSegment(
+            value: ThemeMode.system.index,
+            icon: const Icon(Icons.auto_mode_outlined),
+            tooltip: tr.themeMode.system,
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark.index,
+            icon: const Icon(Icons.dark_mode_outlined),
+            tooltip: tr.themeMode.dark,
+          ),
+        ],
+        selected: {themeModeIndex},
+        onSelectionChanged: (selection) {
+          final themeIndex = selection.first;
+          context.read<ThemeCubit>().setThemeModeIndex(themeIndex);
+          context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.themeMode, themeIndex));
+        },
       ),
+    );
+    // The switch sits at the end of the row, in one line with the title (feedback 111: below the text it left the
+    // right side of the row empty), but only while the title and the current mode still fit beside it: on a narrow
+    // phone the title was squeezed into one character per line (feedback on 1.29.1). Then it goes below the text.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textTheme = Theme.of(context).textTheme;
+        final textScaler = MediaQuery.textScalerOf(context);
+        final direction = Directionality.of(context);
+        double widthOf(String text, TextStyle? style) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textScaler: textScaler,
+            textDirection: direction,
+            maxLines: 1,
+          )..layout();
+          final width = painter.width;
+          painter.dispose();
+          return width;
+        }
+
+        final textWidth = math.max(widthOf(title, textTheme.bodyLarge), widthOf(subtitle, textTheme.bodyMedium));
+        final beside = constraints.maxWidth - _themeTileChromeWidth - _themeSwitchWidth >= textWidth;
+        if (beside) {
+          return SectionListTile(
+            leading: const Icon(Icons.contrast_outlined),
+            title: Text(title, maxLines: 1),
+            subtitle: Text(subtitle, maxLines: 1),
+            trailing: themeSwitch,
+          );
+        }
+        return SectionListTile(
+          leading: const Icon(Icons.contrast_outlined),
+          title: Text(title),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Text(subtitle), sizedBoxW8H8, themeSwitch, sizedBoxW4H4],
+          ),
+        );
+      },
     );
   }
 
