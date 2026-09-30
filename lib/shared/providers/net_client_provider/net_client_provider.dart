@@ -36,7 +36,7 @@ AppException mapException(Object error, StackTrace st) {
   }
   if (error case DioException(:final response)) {
     return HttpHandshakeFailedException(
-      error.message ?? '<unknown error>',
+      error.message ?? error.error?.toString() ?? error.type.name,
       statusCode: response?.statusCode,
       headers: response?.headers,
     );
@@ -213,6 +213,44 @@ final class NetClientProvider with LoggerMixin {
     bool singleAttempt = false,
   }) => _dio.postWithForm(path, data: data, queryParameters: queryParameters, singleAttempt: singleAttempt);
 
+  /// Post [data] as JSON (`Content-Type: application/json`) to [path].
+  ///
+  /// The response body is returned as a plain string and every status code is accepted so the caller can read the
+  /// plugin's JSON envelope (including its error body) itself. [headers] are added to this request's headers.
+  ///
+  /// [singleAttempt] marks a write the server may already have carried out: no transport retry and no redirect follow
+  /// up, so it is never sent twice (see `postWithForm` for the same idea on form posts).
+  AsyncEither<Response<dynamic>> postJson(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
+    bool singleAttempt = false,
+  }) => AsyncEither.tryCatch(
+    () async {
+      final resp = await _dio.post<dynamic>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: Options(
+          headers: {HttpHeaders.contentTypeHeader: Headers.jsonContentType, ...?headers},
+          responseType: ResponseType.plain,
+          validateStatus: (_) => true,
+          followRedirects: singleAttempt ? false : null,
+          extra: singleAttempt ? {singleAttemptHttpRequestKey: true} : null,
+        ),
+      );
+      final status = resp.statusCode ?? 0;
+      if (status < HttpStatus.ok || status >= HttpStatus.multipleChoices) {
+        // Every status is accepted above so the caller can read the plugin's own envelope; log the bad ones anyway, or a
+        // call the server keeps rejecting leaves no trace in an exported log.
+        warning('${resp.requestOptions.method} ${resp.requestOptions.uri} answered $status');
+      }
+      return resp;
+    },
+    mapException,
+  );
+
   /// Post a form [data] to url [path] in `Content-Type` multipart/form-data.
   ///
   /// Automatically set `Content-Type` to `multipart/form-data`.
@@ -358,9 +396,27 @@ class _ErrorHandler extends Interceptor with LoggerMixin {
     handler.next(response);
   }
 
+  /// Whether a 404 is an answer the app asked for rather than a page it lost.
+  ///
+  /// A pokemon sprite that is not on the cdn and the plugin's `recover` (which answers 404 while no battle is running)
+  /// are normal answers, kept out of the error log and the network error banner. A plugin that is disabled or renamed
+  /// answers 404 as well, and that is not an answer anybody asked for: it keeps reporting.
+  bool _isExpectedMissing(RequestOptions options) {
+    final accept = options.headers[HttpHeaders.acceptHeader]?.toString() ?? '';
+    if (accept.contains('image/')) return true;
+    final query = options.uri.queryParameters;
+    return query['id'] == 'pokemon:pokemon' && query['endpoint'] == 'battle' && query['action'] == 'recover';
+  }
+
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    error('${err.requestOptions.uri} ${err.type}: error: ${err.error}, status code: ${err.response?.statusCode}');
+    final status = err.response?.statusCode;
+    if (err.type == DioExceptionType.badResponse && status == 404 && _isExpectedMissing(err.requestOptions)) {
+      debug('${err.requestOptions.uri} ${err.type}: status code: $status');
+      handler.next(err);
+      return;
+    }
+    error('${err.requestOptions.uri} ${err.type}: error: ${err.error}, status code: $status');
     getIt.get<NetErrorSaver>().save(err.message);
 
     if (err.type == DioExceptionType.badResponse) {
@@ -472,7 +528,9 @@ final class _GzipEncodingChecker extends Interceptor with LoggerMixin {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     // Likely to have redirect on post methods.
     if (options.method != 'GET' || options.uri.queryParameters['goto'] == 'findpost') {
-      info('removing gzip encoding in request');
+      // The method and the url belong in the line: without them a burst of these lines cannot be traced back to a caller
+      // from an exported log, where a repeating write request otherwise leaves no trace at all.
+      info('removing gzip encoding in request: ${options.method} ${options.uri}');
       options.headers[HttpHeaders.acceptEncodingHeader] = 'deflate, br';
     }
 

@@ -17,6 +17,7 @@ abstract class _AndroidHttpMethodChannel {
   static const _methodGet = 'get';
   static const _methodPost = 'postForm';
   static const _methodPostMultipart = 'postMultipart';
+  static const _methodPostJson = 'postJson';
 
   /// Make a GET request.
   static Future<_KotlinHttpResponse?> _get({required String url, required Map<String, String> headers}) async {
@@ -74,6 +75,30 @@ abstract class _AndroidHttpMethodChannel {
       return _KotlinHttpResponse._fromRawResp(resp);
     } on PlatformException catch (e, st) {
       talker.handle(e, st, '[KtHttp] POST multipart failed on $url');
+      return null;
+    }
+  }
+
+  /// Post a raw JSON body.
+  static Future<_KotlinHttpResponse?> _postJson({
+    required String url,
+    required Map<String, String> headers,
+    required String body,
+    required bool singleAttempt,
+  }) async {
+    try {
+      final resp = await _httpChannel.invokeMethod<Map<Object?, Object?>>(_methodPostJson, {
+        'url': url,
+        'headers': headers,
+        'body': body,
+        'singleAttempt': singleAttempt,
+      });
+      if (resp == null) {
+        return null;
+      }
+      return _KotlinHttpResponse._fromRawResp(resp);
+    } on PlatformException catch (e, st) {
+      talker.handle(e, st, '[KtHttp] POST json failed on $url');
       return null;
     }
   }
@@ -155,8 +180,10 @@ final class KotlinHttpClient {
     }
 
     final contentType = headers?[HttpHeaders.contentTypeHeader]?.split(';').firstOrNull ?? '';
-    if (singleAttempt && contentType != 'application/x-www-form-urlencoded') {
-      throw UnsupportedError('Single-attempt requests require a URL-encoded form');
+    if (singleAttempt &&
+        contentType != 'application/x-www-form-urlencoded' &&
+        contentType != 'application/json') {
+      throw UnsupportedError('Single-attempt requests require a URL-encoded form or a JSON body');
     }
 
     final rawResp = switch (contentType) {
@@ -170,6 +197,12 @@ final class KotlinHttpClient {
         url: url.toString(),
         headers: headers ?? {},
         body: body as Map<String, String>,
+      ),
+      'application/json' => await _AndroidHttpMethodChannel._postJson(
+        url: url.toString(),
+        headers: headers ?? {},
+        body: body as String,
+        singleAttempt: singleAttempt,
       ),
       final v => throw UnsupportedError('unsupported content type: $v'),
     };
