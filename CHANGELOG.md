@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.29.3] - 2026-09-30
+
 ### Fixed
 
 - @ 提及：适配论坛新的 @ 插件（atplus）。论坛现在只把 @ 面板选出的名字（前后带不可见标记）当成提及，App 之前送出的 `@用户名` 会变成纯文字、对方收不到提醒；现在改为与网页面板相同的格式。
+- Android：内部版本号提高至 119，可从 1.29.3 测试版直接升级。
 
 ### Changed
 
