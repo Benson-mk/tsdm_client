@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fpdart/fpdart.dart';
@@ -41,17 +43,44 @@ final class UserMentionCubit extends Cubit<UserMentionState> with LoggerMixin {
             friends: value.friends,
             others: value.others,
             friendsMessage: value.friendsMessage,
+            recent: value.recent,
+            siteSearch: value.siteSearch,
           ),
         );
+        // A keyword typed while loading is searched once the site search turns out to be available.
+        unawaited(_search());
     }
   }
 
-  /// Filter the candidates by [keyword], case insensitive.
+  /// Filter the candidates by [keyword], case insensitive, and search the site for it when possible.
   void setKeyword(String keyword) {
     final k = keyword.trim();
     if (k == state.keyword) {
       return;
     }
     emit(state.copyWith(keyword: k));
+    unawaited(_search());
+  }
+
+  /// Search the whole site for the current keyword (`atplus`), keeping only the answer of the latest keyword.
+  Future<void> _search() async {
+    final k = state.keyword;
+    if (!state.siteSearch ||
+        k.isEmpty ||
+        (state.searchKeyword == k && state.searchStatus != UserMentionStatus.failure)) {
+      return;
+    }
+    emit(state.copyWith(searchKeyword: k, searchStatus: UserMentionStatus.loading, searchResults: const []));
+    final result = await _repo.searchUsers(k).run();
+    if (isClosed || state.keyword != k) {
+      return;
+    }
+    switch (result) {
+      case Left(:final value):
+        handle(value);
+        emit(state.copyWith(searchStatus: UserMentionStatus.failure));
+      case Right(:final value):
+        emit(state.copyWith(searchStatus: UserMentionStatus.success, searchResults: value));
+    }
   }
 }

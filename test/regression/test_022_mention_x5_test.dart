@@ -50,20 +50,24 @@ void main() {
 
   group('official mention format', () {
     test('the editor embed becomes @name followed by a space', () {
-      expect(toOfficialMentions('hi [@]Alice[/@]!'), 'hi @Alice !');
-      expect(toOfficialMentions('[@]Alice[/@] and [@]Bob[/@]'), '@Alice and @Bob ');
-      expect(toOfficialMentions('[@] Alice [/@]'), '@Alice ');
+      expect(toOfficialMentions('hi [@]Alice[/@]!'), 'hi @\u2063Alice\u2063 !');
+      expect(toOfficialMentions('[@]Alice[/@] and [@]Bob[/@]'), '@\u2063Alice\u2063 and @\u2063Bob\u2063 ');
+      expect(toOfficialMentions('[@] Alice [/@]'), '@\u2063Alice\u2063 ');
     });
 
     test('no extra space when whitespace already follows', () {
-      expect(toOfficialMentions('[@]Alice[/@] ok'), '@Alice ok');
-      expect(toOfficialMentions('[@]Bob[/@]\nnext'), '@Bob\nnext');
+      expect(toOfficialMentions('[@]Alice[/@] ok'), '@\u2063Alice\u2063 ok');
+      expect(toOfficialMentions('[@]Bob[/@]\nnext'), '@\u2063Bob\u2063\nnext');
     });
 
     test('a name with brackets is kept whole', () {
-      expect(toOfficialMentions('hi [@][TSDM]Alice[/@]!'), 'hi @[TSDM]Alice !');
-      expect(toOfficialMentions('[@]a]b[/@] [@]x[y[/@]'), '@a]b @x[y ');
-      expect(toOfficialMentions('[@]x and [@]Bob[/@]'), '[@]x and @Bob ', reason: 'a literal [@] is not a chip');
+      expect(toOfficialMentions('hi [@][TSDM]Alice[/@]!'), 'hi @\u2063[TSDM]Alice\u2063 !');
+      expect(toOfficialMentions('[@]a]b[/@] [@]x[y[/@]'), '@\u2063a]b\u2063 @\u2063x[y\u2063 ');
+      expect(
+        toOfficialMentions('[@]x and [@]Bob[/@]'),
+        '[@]x and @\u2063Bob\u2063 ',
+        reason: 'a literal [@] is not a chip',
+      );
     });
 
     test('other content is untouched', () {

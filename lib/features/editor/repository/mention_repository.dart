@@ -1,22 +1,43 @@
+import 'dart:convert';
+
 import 'package:fpdart/fpdart.dart';
+import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/editor/repository/editor_repository.dart';
+import 'package:tsdm_client/features/editor/utils/mention.dart';
 import 'package:tsdm_client/features/friend/models/models.dart';
 import 'package:tsdm_client/features/friend/repository/friend_repository.dart';
+import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
 /// Who the mention picker can offer.
 final class MentionCandidates {
   /// Constructor.
-  const MentionCandidates({required this.friends, required this.others, this.friendsMessage});
+  const MentionCandidates({
+    required this.friends,
+    required this.others,
+    this.friendsMessage,
+    this.recent = const [],
+    this.siteSearch = false,
+  });
 
   /// Nothing at all.
   static const empty = MentionCandidates(friends: [], others: []);
+
+  /// Users the current user mentioned recently, from the `atplus` plugin; empty without it.
+  final List<Friend> recent;
+
+  /// Whether the forum's `atplus` plugin answered: then any user of the site can be searched by name or uid
+  /// ([MentionRepository.searchUsers]).
+  final bool siteSearch;
 
   /// The current user's own friends, in the order of the friends list, unique by uid.
   final List<Friend> friends;
 
   /// Names on the official `@` list (`misc.php?mod=getatuser`) that are not in [friends], compared case insensitive.
+  ///
+  /// Empty when the `atplus` plugin answered ([siteSearch]): its search replaces that list.
   final List<String> others;
 
   /// Why the friends list could not be read: the privacy or login notice of the page, or the error of the request.
@@ -27,7 +48,11 @@ final class MentionCandidates {
 
 /// Where the mention picker gets its candidates.
 ///
-/// Two sources are merged, and one failing does not fail the whole load:
+/// The forum's `atplus` plugin (`plugin.php?id=atplus:search`, the web @ panel since 2026-09) comes first: `op=init`
+/// gives the users mentioned recently and the friends, `op=search` finds any user of the site by name or uid. When the
+/// plugin does not answer (not installed, or an error), the stock sources are used instead.
+///
+/// Two stock sources are merged, and one failing does not fail the whole load:
 ///
 /// * the current user's own friends list (`home.php?mod=space&uid=SELF&do=friend`, 24 per page, up to
 ///   [maxFriendPages] pages), which carries uid, avatar and user group;
@@ -92,14 +117,57 @@ final class MentionRepository with LoggerMixin {
         return Right((friends: friends, message: null));
       });
 
+  /// Url of the `atplus` plugin's user api.
+  static const atplusUrl = '$baseUrl/plugin.php?id=atplus:search';
+
+  /// Ask the `atplus` plugin with the form [data]; the decoded JSON, or null when the plugin did not answer with it.
+  Future<Object?> _atplus(Map<String, String> data) async {
+    switch (await getIt.get<NetClientProvider>().postForm(atplusUrl, data: data).run()) {
+      case Left(:final value):
+        debug('mention: atplus did not answer: $value');
+        return null;
+      case Right(:final value):
+        final body = value.data;
+        if (body is Map) {
+          return body;
+        }
+        try {
+          return jsonDecode('$body');
+        } on FormatException {
+          return null;
+        }
+    }
+  }
+
+  /// Users of the whole site whose name or uid matches [keyword], through the `atplus` plugin.
+  ///
+  /// Fails when the plugin does not answer; only meaningful when [MentionCandidates.siteSearch] is set.
+  AsyncEither<List<Friend>> searchUsers(String keyword) => AsyncEither(() async {
+    final users = parseAtplusUsers(await _atplus({'op': 'search', 'q': keyword}), 'list', base: baseUrl);
+    return users == null ? Left(ServerRespondedErrorException('atplus search unavailable')) : Right(users);
+  });
+
   /// Load the candidates: own friends of [selfUid] (skipped when null, nobody logged in) and the official `@` list.
   ///
-  /// Fails only when nothing could be loaded at all.
+  /// The `atplus` plugin is asked first for a logged in user; its recent and friends lists replace the stock sources
+  /// when it answers. Fails only when nothing could be loaded at all.
   AsyncEither<MentionCandidates> loadCandidates({required String? selfUid, bool force = false}) =>
       AsyncEither(() async {
         final cached = _cache;
         if (cached != null && !force && _cachedUid == selfUid) {
           return Right(cached);
+        }
+
+        if (selfUid != null) {
+          final init = await _atplus(const {'op': 'init'});
+          final recent = parseAtplusUsers(init, 'recent', base: baseUrl);
+          final friends = parseAtplusUsers(init, 'friends', base: baseUrl);
+          if (recent != null && friends != null) {
+            final candidates = MentionCandidates(recent: recent, friends: friends, others: const [], siteSearch: true);
+            _cache = candidates;
+            _cachedUid = selfUid;
+            return Right(candidates);
+          }
         }
 
         // Both requests run at the same time.

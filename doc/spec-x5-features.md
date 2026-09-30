@@ -1299,3 +1299,25 @@ B. 論壇提醒屏蔽規則
 - `AppDialogTitle(singleLine: true)`：標題單行、過長縮字；贊助彈窗與其 GitHub 按鈕、首頁贊助卡片標題都保持單行。
 - 驗證：test_172 第 4 組新增 320／360／384dp × 1／1.15／2 倍字級案例；主題模式與彈窗 6 項、首頁 1 項在修正前失敗。
 
+## 44. @ 提及適配 atplus 插件（2026-09-30）
+
+### 44.1 論壇端事實（2026-09-30 以測試帳號唯讀實測）
+
+- 帖子頁與回覆頁載入 `source/plugin/atplus/static/at-panel.js?v=1.3.0`，設定 `ATPLUS={"api":"plugin.php?id=atplus:search",...}`；編輯器旁有「@ 提及」按鈕。
+- 面板選到的人插入 `@` + U+2063 + 用戶名 + U+2063 + 空格；伺服器**只認**這種帶標記的 @。在輸入框直接打 `@名字` 只是普通文字（插件 1.0.3 起）。
+- 整組 @（1.1.0）：`@` + U+2064 + 組名 + U+2064，伺服器再檢查權限；測試帳號 `groups` 為空。
+- API（POST，form）：`op=init` → `{"ok":1,"recent":[...],"friends":[...],"groups":[...]}`；`op=search&q=` → `{"ok":1,"list":[...]}`；每筆 `{uid, username, avatar(相對路徑), group, friend}`。`op=card&uids=` 給名片用，App 未用。
+- 舊的 `misc.php?mod=getatuser` 仍在，但只剩名字。
+
+### 44.2 App 端行為
+
+- 送出時 `toOfficialMentions` 把編輯器的 `[@]name[/@]` 轉成 `@⁣name⁣ `（`atplusUserMark`）；原本的純 `@name` 在新插件下不會成為提及。編輯舊帖時原文內的標記原樣保留，再送出仍有效。
+- `MentionRepository.loadCandidates`：已登入時先問 `op=init`，成功就用插件的「最近 @ 過」與好友（`MentionCandidates.siteSearch = true`），不再抓好友頁與 getatuser；插件沒回 JSON（未安裝、錯誤）時退回原本兩個來源。訪客不問插件。
+- `searchUsers(keyword)` → `op=search`；`UserMentionCubit.setKeyword` 在 siteSearch 時搜尋，只保留最新關鍵字的回應。選人面板依序顯示：最近 @ 過、好友、全站搜尋（排除已顯示的）、舊 @ 名單、「提醒『輸入的名字』」。
+- 未做：整組 @（U+2064）、@ 名片。
+
+### 44.3 驗證
+
+- test_022、test_049 更新為帶標記格式；test_049 新增 atplus 群組（解析、插件優先且不問舊來源、訪客不問、cubit 搜尋、選人面板挑選全站搜尋結果）。插件回 404 時的退回路徑由原有案例涵蓋。
+- 未實測：真的發出一則 @ 並確認對方收到提醒（會對測試帳號以外的人產生提醒，未做）。
+

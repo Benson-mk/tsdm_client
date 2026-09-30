@@ -201,6 +201,39 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
     ];
   }
 
+  /// Users mentioned recently (`atplus`), filtered by the keyword; nothing when there are none.
+  List<Widget> _recentSection(UserMentionState state) {
+    final visible = state.visibleRecent;
+    if (visible.isEmpty) {
+      return const [];
+    }
+    return [
+      _header(context.t.bbcodeEditor.userMention.recent, icon: Icons.history),
+      ...visible.map(_friendTile),
+    ];
+  }
+
+  /// Users of the whole site matching the keyword (`atplus`), shown only while a keyword is typed.
+  List<Widget> _searchSection(UserMentionState state) {
+    final tr = context.t.bbcodeEditor.userMention;
+    if (!state.siteSearch || state.keyword.isEmpty) {
+      return const [];
+    }
+    final visible = state.visibleSearchResults;
+    final searching = state.searchKeyword != state.keyword || state.searchStatus == UserMentionStatus.loading;
+    return [
+      _header(tr.siteSearch, icon: Icons.travel_explore),
+      if (searching)
+        const LinearProgressIndicator()
+      else if (state.searchStatus == UserMentionStatus.failure)
+        _note(context.t.general.failedToLoad)
+      else if (visible.isEmpty && !state.hasExactMatch)
+        _note(tr.noSearchResult(name: state.keyword))
+      else
+        ...visible.map(_friendTile),
+    ];
+  }
+
   List<Widget> _othersSection(UserMentionState state) {
     final visible = state.visibleOthers;
     if (visible.isEmpty) {
@@ -259,7 +292,9 @@ class _MentionPickerSheetState extends State<MentionPickerSheet> {
                 builder: (context, state) => ListView(
                   padding: edgeInsetsT4B4,
                   children: [
+                    ..._recentSection(state),
                     ..._friendsSection(state),
+                    ..._searchSection(state),
                     ..._othersSection(state),
                     if (state.keyword.isNotEmpty && !state.hasExactMatch) _useTypedRow(state),
                   ],

@@ -25,6 +25,11 @@ final class UserMentionState with UserMentionStateMappable {
     required this.others,
     required this.keyword,
     this.friendsMessage,
+    this.recent = const [],
+    this.siteSearch = false,
+    this.searchStatus = UserMentionStatus.initial,
+    this.searchKeyword = '',
+    this.searchResults = const [],
   });
 
   /// Empty state.
@@ -46,10 +51,37 @@ final class UserMentionState with UserMentionStateMappable {
   /// Why the friends list could not be read, see [MentionCandidates.friendsMessage].
   final String? friendsMessage;
 
+  /// Users mentioned recently, see [MentionCandidates.recent].
+  final List<Friend> recent;
+
+  /// Whether the whole site can be searched, see [MentionCandidates.siteSearch].
+  final bool siteSearch;
+
+  /// Status of the site search for [searchKeyword].
+  final UserMentionStatus searchStatus;
+
+  /// Keyword the [searchResults] belong to.
+  final String searchKeyword;
+
+  /// Users of the site found for [searchKeyword].
+  final List<Friend> searchResults;
+
   bool _matches(String name) => keyword.isEmpty || name.toLowerCase().contains(keyword.toLowerCase());
 
   /// Friends matching the keyword.
   List<Friend> get visibleFriends => friends.where((e) => _matches(e.username)).toList();
+
+  /// Recently mentioned users matching the keyword.
+  List<Friend> get visibleRecent => recent.where((e) => _matches(e.username)).toList();
+
+  /// Site search results of the current keyword that are not already shown as recent or friends.
+  List<Friend> get visibleSearchResults {
+    if (searchKeyword != keyword) {
+      return const [];
+    }
+    final shown = {...visibleRecent.map((e) => e.uid), ...visibleFriends.map((e) => e.uid)};
+    return searchResults.where((e) => !shown.contains(e.uid)).toList();
+  }
 
   /// Other names matching the keyword.
   List<String> get visibleOthers => others.where(_matches).toList();
@@ -57,7 +89,11 @@ final class UserMentionState with UserMentionStateMappable {
   /// Whether a candidate has exactly the keyword as name (case insensitive).
   bool get hasExactMatch {
     final k = keyword.toLowerCase();
+    bool same(Friend e) => e.username.toLowerCase() == k;
     return k.isNotEmpty &&
-        (friends.any((e) => e.username.toLowerCase() == k) || others.any((e) => e.toLowerCase() == k));
+        (friends.any(same) ||
+            recent.any(same) ||
+            (searchKeyword == keyword && searchResults.any(same)) ||
+            others.any((e) => e.toLowerCase() == k));
   }
 }
