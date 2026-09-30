@@ -1,31 +1,44 @@
 name: Claude Code Review
 
+# pull_request_target runs this workflow file from the base branch with the
+# base repo's secrets, so fork PRs can be reviewed too. The PR head is never
+# checked out or executed; Claude only reads the diff through `gh pr`.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:
   claude-review:
-    # Skip drafts, and PRs from forks (secrets are unavailable there).
+    # Skip drafts. Review PRs from branches in this repo, plus fork PRs whose
+    # author is listed in the repo variable CLAUDE_REVIEW_USERS
+    # (comma-separated GitHub logins, e.g. "alice,bob").
     if: |
       github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      (
+        github.event.pull_request.head.repo.full_name == github.repository ||
+        contains(format(',{0},', vars.CLAUDE_REVIEW_USERS), format(',{0},', github.event.pull_request.user.login))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
-      id-token: write
     steps:
+      # No `ref:` on purpose: check out the base branch, never the PR head.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run Claude Code Review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # allowed_non_write_users only takes effect with github_token; the
+          # job-scoped GITHUB_TOKEN expires when the job ends.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_non_write_users: ${{ vars.CLAUDE_REVIEW_USERS }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
