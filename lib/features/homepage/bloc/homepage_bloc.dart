@@ -127,6 +127,23 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   /// Where [element] is <div class="Kahrpba_threads"> node.
   static PinnedThread? _filterThreadAndAuthors(uh.Element element) {
     final allNode = element.querySelectorAll('a').toList();
+    // The "见习天使" (new members) tab lists one link per row, to the new member's space: "欢迎NAME加入~" (GitHub #155).
+    // The member is both the row and its "author", so the tile shows the avatar and name and opens the profile.
+    if (allNode.length == 1) {
+      final url = allNode.single.attributes['href'];
+      final text = allNode.single.firstEndDeepText()?.trim();
+      if (url == null || text == null || text.isEmpty || !url.contains('mod=space')) {
+        talker.info('skip pinned row with one link that is not a user space');
+        return null;
+      }
+      final name = RegExp('^欢迎(.+?)加入').firstMatch(text)?.group(1)?.trim();
+      return PinnedThread(
+        threadUrl: url,
+        threadTitle: text,
+        authorUrl: url,
+        authorName: name == null || name.isEmpty ? text : name,
+      );
+    }
     // There should be two <a> in children.
     if (allNode.length != 2) {
       talker.info(
@@ -161,6 +178,57 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     }
 
     return PinnedThread(threadUrl: threadUrl, threadTitle: threadTitle, authorUrl: authorUrl, authorName: authorName);
+  }
+
+  /// The tabs of the homepage block of the `Kahrpba` plugin (最新活动, 见习天使, ..., 发帖排行), in the order the
+  /// website shows them; tabs without any row the app can show are left out (GitHub #155).
+  static List<PinnedThreadGroup> parsePinnedThreadGroups(uh.Document document) {
+    final pinnedThreadGroupList = <PinnedThreadGroup>[];
+    final navNameList = document
+        .querySelector('td#Kahrpba_nav')
+        ?.children
+        .map((e) => e.firstEndDeepText())
+        .whereType<String>()
+        .toList();
+    final navShowList = document
+        .querySelector('td#Kahrpba_show')
+        ?.children
+        .where((e) => e.id.startsWith('Kahrpba_c'))
+        .whereType<uh.Element>()
+        .toList();
+
+    if (navNameList != null && navShowList != null && navNameList.length == navShowList.length) {
+      if (navNameList.length >= 7) {
+        navNameList
+          ..swap(4, 6)
+          ..swap(5, 6);
+      }
+      final count = navNameList.length;
+      for (var i = 0; i < count; i++) {
+        final threadList = navShowList[i]
+            .querySelectorAll('div.Kahrpba_threads')
+            .map(_filterThreadAndAuthors)
+            .whereType<PinnedThread>()
+            .toList();
+        // Kept even when empty here so the reordering below still finds every tab where it expects it; empty
+        // groups are left out after that.
+        final group = PinnedThreadGroup(title: navNameList[i], threadList: threadList);
+        pinnedThreadGroupList.add(group);
+      }
+
+      // The sort on server side is not as displayed, fix the sort to keep the
+      // same with website appearance.
+      if (pinnedThreadGroupList.length >= 7) {
+        pinnedThreadGroupList
+          ..swap(4, 5)
+          ..swap(5, 6);
+        // The rank is the last tab once reordered; marked before empty tabs are left out and the indices move.
+        pinnedThreadGroupList[6] = pinnedThreadGroupList[6].copyWith(isRank: true);
+      }
+    }
+    // A tab without any row the app can show would be an empty card as tall as the full ones (GitHub #155).
+    pinnedThreadGroupList.removeWhere((e) => e.threadList.isEmpty);
+    return pinnedThreadGroupList;
   }
 
   Future<void> _onHomepageLoadRequested(HomepageLoadRequested event, Emitter<HomepageState> emit) async {
@@ -412,44 +480,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       avatarUrl: loggedUserAvatar,
     );
 
-    final navNameList = document
-        .querySelector('td#Kahrpba_nav')
-        ?.children
-        .map((e) => e.firstEndDeepText())
-        .whereType<String>()
-        .toList();
-    final navShowList = document
-        .querySelector('td#Kahrpba_show')
-        ?.children
-        .where((e) => e.id.startsWith('Kahrpba_c'))
-        .whereType<uh.Element>()
-        .toList();
-
-    if (navNameList != null && navShowList != null && navNameList.length == navShowList.length) {
-      if (navNameList.length >= 7) {
-        navNameList
-          ..swap(4, 6)
-          ..swap(5, 6);
-      }
-      final count = navNameList.length;
-      for (var i = 0; i < count; i++) {
-        final threadList = navShowList[i]
-            .querySelectorAll('div.Kahrpba_threads')
-            .map(_filterThreadAndAuthors)
-            .whereType<PinnedThread>()
-            .toList();
-        final group = PinnedThreadGroup(title: navNameList[i], threadList: threadList);
-        pinnedThreadGroupList.add(group);
-      }
-
-      // The sort on server side is not as displayed, fix the sort to keep the
-      // same with website appearance.
-      if (pinnedThreadGroupList.length >= 7) {
-        pinnedThreadGroupList
-          ..swap(4, 5)
-          ..swap(5, 6);
-      }
-    }
+    pinnedThreadGroupList.addAll(parsePinnedThreadGroups(document));
     // Discuz! X5 renders the unread state in the page header; keep it so the badge can show up right away.
     final (unreadNoticeCount, hasUnreadMessage) = buildUnreadInfoStatus(document);
     return HomepageState(

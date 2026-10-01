@@ -54,6 +54,12 @@ final class NotificationV2 with NotificationV2Mappable {
   /// * [broadcastMessageDoc]: `home.php?mod=space&do=pm&filter=announcepm`.
   ///
   /// Only notifications not earlier than [since] (timestamp in seconds) are kept, if provided.
+  ///
+  /// Unread broadcast messages are kept whatever their time (GitHub #154): the forum stamps a public message with the
+  /// time it was written, but delivers it to the members in batches, so it can reach an account hours later with that
+  /// old time. A running app has moved its window past that time by then and dropped the message for good. The list
+  /// holds a handful of messages and the stored ones are told apart by pmid, so the unread ones are simply always
+  /// taken.
   // ignore: prefer_constructors_over_static_methods
   static NotificationV2 fromDocuments({
     required uh.Document noticeDoc,
@@ -73,7 +79,9 @@ final class NotificationV2 with NotificationV2Mappable {
       status: 0,
       noticeList: since == null ? noticeList : noticeList.where((e) => e.timestamp >= since).toList(),
       personalMessageList: since == null ? pmList : pmList.where((e) => e.timestamp >= since).toList(),
-      broadcastMessageList: since == null ? bmList : bmList.where((e) => e.timestamp >= since).toList(),
+      broadcastMessageList: since == null
+          ? bmList
+          : bmList.where((e) => !e.alreadyRead || e.timestamp >= since).toList(),
     );
   }
 
