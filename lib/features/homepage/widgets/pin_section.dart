@@ -81,7 +81,11 @@ class PinSection extends StatelessWidget with LoggerMixin {
 
     for (var i = 0; i < count; i++) {
       final sectionName = pinnedThreadGroup[i].title;
-      final threadWidgetList = _buildSectionThreads(context, pinnedThreadGroup[i].threadList, reverseTitle: i == 6);
+      final threadWidgetList = _buildSectionThreads(
+        context,
+        pinnedThreadGroup[i].threadList,
+        reverseTitle: pinnedThreadGroup[i].isRank,
+      );
       ret.add(
         Card(
           margin: EdgeInsets.zero,
