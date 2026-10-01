@@ -16,14 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.29.3 (2026-09-30)
+## Latest update: 1.30.0 (2026-10-01)
 
 - Adds banking, medal search and an in-app title shop.
 - Adds a draft box, website blacklist management with individual imports into local blocking, post reporting, and creation of ordinary single- or multiple-choice polls.
 - Fixes UID lookup with an empty blacklist, title purchase page recognition and draft saving; improves landscape safe areas on the website blacklist, local blocking, activities and My Titles pages.
 - Android build number 103 supports upgrading over earlier stable releases and preview builds 99–102.
 
-[Download 1.29.3](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.29.3) · [Full changelog](./CHANGELOG.md)
+[Download 1.30.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.30.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
