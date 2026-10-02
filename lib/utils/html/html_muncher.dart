@@ -615,8 +615,18 @@ final class _Muncher with LoggerMixin {
     // and restore munch state to avoid potential issued about "styles inside
     // quoted blocks  affects outside main content".
     state.save();
-    final span = element.innerText.isEmpty ? null : TextSpan(children: _munch(element));
+    final content = element.innerText.isEmpty ? null : _munch(element);
     state.restore();
+    // A trailing line break inside the quote ends a line that is as tall as the line before it: when that line holds
+    // a nested quote, every level doubled the height and left a blank block (#158). The website shows no such line.
+    while (content != null &&
+        (content.lastOrNull == emptySpan ||
+            (content.lastOrNull is TextSpan &&
+                (content.last as TextSpan).children == null &&
+                ((content.last as TextSpan).text?.trim().isEmpty ?? false)))) {
+      content.removeLast();
+    }
+    final span = content == null ? null : TextSpan(children: content);
     return [WidgetSpan(child: QuotedText.rich(span)), emptySpan];
   }
 

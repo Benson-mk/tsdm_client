@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- 帖子：整篇包在多层引用里的帖子，正文结束后会多出一大段空白，外层引用的竖线一路延伸；每多包一层空白就加倍。现在引用框只有内容那么高。(#158)
+
 ## [1.30.0] - 2026-10-01
 
 ### Added
