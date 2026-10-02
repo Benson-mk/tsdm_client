@@ -1354,3 +1354,28 @@ B. 論壇提醒屏蔽規則
 - 根因：`SecondaryTitle.parseTitlesPage` 在區塊裡找不到表格時退回「頁面第一個 `table.dt`」，那是「当前拥有的称号」，第一列被當成正在使用，核對失敗。
 - 修正：只有找不到區塊標題時才依表格順序退回；區塊存在但沒有表格＝未裝備。
 - 驗證：test_187（自組頁面）：有裝備、未裝備、無區塊標題的舊版面。修正前「未裝備」案例得到 `[674]`。未實測取下（會改動帳號狀態，測試帳號也沒有稱號）。
+
+## 48. App 內更新與互動檢視的後續修正、Windows App 內更新（PR #162 審查，2026-10-03）
+
+### 48.1 審查的三項 P2
+
+- 更新快取：`ReleaseUpdateRepository.cleanup(keepVersionCode)` 刪除快取目錄下直接的 `update-<code>-<ts>.(apk|zip|part)`：`.part` 一律刪，完整檔只留目前提供的新版版本碼；Windows 另刪 `staging-<code>`、`backup-<code>`。`UpdateDownloadCubit.restore` 每次檢查版本都會觸發，已是最新版時也會；清理不阻塞 restore（restore 只讀同版本的完整檔），下載開始前會先等清理完成，避免刪到正在寫的 `.part`。
+- 互動視窗來源：`documentUrl` 改成 `https://p<SHA-256 前 62 位>.invalid/document.html`，每個（帳號、來源頁、樓層）各自是一個可註冊網域。原本都在 `tsdm.invalid` 底下，帖子腳本可以用 `Domain=tsdm.invalid` 的 Cookie 跨帖子、跨帳號傳資料。
+- NAT64：`publicAddress` 遇到 `64:ff9b::/96` 時取最後 4 bytes，套用原本的 IPv4 規則。
+
+### 48.2 Windows App 內更新
+
+- 資產：`tsdm_client-windows.zip`（內含 `tsdm_client/` 資料夾），版本碼不加 ABI 位數。下載、大小與 SHA-256 核對、重啟後恢復，都和 Android 共用同一套流程（`UpdateTarget`）。快取放在 application support 的 `updates/`。
+- 安裝（`WindowsUpdateInstaller`）：
+  1. 前提檢查：執行檔必須是 `tsdm_client.exe`，旁邊要有 `flutter_windows.dll`（debug 執行或不明的資料夾配置不處理）；資料夾要可寫入（Program Files 會提示搬家）。
+  2. 解壓到 `staging-<code>`：每個項目都必須在 `tsdm_client/` 底下，不能有 `..`、反斜線或磁碟代號，解壓結果必須含 exe 和 engine。
+  3. 寫入 `apply-update.ps1`（純 ASCII），用 detached 方式啟動 `powershell.exe`，約 0.8 秒後 App 自行結束。
+  4. 腳本流程：等 App 行程結束，備份「新版會覆蓋到的舊檔」，逐檔複製（每檔重試 20 次），完成後重新啟動 App。換檔失敗時，只還原實際換過的檔案，並刪除新增的檔案。日誌寫在 `updates/update.log`。
+  5. 只寫入 release 裡有的檔案，資料夾裡其他檔案不動；使用者資料本來就在 AppData。
+- 驗證：
+  - test_188：清理、Windows 資產與恢復、解壓的路徑檢查（含 zip-slip）、安裝參數、不可寫入、Windows 卡片文字。
+  - 在實機 Windows 用真的腳本、舊版資料夾（885 檔）加 1.30.0 檔案驗證三種情況：
+    - 成功：檔案與新版 SHA-256 一致，資料夾裡的其他檔案保留，App 自動重開。
+    - 檔案被鎖、連讀取都不行：在備份階段就停下，沒有改任何東西。
+    - 檔案可讀不可寫：換檔失敗後還原，結果與舊版 SHA-256 一致。
+  - 未做：在 App 內實際按下安裝的完整流程（需要用含此功能的 Windows 版，從舊版更新到新版才能驗）。

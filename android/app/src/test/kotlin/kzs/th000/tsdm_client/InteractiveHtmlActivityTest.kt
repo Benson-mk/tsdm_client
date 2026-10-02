@@ -61,7 +61,7 @@ class InteractiveHtmlActivityTest {
         assertFalse(view.settings.javaScriptCanOpenWindowsAutomatically)
         assertTrue(view.settings.blockNetworkLoads)
         assertEquals(WebSettings.MIXED_CONTENT_NEVER_ALLOW, view.settings.mixedContentMode)
-        assertTrue(shadowOf(view).lastLoadedUrl.contains(".interactive.tsdm.invalid/"))
+        assertTrue(shadowOf(view).lastLoadedUrl.endsWith(".invalid/document.html"))
         controller.pause().stop().destroy()
         assertTrue(shadowOf(view).wasOnPauseCalled())
         assertTrue(shadowOf(view).wasDestroyCalled())

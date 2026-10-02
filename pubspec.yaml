@@ -12,6 +12,7 @@ environment:
   sdk: ">=3.10.0 <4.0.0"
 
 dependencies:
+  archive: ^4.0.7
   args: ^2.6.0
   bloc: ^9.2.0
   chat_bottom_container: ^0.4.0

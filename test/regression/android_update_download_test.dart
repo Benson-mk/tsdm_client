@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsdm_client/features/update/cubit/update_download_cubit.dart';
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
-import 'package:tsdm_client/features/update/repository/android_update_repository.dart';
+import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
 
 const _info = LatestVersionInfo(version: '1.31.0', versionCode: 121, changelog: 'update');
 const _url = 'https://github.com/Carinoasd/tsdm_client/releases/download/v1.31.0/tsdm_client-universal.apk';
@@ -79,7 +79,7 @@ class _Adapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-class _DelayedRepository extends AndroidUpdateRepository {
+class _DelayedRepository extends ReleaseUpdateRepository {
   _DelayedRepository(AndroidUpdateInstaller installer) : super(installer: installer);
   final pending = <Completer<DownloadedUpdate>>[];
   final discarded = <DownloadedUpdate>[];
@@ -106,7 +106,7 @@ void main() {
   late _Installer installer;
   late Map<String, Object?> asset;
   late _Adapter adapter;
-  late AndroidUpdateRepository repository;
+  late ReleaseUpdateRepository repository;
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('tsdm-update-test-');
@@ -125,7 +125,7 @@ void main() {
       'prerelease': false,
       'assets': [asset],
     });
-    repository = AndroidUpdateRepository(dio: Dio()..httpClientAdapter = adapter, installer: installer);
+    repository = ReleaseUpdateRepository(dio: Dio()..httpClientAdapter = adapter, installer: installer);
   });
   tearDown(() async {
     repository.dispose();
