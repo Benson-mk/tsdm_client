@@ -19,7 +19,9 @@ object InteractiveHtmlPolicy {
             val scope = listOf(accountScope, sourceUrl, postId).joinToString("") { "${it.length}:$it" }
             val digest = MessageDigest.getInstance("SHA-256").digest(scope.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            "https://p${digest.take(32)}.${digest.drop(32)}.interactive.tsdm.invalid/document.html"
+            // Each scope is its own registrable domain: under a shared parent, authored scripts could pass data to
+            // other posts and accounts with a `Domain=<parent>` cookie. One label holds at most 63 characters.
+            "https://p${digest.take(62)}.invalid/document.html"
         }
         val imageUrls: Set<String> by lazy { declaredImageUrls(html, sourceUrl) }
     }
@@ -71,18 +73,25 @@ object InteractiveHtmlPolicy {
         ) return false
         val bytes = address.address.map { it.toInt() and 0xff }
         return when (bytes.size) {
-            4 -> !(bytes[0] == 0 || bytes[0] == 10 || bytes[0] == 127 || bytes[0] >= 224 ||
-                (bytes[0] == 100 && bytes[1] in 64..127) ||
-                (bytes[0] == 169 && bytes[1] == 254) ||
-                (bytes[0] == 172 && bytes[1] in 16..31) ||
-                (bytes[0] == 192 && (bytes[1] == 168 || (bytes[1] == 0 && bytes[2] in listOf(0, 2)))) ||
-                (bytes[0] == 198 && (bytes[1] in 18..19 || (bytes[1] == 51 && bytes[2] == 100))) ||
-                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113))
-            16 -> bytes[0] and 0xe0 == 0x20 &&
-                !(bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8)
+            4 -> publicIpv4(bytes)
+            // DNS64 on IPv6-only networks maps an IPv4-only host into 64:ff9b::/96; judge the embedded address.
+            16 -> if (bytes.subList(0, 12) == nat64Prefix) publicIpv4(bytes.subList(12, 16)) else
+                bytes[0] and 0xe0 == 0x20 &&
+                    !(bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8)
             else -> false
         }
     }
+
+    private val nat64Prefix = listOf(0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0)
+
+    private fun publicIpv4(bytes: List<Int>): Boolean =
+        !(bytes[0] == 0 || bytes[0] == 10 || bytes[0] == 127 || bytes[0] >= 224 ||
+            (bytes[0] == 100 && bytes[1] in 64..127) ||
+            (bytes[0] == 169 && bytes[1] == 254) ||
+            (bytes[0] == 172 && bytes[1] in 16..31) ||
+            (bytes[0] == 192 && (bytes[1] == 168 || (bytes[1] == 0 && bytes[2] in listOf(0, 2)))) ||
+            (bytes[0] == 198 && (bytes[1] in 18..19 || (bytes[1] == 51 && bytes[2] == 100))) ||
+            (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113))
 
     private fun unescape(value: String): String = Regex("&#(x[0-9a-f]+|[0-9]+);?|&(amp|quot|apos|lt|gt);", RegexOption.IGNORE_CASE)
         .replace(value) { match ->

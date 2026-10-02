@@ -39,8 +39,11 @@ class InteractiveHtmlPolicyTest {
         assertNotEquals(original.documentUrl, InteractiveHtmlPolicy.validate("x", "$source&page=2", "123", "42").documentUrl)
         val uri = Uri.parse(original.documentUrl)
         assertEquals("https", uri.scheme)
-        assertTrue(uri.host!!.endsWith(".interactive.tsdm.invalid"))
+        // The host itself is the registrable domain: no parent a cookie could be shared on.
+        assertEquals(2, uri.host!!.split('.').size)
+        assertTrue(uri.host!!.endsWith(".invalid"))
         assertTrue(uri.host!!.split('.').all { it.length <= 63 })
+        assertNotEquals(uri.host, Uri.parse(content(account = "guest").documentUrl).host)
         assertFalse(original.documentUrl.contains("1266801"))
     }
 
@@ -81,10 +84,12 @@ class InteractiveHtmlPolicyTest {
 
     @Test fun dnsPolicyRejectsPrivateAndSpecialUseAddressesIncludingIpv6() {
         for (ip in listOf("0.0.0.0", "10.0.0.1", "100.64.0.1", "127.0.0.1", "169.254.169.254", "172.31.1.1",
-            "192.168.1.1", "192.0.2.1", "198.18.0.1", "224.0.0.1", "::1", "fe80::1", "fd12::1", "2001:db8::1")) {
+            "192.168.1.1", "192.0.2.1", "198.18.0.1", "224.0.0.1", "::1", "fe80::1", "fd12::1", "2001:db8::1",
+            "64:ff9b::a00:1", "64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe")) {
             assertFalse(ip, InteractiveHtmlPolicy.publicAddress(InetAddress.getByName(ip)))
         }
-        for (ip in listOf("8.8.8.8", "1.1.1.1", "2606:4700:4700::1111")) {
+        // 64:ff9b::808:808 is 8.8.8.8 through NAT64.
+        for (ip in listOf("8.8.8.8", "1.1.1.1", "2606:4700:4700::1111", "64:ff9b::808:808")) {
             assertTrue(ip, InteractiveHtmlPolicy.publicAddress(InetAddress.getByName(ip)))
         }
     }

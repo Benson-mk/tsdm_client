@@ -4,10 +4,11 @@ import 'package:bloc/bloc.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
-import 'package:tsdm_client/features/update/repository/android_update_repository.dart';
+import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
 import 'package:tsdm_client/utils/git_info.dart';
 
-export 'package:tsdm_client/features/update/repository/android_update_repository.dart' show UpdateDownloadFailure;
+export 'package:tsdm_client/features/update/repository/release_update_repository.dart'
+    show UpdateDownloadFailure, UpdateTarget;
 
 /// Downloading and installation are explicit separate user actions.
 enum UpdateDownloadStatus {
@@ -89,19 +90,23 @@ class UpdateDownloadState {
 /// Holds one user-requested APK download; never starts installation automatically.
 class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
   /// Dependencies are injectable for offline tests; construction does not call native Android APIs.
-  UpdateDownloadCubit({AndroidUpdateRepository? repository, bool? supported, int? currentVersionCode})
-    : _repository = repository ?? AndroidUpdateRepository(),
-      supported = supported ?? io.Platform.isAndroid,
+  UpdateDownloadCubit({ReleaseUpdateRepository? repository, bool? supported, int? currentVersionCode})
+    : _repository = repository ?? ReleaseUpdateRepository(),
+      supported = supported ?? (io.Platform.isAndroid || io.Platform.isWindows),
       _currentVersionCode = currentVersionCode ?? int.tryParse(appVersion.split('+').last) ?? 0,
       super(const UpdateDownloadState());
 
-  final AndroidUpdateRepository _repository;
+  final ReleaseUpdateRepository _repository;
   final int _currentVersionCode;
 
-  /// Only Android has the native APK installation flow.
+  /// The release asset this platform installs, decides the wording of the update page.
+  UpdateTarget get target => _repository.installer.target;
+
+  /// Android installs the APK through the system installer, Windows replaces the portable folder.
   final bool supported;
   CancelToken? _token;
   DownloadedUpdate? _downloaded;
+  Future<void>? _cleanup;
 
   void _stage(UpdateDownloadStatus status, {int? received, int? total, UpdateDownloadFailure? failure}) {
     if (!isClosed) {
@@ -122,10 +127,17 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
   /// Version discovery may call this on startup. In-flight and user-visible download states are never replaced;
   /// returning from permission settings still requires an explicit Install action, even after a successful restore.
   Future<void> restore(LatestVersionInfo info) async {
-    if (isClosed ||
-        !supported ||
-        info.versionCode <= _currentVersionCode ||
-        state.status != UpdateDownloadStatus.idle) {
+    if (isClosed || !supported || state.status != UpdateDownloadStatus.idle) {
+      return;
+    }
+    // Nothing is running: drop unfinished downloads and the ones of other versions, also once the update is
+    // installed and the current version is the latest. Restoring only reads complete files of this version, so it
+    // does not wait; a download does, so its partial file is not removed.
+    final newer = info.versionCode > _currentVersionCode;
+    _cleanup ??= _repository
+        .cleanup(keepVersionCode: newer ? info.versionCode : null)
+        .whenComplete(() => _cleanup = null);
+    if (!newer) {
       return;
     }
     final token = CancelToken();
@@ -168,6 +180,7 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
     final old = _downloaded;
     _downloaded = null;
     await _repository.discard(old);
+    await _cleanup;
     try {
       final update = await _repository.download(
         info,
@@ -218,6 +231,8 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
         return;
       }
       _stage(UpdateDownloadStatus.installerOpened);
+    } on UpdateDownloadException catch (error) {
+      _stage(UpdateDownloadStatus.failed, failure: error.failure);
     } on PlatformException catch (error) {
       if (error.code == 'install_permission_required') {
         _stage(UpdateDownloadStatus.permissionRequired);

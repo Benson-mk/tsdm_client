@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsdm_client/features/update/cubit/update_download_cubit.dart';
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
-import 'package:tsdm_client/features/update/repository/android_update_repository.dart';
+import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
 
 const _info = LatestVersionInfo(version: '1.31.0', versionCode: 121, changelog: 'update');
 const _assetUrl = 'https://github.com/Carinoasd/tsdm_client/releases/download/v1.31.0/tsdm_client-universal.apk';
@@ -89,7 +89,7 @@ class _PendingRestore {
   final result = Completer<DownloadedUpdate?>();
 }
 
-class _DelayedRepository extends AndroidUpdateRepository {
+class _DelayedRepository extends ReleaseUpdateRepository {
   _DelayedRepository(AndroidUpdateInstaller installer) : super(installer: installer);
   final restores = <_PendingRestore>[];
   final downloads = <Completer<DownloadedUpdate>>[];
@@ -129,7 +129,7 @@ void main() {
   late _Installer installer;
   late Map<String, Object?> asset;
   late _MetadataAdapter adapter;
-  late AndroidUpdateRepository repository;
+  late ReleaseUpdateRepository repository;
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('tsdm-update-restore-test-');
@@ -148,7 +148,7 @@ void main() {
       'prerelease': false,
       'assets': [asset],
     });
-    repository = AndroidUpdateRepository(dio: Dio()..httpClientAdapter = adapter, installer: installer);
+    repository = ReleaseUpdateRepository(dio: Dio()..httpClientAdapter = adapter, installer: installer);
   });
 
   tearDown(() async {
@@ -184,7 +184,7 @@ void main() {
     final restartedInstaller = _Installer(directory.path);
     final freshMetadata = _MetadataAdapter(adapter.release);
     final restarted = UpdateDownloadCubit(
-      repository: AndroidUpdateRepository(
+      repository: ReleaseUpdateRepository(
         dio: Dio()..httpClientAdapter = freshMetadata,
         installer: restartedInstaller,
       ),
@@ -217,7 +217,7 @@ void main() {
   });
 
   test('missing directory is an empty cache without network access', () async {
-    final missing = AndroidUpdateRepository(
+    final missing = ReleaseUpdateRepository(
       dio: Dio()..httpClientAdapter = adapter,
       installer: _Installer('${directory.path}/not-created'),
     );

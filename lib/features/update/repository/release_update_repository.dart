@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
+import 'package:tsdm_client/features/update/repository/windows_update_installer.dart';
 
 /// Actionable failures, translated by the update page instead of exposing raw network errors.
 enum UpdateDownloadFailure {
@@ -26,8 +27,11 @@ enum UpdateDownloadFailure {
   /// Android could not open or validate the installer request.
   install,
 
-  /// This platform or version cannot use APK installation.
+  /// This platform or version cannot use in-app installation.
   unsupported,
+
+  /// The folder of the running app cannot be written, e.g. it is under Program Files (Windows).
+  installLocation,
 }
 
 /// A download that cannot safely be offered to the installer.
@@ -39,7 +43,31 @@ class UpdateDownloadException implements Exception {
   final UpdateDownloadFailure failure;
 }
 
-/// An APK whose size and SHA-256 matched the exact published release asset.
+/// The official release asset a platform installs.
+enum UpdateTarget {
+  /// Android: the universal APK; its version code carries the ABI suffix 9.
+  android(assetName: 'tsdm_client-universal.apk', extension: 'apk', abiSuffix: 9),
+
+  /// Windows: the portable zip, holding the `tsdm_client` folder.
+  windows(assetName: 'tsdm_client-windows.zip', extension: 'zip')
+  ;
+
+  const UpdateTarget({required this.assetName, required this.extension, this.abiSuffix});
+
+  /// File name of the asset in the GitHub release.
+  final String assetName;
+
+  /// Extension of a complete download in the update cache.
+  final String extension;
+
+  /// Android ABI digit appended to the version code of the installed package.
+  final int? abiSuffix;
+
+  /// Version code of the installed build for the release [versionCode].
+  int installedVersionCode(int versionCode) => abiSuffix == null ? versionCode : versionCode * 10 + abiSuffix!;
+}
+
+/// An asset whose size and SHA-256 matched the exact published release asset.
 class DownloadedUpdate {
   /// Constructor.
   const DownloadedUpdate({required this.path, required this.version, required this.versionCode});
@@ -50,7 +78,7 @@ class DownloadedUpdate {
   /// Expected APK version name.
   final String version;
 
-  /// Expected Android version code, including the universal ABI suffix.
+  /// Expected version code of the installed build (Android: including the universal ABI suffix).
   final int versionCode;
 }
 
@@ -62,11 +90,33 @@ class _ReleaseAsset {
   final String digest;
 }
 
+/// The platform side of an update: where downloads are kept and how a verified one is installed.
+abstract interface class UpdateInstaller {
+  /// The release asset this platform installs.
+  UpdateTarget get target;
+
+  /// Directory holding downloads; only this app writes to it.
+  Future<String> directory();
+
+  /// Whether the app may request installation now.
+  Future<bool> canInstall();
+
+  /// Opens the settings that allow installation, false when the platform has none.
+  Future<bool> openPermissionSettings();
+
+  /// Installs [update] after the user asked for it.
+  Future<bool> install(DownloadedUpdate update);
+}
+
 /// Native operations are separate from downloading, allowing offline verification of both layers.
-class AndroidUpdateInstaller {
+class AndroidUpdateInstaller implements UpdateInstaller {
   static const _channel = MethodChannel('kzs.th000.tsdm_client/updateChannel');
 
+  @override
+  UpdateTarget get target => UpdateTarget.android;
+
   /// Returns the private directory exposed only to the system installer.
+  @override
   Future<String> directory() async {
     final path = await _channel.invokeMethod<String>('getUpdateDirectory');
     if (path == null || path.isEmpty) {
@@ -76,12 +126,15 @@ class AndroidUpdateInstaller {
   }
 
   /// Whether the user has allowed this application to request installation.
+  @override
   Future<bool> canInstall() async => await _channel.invokeMethod<bool>('canInstallPackages') ?? false;
 
   /// Opens Android's per-application installation permission settings.
+  @override
   Future<bool> openPermissionSettings() async => await _channel.invokeMethod<bool>('openInstallPermission') ?? false;
 
   /// Native code rechecks the private path, package, version and signer before granting temporary read access.
+  @override
   Future<bool> install(DownloadedUpdate update) async =>
       await _channel.invokeMethod<bool>('installUpdate', {
         'path': update.path,
@@ -91,13 +144,13 @@ class AndroidUpdateInstaller {
       false;
 }
 
-/// Downloads only the universal APK from an exact official GitHub release.
+/// Downloads only the platform's asset ([UpdateTarget]) from an exact official GitHub release.
 ///
 /// Uses an independent streaming Dio client: forum cookies and the native forum client's buffered GET transport
 /// must never be used for update downloads. Network failures retain the external GitHub fallback in the UI.
-class AndroidUpdateRepository {
+class ReleaseUpdateRepository {
   /// Optional dependencies support offline release/download/installer tests.
-  AndroidUpdateRepository({Dio? dio, AndroidUpdateInstaller? installer})
+  ReleaseUpdateRepository({Dio? dio, UpdateInstaller? installer})
     : _dio =
           dio ??
           Dio(
@@ -106,15 +159,16 @@ class AndroidUpdateRepository {
               receiveTimeout: const Duration(seconds: 60),
             ),
           ),
-      installer = installer ?? AndroidUpdateInstaller();
+      installer = installer ?? (Platform.isWindows ? WindowsUpdateInstaller() : AndroidUpdateInstaller());
 
   final Dio _dio;
 
   /// Platform bridge for private cache access and explicit installation actions.
-  final AndroidUpdateInstaller installer;
+  final UpdateInstaller installer;
+
+  UpdateTarget get _target => installer.target;
 
   static const _repository = 'Carinoasd/tsdm_client';
-  static const _assetName = 'tsdm_client-universal.apk';
   static const int _maxSize = 512 * 1024 * 1024;
 
   Future<_ReleaseAsset> _resolve(LatestVersionInfo info, CancelToken cancelToken) async {
@@ -136,13 +190,13 @@ class AndroidUpdateRepository {
       throw const UpdateDownloadException(UpdateDownloadFailure.invalidRelease);
     }
     final assets = (release['assets'] as List<dynamic>).whereType<Map<String, dynamic>>().where(
-      (asset) => asset['name'] == _assetName && asset['state'] == 'uploaded',
+      (asset) => asset['name'] == _target.assetName && asset['state'] == 'uploaded',
     );
     if (assets.length != 1) {
       throw const UpdateDownloadException(UpdateDownloadFailure.releaseUnavailable);
     }
     final asset = assets.single;
-    final expectedUrl = 'https://github.com/$_repository/releases/download/$tag/$_assetName';
+    final expectedUrl = 'https://github.com/$_repository/releases/download/$tag/${_target.assetName}';
     final size = asset['size'];
     final digest = asset['digest'];
     if (asset['browser_download_url'] != expectedUrl ||
@@ -194,7 +248,7 @@ class AndroidUpdateRepository {
       }
       final directory = Directory(await installer.directory());
       if (!directory.existsSync()) return null;
-      final name = RegExp('^update-${info.versionCode}-[0-9]+\\.apk\$');
+      final name = RegExp('^update-${info.versionCode}-[0-9]+\\.${_target.extension}\$');
       final candidates = await directory
           .list(followLinks: false)
           .where((entry) => entry is File && name.hasMatch(p.basename(entry.path)))
@@ -212,7 +266,7 @@ class AndroidUpdateRepository {
           return DownloadedUpdate(
             path: candidate.path,
             version: info.version,
-            versionCode: info.versionCode * 10 + 9,
+            versionCode: _target.installedVersionCode(info.versionCode),
           );
         }
         await _delete(candidate);
@@ -249,7 +303,7 @@ class AndroidUpdateRepository {
       await directory.create(recursive: true);
       final name = 'update-${info.versionCode}-${DateTime.now().microsecondsSinceEpoch}';
       partial = File('${directory.path}/$name.part');
-      complete = File('${directory.path}/$name.apk');
+      complete = File('${directory.path}/$name.${_target.extension}');
       writer = await partial.open(mode: FileMode.writeOnly);
       final body = await _dio.get<ResponseBody>(
         asset.url,
@@ -283,7 +337,11 @@ class AndroidUpdateRepository {
       if (cancelToken.cancelError case final error?) throw error;
       await partial.rename(complete.path);
       success = true;
-      return DownloadedUpdate(path: complete.path, version: info.version, versionCode: info.versionCode * 10 + 9);
+      return DownloadedUpdate(
+        path: complete.path,
+        version: info.version,
+        versionCode: _target.installedVersionCode(info.versionCode),
+      );
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) rethrow;
       throw UpdateDownloadException(
@@ -299,6 +357,36 @@ class AndroidUpdateRepository {
         await _delete(partial);
         await _delete(complete);
       }
+    }
+  }
+
+  static final _artifact = RegExp(r'^update-([0-9]+)-[0-9]+\.(apk|zip|part)$');
+  static final _windowsWorkDirectory = RegExp(r'^(staging|backup)-[0-9]+$');
+
+  /// Removes what no later step will use: unfinished downloads, and downloads of any version but [keepVersionCode]
+  /// (an installed or replaced release). Windows also leaves the unpacked and backed up folders of an applied update.
+  ///
+  /// Only direct entries named by this repository are touched; the cache directory itself is kept. Call it only when
+  /// no download is running.
+  Future<void> cleanup({int? keepVersionCode}) async {
+    try {
+      final directory = Directory(await installer.directory());
+      if (!directory.existsSync()) return;
+      await for (final entry in directory.list(followLinks: false)) {
+        final name = p.basename(entry.path);
+        if (entry is File) {
+          final match = _artifact.firstMatch(name);
+          if (match != null && (match.group(2) == 'part' || int.parse(match.group(1)!) != keepVersionCode)) {
+            await _delete(entry);
+          }
+        } else if (entry is Directory && _windowsWorkDirectory.hasMatch(name)) {
+          await entry.delete(recursive: true);
+        }
+      }
+    } on FileSystemException {
+      // Leftovers are retried at the next check; they never block an update.
+    } on PlatformException {
+      // Same as above.
     }
   }
 

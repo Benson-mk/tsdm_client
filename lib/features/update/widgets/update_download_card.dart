@@ -29,6 +29,8 @@ class UpdateDownloadCard extends StatelessWidget {
           return const SizedBox.shrink();
         }
         final tr = context.t.updatePage.download;
+        // Windows replaces the portable folder and restarts; the shared texts name neither platform.
+        final windows = cubit.target == UpdateTarget.windows ? tr.windows : null;
         final version = state.version ?? latest?.version;
         final progress = state.total > 0 ? (state.received / state.total).clamp(0.0, 1.0) : null;
         final failed = state.status == UpdateDownloadStatus.failed;
@@ -46,10 +48,10 @@ class UpdateDownloadCard extends StatelessWidget {
           UpdateDownloadStatus.resolving => tr.resolving,
           UpdateDownloadStatus.downloading => tr.downloading,
           UpdateDownloadStatus.verifying => tr.verifying,
-          UpdateDownloadStatus.ready => tr.ready,
-          UpdateDownloadStatus.installing => tr.installing,
+          UpdateDownloadStatus.ready => windows?.ready ?? tr.ready,
+          UpdateDownloadStatus.installing => windows?.installing ?? tr.installing,
           UpdateDownloadStatus.permissionRequired => tr.permissionRequired,
-          UpdateDownloadStatus.installerOpened => tr.installerOpened,
+          UpdateDownloadStatus.installerOpened => windows?.installerOpened ?? tr.installerOpened,
           UpdateDownloadStatus.cancelled => tr.cancelled,
           UpdateDownloadStatus.failed => switch (state.failure) {
             UpdateDownloadFailure.network => tr.networkError,
@@ -57,8 +59,9 @@ class UpdateDownloadCard extends StatelessWidget {
             UpdateDownloadFailure.invalidRelease => tr.invalidReleaseError,
             UpdateDownloadFailure.integrity => tr.integrityError,
             UpdateDownloadFailure.storage => tr.storageError,
-            UpdateDownloadFailure.install => tr.installError,
-            UpdateDownloadFailure.unsupported => tr.unsupportedError,
+            UpdateDownloadFailure.install => windows?.installError ?? tr.installError,
+            UpdateDownloadFailure.unsupported => windows?.unsupportedError ?? tr.unsupportedError,
+            UpdateDownloadFailure.installLocation => tr.installLocationError,
             null => tr.networkError,
           },
         };
@@ -70,12 +73,12 @@ class UpdateDownloadCard extends StatelessWidget {
               children: [
                 if (version != null) ...[
                   Text(
-                    tr.title(version: version),
+                    windows?.title(version: version) ?? tr.title(version: version),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   sizedBoxW8H8,
                 ],
-                Text(tr.universalApk),
+                Text(windows?.intro ?? tr.universalApk),
                 if (message != null) ...[
                   sizedBoxW12H12,
                   if (failed) AppNoticeBanner(message: message, tone: AppNoticeTone.error) else Text(message),
@@ -116,7 +119,8 @@ class UpdateDownloadCard extends StatelessWidget {
                           icon: const Icon(Icons.download_outlined),
                           label: Text(
                             state.status == UpdateDownloadStatus.idle
-                                ? tr.downloadApk(version: latest!.version)
+                                ? windows?.download(version: latest!.version) ??
+                                      tr.downloadApk(version: latest!.version)
                                 : tr.retryDownload(version: latest!.version),
                             textAlign: TextAlign.center,
                           ),
