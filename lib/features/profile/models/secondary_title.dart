@@ -44,11 +44,11 @@ final class SecondaryTitle with SecondaryTitleMappable {
     return SecondaryTitle(id: id, name: name, imageUrl: imageUrl, activated: false);
   }
 
-  /// Find the table under the block whose title is [title].
-  static uh.Element? _findTable(uh.Document doc, String title) {
+  /// Find the block whose title is [title], null if the page has no such block.
+  static uh.Element? _findBlock(uh.Document doc, String title) {
     for (final h in doc.querySelectorAll('div.bm > div.bm_h > h2')) {
       if (h.innerText.trim() == title) {
-        return h.parent?.parent?.querySelector('table.dt');
+        return h.parent?.parent;
       }
     }
     return null;
@@ -64,9 +64,20 @@ final class SecondaryTitle with SecondaryTitleMappable {
   /// <div class="bm"><div class="bm_h"><h2>当前使用的称号</h2></div><div class="bm_c"><table class="dt">...</table></div></div>
   /// <div class="bm"><div class="bm_h"><h2>当前拥有的称号</h2></div><div class="bm_c"><table class="dt">...</table></div></div>
   /// ```
+  ///
+  /// A block without any title holds `<p class="emp">您当前还没有装备称号哦...</p>` instead of the table.
   static List<SecondaryTitle> parseTitlesPage(uh.Document doc) {
-    final ownedTable = _findTable(doc, '当前拥有的称号') ?? doc.querySelectorAll('table.dt').lastOrNull;
-    final currentTable = _findTable(doc, '当前使用的称号') ?? doc.querySelectorAll('table.dt').firstOrNull;
+    // Fall back to the order of the tables only when the blocks are not found. A block without a table is empty:
+    // without any title worn, the "current" block holds a line of text, and the first table of the page is the owned
+    // titles (#160).
+    final ownedBlock = _findBlock(doc, '当前拥有的称号');
+    final currentBlock = _findBlock(doc, '当前使用的称号');
+    final ownedTable = ownedBlock != null
+        ? ownedBlock.querySelector('table.dt')
+        : doc.querySelectorAll('table.dt').lastOrNull;
+    final currentTable = currentBlock != null
+        ? currentBlock.querySelector('table.dt')
+        : doc.querySelectorAll('table.dt').firstOrNull;
     final allAvailableTitles = (ownedTable?.querySelectorAll('tbody > tr') ?? <uh.Element>[])
         .where((e) => e.querySelector('td') != null)
         .map(SecondaryTitle.fromTr)
