@@ -28,9 +28,28 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// The emulator runner shares dependencies with its target APK. R8 only sees the
+// app's references, so it can remove APIs needed by AndroidJUnitRunner/Espresso.
+// Opt in for BOTH the Flutter APK and assembleReleaseAndroidTest invocations.
+def emulatorInstrumentation = providers.gradleProperty('tsdmEmulatorInstrumentation').getOrElse('false') == 'true'
+if (emulatorInstrumentation) {
+    def target = providers.gradleProperty('target').orNull
+    def selectedTarget = target == null ? null : new File(target)
+    if (selectedTarget != null && !selectedTarget.isAbsolute()) {
+        selectedTarget = new File(rootProject.projectDir.parentFile, target)
+    }
+    def expectedTarget = rootProject.file('../test_driver/android_update_smoke.dart').canonicalFile
+    if (selectedTarget?.canonicalFile != expectedTarget) {
+        throw new GradleException('tsdmEmulatorInstrumentation is only allowed with test_driver/android_update_smoke.dart')
+    }
+    logger.lifecycle('Disposable emulator instrumentation build: native R8 and resource shrinking disabled; release AOT and signing retained.')
+}
+
 
 android {
     namespace = "kzs.th000.tsdm_client"
+    // Instrument the same signed release-native code on an isolated emulator.
+    testBuildType "release"
     compileSdkVersion 36
     // ndkVersion flutter.ndkVersion
     ndkVersion "29.0.14206865" // r29, keep using the same version in workflows.
@@ -62,6 +81,7 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId "com.tsdm.tsdm_client"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
 
@@ -86,6 +106,12 @@ android {
 
     buildTypes {
         release {
+            // Flutter enables these before this block. Keep those production
+            // defaults unless building the explicitly guarded emulator target.
+            if (emulatorInstrumentation) {
+                minifyEnabled false
+                shrinkResources false
+            }
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig signingConfigs.release
@@ -136,9 +162,16 @@ flutter {
 }
 
 dependencies {
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-web:3.6.1'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.16.1'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    // Update validation runs off the UI thread and returns to Android's main dispatcher before opening system UI.
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
 
     // For splash screen Theme.SplashScreen
     implementation "androidx.core:core-splashscreen:1.2.0"
