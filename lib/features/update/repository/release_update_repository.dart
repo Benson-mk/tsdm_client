@@ -361,10 +361,11 @@ class ReleaseUpdateRepository {
   }
 
   static final _artifact = RegExp(r'^update-([0-9]+)-[0-9]+\.(apk|zip|part)$');
-  static final _windowsWorkDirectory = RegExp(r'^(staging|backup)-[0-9]+$');
+  static final _windowsWorkDirectory = RegExp(r'^(staging-[0-9]+|backup-[0-9]+(-[0-9]+)?)$');
 
   /// Removes what no later step will use: unfinished downloads, and downloads of any version but [keepVersionCode]
-  /// (an installed or replaced release). Windows also leaves the unpacked and backed up folders of an applied update.
+  /// (an installed or replaced release). Windows also leaves the unpacked and backed up folders of an applied update;
+  /// a backup marked by an incomplete rollback (`<backup>.incomplete` next to it) is kept with its marker.
   ///
   /// Only direct entries named by this repository are touched; the cache directory itself is kept. Call it only when
   /// no download is running.
@@ -379,8 +380,14 @@ class ReleaseUpdateRepository {
           if (match != null && (match.group(2) == 'part' || int.parse(match.group(1)!) != keepVersionCode)) {
             await _delete(entry);
           }
-        } else if (entry is Directory && _windowsWorkDirectory.hasMatch(name)) {
-          await entry.delete(recursive: true);
+        } else if (entry is Directory &&
+            _windowsWorkDirectory.hasMatch(name) &&
+            !File('${entry.path}.incomplete').existsSync()) {
+          try {
+            await entry.delete(recursive: true);
+          } on FileSystemException {
+            // Held by another program (e.g. antivirus): retried next time, the other entries are still cleaned.
+          }
         }
       }
     } on FileSystemException {

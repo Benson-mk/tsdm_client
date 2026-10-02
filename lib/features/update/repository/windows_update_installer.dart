@@ -75,7 +75,8 @@ class WindowsUpdateInstaller implements UpdateInstaller {
 
     final updates = await directory();
     final staging = Directory(p.join(updates, 'staging-${update.versionCode}'));
-    final backup = p.join(updates, 'backup-${update.versionCode}');
+    // A new backup folder every time: one kept after an incomplete rollback is never overwritten.
+    final backup = p.join(updates, 'backup-${update.versionCode}-${DateTime.now().millisecondsSinceEpoch}');
     try {
       if (staging.existsSync()) await staging.delete(recursive: true);
       await extractRelease(File(update.path), staging);
@@ -202,7 +203,10 @@ try {
     $_.FullName.Substring($Source.TrimEnd('\').Length).TrimStart('\')
   })
   if ($files.Count -eq 0) { throw 'nothing to install' }
-  if (Test-Path -LiteralPath $Backup) { Remove-Item -LiteralPath $Backup -Recurse -Force }
+  # A folder where the release has a file would take the file inside it: stop before anything changes.
+  foreach ($file in $files) {
+    if (Test-Path -LiteralPath (Join-Path $Target $file) -PathType Container) { throw ('a folder is in the way: {0}' -f $file) }
+  }
   $replaced = @()
   foreach ($file in $files) {
     $old = Join-Path $Target $file
@@ -213,23 +217,38 @@ try {
   }
   Write-Log ('backed up {0} files' -f $replaced.Count)
   $added = @()
-  $copied = @()
+  $attempted = @()
   try {
     foreach ($file in $files) {
       $new = Join-Path $Target $file
       if (-not (Test-Path -LiteralPath $new)) { $added += $file }
+      # Recorded before copying: a copy that fails half way may have damaged the old file.
+      $attempted += $file
       Copy-WithRetry (Join-Path $Source $file) $new
-      $copied += $file
     }
     Write-Log ('installed {0} files' -f $files.Count)
   } catch {
     Write-Log ('install failed: {0}' -f $_)
     $failed = 0
-    foreach ($file in ($replaced | Where-Object { $copied -contains $_ })) {
-      try { Copy-WithRetry (Join-Path $Backup $file) (Join-Path $Target $file) } catch { $failed++; Write-Log ('not restored: {0}' -f $file) }
+    foreach ($file in ($replaced | Where-Object { $attempted -contains $_ })) {
+      $old = Join-Path $Target $file
+      $saved = Join-Path $Backup $file
+      try { Copy-WithRetry $saved $old } catch {
+        # Still locked but never changed: nothing to restore.
+        $same = $false
+        try { $same = (Get-FileHash -LiteralPath $old).Hash -eq (Get-FileHash -LiteralPath $saved).Hash } catch { }
+        if (-not $same) { $failed++; Write-Log ('not restored: {0}' -f $file) }
+      }
     }
     foreach ($file in $added) { Remove-Item -LiteralPath (Join-Path $Target $file) -Force -ErrorAction SilentlyContinue }
-    if ($failed -eq 0) { Write-Log 'restored the previous version' } else { Write-Log ('restore incomplete, the previous files are in {0}' -f $Backup) }
+    if ($failed -eq 0) {
+      Write-Log 'restored the previous version'
+    } else {
+      # The app cleans backup folders at its next version check; this marker keeps this one. A new file is written
+      # even when a file in the folder is still locked, unlike renaming the folder.
+      Set-Content -LiteralPath ($Backup + '.incomplete') -Value $Backup -Encoding UTF8
+      Write-Log ('restore incomplete, the previous files are in {0}' -f $Backup)
+    }
   }
 } catch {
   Write-Log ('failed: {0}' -f $_)

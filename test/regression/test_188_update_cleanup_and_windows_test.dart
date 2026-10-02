@@ -113,9 +113,11 @@ void main() {
       ]) {
         await File(p.join(updates.path, name)).writeAsString(name);
       }
-      for (final name in ['staging-121', 'backup-120', 'other']) {
+      for (final name in ['staging-121', 'backup-120', 'backup-120-1', 'backup-120-2', 'other']) {
         await File(p.join(updates.path, name, 'tsdm_client.exe')).create(recursive: true);
       }
+      // Left by an incomplete rollback: that backup is the only copy of the previous files.
+      await File(p.join(updates.path, 'backup-120-2.incomplete')).writeAsString('kept');
     });
 
     tearDown(() => repository.dispose());
@@ -124,14 +126,47 @@ void main() {
 
     test('keeps the downloads of the offered version, drops partial files, other versions and work folders', () async {
       await repository.cleanup(keepVersionCode: 121);
-      expect(left(), ['apply-update.ps1', 'notes.txt', 'other', 'update-121-2.apk', 'update-121-3.zip', 'update.log']);
+      expect(left(), [
+        'apply-update.ps1',
+        'backup-120-2',
+        'backup-120-2.incomplete',
+        'notes.txt',
+        'other',
+        'update-121-2.apk',
+        'update-121-3.zip',
+        'update.log',
+      ]);
       expect(File(p.join(updates.path, 'other', 'tsdm_client.exe')).existsSync(), isTrue);
     });
 
     test('nothing to offer (already the latest): every download goes', () async {
       await repository.cleanup();
-      expect(left(), ['apply-update.ps1', 'notes.txt', 'other', 'update.log']);
+      expect(left(), [
+        'apply-update.ps1',
+        'backup-120-2',
+        'backup-120-2.incomplete',
+        'notes.txt',
+        'other',
+        'update.log',
+      ]);
     });
+
+    test(
+      'a work folder that cannot be deleted does not stop the rest of the cleanup',
+      () async {
+        final locked = Directory(p.join(updates.path, 'staging-121'));
+        await Process.run('chmod', ['555', locked.path]);
+        addTearDown(() => Process.run('chmod', ['755', locked.path]));
+        await repository.cleanup(keepVersionCode: 121);
+        expect(left(), contains('staging-121'));
+        expect(left(), isNot(contains('update-121-4.part')));
+        expect(left(), isNot(contains('update-122-5.zip')));
+        expect(left(), isNot(contains('backup-120')));
+        expect(left(), isNot(contains('backup-120-1')));
+        expect(left(), contains('backup-120-2'), reason: 'marked by an incomplete rollback');
+      },
+      skip: Platform.isLinux && Process.runSync('id', ['-u']).stdout.toString().trim() == '0',
+    );
 
     test('a missing cache folder is fine', () async {
       await updates.delete(recursive: true);
@@ -144,7 +179,14 @@ void main() {
       addTearDown(cubit.close);
       await cubit.restore(_info);
       await pumpEventQueue();
-      expect(left(), ['apply-update.ps1', 'notes.txt', 'other', 'update.log']);
+      expect(left(), [
+        'apply-update.ps1',
+        'backup-120-2',
+        'backup-120-2.incomplete',
+        'notes.txt',
+        'other',
+        'update.log',
+      ]);
       expect(cubit.state.status, UpdateDownloadStatus.idle);
     });
   });
@@ -249,6 +291,8 @@ void main() {
       final script = File(p.join(updates, WindowsUpdateInstaller.scriptName)).readAsStringSync();
       expect(script.codeUnits.every((e) => e < 128), isTrue, reason: 'ASCII: read without BOM');
       expect(script, contains('restored the previous version'));
+      expect(script, contains('.incomplete'), reason: 'a backup still needed is marked out of the cleanup');
+      expect(script, contains('a folder is in the way'));
 
       final launch = installer.launches.single;
       expect(launch.first, 'powershell.exe');
@@ -257,7 +301,7 @@ void main() {
       expect(arg('-ProcessId'), '$pid');
       expect(arg('-Source'), staging);
       expect(arg('-Target'), app.path);
-      expect(arg('-Backup'), p.join(updates, 'backup-121'));
+      expect(arg('-Backup'), startsWith(p.join(updates, 'backup-121-')));
       expect(installer.quits, isEmpty, reason: 'the page shows the restart first');
       await Future<void>.delayed(const Duration(seconds: 1));
       expect(installer.quits, [1]);
