@@ -16,14 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.30.0 (2026-10-01)
+## Latest update: 1.31.0 (2026-10-03)
 
-- Adds banking, medal search and an in-app title shop.
-- Adds a draft box, website blacklist management with individual imports into local blocking, post reporting, and creation of ordinary single- or multiple-choice polls.
-- Fixes UID lookup with an empty blacklist, title purchase page recognition and draft saving; improves landscape safe areas on the website blacklist, local blocking, activities and My Titles pages.
-- Android build number 103 supports upgrading over earlier stable releases and preview builds 99–102.
+- In-app updates: on Android and Windows a new version can be downloaded, verified and installed inside the app, no need to look for files on GitHub (available from this version on; this update is still manual).
+- Android: posts with forms or buttons, such as event threads, open in an in-app interactive view.
+- Fixed a large blank block below posts wrapped in nested quotes, and an error shown when taking off the secondary title.
+- Android build number 121, installs over earlier releases and test builds.
 
-[Download 1.30.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.30.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.31.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 

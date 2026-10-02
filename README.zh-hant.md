@@ -16,14 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.30.0（2026-10-01）
+## 最新更新：1.31.0（2026-10-03）
 
-- 新增銀行功能、勳章搜尋與 App 內稱號商店。
-- 新增草稿箱、網站黑名單管理與逐人匯入本機屏蔽、帖子樓層舉報，以及建立一般單選／多選投票。
-- 修正空黑名單時 UID 查詢失敗、稱號購買頁面辨識與草稿儲存問題；改善網站黑名單、本機屏蔽、活動、我的稱號四頁的橫屏安全區。
-- Android 建置編號為 103，可直接覆蓋先前的正式版及 99–102 測試版。
+- App 內更新：Android 與 Windows 發現新版時可直接在 App 內下載、核對並安裝，不必再去 GitHub 找檔案（從這一版開始才有，這次仍需手動下載）。
+- Android：活動帖等帶表單或按鈕的樓層可點「互動內容」在 App 內操作。
+- 修正多層引用帖子下方的大片空白，以及取下第二稱號時誤報失敗。
+- Android 建置編號為 121，可直接覆蓋之前的正式版與測試版。
 
-[下載 1.30.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.30.0) · [完整更新日誌](./CHANGELOG.md)
+[下載 1.31.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.0) · [完整更新日誌](./CHANGELOG.md)
 
 ## 這是什麼
 
