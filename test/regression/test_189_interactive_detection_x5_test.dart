@@ -1,7 +1,7 @@
 /// GitHub #165: ordinary posts got the "interactive content" button.
 ///
 /// The forum adds its own markup to every message: `onmouseover="img_onmouseoverfunc(this)"` on each image, a
-/// `replyreload` script at the start of a message, and a toggle button without a class in the spoiler header. Each
+/// `replyreload` script at the start of a message. Each
 /// made an ordinary post (a reply with a sticker, an event post in nested quotes) look interactive. They are the
 /// forum's, not the author's, and no longer count. Authored handlers, styles and forms still do.
 library;
@@ -27,7 +27,7 @@ const _quotedEvent = '''
 <script type="text/javascript">replyreload += ',' + 78099287;</script><i class="pstatus"> edited </i><br />
 <div align="center"><img id="aimg_bVGIU" onclick="zoom(this, this.src, 0, 0, 0)" class="zoom" file="https://example.com/16th.jpg" onmouseover="img_onmouseoverfunc(this)" lazyloadthumb="1" border="0" alt="" /></div>
 <blockquote><blockquote><blockquote><blockquote><font size="4"><strong>活动内容</strong></font><br />
-<div class="spoiler"><div class="spoilerheader"><input type="button" value="活动格式" onclick="this.parentNode.nextSibling.style.display='block'" /></div><div class="spoilerbody" style="display: none;">format</div></div>
+<div class="spoiler"><div class="spoilerheader"><input type="button" class="spoilerbutton" value="活动格式" onClick="n = this.parentNode.parentNode.lastChild;if(n.style.display == 'none') {n.style.display = 'block';} else {n.style.display = 'none';} return false;"/> （點擊展開 / 收起）</div><div class="spoilerbody" style="display: none;">format</div></div>
 </blockquote></blockquote></blockquote></blockquote></td></tr></table>''';
 
 void main() {
@@ -49,6 +49,11 @@ void main() {
       "replyreload += ',' + 78099287;",
       "replyreload += ',' + 78099287; window.tfStart = 1;",
     );
+    expect(interactivePostHtml(html, postId: '78099287'), isNotNull);
+  });
+
+  test('an authored button inside a spoiler header without the native class still counts', () {
+    final html = _quotedEvent.replaceFirst('class="spoilerbutton" ', '');
     expect(interactivePostHtml(html, postId: '78099287'), isNotNull);
   });
 

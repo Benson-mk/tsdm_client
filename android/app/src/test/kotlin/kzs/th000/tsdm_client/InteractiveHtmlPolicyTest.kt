@@ -109,6 +109,7 @@ class InteractiveHtmlPolicyTest {
         assertTrue(document.contains("blockquote{margin:8px 0"))
         assertFalse(document.contains("overflow-wrap:anywhere"))
         assertTrue(document.contains("img[file]"))
+        assertTrue("the placeholder is replaced too", document.contains("none\\.gif"))
         assertEquals(setOf("https://example.com/a.png"), page.imageUrls)
         assertTrue(InteractiveHtmlPolicy.declaredImageUrls("<img zoomfile='https://example.com/b.png'>", source).contains("https://example.com/b.png"))
         assertTrue(InteractiveHtmlPolicy.declaredImageUrls("<img data-file='https://example.com/c.png'>", source).isEmpty())

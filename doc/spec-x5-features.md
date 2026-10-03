@@ -1386,11 +1386,10 @@ B. 論壇提醒屏蔽規則
 - **誤判**：論壇自己加在每則訊息的三種標記都被當成作者寫的互動內容：
   - 圖片的 `onmouseover="img_onmouseoverfunc(this)"`
   - 正文開頭的 `<script>replyreload += ',' + pid;</script>`
-  - 折疊區塊標題裡沒有 class 的 `<input type="button">`
 
-  三者現在都視為論壇原生；作者自己寫的 handler、script、按鈕照樣算。
+  前兩者現在視為論壇原生；作者自己寫的 handler、script、按鈕照樣算。折疊區塊的原生按鈕帶 `class="spoilerbutton"`，原本就已排除（PR #166 審查後拿掉了多餘的「沒有 class 也排除」規則）。
 - **細長豎條**（tid 1267377）：全文包在四層 `<blockquote>`。互動視窗沒有論壇的樣式表，瀏覽器預設每層左右各留 40px，四層就把手機寬度吃光了。文件現在加上論壇的引用框樣式（左邊框、不縮排右側），`overflow-wrap` 也從 `anywhere` 改成 `break-word`，避免表格的最小寬度被壓成一個字。
-- **延遲載入圖片**：論壇把圖片網址放在 `file`／`zoomfile`，沒有 `src`。互動視窗沒有論壇的載入腳本，所以圖片空白。現在這兩個屬性也列入允許的圖片清單，文件載入後再補上 `src`。
+- **延遲載入圖片**：論壇把圖片網址放在 `file`／`zoomfile`，沒有 `src`。互動視窗沒有論壇的載入腳本，所以圖片空白。現在這兩個屬性也列入允許的圖片清單；`src` 空白或是 `none.gif` 佔位圖時，文件載入後改用 `file`。
 - **語言**：Dart 端把 `LocaleSettings.currentLocale.languageTag` 傳給原生；`InteractiveHtmlActivity.Labels` 有簡體、繁體、英文三組文字，沒收到語言時才依系統語言。
 - **橫屏安全區**：`layoutInDisplayCutoutMode = SHORT_EDGES`，背景延伸到瀏海；原本的 insets padding（systemBars、displayCutout、ime）讓控制列和頁面避開瀏海。
 - **驗證**：

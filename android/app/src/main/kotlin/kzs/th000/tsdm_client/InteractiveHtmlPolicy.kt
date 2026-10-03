@@ -143,10 +143,13 @@ object InteractiveHtmlPolicy {
         ".quote{margin:8px 0}.quote blockquote{margin:0}hr.l{border:0;border-top:1px dashed #c8c8c8}" +
         "table{max-width:100%}"
 
-    /** Discuz images carry their address in `file` until its lazy loader runs, which the viewer does not have. */
+    /**
+     * Discuz images carry their address in `file` until its lazy loader runs, which the viewer does not have; `src`
+     * is missing or the `none.gif` placeholder.
+     */
     private const val LAZY_IMAGES = "document.addEventListener('DOMContentLoaded',function(){" +
         "var list=document.querySelectorAll('img[file]');for(var i=0;i<list.length;i++){var img=list[i];" +
-        "if(!img.getAttribute('src'))img.setAttribute('src',img.getAttribute('file'));}});"
+        "var src=img.getAttribute('src')||'';if(!src||/(^|\\/)none\\.gif$/.test(src))img.setAttribute('src',img.getAttribute('file'));}});"
 
     fun headers(content: Content): Map<String, String> {
         val source = requireNotNull(content.sourceUrl.toHttpUrlOrNull())

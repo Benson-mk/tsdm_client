@@ -108,13 +108,6 @@ bool _isNativeControl(Element element, Node root) {
   if (element.classes.contains('spoilerbutton') || element.classes.contains('spoiler_btn')) {
     return true;
   }
-  // The spoiler's toggle button has no class of its own in X5: it sits in the spoiler header.
-  if (element.localName == 'input' &&
-      element.attributes['type']?.toLowerCase() == 'button' &&
-      element.parent != null &&
-      (element.parent!.classes.contains('spoilerheader') || element.parent!.classes.contains('spoiler_control'))) {
-    return true;
-  }
   for (Element? current = element; current != null && current != root; current = current.parent) {
     final tag = current.localName;
     if (tag == 'code' || tag == 'pre' || current.classes.contains('blockcode')) {
