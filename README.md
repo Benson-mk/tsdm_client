@@ -16,14 +16,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.31.0（2026-10-03）
+## 最新更新：1.31.1（2026-10-03）
 
-- 应用内更新：Android 与 Windows 发现新版时可直接在 App 内下载、核对并安装，不必再去 GitHub 找文件（从这一版开始才有，这次仍需手动下载）。
-- Android：活动帖等带表单或按钮的楼层可点「互动内容」在 App 内操作。
-- 修复多层引用帖子下方的大片空白，以及取下第二称号时误报失败。
-- Android 构建编号为 121，可直接覆盖之前的正式版与测试版。
+- 修复关闭互动窗口后可能闪退。
+- 普通回复（引用、贴图）不再误显示「互动内容」按钮；多层引用的帖子在互动窗口里正常显示，图片也能加载。
+- 互动窗口的文字跟随 App 设置的语言，横屏时避开刘海。
+- 1.31.0 起 Android 与 Windows 可在 App 内直接下载并安装新版。
+- Android 构建编号为 122，可直接覆盖之前的正式版与测试版。
 
-[下载 1.31.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.0) · [完整更新日志](./CHANGELOG.md)
+[下载 1.31.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.1) · [完整更新日志](./CHANGELOG.md)
 
 ## 这是什么
 

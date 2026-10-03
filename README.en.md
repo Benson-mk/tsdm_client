@@ -16,14 +16,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.31.0 (2026-10-03)
+## Latest update: 1.31.1 (2026-10-03)
 
-- In-app updates: on Android and Windows a new version can be downloaded, verified and installed inside the app, no need to look for files on GitHub (available from this version on; this update is still manual).
-- Android: posts with forms or buttons, such as event threads, open in an in-app interactive view.
-- Fixed a large blank block below posts wrapped in nested quotes, and an error shown when taking off the secondary title.
-- Android build number 121, installs over earlier releases and test builds.
+- Fixed a possible crash after closing the interactive view.
+- Ordinary replies (quotes, stickers) no longer show the interactive content button; posts in nested quotes display properly in the interactive view, with their images.
+- The interactive view follows the language set in the app and keeps clear of the notch in landscape.
+- Since 1.31.0, Android and Windows can download and install new versions inside the app.
+- Android build number 122, installs over earlier releases and test builds.
 
-[Download 1.31.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.31.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.1) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
