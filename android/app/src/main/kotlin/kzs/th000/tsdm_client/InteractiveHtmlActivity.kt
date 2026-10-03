@@ -48,7 +48,7 @@ class InteractiveHtmlActivity : Activity() {
     private var webView: WebView? = null
     private var images: InteractiveHtmlImages? = null
     private var pageDialog: AlertDialog? = null
-    private val chinese get() = Locale.getDefault().language == "zh"
+    private val labels by lazy { Labels.forLocale(intent.getStringExtra(EXTRA_LOCALE)) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +58,7 @@ class InteractiveHtmlActivity : Activity() {
                 intent.getStringExtra(EXTRA_ACCOUNT_SCOPE), intent.getStringExtra(EXTRA_POST_ID),
             )
         } catch (_: Exception) {
-            Toast.makeText(this, if (chinese) "無法開啟互動內容" else "Unable to open interactive content", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, labels.openFailed, Toast.LENGTH_LONG).show()
             finish()
             return
         }
@@ -71,7 +71,7 @@ class InteractiveHtmlActivity : Activity() {
             images = InteractiveHtmlImages(content.imageUrls)
             viewer.webViewClient = contentClient()
             viewer.webChromeClient = chromeClient()
-            viewer.setDownloadListener { _, _, _, _, _ -> showMessage(if (chinese) "請從原文下載檔案" else "Open the original page to download files") }
+            viewer.setDownloadListener { _, _, _, _, _ -> showMessage(labels.downloadInOriginal) }
             viewer.loadUrl(content.documentUrl)
         } catch (_: Exception) {
             showFailure()
@@ -84,6 +84,12 @@ class InteractiveHtmlActivity : Activity() {
         val background = if (dark) Color.rgb(25, 27, 31) else Color.WHITE
         val foreground = if (dark) Color.WHITE else Color.rgb(28, 30, 34)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Draw the background under a landscape notch too; the insets below keep the controls and page clear of it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         body = LinearLayout(this).apply {
@@ -97,24 +103,24 @@ class InteractiveHtmlActivity : Activity() {
         }
         val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         toolbar.addView(Button(this).apply {
-            text = if (chinese) "返回" else "Back"
+            text = labels.back
             contentDescription = text
             setOnClickListener { finish() }
         })
         toolbar.addView(TextView(this).apply {
-            text = if (chinese) "互動內容" else "Interactive content"
+            text = labels.title
             setTextColor(foreground)
             textSize = 18f
             gravity = android.view.Gravity.CENTER_VERTICAL
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         toolbar.addView(Button(this).apply {
-            text = if (chinese) "原文" else "Original"
-            contentDescription = if (chinese) "在瀏覽器查看原文" else "Open original page in browser"
+            text = labels.original
+            contentDescription = labels.originalDescription
             setOnClickListener { openBrowser(content.sourceUrl) }
         })
         body.addView(toolbar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         status = TextView(this).apply {
-            text = if (chinese) "正在載入…" else "Loading…"
+            text = labels.loading
             setTextColor(foreground)
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
@@ -184,7 +190,7 @@ class InteractiveHtmlActivity : Activity() {
                         .setClassName(packageName, "kzs.th000.tsdm_client.MainActivity")
                         .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                     finish()
-                } catch (_: Exception) { showMessage(if (chinese) "無法開啟連結" else "Unable to open link") }
+                } catch (_: Exception) { showMessage(labels.linkFailed) }
             } else openBrowser(url.toString())
             return true
         }
@@ -235,7 +241,7 @@ class InteractiveHtmlActivity : Activity() {
         pageDialog?.dismiss()
         var completed = false
         val builder = AlertDialog.Builder(this)
-            .setTitle(if (chinese) "頁面提示" else "Page message")
+            .setTitle(labels.pageMessage)
             .setMessage(message.take(2000))
             .setPositiveButton(android.R.string.ok) { _, _ -> completed = true; result.confirm() }
         if (confirm) builder.setNegativeButton(android.R.string.cancel) { _, _ -> completed = true; result.cancel() }
@@ -247,7 +253,7 @@ class InteractiveHtmlActivity : Activity() {
 
     private fun openBrowser(url: String) {
         if (BrowserIntents.launch(url) { startActivity(it) } != BrowserIntents.LaunchResult.STARTED) {
-            showMessage(if (chinese) "無法開啟瀏覽器" else "Unable to open browser")
+            showMessage(labels.browserFailed)
         }
     }
 
@@ -256,7 +262,7 @@ class InteractiveHtmlActivity : Activity() {
     private fun showFailure() {
         if (::status.isInitialized) {
             status.visibility = View.VISIBLE
-            status.text = if (chinese) "互動內容無法載入，請點選「原文」查看。" else "Unable to load interactive content. Open the original page instead."
+            status.text = labels.loadFailed
         }
     }
 
@@ -288,14 +294,52 @@ class InteractiveHtmlActivity : Activity() {
         const val EXTRA_SOURCE_URL = "interactive_html.source_url"
         const val EXTRA_ACCOUNT_SCOPE = "interactive_html.account_scope"
         const val EXTRA_POST_ID = "interactive_html.post_id"
+        const val EXTRA_LOCALE = "interactive_html.locale"
 
-        fun intent(context: Context, html: String?, sourceUrl: String?, accountScope: String?, postId: String?): Intent {
+        fun intent(
+            context: Context, html: String?, sourceUrl: String?, accountScope: String?, postId: String?,
+            locale: String? = null,
+        ): Intent {
             val checked = InteractiveHtmlPolicy.validate(html, sourceUrl, accountScope, postId)
             return Intent(context, InteractiveHtmlActivity::class.java)
                 .putExtra(EXTRA_HTML, checked.html)
                 .putExtra(EXTRA_SOURCE_URL, checked.sourceUrl)
                 .putExtra(EXTRA_ACCOUNT_SCOPE, checked.accountScope)
                 .putExtra(EXTRA_POST_ID, checked.postId)
+                .putExtra(EXTRA_LOCALE, locale)
+        }
+    }
+
+    /** Texts of the viewer in the language chosen in the app, not the system one. */
+    data class Labels(
+        val title: String, val back: String, val original: String, val originalDescription: String,
+        val loading: String, val loadFailed: String, val openFailed: String, val linkFailed: String,
+        val browserFailed: String, val downloadInOriginal: String, val pageMessage: String,
+    ) {
+        companion object {
+            private val simplified = Labels(
+                "互动内容", "返回", "原文", "在浏览器查看原文", "正在加载…", "互动内容无法加载，请点击「原文」查看。",
+                "无法打开互动内容", "无法打开链接", "无法打开浏览器", "请从原文下载文件", "页面提示",
+            )
+            private val traditional = Labels(
+                "互動內容", "返回", "原文", "在瀏覽器查看原文", "正在載入…", "互動內容無法載入，請點選「原文」查看。",
+                "無法開啟互動內容", "無法開啟連結", "無法開啟瀏覽器", "請從原文下載檔案", "頁面提示",
+            )
+            private val english = Labels(
+                "Interactive content", "Back", "Original", "Open original page in browser", "Loading…",
+                "Unable to load interactive content. Open the original page instead.",
+                "Unable to open interactive content", "Unable to open link", "Unable to open browser",
+                "Open the original page to download files", "Page message",
+            )
+
+            /** [tag] is the app's language tag (zh-CN, zh-TW, en); without one the system language decides. */
+            fun forLocale(tag: String?): Labels {
+                val locale = if (tag.isNullOrBlank()) Locale.getDefault() else Locale.forLanguageTag(tag)
+                if (locale.language != "zh") return english
+                val traditionalScript = locale.script == "Hant" ||
+                    (locale.script.isEmpty() && locale.country in setOf("TW", "HK", "MO"))
+                return if (traditionalScript) traditional else simplified
+            }
         }
     }
 }

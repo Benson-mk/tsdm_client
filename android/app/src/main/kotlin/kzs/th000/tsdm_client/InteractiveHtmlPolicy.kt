@@ -116,7 +116,8 @@ object InteractiveHtmlPolicy {
             if (result.size < 128) safeImageUrl(unescape(raw.trim()), sourceUrl)?.let { result.add(it.toString()) }
         }
         val tags = Regex("<(?:img|image|source)\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-        val attributes = Regex("(?:src|href|xlink:href|srcset)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))", RegexOption.IGNORE_CASE)
+        // Discuz lazy-loads post images: the address is in `file` (or `zoomfile`) and `src` is missing.
+        val attributes = Regex("(?<![\\w-])(?:src|href|xlink:href|srcset|file|zoomfile)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))", RegexOption.IGNORE_CASE)
         tags.findAll(html).forEach { tag ->
             attributes.findAll(tag.value).forEach { attribute ->
                 val value = attribute.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: ""
@@ -131,8 +132,21 @@ object InteractiveHtmlPolicy {
 
     fun document(content: Content): String {
         val base = content.sourceUrl.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")
-        return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><base href="$base"><style>html{color-scheme:light dark}body{margin:12px;overflow-wrap:anywhere}img,svg{max-width:100%}*{box-sizing:border-box}</style><script>document.addEventListener('click',function(event){var node=event.target;var link=node.closest?node.closest('a[href]'):null;if(link)link.removeAttribute('target');},true);</script></head><body>${content.html}</body></html>"""
+        return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><base href="$base"><style>html{color-scheme:light dark}body{margin:12px;overflow-wrap:break-word}img,svg{max-width:100%}*{box-sizing:border-box}$FORUM_STYLE</style><script>document.addEventListener('click',function(event){var node=event.target;var link=node.closest?node.closest('a[href]'):null;if(link)link.removeAttribute('target');},true);$LAZY_IMAGES</script></head><body>${content.html}</body></html>"""
     }
+
+    /**
+     * What the forum's stylesheet does for the post markup. Browser defaults indent each `blockquote` by 40px on both
+     * sides: four nested quotes left a column of a few characters on a phone (#165).
+     */
+    private const val FORUM_STYLE = "blockquote{margin:8px 0;padding:4px 0 4px 10px;border-left:3px solid #c8c8c8}" +
+        ".quote{margin:8px 0}.quote blockquote{margin:0}hr.l{border:0;border-top:1px dashed #c8c8c8}" +
+        "table{max-width:100%}"
+
+    /** Discuz images carry their address in `file` until its lazy loader runs, which the viewer does not have. */
+    private const val LAZY_IMAGES = "document.addEventListener('DOMContentLoaded',function(){" +
+        "var list=document.querySelectorAll('img[file]');for(var i=0;i<list.length;i++){var img=list[i];" +
+        "if(!img.getAttribute('src'))img.setAttribute('src',img.getAttribute('file'));}});"
 
     fun headers(content: Content): Map<String, String> {
         val source = requireNotNull(content.sourceUrl.toHttpUrlOrNull())

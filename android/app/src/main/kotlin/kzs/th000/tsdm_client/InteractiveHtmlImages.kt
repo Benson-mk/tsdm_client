@@ -87,11 +87,23 @@ class InteractiveHtmlImages(private val allowedUrls: Set<String>) : AutoCloseabl
         return blocked()
     }
 
+    /**
+     * Cancelling calls and evicting the pool close sockets, a TLS close writes to the network: on the main thread
+     * (Activity.onDestroy) Android throws NetworkOnMainThreadException, which OkHttp rethrows and kills the app
+     * (#165). New loads are refused at once; the sockets are closed on a background thread.
+     */
     override fun close() {
-        closed.set(true)
-        activeCalls.forEach { it.cancel() }
-        client.dispatcher.cancelAll()
-        client.connectionPool.evictAll()
+        if (closed.getAndSet(true)) return
+        Thread({
+            try {
+                activeCalls.forEach { it.cancel() }
+                client.dispatcher.cancelAll()
+                client.connectionPool.evictAll()
+                client.dispatcher.executorService.shutdown()
+            } catch (_: Exception) {
+                // Leftover connections time out on their own; closing the viewer must never crash the app.
+            }
+        }, "interactive-html-images-close").start()
     }
 
     companion object {
