@@ -101,4 +101,35 @@ class InteractiveHtmlPolicyTest {
         assertNull(InteractiveHtmlPolicy.fragment(page, "https://evil.example/#section"))
         assertNull(InteractiveHtmlPolicy.fragment(page, source))
     }
+
+    // #165: four nested quotes were squeezed into a column of a few characters by the browser's default indent.
+    @Test fun forumQuotesAndLazyImagesRenderLikeTheForum() {
+        val page = content("<blockquote><blockquote>x</blockquote></blockquote><img file=\"https://example.com/a.png\" onclick=\"zoom(this)\">")
+        val document = InteractiveHtmlPolicy.document(page)
+        assertTrue(document.contains("blockquote{margin:8px 0"))
+        assertFalse(document.contains("overflow-wrap:anywhere"))
+        assertTrue(document.contains("img[file]"))
+        assertTrue("the placeholder is replaced too", document.contains("none\\.gif"))
+        assertEquals(setOf("https://example.com/a.png"), page.imageUrls)
+        assertTrue(InteractiveHtmlPolicy.declaredImageUrls("<img zoomfile='https://example.com/b.png'>", source).contains("https://example.com/b.png"))
+        assertTrue(InteractiveHtmlPolicy.declaredImageUrls("<img data-file='https://example.com/c.png'>", source).isEmpty())
+    }
+
+    // #165: the viewer followed the system language instead of the one chosen in the app.
+    @Test fun labelsFollowTheAppLanguage() {
+        assertEquals("互动内容", InteractiveHtmlActivity.Labels.forLocale("zh-CN").title)
+        assertEquals("互動內容", InteractiveHtmlActivity.Labels.forLocale("zh-TW").title)
+        assertEquals("Interactive content", InteractiveHtmlActivity.Labels.forLocale("en").title)
+        assertEquals("互動內容", InteractiveHtmlActivity.Labels.forLocale("zh-Hant").title)
+    }
+
+    // #165: closing the viewer closed the image sockets on the main thread and Android killed the app.
+    @Test fun closingTheImageLoaderReturnsAtOnceAndRefusesNewLoads() {
+        val images = InteractiveHtmlImages(setOf("https://example.com/a.png"))
+        val caller = Thread.currentThread()
+        images.close()
+        images.close()
+        assertSame(caller, Thread.currentThread())
+        assertEquals(403, images.load("https://example.com/a.png").statusCode)
+    }
 }

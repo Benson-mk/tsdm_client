@@ -74,9 +74,18 @@ void main() {
       'sourceUrl': '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=998877',
       'accountScope': '1234',
       'postId': '998877',
+      'locale': LocaleSettings.currentLocale.languageTag,
     });
     expect(browserCalls, isEmpty);
     expect(launcherCalls, isEmpty);
+  });
+
+  test('the viewer texts follow the language chosen in the app (#165)', () async {
+    for (final locale in [AppLocale.zhCn, AppLocale.zhTw, AppLocale.en]) {
+      await LocaleSettings.setLocale(locale);
+      await openInteractivePost(html: _html, postId: '998877', currentUid: 1234);
+    }
+    expect(viewerCalls.map((call) => (call.arguments as Map<Object?, Object?>)['locale']), ['zh-CN', 'zh-TW', 'en']);
   });
 
   test('each active reader and guest uses a separate account scope', () async {

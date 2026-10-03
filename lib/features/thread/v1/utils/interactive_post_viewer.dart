@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
 
 const _channel = MethodChannel('kzs.th000.tsdm_client/interactiveHtmlChannel');
@@ -56,6 +57,8 @@ Future<InteractivePostOpenResult> openInteractivePost({
         'sourceUrl': source.toString(),
         'accountScope': currentUid != null && currentUid > 0 ? '$currentUid' : 'guest',
         'postId': postId,
+        // The viewer's own texts follow the language chosen in the app, not the system one (#165).
+        'locale': LocaleSettings.currentLocale.languageTag,
       });
       if (opened ?? false) {
         return InteractivePostOpenResult.viewer;

@@ -8,12 +8,15 @@ final _interactiveMarkup = RegExp(
 final _leadingCell = RegExp(r'^\s*<(?:td|th)(?:\s|>)', caseSensitive: false);
 final _leadingRow = RegExp(r'^\s*<tr(?:\s|>)', caseSensitive: false);
 final _nativeHandler = RegExp(
-  r'^\s*(?:return\s+)?(?:zoom|showWindow|showMenu|hideMenu|showTip|hideTip|atarget|attachimg|thumbImg)'
+  r'^\s*(?:return\s+)?(?:zoom|showWindow|showMenu|hideMenu|showTip|hideTip|atarget|attachimg|thumbImg|img_onmouseoverfunc)'
   r'\s*\([^;{}]*\)\s*;?\s*(?:return\s+(?:false|true)\s*;?\s*)?$',
   caseSensitive: false,
 );
 final _nativeNeteasePlayer = RegExp(r'//music\.163\.com/outchain/player\?.*id=\d+.*');
 final _nativePollIdentity = RegExp(r'''^\s*(?:var\s+)?discuz_uid\s*=\s*['"]\d+['"]\s*;?\s*$''');
+
+/// The forum puts this at the start of every message it may reload after a reply (#165).
+final _nativeReplyReload = RegExp(r'''^\s*replyreload\s*\+=\s*['"],['"]\s*\+\s*\d+\s*;?\s*$''');
 
 /// The authored message HTML when it needs the interactive viewer, otherwise null.
 ///
@@ -70,6 +73,9 @@ bool _containsInteractiveContent(Node root, {bool bareFragment = false}) {
     }
     final tag = element.localName;
     if (tag == 'script' && hasNativePoll && _nativePollIdentity.hasMatch(element.text)) {
+      continue;
+    }
+    if (tag == 'script' && _nativeReplyReload.hasMatch(element.text)) {
       continue;
     }
     if (const {'style', 'svg', 'canvas', 'script', 'form', 'select', 'textarea', 'button'}.contains(tag)) {
