@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.31.2 (2026-10-06)
+## Latest update: 1.32.0 (2026-10-06)
 
-- Fixed an automatic check-in between 0:00 and 1:00 being recorded as done, so the app showed "checked in" and never checked in that day.
-- Since 1.31.0, Android and Windows can download and install new versions inside the app.
-- Android build number 123, installs over earlier releases and test builds.
+- Uses the forum's official app API: notification checks first ask the forum whether anything is new, so most checks no longer fetch three whole web pages; the check-in state comes straight from the forum.
+- Everything works as before on a forum without the API plugin.
+- Android build number 124, installs over earlier releases and test builds.
 
-[Download 1.31.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.2) · [Full changelog](./CHANGELOG.md)
+[Download 1.32.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.32.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 

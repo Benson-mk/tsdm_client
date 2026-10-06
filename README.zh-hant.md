@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.31.2（2026-10-06）
+## 最新更新：1.32.0（2026-10-06）
 
-- 修正 0 點到 1 點之間自動簽到被誤記成「已簽到」、當天不再簽到的問題。
-- 1.31.0 起 Android 與 Windows 可在 App 內直接下載並安裝新版。
-- Android 建置編號為 123，可直接覆蓋之前的正式版與測試版。
+- 支援論壇官方的 App 接口：檢查提醒時先問論壇有沒有新東西，大多數時候不再抓三整頁網頁，省流量也減輕論壇負擔；簽到狀態直接由論壇告知，不再誤判。
+- 論壇沒裝接口插件時一切照舊。
+- Android 建置編號為 124，可直接覆蓋之前的正式版與測試版。
 
-[下載 1.31.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.2) · [完整更新日誌](./CHANGELOG.md)
+[下載 1.32.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.32.0) · [完整更新日誌](./CHANGELOG.md)
 
 ## 這是什麼
 
