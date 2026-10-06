@@ -28,6 +28,29 @@ String? parseCheckinFormHash(uh.Document document) {
 String? parseCheckinPageMessage(uh.Document document) =>
     document.querySelectorAll('h1.mt').map((e) => e.innerText.trim()).firstWhereOrNull((e) => e.isNotEmpty);
 
+/// Whether the checkin page [document] says the account checked in today, null if the page does not tell.
+///
+/// The "service desk" box beside the ranking states it plainly, unlike the page title, which is the same for "already
+/// checked in" and "checkin is not open yet" (before 1:00):
+///
+/// ```html
+/// <div class="um" id="qdmsgt">
+///   <p>【<span class=gray>今天未签到</span>】</p>
+///   <p>您上次签到时间:<font color="#ff00cc">2026-09-10 16:19</font></p>
+/// ```
+///
+/// Marked as public for testing.
+bool? parseCheckinDeskStatus(uh.Document document) {
+  final text = document.querySelector('div#qdmsgt')?.innerText ?? '';
+  if (text.contains('今天已签到')) {
+    return true;
+  }
+  if (text.contains('今天未签到')) {
+    return false;
+  }
+  return null;
+}
+
 /// Parse the message text in the checkin ajax response [data].
 ///
 /// The response is an xml document wrapping html:

@@ -44,6 +44,12 @@ Task<CheckinResult> doCheckin(NetClientProvider netClient, CheckinFeeling feelin
       return const CheckinResultNotAuthorized();
     }
 
+    // The service desk box tells the truth; the page title may not (see below).
+    if (parseCheckinDeskStatus(document) ?? false) {
+      talker.info('check in skipped: the checkin page says checked in today');
+      return const CheckinResultAlreadyChecked();
+    }
+
     final maybeCheckinMessage = parseCheckinPageMessage(document);
     if (maybeCheckinMessage != null) {
       final r2 = _checkCheckinResultText(maybeCheckinMessage);
@@ -110,6 +116,14 @@ CheckinResult _requestFailed(AppException e) {
 }
 
 CheckinResult? _checkCheckinResultText(String result) {
+  // "您今天已经签到过了或者签到时间还未开始" is all the forum says before 1:00, when checkin is not open yet. Read as
+  // "already checked in" it was recorded as today's checkin: the app showed it checked in, never tried again, and the
+  // website had no checkin. Only "not open yet" is safe: an account that did check in is then simply tried again.
+  // When the page says it checked in, the service desk box above has already answered.
+  if (result.contains('签到时间还未开始') || result.contains('签到时间还没有到')) {
+    talker.warning('check in not done: checkin is not open yet (or already done): $result');
+    return const CheckinResultEarlyInTime();
+  }
   if (result.contains('签到成功')) {
     talker.info('check in success: $result');
     return CheckinResultSuccess(result);
@@ -125,10 +139,6 @@ CheckinResult? _checkCheckinResultText(String result) {
   if (result.contains('已经过了签到时间')) {
     talker.error('check in failed: late in time');
     return const CheckinResultLateInTime();
-  }
-  if (result.contains('签到时间还没有到') || result.contains('签到时间还未开始')) {
-    talker.error('check in failed: early in time');
-    return const CheckinResultEarlyInTime();
   }
   return null;
 }
