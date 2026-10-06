@@ -5,6 +5,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -75,7 +76,9 @@ class ThreadRepository {
       _threadUrl = '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=$pid';
     }
 
-    final respEither = await getIt.get<NetClientProvider>().get(_threadUrl!).run();
+    // With the forum's app API the page comes back as JSON without header, footer and sidebar (see TsdmAppApi);
+    // the url kept for sharing and reloading stays the plain one.
+    final respEither = await getIt.get<NetClientProvider>().get(withTsdmAppJson(_threadUrl!)).run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
     }
@@ -85,8 +88,7 @@ class ThreadRepository {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
-    final document = parseHtmlDocument(resp.data as String);
-    return right(document);
+    return right(tsdmAppPageDocument(resp.data));
   });
 
   /// Fetch the operation log for thread [tid].

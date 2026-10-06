@@ -1457,3 +1457,26 @@ B. 論壇提醒屏蔽規則
   - test_188、interactive_post_viewer_test 依新參數更新。
   - 原生：InteractiveHtmlActivityTest 驗證 manifest 的 configChanges、設定變更後 WebView 不重載且顏色跟著深色模式、畫面使用 App 傳入的文字；InteractiveHtmlPolicyTest 驗證 labels 的取用與退回。
   - 未在實機或 Windows 上執行更新腳本。
+
+## 53. 論壇 App 接口第二階段：網頁 JSON 模式（2026-10-06）
+
+- 插件 tsdmapp 1.2.0：網頁地址加上 `tsdmapp=json`。插件用全站 `common` 掛點擋掉論壇的最終輸出，頁面照常處理（所有權限與其他插件都照舊），結束時改回 JSON：
+  - 白名單結構化欄位：主題、樓層、版塊、頁數。
+  - `document`：App 解析器要用的區塊，從論壇最終輸出依位置原樣切出。不經 DOM 重新輸出，因為 libxml 會把網址裡的中文改寫成 `%XX`。樓層區的結尾以它後面固定出現的 `form#modactions` 定位，因為作者寫的 HTML 可能不成對。
+  - `head`：原頁的 `<link>`（含 canonical）和宣告 `discuz_uid` 的腳本。檢舉連結要靠它們取得 tid 和目前登入的帳號。
+- App：
+  - `ThreadRepository.fetchThread` 和 `ForumRepository.fetchForum` 的請求都帶上 `tsdmapp=json`，回應交給 `tsdmAppPageDocument`：是 JSON 就以 `head` 加 `document` 重組精簡頁，是網頁就照原樣解析。後面的解析器不變。
+  - 沒裝插件、裝的是舊版插件或插件關閉時，參數會被忽略，論壇照常回網頁，不會多一次請求。
+  - 用 pid 找帖（`mod=redirect`）時論壇會轉址並丟掉參數，回的是網頁，照舊。
+- 不接的頁面：
+  - 個人資料：解析器依賴頁首 `#um`、外層 `div#wp`。
+  - 版塊首頁：首頁的特殊區塊和使用者資訊。
+
+  插件已支援這兩頁，App 之後再接。
+- 驗證：
+  - test_193 用測試站成對素材（網頁與 JSON，ag_low），涵蓋：
+    - 帖子 5 種：一般、回覆可見、付費、第 2 頁、閱讀權限。每一樓的所有欄位（Post 的 map）、回覆參數、麵包屑、勳章、頁數都和網頁一致。
+    - 版塊頁、無權限版塊。
+    - JSON 裡沒有敏感欄位。
+  - 測試站的 X5 模板用 `<li>` 列主題，App 只認正式站的 `<tbody>`，所以正式站樣式另外離線比對（不進 repo，頁面含真實使用者內容）：用測試帳號唯讀抓正式站 4 個帖子頁（40 樓）和 3 個版塊頁，以插件同一段切取程式產生精簡頁，App 解析結果全部一致。
+  - 插件端的權限比對、升級預演見插件專案的 verify.md。
