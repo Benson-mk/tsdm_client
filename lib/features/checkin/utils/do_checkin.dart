@@ -6,6 +6,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/features/checkin/utils/parse_checkin.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/parsing.dart';
@@ -22,6 +23,23 @@ const _checkInRequestUrl = '$baseUrl/plugin.php?id=dsu_paulsign:sign&operation=q
 /// class, because they don't have it.
 Task<CheckinResult> doCheckin(NetClientProvider netClient, CheckinFeeling feeling, String message) {
   return Task(() async {
+    // The forum's app API tells the state plainly when the forum has it; checking in itself stays the web form.
+    final apiAnswer = await TsdmAppApi.ask(netClient, 'checkin');
+    if (apiAnswer != null && apiAnswer['ok'] == 0 && apiAnswer['error'] == 'login') {
+      talker.error('check in failed: not logged in (app api)');
+      return const CheckinResultNotAuthorized();
+    }
+    switch (checkinStateOf(apiAnswer)) {
+      case (checkedToday: true, openNow: _):
+        talker.info('check in skipped: checked in today (app api)');
+        return const CheckinResultAlreadyChecked();
+      case (checkedToday: false, openNow: false):
+        talker.warning('check in not done: checkin is not open now (app api)');
+        return const CheckinResultEarlyInTime();
+      case (checkedToday: false, openNow: true) || null:
+        break;
+    }
+
     final respEither = await netClient.get(_checkInPageUrl).run();
     if (respEither.isLeft()) {
       return _requestFailed(respEither.unwrapErr());
