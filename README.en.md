@@ -16,13 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.32.0 (2026-10-06)
+## Latest update: 1.33.0 (2026-10-06)
 
-- Uses the forum's official app API: notification checks first ask the forum whether anything is new, so most checks no longer fetch three whole web pages; the check-in state comes straight from the forum.
-- Everything works as before on a forum without the API plugin.
-- Android build number 124, installs over earlier releases and test builds.
+- With the forum's app API plugin 1.4.0, threads, forums, home, messages, favorites, search, medals, titles and profiles are read in the forum's JSON mode, so header and sidebar changes on the forum no longer break the app; without the plugin the web pages are read as before.
+- Interactive content: rotating the screen no longer reloads it; only scripts the author wrote count as interactive.
+- In-app update (Windows): the app no longer closes when the update script is blocked; folders that cannot be updated are reported before downloading.
+- Android build number 125, installs over earlier releases and test builds.
 
-[Download 1.32.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.32.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.33.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 

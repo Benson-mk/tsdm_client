@@ -16,13 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.32.0（2026-10-06）
+## 最新更新：1.33.0（2026-10-06）
 
-- 支援論壇官方的 App 接口：檢查提醒時先問論壇有沒有新東西，大多數時候不再抓三整頁網頁，省流量也減輕論壇負擔；簽到狀態直接由論壇告知，不再誤判。
-- 論壇沒裝接口插件時一切照舊。
-- Android 建置編號為 124，可直接覆蓋之前的正式版與測試版。
+- 論壇 App 接口插件升級到 1.4.0 後，看帖、版塊、首頁、私信、收藏、搜尋、勳章、稱號、個人資料改為讀取論壇的 JSON 模式，論壇改版頁首、側欄不再影響 App；沒裝插件時照舊讀網頁。
+- 互動內容：旋轉螢幕不再重新載入；只有作者自己寫的腳本才算互動內容。
+- App 內更新（Windows）：更新腳本被擋下時不再自行關閉；不能更新的資料夾在下載前就提示。
+- Android 建置編號為 125，可直接覆蓋之前的正式版與測試版。
 
-[下載 1.32.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.32.0) · [完整更新日誌](./CHANGELOG.md)
+[下載 1.33.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.0) · [完整更新日誌](./CHANGELOG.md)
 
 ## 這是什麼
 
