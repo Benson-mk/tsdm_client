@@ -16,15 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.31.1 (2026-10-03)
+## Latest update: 1.31.2 (2026-10-06)
 
-- Fixed a possible crash after closing the interactive view.
-- Ordinary replies (quotes, stickers) no longer show the interactive content button; posts in nested quotes display properly in the interactive view, with their images.
-- The interactive view follows the language set in the app and keeps clear of the notch in landscape.
+- Fixed an automatic check-in between 0:00 and 1:00 being recorded as done, so the app showed "checked in" and never checked in that day.
 - Since 1.31.0, Android and Windows can download and install new versions inside the app.
-- Android build number 122, installs over earlier releases and test builds.
+- Android build number 123, installs over earlier releases and test builds.
 
-[Download 1.31.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.1) · [Full changelog](./CHANGELOG.md)
+[Download 1.31.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.2) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 

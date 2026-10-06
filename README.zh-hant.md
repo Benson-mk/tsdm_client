@@ -16,15 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.31.1（2026-10-03）
+## 最新更新：1.31.2（2026-10-06）
 
-- 修正關閉互動視窗後可能閃退。
-- 一般回覆（引用、貼圖）不再誤顯示「互動內容」按鈕；多層引用的帖子在互動視窗裡正常顯示，圖片也能載入。
-- 互動視窗的文字跟隨 App 設定的語言，橫屏時避開瀏海。
+- 修正 0 點到 1 點之間自動簽到被誤記成「已簽到」、當天不再簽到的問題。
 - 1.31.0 起 Android 與 Windows 可在 App 內直接下載並安裝新版。
-- Android 建置編號為 122，可直接覆蓋之前的正式版與測試版。
+- Android 建置編號為 123，可直接覆蓋之前的正式版與測試版。
 
-[下載 1.31.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.1) · [完整更新日誌](./CHANGELOG.md)
+[下載 1.31.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.31.2) · [完整更新日誌](./CHANGELOG.md)
 
 ## 這是什麼
 
