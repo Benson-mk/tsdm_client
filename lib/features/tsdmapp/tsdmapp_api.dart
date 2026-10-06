@@ -4,6 +4,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:universal_html/html.dart' as uh;
+import 'package:universal_html/parsing.dart';
 
 /// The forum's app API, the `tsdmapp` Discuz plugin: `plugin.php?id=tsdmapp:api&action=…`, UTF-8 JSON.
 ///
@@ -146,4 +148,40 @@ TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since})
     return null;
   }
   return (checkedToday: checked == 1, openNow: window['open_now'] == 1);
+}
+
+/// Query parameter asking a forum page for its JSON mode (stage 2: thread and forum pages).
+///
+/// The forum renders the page as usual and, with the plugin, answers JSON holding the blocks the app's parsers read
+/// (`document`), cut from its final output: same permissions and content as the web page, without header, footer and
+/// sidebar. Without the plugin (or with it switched off) the parameter is ignored and the page comes back as usual.
+const tsdmAppJsonQuery = 'tsdmapp=json';
+
+/// Add [tsdmAppJsonQuery] to [url].
+String withTsdmAppJson(String url) => '$url${url.contains('?') ? '&' : '?'}$tsdmAppJsonQuery';
+
+/// The document to parse from a forum page answer [data]: the web page itself, or the page rebuilt from the blocks of
+/// a JSON answer. A thread answer also gets the `<link>` to the thread the thread parser reads the tid from.
+uh.Document tsdmAppPageDocument(Object? data) {
+  final Object? json;
+  if (data is Map<String, dynamic>) {
+    json = data;
+  } else if (data is String && data.trimLeft().startsWith('{')) {
+    try {
+      json = jsonDecode(data);
+    } on FormatException {
+      return parseHtmlDocument(data);
+    }
+  } else {
+    return parseHtmlDocument(data is String ? data : '');
+  }
+  if (json is! Map<String, dynamic> || json['document'] is! String) {
+    return parseHtmlDocument(data is String ? data : '');
+  }
+  // The links of the page head (the thread parser and the report links read the tid from them); older answers had none.
+  final tid = json['thread'] is Map<String, dynamic> ? (json['thread'] as Map<String, dynamic>)['tid'] : null;
+  final head = json['head'] is String && (json['head'] as String).isNotEmpty
+      ? json['head'] as String
+      : (tid is int ? '<link href="forum.php?mod=viewthread&amp;tid=$tid" />' : '');
+  return parseHtmlDocument('<html><head>$head</head><body>${json['document']}</body></html>');
 }

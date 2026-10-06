@@ -6,6 +6,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/utils/group.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -20,7 +21,10 @@ class ForumRepository {
       AsyncEither(() async {
         final fetchUrl = _formatForumUrl(fid, pageNumber, filterState);
         final netClient = getIt.get<NetClientProvider>();
-        final respEither = await netClient.getUri(fetchUrl).run();
+        // JSON mode of the forum's app API when the forum has it, the web page otherwise (see TsdmAppApi).
+        final respEither = await netClient
+            .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, 'tsdmapp': 'json'}))
+            .run();
         if (respEither.isLeft()) {
           return left(respEither.unwrapErr());
         }
@@ -28,8 +32,7 @@ class ForumRepository {
         if (resp.statusCode != HttpStatus.ok) {
           return left(HttpRequestFailedException(resp.statusCode));
         }
-        final document = parseHtmlDocument(resp.data as String);
-        return right(document);
+        return right(tsdmAppPageDocument(resp.data));
       });
 
   Uri _formatForumUrl(String fid, int pageNumber, FilterState filterState) {

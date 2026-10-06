@@ -143,6 +143,8 @@ void main() {
         'fid': '73',
         'page': '1',
         'forumdefstyle': 'yes',
+        // JSON mode of the forum's app API; ignored by a forum without it.
+        'tsdmapp': 'json',
         'mobile': 'no',
       });
       expect(parseForumPage(document, '73').normalThreadList.map((e) => e.threadID), ['1000003', '1000002']);
@@ -166,6 +168,8 @@ void main() {
         'fid': '73',
         'page': '3',
         'forumdefstyle': 'yes',
+        // JSON mode of the forum's app API; ignored by a forum without it.
+        'tsdmapp': 'json',
         'recommend': '1',
         'orderby': 'dateline',
         'typeid': '390',
