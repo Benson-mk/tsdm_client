@@ -183,7 +183,8 @@ void main() {
       final cubit = UpdateDownloadCubit(repository: repository, supported: true, currentVersionCode: 121);
       addTearDown(cubit.close);
       await cubit.restore(_info);
-      await pumpEventQueue();
+      // The cleanup runs in the background: wait for it, a slow file system finishes after the event queue.
+      await cubit.cleanupDone;
       expect(left(), [
         'apply-update.ps1',
         'backup-120-2',

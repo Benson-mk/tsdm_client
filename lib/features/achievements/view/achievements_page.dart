@@ -10,6 +10,7 @@ import 'package:tsdm_client/features/achievements/cubit/achievements_cubit.dart'
 import 'package:tsdm_client/features/achievements/models/achievement_page_data.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -43,9 +44,9 @@ class _AchievementsPageState extends State<AchievementsPage> {
       _cubit = AchievementsCubit(
         currentUid: () => auth.effectiveCurrentUid,
         fetchPage: () async {
-          final result = await getIt.get<NetClientProvider>().get(achievementsUrl).run();
+          final result = await getIt.get<NetClientProvider>().get(withTsdmAppJson(achievementsUrl)).run();
           return switch (result) {
-            Right(:final value) => value.data as String,
+            Right(:final value) => tsdmAppPageHtml(value.data),
             Left(:final value) => throw value,
           };
         },

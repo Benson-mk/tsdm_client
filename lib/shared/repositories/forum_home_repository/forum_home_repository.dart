@@ -7,12 +7,12 @@ import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dar
 import 'package:tsdm_client/features/red_packet/repository/daily_rewards_repository.dart';
 import 'package:tsdm_client/features/red_packet/repository/red_packet_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
-import 'package:universal_html/parsing.dart';
 
 /// A repository that fetches the homepage html data from website.
 ///
@@ -85,7 +85,8 @@ final class ForumHomeRepository with LoggerMixin {
     final client = getIt.get<NetClientProvider>();
     final cookie = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>() : null;
     final uid = cookie?.userLoginInfo.uid;
-    final first = await client.get(homePage).mapHttp((v) => parseHtmlDocument(v.data as String)).run();
+    // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+    final first = await client.get(withTsdmAppJson(homePage)).mapHttp((v) => tsdmAppPageDocument(v.data)).run();
     if (first.isLeft()) return first;
     final document = first.unwrap();
     bool isCurrent() => cookie?.userLoginInfo.uid == uid;
@@ -113,7 +114,7 @@ final class ForumHomeRepository with LoggerMixin {
     if (refresh && isCurrent()) {
       // Not recursive: one best-effort reload updates the balance and removes the claimed packet entry.
       try {
-        final updated = await client.get(homePage).mapHttp((v) => parseHtmlDocument(v.data as String)).run();
+        final updated = await client.get(withTsdmAppJson(homePage)).mapHttp((v) => tsdmAppPageDocument(v.data)).run();
         if (updated.isRight() && isCurrent() && parseLoggedUidFromDocument(updated.unwrap()) == uid) return updated;
       } on Object {
         warning('daily rewards homepage reload failed; keep the original page');

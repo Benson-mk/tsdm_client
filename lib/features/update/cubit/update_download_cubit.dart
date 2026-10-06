@@ -2,6 +2,7 @@ import 'dart:io' as io;
 
 import 'package:bloc/bloc.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
 import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
@@ -107,6 +108,10 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
   CancelToken? _token;
   DownloadedUpdate? _downloaded;
   Future<void>? _cleanup;
+
+  /// Completes when the cache cleanup started by [restore] is over (for tests; the cleanup runs in the background).
+  @visibleForTesting
+  Future<void> get cleanupDone async => _cleanup?.catchError((Object _) {});
 
   void _stage(UpdateDownloadStatus status, {int? received, int? total, UpdateDownloadFailure? failure}) {
     if (!isClosed) {

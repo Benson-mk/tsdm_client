@@ -1,6 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/title_shop/models/title_shop.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/parsing.dart';
 
@@ -20,8 +21,9 @@ class TitleShopRepository {
 
   /// Uses the account-bound client; the purchase is a single attempt that follows no redirect.
   factory TitleShopRepository.network(NetClientProvider client) => TitleShopRepository(
-    getPage: (url) async => switch (await client.get(url).run()) {
-      Right(:final value) => value.data as String,
+    // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+    getPage: (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) => tsdmAppPageHtml(value.data),
       Left(:final value) => throw value,
     },
     postForm: (url, body) async => switch (await client.postForm(url, data: body, singleAttempt: true).run()) {

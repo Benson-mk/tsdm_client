@@ -10,6 +10,7 @@ import 'package:tsdm_client/features/authentication/repository/authentication_re
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/medal_center/cubit/medal_center_cubit.dart';
 import 'package:tsdm_client/features/medal_center/models/medal_catalog.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -50,9 +51,10 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
       _cubit = MedalCenterCubit(
         currentUid: () => auth.effectiveCurrentUid,
         fetchPage: (url) async {
-          final result = await getIt.get<NetClientProvider>().get(url).run();
+          // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+          final result = await getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).run();
           return switch (result) {
-            Right(:final value) => value.data as String,
+            Right(:final value) => tsdmAppPageHtml(value.data),
             Left(:final value) => throw value,
           };
         },
