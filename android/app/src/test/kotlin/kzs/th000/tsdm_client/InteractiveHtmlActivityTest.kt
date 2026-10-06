@@ -1,11 +1,17 @@
 package kzs.th000.tsdm_client
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.*
@@ -80,6 +86,55 @@ class InteractiveHtmlActivityTest {
             request("https://example.com/payload.js", main = false))) {
             assertEquals(403, view.webViewClient.shouldInterceptRequest(view, candidate)!!.statusCode)
         }
+        controller.pause().stop().destroy()
+    }
+
+    private fun viewerManifestEntry(): Element {
+        val root = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(File(requireNotNull(System.getProperty("appManifest")))).documentElement
+        val activities = root.getElementsByTagName("activity")
+        return (0 until activities.length).map { activities.item(it) as Element }
+            .single { it.getAttribute("android:name") == InteractiveHtmlActivity::class.java.name }
+    }
+
+    // Rotating, resizing the window or switching dark mode recreated the viewer, which loaded the post again.
+    @Test fun configurationChangesKeepThePageAndFollowDarkMode() {
+        val handled = viewerManifestEntry().getAttribute("android:configChanges").split("|").toSet()
+        assertTrue(handled.containsAll(setOf("orientation", "screenSize", "screenLayout", "smallestScreenSize", "uiMode", "density")))
+
+        val controller = Robolectric.buildActivity(InteractiveHtmlActivity::class.java, launchIntent()).setup()
+        val activity = controller.get()
+        val view = viewer(activity)
+        val body = view.parent as LinearLayout
+        val title = (body.getChildAt(0) as LinearLayout).getChildAt(1) as TextView
+        val loaded = shadowOf(view).lastLoadedUrl
+        assertEquals(Color.WHITE, (body.background as ColorDrawable).color)
+
+        val night = Configuration(activity.resources.configuration).apply {
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_YES
+            orientation = Configuration.ORIENTATION_LANDSCAPE
+        }
+        activity.onConfigurationChanged(night)
+        assertSame(view, viewer(activity))
+        assertEquals(loaded, shadowOf(view).lastLoadedUrl)
+        assertFalse(shadowOf(view).wasDestroyCalled())
+        assertEquals(Color.rgb(25, 27, 31), (body.background as ColorDrawable).color)
+        assertEquals(Color.WHITE, title.currentTextColor)
+        controller.pause().stop().destroy()
+    }
+
+    // The texts come translated from the app instead of tables kept in Kotlin.
+    @Test fun viewerShowsTheTextsSentByTheApp() {
+        val intent = InteractiveHtmlActivity.intent(RuntimeEnvironment.getApplication(), html, source, "guest", "42", "en",
+            mapOf("title" to "Sent title", "back" to "Sent back", "loading" to "Sent loading"))
+        assertEquals("Sent title", intent.getBundleExtra(InteractiveHtmlActivity.EXTRA_LABELS)!!.getString("title"))
+        val controller = Robolectric.buildActivity(InteractiveHtmlActivity::class.java, intent).setup()
+        val body = viewer(controller.get()).parent as LinearLayout
+        val toolbar = body.getChildAt(0) as LinearLayout
+        assertEquals("Sent back", (toolbar.getChildAt(0) as Button).text.toString())
+        assertEquals("Sent title", (toolbar.getChildAt(1) as TextView).text.toString())
+        assertEquals("missing: the English table", "Original", (toolbar.getChildAt(2) as Button).text.toString())
+        assertEquals("Sent loading", (body.getChildAt(1) as TextView).text.toString())
         controller.pause().stop().destroy()
     }
 

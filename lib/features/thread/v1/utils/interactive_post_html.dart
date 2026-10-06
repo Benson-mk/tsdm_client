@@ -7,11 +7,37 @@ final _interactiveMarkup = RegExp(
 );
 final _leadingCell = RegExp(r'^\s*<(?:td|th)(?:\s|>)', caseSensitive: false);
 final _leadingRow = RegExp(r'^\s*<tr(?:\s|>)', caseSensitive: false);
+
+/// Handlers of well known Discuz helpers on images and links, with any arguments.
 final _nativeHandler = RegExp(
   r'^\s*(?:return\s+)?(?:zoom|showWindow|showMenu|hideMenu|showTip|hideTip|atarget|attachimg|thumbImg|img_onmouseoverfunc)'
   r'\s*\([^;{}]*\)\s*;?\s*(?:return\s+(?:false|true)\s*;?\s*)?$',
   caseSensitive: false,
 );
+
+/// A handler that is one plain call of a function, optionally returning its result or a boolean afterwards. Matched
+/// against the value with its string literals emptied, so the arguments cannot hide statements.
+final _singleCall = RegExp(
+  r'^\s*(?:return\s+)?([A-Za-z_$][\w$]*)\s*\(([^;{}()]*)\)\s*;?\s*(?:return\s+(?:false|true)\s*;?\s*)?$',
+);
+final _callee = RegExp(r'^\s*(?:return\s+)?([A-Za-z_$][\w$]*)\s*\(');
+final _stringLiteral = RegExp(r'''"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`''');
+
+/// An assignment or increment inside the arguments is authored behaviour, a comparison is not.
+final _argumentWrite = RegExp(r'(?<![=!<>])=(?!=)|\+\+|--');
+
+/// Functions a post may define in its own scripts: declarations, assigned function expressions or arrows, variables
+/// and globals assigned on `window`.
+final _definedFunction = RegExp(
+  r'\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)'
+  r'|([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)'
+  r'|\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*='
+  r'|\b(?:window|self|globalThis)\.([A-Za-z_$][\w$]*)\s*=(?!=)',
+);
+
+/// Browser functions are never forum helpers: a handler calling them does something the native reader does not.
+const _browserActions = {'alert', 'confirm', 'prompt', 'eval', 'open', 'print', 'fetch', 'setTimeout', 'setInterval'};
+
 final _nativeNeteasePlayer = RegExp(r'//music\.163\.com/outchain/player\?.*id=\d+.*');
 final _nativePollIdentity = RegExp(r'''^\s*(?:var\s+)?discuz_uid\s*=\s*['"]\d+['"]\s*;?\s*$''');
 
@@ -67,6 +93,7 @@ bool _containsInteractiveContent(Node root, {bool bareFragment = false}) {
     _ => const <Element>[],
   };
   final hasNativePoll = bareFragment && elements.any((element) => element.localName == 'form' && element.id == 'poll');
+  final defined = _definedFunctions(elements);
   for (final element in elements) {
     if (_isNativeControl(element, root)) {
       continue;
@@ -94,14 +121,48 @@ bool _containsInteractiveContent(Node root, {bool bareFragment = false}) {
       if (attribute.value.trim().isEmpty) {
         continue;
       }
-      // Images and links already have native tap handlers for these Discuz helpers. A custom handler still counts.
-      if ((tag == 'img' || tag == 'a') && _nativeHandler.hasMatch(attribute.value)) {
+      // Images and links already have native tap handlers. A custom handler still counts.
+      if ((tag == 'img' || tag == 'a') && _isNativeHandler(element, attribute.value, defined)) {
         continue;
       }
       return true;
     }
   }
   return false;
+}
+
+/// Names of the functions the post's own scripts define.
+Set<String> _definedFunctions(Iterable<Element> elements) => {
+  for (final script in elements.where((element) => element.localName == 'script'))
+    for (final match in _definedFunction.allMatches(script.text))
+      match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4)!,
+};
+
+/// Whether the handler [value] on an image or link is forum markup rather than something the author wrote.
+///
+/// Instead of listing every Discuz helper, a handler is native when it is a single plain call of a function the post
+/// does not define itself: the forum's helpers live in the forum's scripts, which a post does not carry. A call of a
+/// function defined by the post, more than one statement, an assignment, a browser function, or a link whose only
+/// action is the handler (no real `href`) is authored.
+bool _isNativeHandler(Element element, String value, Set<String> defined) {
+  final callee = _callee.firstMatch(value)?.group(1);
+  if (callee == null || defined.contains(callee)) {
+    return false;
+  }
+  if (_nativeHandler.hasMatch(value)) {
+    return true;
+  }
+  final call = _singleCall.firstMatch(value.replaceAll(_stringLiteral, '""'));
+  if (call == null || _browserActions.contains(callee) || _argumentWrite.hasMatch(call.group(2)!)) {
+    return false;
+  }
+  if (element.localName == 'a') {
+    final href = element.attributes['href']?.trim().toLowerCase() ?? '';
+    if (href.isEmpty || href.startsWith('#') || href.startsWith('javascript:')) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool _isNativeControl(Element element, Node root) {

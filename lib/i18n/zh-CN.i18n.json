@@ -1209,7 +1209,20 @@
       "description": "打开此楼层的互动排版、表单和按钮。",
       "browserDescription": "在浏览器中打开原帖，使用其中的互动内容。",
       "browserFallback": "已在浏览器中打开原帖。",
-      "openFailed": "无法打开互动内容，请尝试在浏览器中打开原帖。"
+      "openFailed": "无法打开互动内容，请尝试在浏览器中打开原帖。",
+      "viewer": {
+        "title": "互动内容",
+        "back": "返回",
+        "original": "原文",
+        "originalDescription": "在浏览器查看原文",
+        "loading": "正在加载…",
+        "loadFailed": "互动内容无法加载，请点击「原文」查看。",
+        "openFailed": "无法打开互动内容",
+        "linkFailed": "无法打开链接",
+        "browserFailed": "无法打开浏览器",
+        "downloadInOriginal": "请从原文下载文件",
+        "pageMessage": "页面提示"
+      }
     },
     "reply": "回复",
     "rate": "评分",

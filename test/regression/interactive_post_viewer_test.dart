@@ -75,7 +75,12 @@ void main() {
       'accountScope': '1234',
       'postId': '998877',
       'locale': LocaleSettings.currentLocale.languageTag,
+      'labels': interactivePostViewerLabels(),
     });
+    expect(
+      (viewerCalls.single.arguments as Map<Object?, Object?>)['labels'],
+      containsPair('title', 'Interactive content'),
+    );
     expect(browserCalls, isEmpty);
     expect(launcherCalls, isEmpty);
   });

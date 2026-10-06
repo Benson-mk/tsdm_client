@@ -123,6 +123,18 @@ class InteractiveHtmlPolicyTest {
         assertEquals("互動內容", InteractiveHtmlActivity.Labels.forLocale("zh-Hant").title)
     }
 
+    // The app sends the texts translated from its own strings; the tables only fill in what is missing.
+    @Test fun labelsSentByTheAppWinAndMissingOnesFallBack() {
+        val sent = InteractiveHtmlActivity.labelMap(mapOf("title" to "From the app", "back" to " ", "unknown" to "x", "loading" to 3))
+        assertEquals(mapOf("title" to "From the app", "back" to " "), sent)
+        val labels = InteractiveHtmlActivity.Labels.resolve(sent, "zh-TW")
+        assertEquals("From the app", labels.title)
+        assertEquals("返回", labels.back)
+        assertEquals("正在載入…", labels.loading)
+        assertEquals(InteractiveHtmlActivity.Labels.forLocale("en"), InteractiveHtmlActivity.Labels.resolve(emptyMap(), "en"))
+        assertEquals(11, InteractiveHtmlActivity.Labels.KEYS.size)
+    }
+
     // #165: closing the viewer closed the image sockets on the main thread and Android killed the app.
     @Test fun closingTheImageLoaderReturnsAtOnceAndRefusesNewLoads() {
         val images = InteractiveHtmlImages(setOf("https://example.com/a.png"))

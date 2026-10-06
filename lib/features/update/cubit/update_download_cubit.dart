@@ -177,11 +177,20 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
     final token = CancelToken();
     _token = token;
     emit(UpdateDownloadState(status: UpdateDownloadStatus.resolving, version: info.version));
-    final old = _downloaded;
-    _downloaded = null;
-    await _repository.discard(old);
-    await _cleanup;
     try {
+      // A run that can never install (e.g. not the portable Windows folder) learns it before the download.
+      final blocked = await _repository.installer.preflight();
+      if (isClosed || _token != token || token.isCancelled) return;
+      if (blocked != null) {
+        _stage(UpdateDownloadStatus.failed, failure: blocked);
+        return;
+      }
+      final old = _downloaded;
+      _downloaded = null;
+      await _repository.discard(old);
+      // Never throws; awaited only so the cleanup does not remove the new partial file.
+      await _cleanup?.catchError((Object _) {});
+      if (isClosed || _token != token || token.isCancelled) return;
       final update = await _repository.download(
         info,
         cancelToken: token,

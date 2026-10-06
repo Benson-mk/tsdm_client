@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:cryptography/dart.dart';
 import 'package:dio/dio.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
 import 'package:tsdm_client/features/update/repository/windows_update_installer.dart';
+import 'package:tsdm_client/instance.dart';
 
 /// Actionable failures, translated by the update page instead of exposing raw network errors.
 enum UpdateDownloadFailure {
@@ -104,6 +106,12 @@ abstract interface class UpdateInstaller {
   /// Opens the settings that allow installation, false when the platform has none.
   Future<bool> openPermissionSettings();
 
+  /// Why an update downloaded now could not be installed, null when nothing is known to stand in the way.
+  ///
+  /// Checked before downloading, so a run that can never install (e.g. not the portable Windows folder, or a folder
+  /// that cannot be written) does not download the release first.
+  Future<UpdateDownloadFailure?> preflight();
+
   /// Installs [update] after the user asked for it.
   Future<bool> install(DownloadedUpdate update);
 }
@@ -132,6 +140,10 @@ class AndroidUpdateInstaller implements UpdateInstaller {
   /// Opens Android's per-application installation permission settings.
   @override
   Future<bool> openPermissionSettings() async => await _channel.invokeMethod<bool>('openInstallPermission') ?? false;
+
+  /// The system installer checks the package itself; the installation permission is asked for at Install.
+  @override
+  Future<UpdateDownloadFailure?> preflight() async => null;
 
   /// Native code rechecks the private path, package, version and signer before granting temporary read access.
   @override
@@ -216,18 +228,29 @@ class ReleaseUpdateRepository {
         await file.length() != asset.size) {
       return false;
     }
+    // Hashing tens of megabytes in pure Dart takes seconds: keep it off the UI isolate, restore() runs at startup.
+    // A cancellation cannot stop the background hash, but its result is never used then.
+    final path = file.path;
+    final size = asset.size;
+    final actual = await Isolate.run(() => hashFile(path, size));
+    if (cancelToken.cancelError case final error?) throw error;
+    return actual != null && actual == asset.digest;
+  }
+
+  /// Lowercase hex SHA-256 of the file at [path], null when it does not hold exactly [size] bytes.
+  ///
+  /// Runs in a background isolate; only the path and size are sent to it.
+  static Future<String?> hashFile(String path, int size) async {
     final hash = const DartSha256().newHashSink();
     var received = 0;
-    await for (final bytes in file.openRead()) {
-      if (cancelToken.cancelError case final error?) throw error;
+    await for (final bytes in File(path).openRead()) {
       received += bytes.length;
-      if (received > asset.size) return false;
+      if (received > size) return null;
       hash.add(bytes);
     }
     hash.close();
-    final actual = (await hash.hash()).bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-    if (cancelToken.cancelError case final error?) throw error;
-    return received == asset.size && actual == asset.digest;
+    if (received != size) return null;
+    return (await hash.hash()).bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 
   /// Recover a completed download after Android restarts the app when installation permission changes.
@@ -390,10 +413,21 @@ class ReleaseUpdateRepository {
           }
         }
       }
-    } on FileSystemException {
-      // Leftovers are retried at the next check; they never block an update.
-    } on PlatformException {
-      // Same as above.
+    } on Exception catch (e, st) {
+      // Leftovers are retried at the next check; they never block an update. Besides file system errors this also
+      // covers a native side that has no update folder (UpdateDownloadException, MissingPluginException): the
+      // result is awaited by nobody at startup, so nothing may escape from here.
+      _logCleanupFailure(e, st);
+    }
+  }
+
+  static void _logCleanupFailure(Exception error, StackTrace stackTrace) {
+    try {
+      talker.warning('update cache cleanup failed: $error', error, stackTrace);
+      // Logging must not throw either, also where no logger was set up (tests, a check before initLogger).
+      // ignore: avoid_catching_errors
+    } on Error {
+      // Nothing to log to.
     }
   }
 
