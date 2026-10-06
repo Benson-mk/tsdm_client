@@ -1439,3 +1439,21 @@ B. 論壇提醒屏蔽規則
   - test_191：閘門判斷；沒裝、關閉、429、斷線、舊版插件；提醒輪詢只發 1 個請求或照舊 4 個；簽到各狀態。
   - 依序回應網頁的舊測試（036、046、060、190）明確設定成「沒有 API」。
   - JSON 格式取自測試站插件 1.1.0 的實際回應。
+
+## 52. App 內更新與互動檢視的審查修正（2026-10-06）
+
+審查 App 內更新（#48）與互動檢視（#49）時找到 8 項問題，一次修正。
+
+- **互動視窗不重建**：`InteractiveHtmlActivity` 原本沒有 `configChanges`，旋轉、調整視窗大小、切換深色模式都會重建 Activity、重新載入帖子，頁面裡的 JS 狀態（測驗進度、未送出的欄位）全部消失。manifest 現在宣告 `orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|density|uiMode`，`onConfigurationChanged` 只重新套用背景、標題與狀態文字的顏色及系統列明暗，並重新要求 insets；WebView 保持同一個。
+- **互動判斷改從根本判別**：圖片、連結上的 `on*` handler 原本靠一份 Discuz 輔助函數清單判斷，清單外的論壇標記就誤判。現在收集帖子自己 `<script>` 定義的函數（`function NAME`、`NAME = function／箭頭函數`、`var/let/const NAME =`、`window.NAME =`），handler 符合以下任一項就算作者寫的：呼叫帖子自己定義的函數；不是單一呼叫（多條語句、`this.` 屬性賦值、`document.` 等）；參數裡有賦值或遞增；呼叫瀏覽器函數（`alert`、`open`…）；或是放在沒有實際 `href`（空白、`#`、`javascript:`）的連結上。其餘「單純呼叫一個帖子沒定義的函數」視為論壇標記。原本的已知清單保留，作為 `javascript:;` 連結上 `showWindow` 這類論壇寫法的例外。
+- **檢視器文字來自 App 翻譯**：Dart 端在 `openHtml` 加上 `labels`（title、back、original、originalDescription、loading、loadFailed、openFailed、linkFailed、browserFailed、downloadInOriginal、pageMessage），取自 `postCard.interactiveHtml.viewer`（三語 i18n 已補）。`MainActivity` 轉成 Bundle 放進 intent extra，Activity 優先使用；缺少或空白的項目才退回 Kotlin 內建的三語表。
+- **Windows 更新腳本必須回報已啟動**：`install()` 啟動 PowerShell 前先刪除舊的 `<updates>/apply-update.started`，並以新參數 `-Marker`、`-Nonce` 傳入隨機 nonce；腳本的第一個動作就是把 nonce 寫進該檔。App 最多等 5 秒，讀到相同 nonce 才排定 800 ms 後退出；沒讀到就丟出 `UpdateDownloadFailure.install`，App 不退出。腳本仍只含 ASCII。
+- **App 沒退出時不再啟動第二個**：腳本以 `$exited` 記錄 App 是否在 60 秒內結束；沒結束時只寫日誌，不執行最後的 `Start-Process`。
+- **下載前先檢查**：`UpdateInstaller` 新增 `preflight()`，回傳 null 表示可安裝。Android 一律 null；Windows 檢查是否為便攜版資料夾（`tsdm_client.exe` 旁有 `flutter_windows.dll`）以及可否寫入，分別回傳 `unsupported`、`installLocation`。`UpdateDownloadCubit.download()` 一開始就呼叫，失敗時直接顯示失敗、不下載；`install()` 仍會再檢查一次。
+- **清理不再丟例外**：`ReleaseUpdateRepository.cleanup()` 改為攔下所有 `Exception`（包括 `UpdateDownloadException`、`MissingPluginException`）並寫入日誌（沒有 logger 時略過）；`download()` 等待清理時也忽略其錯誤，卡片不會停在「正在查找」。
+- **雜湊移到背景**：`_matchesAsset` 先在主 isolate 檢查取消與檔案大小，再用 `Isolate.run` 呼叫 `ReleaseUpdateRepository.hashFile` 計算 SHA-256；計算期間無法中斷，但結束後若已取消就丟棄結果並拋出取消。
+- **驗證**：
+  - test_192：清理遇到三種例外仍完成且之後的下載會結束；背景雜湊的正確值與長度不符；雜湊期間取消會丟棄結果且保留檔案；非便攜版、不可寫入時下載前就失敗且沒有網路請求；腳本沒回報時不退出、舊 marker 不算數；腳本第一行寫 marker、只在 `$exited` 時重新啟動；新增的互動判斷正反例；三語 labels 的鍵與 Kotlin 端一致。
+  - test_188、interactive_post_viewer_test 依新參數更新。
+  - 原生：InteractiveHtmlActivityTest 驗證 manifest 的 configChanges、設定變更後 WebView 不重載且顏色跟著深色模式、畫面使用 App 傳入的文字；InteractiveHtmlPolicyTest 驗證 labels 的取用與退回。
+  - 未在實機或 Windows 上執行更新腳本。

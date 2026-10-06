@@ -36,6 +36,24 @@ Uri? interactivePostSourceUrl(String postId) {
   );
 }
 
+/// Texts of the native viewer in the language chosen in the app, keyed as the viewer reads them.
+Map<String, String> interactivePostViewerLabels() {
+  final tr = LocaleSettings.instance.currentTranslations.postCard.interactiveHtml.viewer;
+  return {
+    'title': tr.title,
+    'back': tr.back,
+    'original': tr.original,
+    'originalDescription': tr.originalDescription,
+    'loading': tr.loading,
+    'loadFailed': tr.loadFailed,
+    'openFailed': tr.openFailed,
+    'linkFailed': tr.linkFailed,
+    'browserFailed': tr.browserFailed,
+    'downloadInOriginal': tr.downloadInOriginal,
+    'pageMessage': tr.pageMessage,
+  };
+}
+
 /// Open already-fetched authored HTML only after the reader asks to interact with it.
 ///
 /// [currentUid] identifies the currently logged-in reader for isolated local storage. It must never be the author
@@ -59,6 +77,8 @@ Future<InteractivePostOpenResult> openInteractivePost({
         'postId': postId,
         // The viewer's own texts follow the language chosen in the app, not the system one (#165).
         'locale': LocaleSettings.currentLocale.languageTag,
+        // Translated here so the native viewer does not keep its own copy of these texts.
+        'labels': interactivePostViewerLabels(),
       });
       if (opened ?? false) {
         return InteractivePostOpenResult.viewer;

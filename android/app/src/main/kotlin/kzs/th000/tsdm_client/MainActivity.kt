@@ -81,6 +81,7 @@ class MainActivity: FlutterActivity() {
                             call.argument<Any>("accountScope") as? String,
                             call.argument<Any>("postId") as? String,
                             call.argument<Any>("locale") as? String,
+                            call.argument<Any>("labels") as? Map<*, *>,
                         ))
                         result.success(true)
                     } catch (error: InteractiveHtmlPolicy.Failure) {

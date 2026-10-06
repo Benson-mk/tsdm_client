@@ -39,7 +39,12 @@ class _WindowsInstaller extends WindowsUpdateInstaller {
     : super(
         updateDirectory: updates,
         executable: executable,
-        launch: (executable, arguments) async => launches.add([executable, ...arguments]),
+        launch: (executable, arguments) async {
+          launches.add([executable, ...arguments]);
+          // What the script does first: report that it runs.
+          String arg(String name) => arguments[arguments.indexOf(name) + 1];
+          File(arg('-Marker')).writeAsStringSync('${arg('-Nonce')}\r\n');
+        },
         quit: () async => quits.add(1),
       );
 

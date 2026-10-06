@@ -1209,7 +1209,20 @@
       "description": "開啟此樓層的互動排版、表單與按鈕。",
       "browserDescription": "在瀏覽器開啟原文，使用其中的互動內容。",
       "browserFallback": "已在瀏覽器開啟原文。",
-      "openFailed": "無法開啟互動內容，請嘗試在瀏覽器開啟原文。"
+      "openFailed": "無法開啟互動內容，請嘗試在瀏覽器開啟原文。",
+      "viewer": {
+        "title": "互動內容",
+        "back": "返回",
+        "original": "原文",
+        "originalDescription": "在瀏覽器查看原文",
+        "loading": "正在載入…",
+        "loadFailed": "互動內容無法載入，請點選「原文」查看。",
+        "openFailed": "無法開啟互動內容",
+        "linkFailed": "無法開啟連結",
+        "browserFailed": "無法開啟瀏覽器",
+        "downloadInOriginal": "請從原文下載檔案",
+        "pageMessage": "頁面提示"
+      }
     },
     "reply": "回覆",
     "rate": "評分",

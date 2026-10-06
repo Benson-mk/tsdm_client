@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
@@ -16,6 +17,10 @@ typedef DetachedLauncher = Future<void> Function(String executable, List<String>
 /// PowerShell script waits for the app to exit, copies the new files over the old ones and starts the app again. The
 /// files it replaces are backed up first and put back when copying fails. Only the files of the release are written:
 /// other files in the folder are left alone, and the user data lives in the application support folder anyway.
+///
+/// The app only exits once the script proved it runs by writing [startedMarkerName] with the nonce of this install:
+/// an execution policy, AppLocker or an antivirus may stop PowerShell or the script, and quitting then would leave
+/// the user without the app and without the update.
 class WindowsUpdateInstaller implements UpdateInstaller {
   /// Optional dependencies support offline tests.
   WindowsUpdateInstaller({
@@ -23,15 +28,18 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     String? updateDirectory,
     DetachedLauncher? launch,
     Future<void> Function()? quit,
+    Duration startTimeout = const Duration(seconds: 5),
   }) : _executable = executable,
        _updateDirectory = updateDirectory,
        _launch = launch ?? _launchDetached,
-       _quit = quit ?? exitApp;
+       _quit = quit ?? exitApp,
+       _startTimeout = startTimeout;
 
   final String? _executable;
   final String? _updateDirectory;
   final DetachedLauncher _launch;
   final Future<void> Function() _quit;
+  final Duration _startTimeout;
 
   /// Executable name inside the release zip and the installed folder.
   static const executableName = 'tsdm_client.exe';
@@ -44,6 +52,9 @@ class WindowsUpdateInstaller implements UpdateInstaller {
 
   /// Log written by the update script, kept for diagnosis.
   static const logName = 'update.log';
+
+  /// Written by the update script as its first action, holding the nonce it was started with.
+  static const startedMarkerName = 'apply-update.started';
 
   static Future<void> _launchDetached(String executable, List<String> arguments) async {
     await Process.start(executable, arguments, mode: ProcessStartMode.detached);
@@ -62,18 +73,31 @@ class WindowsUpdateInstaller implements UpdateInstaller {
   @override
   Future<bool> openPermissionSettings() async => false;
 
+  File get _executableFile => File(_executable ?? Platform.resolvedExecutable);
+
   @override
-  Future<bool> install(DownloadedUpdate update) async {
-    final executable = File(_executable ?? Platform.resolvedExecutable);
+  Future<UpdateDownloadFailure?> preflight() async => _check(_executableFile);
+
+  static UpdateDownloadFailure? _check(File executable) {
     final installDir = executable.parent;
     // A debug run or an unknown layout is not a portable release folder: never copy files into it.
     if (p.basename(executable.path).toLowerCase() != executableName ||
         !File(p.join(installDir.path, 'flutter_windows.dll')).existsSync()) {
-      throw const UpdateDownloadException(UpdateDownloadFailure.unsupported);
+      return UpdateDownloadFailure.unsupported;
     }
-    _checkWritable(installDir);
+    return _isWritable(installDir) ? null : UpdateDownloadFailure.installLocation;
+  }
+
+  @override
+  Future<bool> install(DownloadedUpdate update) async {
+    final executable = _executableFile;
+    final installDir = executable.parent;
+    // Checked again: the folder may have changed since the download started.
+    if (_check(executable) case final failure?) throw UpdateDownloadException(failure);
 
     final updates = await directory();
+    final marker = File(p.join(updates, startedMarkerName));
+    final nonce = _nonce();
     final staging = Directory(p.join(updates, 'staging-${update.versionCode}'));
     // A new backup folder every time: one kept after an incomplete rollback is never overwritten.
     final backup = p.join(updates, 'backup-${update.versionCode}-${DateTime.now().millisecondsSinceEpoch}');
@@ -82,6 +106,8 @@ class WindowsUpdateInstaller implements UpdateInstaller {
       await extractRelease(File(update.path), staging);
       final script = File(p.join(updates, scriptName));
       await script.writeAsString(updateScript, flush: true);
+      // A marker left by an earlier attempt must not pass for this one.
+      if (marker.existsSync()) await marker.delete();
       await _launch('powershell.exe', [
         '-NoProfile',
         '-NonInteractive',
@@ -101,10 +127,18 @@ class WindowsUpdateInstaller implements UpdateInstaller {
         backup,
         '-Log',
         p.join(updates, logName),
+        '-Marker',
+        marker.path,
+        '-Nonce',
+        nonce,
       ]);
     } on FileSystemException {
       throw const UpdateDownloadException(UpdateDownloadFailure.storage);
     } on ProcessException {
+      throw const UpdateDownloadException(UpdateDownloadFailure.install);
+    }
+    // Started is not running: the app stays open unless the script reports in.
+    if (!await _waitForStart(marker, nonce)) {
       throw const UpdateDownloadException(UpdateDownloadFailure.install);
     }
     // Leave a moment for the page to show that the app restarts, then exit so the script can replace the files.
@@ -112,14 +146,33 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     return true;
   }
 
-  static void _checkWritable(Directory dir) {
+  Future<bool> _waitForStart(File marker, String nonce) async {
+    final deadline = DateTime.now().add(_startTimeout);
+    while (true) {
+      try {
+        if (marker.existsSync() && (await marker.readAsString()).trim() == nonce) return true;
+      } on FileSystemException {
+        // Still being written by the script: read again.
+      }
+      if (!DateTime.now().isBefore(deadline)) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  static String _nonce() {
+    final random = Random.secure();
+    return List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  static bool _isWritable(Directory dir) {
     final probe = File(p.join(dir.path, '.tsdm_update_probe'));
     try {
       probe
         ..writeAsStringSync('')
         ..deleteSync();
+      return true;
     } on FileSystemException {
-      throw const UpdateDownloadException(UpdateDownloadFailure.installLocation);
+      return false;
     }
   }
 
@@ -180,8 +233,12 @@ param(
   [Parameter(Mandatory = $true)][string]$Source,
   [Parameter(Mandatory = $true)][string]$Target,
   [Parameter(Mandatory = $true)][string]$Backup,
-  [Parameter(Mandatory = $true)][string]$Log
+  [Parameter(Mandatory = $true)][string]$Log,
+  [Parameter(Mandatory = $true)][string]$Marker,
+  [Parameter(Mandatory = $true)][string]$Nonce
 )
+# First of all tell the app that the script runs; it only exits after reading this nonce.
+Set-Content -LiteralPath $Marker -Value $Nonce -Encoding ASCII
 $ErrorActionPreference = 'Stop'
 function Write-Log([string]$Message) {
   Add-Content -LiteralPath $Log -Value ('{0} {1}' -f (Get-Date -Format o), $Message) -Encoding UTF8
@@ -195,9 +252,10 @@ function Copy-WithRetry([string]$From, [string]$To) {
   Copy-Item -LiteralPath $From -Destination $To -Force
 }
 Set-Content -LiteralPath $Log -Value '' -Encoding UTF8
+$exited = $true
 try {
   $app = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($app -and -not $app.WaitForExit(60000)) { throw 'the app did not exit' }
+  if ($app -and -not $app.WaitForExit(60000)) { $exited = $false; throw 'the app did not exit' }
   Start-Sleep -Milliseconds 500
   $files = @(Get-ChildItem -LiteralPath $Source -Recurse -File | ForEach-Object {
     $_.FullName.Substring($Source.TrimEnd('\').Length).TrimStart('\')
@@ -253,6 +311,11 @@ try {
 } catch {
   Write-Log ('failed: {0}' -f $_)
 }
-Start-Process -FilePath (Join-Path $Target 'tsdm_client.exe') -WorkingDirectory $Target
+if ($exited) {
+  Start-Process -FilePath (Join-Path $Target 'tsdm_client.exe') -WorkingDirectory $Target
+} else {
+  # The app is still open: starting it again would run two instances on the same data.
+  Write-Log 'the app is still running, not starting another instance'
+}
 ''';
 }

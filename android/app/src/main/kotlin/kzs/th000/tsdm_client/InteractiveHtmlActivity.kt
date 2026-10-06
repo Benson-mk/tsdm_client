@@ -45,10 +45,13 @@ class InteractiveHtmlActivity : Activity() {
     private lateinit var content: InteractiveHtmlPolicy.Content
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
+    private lateinit var titleView: TextView
     private var webView: WebView? = null
     private var images: InteractiveHtmlImages? = null
     private var pageDialog: AlertDialog? = null
-    private val labels by lazy { Labels.forLocale(intent.getStringExtra(EXTRA_LOCALE)) }
+    private val labels by lazy {
+        Labels.resolve(labelMap(intent.getBundleExtra(EXTRA_LABELS)), intent.getStringExtra(EXTRA_LOCALE))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,11 +81,32 @@ class InteractiveHtmlActivity : Activity() {
         }
     }
 
+    /**
+     * Rotation, a window resize and a dark mode switch are handled here instead of recreating the Activity: a new
+     * Activity would load the post again and lose what the reader did in it (quiz progress, filled fields).
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::status.isInitialized) return
+        applyColors(newConfig)
+        // The new orientation or size brings new insets; the listener set in buildChrome pads for them.
+        ViewCompat.requestApplyInsets(body)
+    }
+
+    private fun applyColors(configuration: Configuration) {
+        val dark = isDark(configuration)
+        val foreground = if (dark) Color.WHITE else Color.rgb(28, 30, 34)
+        body.setBackgroundColor(if (dark) Color.rgb(25, 27, 31) else Color.WHITE)
+        titleView.setTextColor(foreground)
+        status.setTextColor(foreground)
+        WindowCompat.getInsetsController(window, body).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun buildChrome() {
-        val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        val background = if (dark) Color.rgb(25, 27, 31) else Color.WHITE
-        val foreground = if (dark) Color.WHITE else Color.rgb(28, 30, 34)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         // Draw the background under a landscape notch too; the insets below keep the controls and page clear of it.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -92,10 +116,7 @@ class InteractiveHtmlActivity : Activity() {
         }
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
-        body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(background)
-        }
+        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         ViewCompat.setOnApplyWindowInsetsListener(body) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
@@ -107,12 +128,12 @@ class InteractiveHtmlActivity : Activity() {
             contentDescription = text
             setOnClickListener { finish() }
         })
-        toolbar.addView(TextView(this).apply {
+        titleView = TextView(this).apply {
             text = labels.title
-            setTextColor(foreground)
             textSize = 18f
             gravity = android.view.Gravity.CENTER_VERTICAL
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
+        toolbar.addView(titleView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         toolbar.addView(Button(this).apply {
             text = labels.original
             contentDescription = labels.originalDescription
@@ -121,15 +142,11 @@ class InteractiveHtmlActivity : Activity() {
         body.addView(toolbar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         status = TextView(this).apply {
             text = labels.loading
-            setTextColor(foreground)
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
         body.addView(status)
         setContentView(body)
-        WindowCompat.getInsetsController(window, body).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
+        applyColors(resources.configuration)
         ViewCompat.requestApplyInsets(body)
     }
 
@@ -295,11 +312,24 @@ class InteractiveHtmlActivity : Activity() {
         const val EXTRA_ACCOUNT_SCOPE = "interactive_html.account_scope"
         const val EXTRA_POST_ID = "interactive_html.post_id"
         const val EXTRA_LOCALE = "interactive_html.locale"
+        const val EXTRA_LABELS = "interactive_html.labels"
+
+        internal fun isDark(configuration: Configuration) =
+            configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+        /** Only the string values of the known label keys, from the channel call or the intent. */
+        internal fun labelMap(source: Map<*, *>?): Map<String, String> = buildMap {
+            source?.forEach { (key, value) -> if (key is String && key in Labels.KEYS && value is String) put(key, value) }
+        }
+
+        private fun labelMap(bundle: Bundle?): Map<String, String> =
+            labelMap(bundle?.let { b -> b.keySet().associateWith { b.getString(it) } })
 
         fun intent(
             context: Context, html: String?, sourceUrl: String?, accountScope: String?, postId: String?,
-            locale: String? = null,
+            locale: String? = null, labels: Map<*, *>? = null,
         ): Intent {
+            val texts = Bundle().apply { labelMap(labels).forEach { (key, value) -> putString(key, value) } }
             val checked = InteractiveHtmlPolicy.validate(html, sourceUrl, accountScope, postId)
             return Intent(context, InteractiveHtmlActivity::class.java)
                 .putExtra(EXTRA_HTML, checked.html)
@@ -307,10 +337,14 @@ class InteractiveHtmlActivity : Activity() {
                 .putExtra(EXTRA_ACCOUNT_SCOPE, checked.accountScope)
                 .putExtra(EXTRA_POST_ID, checked.postId)
                 .putExtra(EXTRA_LOCALE, locale)
+                .putExtra(EXTRA_LABELS, texts)
         }
     }
 
-    /** Texts of the viewer in the language chosen in the app, not the system one. */
+    /**
+     * Texts of the viewer in the language chosen in the app, not the system one. The app sends them translated from
+     * its own strings; the tables below only cover a call without them (e.g. an older Dart side).
+     */
     data class Labels(
         val title: String, val back: String, val original: String, val originalDescription: String,
         val loading: String, val loadFailed: String, val openFailed: String, val linkFailed: String,
@@ -331,6 +365,25 @@ class InteractiveHtmlActivity : Activity() {
                 "Unable to open interactive content", "Unable to open link", "Unable to open browser",
                 "Open the original page to download files", "Page message",
             )
+
+            /** Keys of the texts sent by the app, in the order of the constructor. */
+            val KEYS = listOf(
+                "title", "back", "original", "originalDescription", "loading", "loadFailed", "openFailed",
+                "linkFailed", "browserFailed", "downloadInOriginal", "pageMessage",
+            )
+
+            /** The texts sent by the app in [values], each missing or blank one from the table of [tag]. */
+            fun resolve(values: Map<String, String>, tag: String?): Labels {
+                val fallback = forLocale(tag)
+                fun pick(key: String, default: String) = values[key]?.takeIf { it.isNotBlank() } ?: default
+                return Labels(
+                    pick("title", fallback.title), pick("back", fallback.back), pick("original", fallback.original),
+                    pick("originalDescription", fallback.originalDescription), pick("loading", fallback.loading),
+                    pick("loadFailed", fallback.loadFailed), pick("openFailed", fallback.openFailed),
+                    pick("linkFailed", fallback.linkFailed), pick("browserFailed", fallback.browserFailed),
+                    pick("downloadInOriginal", fallback.downloadInOriginal), pick("pageMessage", fallback.pageMessage),
+                )
+            }
 
             /** [tag] is the app's language tag (zh-CN, zh-TW, en); without one the system language decides. */
             fun forLocale(tag: String?): Labels {
