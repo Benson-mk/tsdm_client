@@ -5,11 +5,11 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/search/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
-import 'package:universal_html/parsing.dart';
 
 /// Query parameters of a new forum search, see [SearchRepository] for the meaning of each one.
 Map<String, String> buildSearchQuery({
@@ -90,7 +90,8 @@ class SearchRepository with LoggerMixin {
     }
 
     final netClient = getIt.get<NetClientProvider>();
-    final respEither = await netClient.get(_searchUrl, queryParameters: queryParameters).run();
+    // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the redirect to the results keeps it.
+    final respEither = await netClient.get(_searchUrl, queryParameters: {...queryParameters, 'tsdmapp': 'json'}).run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
     }
@@ -99,7 +100,7 @@ class SearchRepository with LoggerMixin {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
-    final document = parseHtmlDocument(resp.data as String);
+    final document = tsdmAppPageDocument(resp.data);
 
     // Server side error, e.g. "抱歉，您的搜索过于频繁" or "没有找到匹配结果".
     final errorText = document.querySelector('div#messagetext > p')?.innerText.trim();

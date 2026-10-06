@@ -157,8 +157,10 @@ TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since})
 /// sidebar. Without the plugin (or with it switched off) the parameter is ignored and the page comes back as usual.
 const tsdmAppJsonQuery = 'tsdmapp=json';
 
-/// Add [tsdmAppJsonQuery] to [url].
-String withTsdmAppJson(String url) => '$url${url.contains('?') ? '&' : '?'}$tsdmAppJsonQuery';
+/// Add [tsdmAppJsonQuery] to [url]; an AJAX url (`inajax=1`, answered as an XML fragment) is left as it is.
+String withTsdmAppJson(String url) => url.contains('inajax=1') || url.contains(tsdmAppJsonQuery)
+    ? url
+    : '$url${url.contains('?') ? '&' : '?'}$tsdmAppJsonQuery';
 
 /// The document to parse from a forum page answer [data]: the web page itself, or the page rebuilt from the blocks of
 /// a JSON answer. A thread answer also gets the `<link>` to the thread the thread parser reads the tid from.
@@ -183,5 +185,17 @@ uh.Document tsdmAppPageDocument(Object? data) {
   final head = json['head'] is String && (json['head'] as String).isNotEmpty
       ? json['head'] as String
       : (tid is int ? '<link href="forum.php?mod=viewthread&amp;tid=$tid" />' : '');
-  return parseHtmlDocument('<html><head>$head</head><body>${json['document']}</body></html>');
+  // The blocks sit inside `div#wp.wp` on the web page and some parsers match through it.
+  return parseHtmlDocument(
+    '<html><head>$head</head><body><div id="wp" class="wp">${json['document']}</div></body></html>',
+  );
+}
+
+/// The html of a forum page answer [data], for callers that hand a page around as a string: the web page itself, or
+/// the page rebuilt from the blocks of a JSON answer (see [tsdmAppPageDocument]).
+String tsdmAppPageHtml(Object? data) {
+  if (data is String && !data.trimLeft().startsWith('{')) {
+    return data;
+  }
+  return tsdmAppPageDocument(data).documentElement?.outerHtml ?? '';
 }

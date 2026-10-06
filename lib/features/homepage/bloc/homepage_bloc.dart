@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:collection/collection.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:rxdart/rxdart.dart';
@@ -405,6 +406,11 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   Future<void> _onHomepageResumeSwiper(HomepageResumeSwiper event, Emitter<HomepageState> emit) async {
     emit(state.copyWith(scrollSwiper: true));
   }
+
+  /// [_parseStateFromDocument] for tests comparing two answers of the same page.
+  @visibleForTesting
+  static HomepageState parseStateForTest(uh.Document document, String? username, {String? avatarUrl}) =>
+      _parseStateFromDocument(document, username, avatarUrl: avatarUrl);
 
   static HomepageState _parseStateFromDocument(uh.Document document, String? username, {String? avatarUrl}) {
     final swiperUrlList = <SwiperUrl>[];

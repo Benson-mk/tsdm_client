@@ -6,6 +6,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/profile/models/models.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -74,11 +75,12 @@ final class ProfileRepository with LoggerMixin {
       isLoggedUserProfile = true;
     }
 
-    switch (await getIt.get<NetClientProvider>().get(targetUrl).run()) {
+    // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+    switch (await getIt.get<NetClientProvider>().get(withTsdmAppJson(targetUrl)).run()) {
       case Left(:final value):
         return left(value);
       case Right(:final value):
-        final document = parseHtmlDocument(value.data as String);
+        final document = tsdmAppPageDocument(value.data);
         if (isLoggedUserProfile) {
           _loggedUserDocument = document;
         }

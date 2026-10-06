@@ -6,10 +6,10 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/favorite/models/models.dart';
 import 'package:tsdm_client/features/favorite/utils/parse_favorite.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
-import 'package:universal_html/parsing.dart';
 
 /// Repository of favorites (收藏) on the forum: threads (帖子) and forums (版块).
 ///
@@ -115,20 +115,22 @@ final class FavoriteRepository with LoggerMixin {
   void forgetItem({required int uid, required FavoriteItem item}) => _known[item.type]?[uid]?.remove(item.targetId);
 
   /// Fetch and parse one page of the thread favorites list.
-  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) =>
-      getIt.get<NetClientProvider>().get(url).mapHttp((v) => parseFavoriteListPage(parseHtmlDocument('${v.data}')));
+  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) => getIt
+      .get<NetClientProvider>()
+      .get(withTsdmAppJson(url))
+      .mapHttp((v) => parseFavoriteListPage(tsdmAppPageDocument(v.data)));
 
   /// Fetch and parse one page of the forum favorites list.
   AsyncEither<FavoriteListPage<FavoriteForum>> fetchForumListPage([String? url]) => getIt
       .get<NetClientProvider>()
-      .get(url ?? listUrlOf(FavoriteType.forum))
-      .mapHttp((v) => parseFavoriteForumListPage(parseHtmlDocument('${v.data}')));
+      .get(withTsdmAppJson(url ?? listUrlOf(FavoriteType.forum)))
+      .mapHttp((v) => parseFavoriteForumListPage(tsdmAppPageDocument(v.data)));
 
   /// Fetch and parse one page of the favorites list of [type]; the first page when [url] is null.
   AsyncEither<FavoriteListPage<FavoriteItem>> fetchListPageOf(FavoriteType type, [String? url]) => getIt
       .get<NetClientProvider>()
-      .get(url ?? listUrlOf(type))
-      .mapHttp((v) => parseFavoriteListPageOfType(parseHtmlDocument('${v.data}'), type));
+      .get(withTsdmAppJson(url ?? listUrlOf(type)))
+      .mapHttp((v) => parseFavoriteListPageOfType(tsdmAppPageDocument(v.data), type));
 
   /// Fetch a favorite dialog (add or delete); the html wrapped in the ajax xml answer.
   AsyncEither<String> _fetchDialog(String url) => getIt.get<NetClientProvider>().get(url).mapHttp((v) => '${v.data}');

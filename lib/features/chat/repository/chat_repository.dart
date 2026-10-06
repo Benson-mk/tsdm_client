@@ -4,6 +4,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -16,7 +17,11 @@ final class ChatRepository {
 
   /// Fetch the chat history with user [uid].
   AsyncEither<uh.Document> fetchChatHistory(String uid, {int? page}) => AsyncEither(() async {
-    final respEither = await getIt.get<NetClientProvider>().get(formatChatFullHistoryUrl(uid, page: page)).run();
+    // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+    final respEither = await getIt
+        .get<NetClientProvider>()
+        .get(withTsdmAppJson(formatChatFullHistoryUrl(uid, page: page)))
+        .run();
 
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
@@ -25,8 +30,7 @@ final class ChatRepository {
     if (resp.statusCode != HttpStatus.ok) {
       return left(HttpRequestFailedException(resp.statusCode));
     }
-    final document = parseHtmlDocument(resp.data as String);
-    return right(document);
+    return right(tsdmAppPageDocument(resp.data));
   });
 
   /// Fetch the chat history with user [uid].

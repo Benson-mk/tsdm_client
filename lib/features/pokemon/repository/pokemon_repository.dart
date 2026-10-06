@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/pokemon/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -106,8 +107,7 @@ final class PokemonRepository with LoggerMixin {
       _getData('evolution&action=evolution_path&pmid=$speciesId', EvolutionPath.fromMap);
 
   /// Fetch the full detail (with [PokemonStats]) of pokemon [id].
-  AsyncEither<Pokemon> getPokemonDetail(int id) =>
-      _getData('pokemon&action=detail&pokemon_id=$id', Pokemon.fromMap);
+  AsyncEither<Pokemon> getPokemonDetail(int id) => _getData('pokemon&action=detail&pokemon_id=$id', Pokemon.fromMap);
 
   /// Fetch the current user's plugin profile (money etc.).
   AsyncEither<PokemonUserProfile> getProfile() => _getData('user&action=profile', PokemonUserProfile.fromMap);
@@ -242,9 +242,7 @@ final class PokemonRepository with LoggerMixin {
 
   /// Resume an active battle; null when there is none (the server answers 404 for that).
   AsyncEither<BattleScene?> recoverBattle() => _send((headers) async {
-    final resp = await _net
-        .get('$pokemonApiBase&endpoint=battle&action=recover', options: _options(headers))
-        .run();
+    final resp = await _net.get('$pokemonApiBase&endpoint=battle&action=recover', options: _options(headers)).run();
     return switch (resp) {
       Left(:final value) => left<AppException, BattleScene?>(value),
       Right(:final value) => _decodeEnvelope(value).fold(
@@ -303,12 +301,12 @@ final class PokemonRepository with LoggerMixin {
     T Function(Map<String, dynamic>) decode, {
     Duration? deadline,
   }) => _send((headers) async {
-    final resp = await _net
-        .get('$pokemonApiBase&endpoint=$endpoint', options: _options(headers))
-        .run();
+    final resp = await _net.get('$pokemonApiBase&endpoint=$endpoint', options: _options(headers)).run();
     return switch (resp) {
       Left(:final value) => left<AppException, T>(value),
-      Right(:final value) => _decodeEnvelope(value).fold((e) => left<AppException, T>(e), (data) => _decode(data, decode, value)),
+      Right(:final value) => _decodeEnvelope(
+        value,
+      ).fold((e) => left<AppException, T>(e), (data) => _decode(data, decode, value)),
     };
   }, deadline: deadline);
 
@@ -344,7 +342,9 @@ final class PokemonRepository with LoggerMixin {
         .run();
     return switch (resp) {
       Left(:final value) => left<AppException, T>(value),
-      Right(:final value) => _decodeEnvelope(value).fold((e) => left<AppException, T>(e), (data) => _decode(data, decode, value)),
+      Right(:final value) => _decodeEnvelope(
+        value,
+      ).fold((e) => left<AppException, T>(e), (data) => _decode(data, decode, value)),
     };
   }, deadline: _writeDeadline);
 
@@ -408,6 +408,19 @@ final class PokemonRepository with LoggerMixin {
   /// Read the formhash from the plugin page and remember it; a failed read is not cached.
   Future<String?> _readFormHash() async {
     final uid = getIt.get<CookieProvider>().userLoginInfo.uid;
+    // The forum's app API tells the form hash in a small answer (plugin 1.3.1); the game page is read otherwise.
+    final status = await TsdmAppApi.ask(_net, 'status').timeout(_requestDeadline, onTimeout: () => null);
+    final apiHash = status?['formhash'];
+    if (status?['ok'] == 1 &&
+        apiHash is String &&
+        RegExp(r'^[0-9a-f]{8}$').hasMatch(apiHash) &&
+        status?['uid'] == uid) {
+      if (getIt.get<CookieProvider>().userLoginInfo.uid == uid) {
+        _formHash = apiHash;
+        _formHashUid = uid;
+      }
+      return apiHash;
+    }
     // The page read runs under the same deadline as the call that waits for it: a parked read must not hold it.
     final resp = await _net
         .get(_formHashPageUrl, options: _options())
@@ -454,12 +467,18 @@ final class PokemonRepository with LoggerMixin {
   ///
   /// Catches `Object` (not just `Exception`) because a wrong-typed field makes dart_mappable throw a `TypeError`, which
   /// is an `Error`; letting it escape would leave the page stuck loading forever.
-  Either<AppException, T> _decode<T>(Map<String, dynamic> data, T Function(Map<String, dynamic>) decode, Response<dynamic> resp) {
+  Either<AppException, T> _decode<T>(
+    Map<String, dynamic> data,
+    T Function(Map<String, dynamic>) decode,
+    Response<dynamic> resp,
+  ) {
     try {
       return right<AppException, T>(decode(data));
     } on Object catch (e) {
       final preview = jsonEncode(data);
-      talker.error('failed to decode pokemon api data: $e; data: ${preview.length > 200 ? preview.substring(0, 200) : preview}');
+      talker.error(
+        'failed to decode pokemon api data: $e; data: ${preview.length > 200 ? preview.substring(0, 200) : preview}',
+      );
       return left<AppException, T>(ServerRespFailure(status: resp.statusCode, message: '$e'));
     }
   }

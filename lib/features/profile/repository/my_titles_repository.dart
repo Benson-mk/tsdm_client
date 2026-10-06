@@ -3,6 +3,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/profile/models/secondary_title.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -39,8 +40,11 @@ final class MyTitlesRepository with LoggerMixin {
   String? _formHash;
 
   /// Fetch all available secondary titles for current user.
-  AsyncEither<List<SecondaryTitle>> fetchSecondaryTitles() =>
-      getIt.get<NetClientProvider>().get(_pageUrl).mapHttp((v) => parseHtmlDocument(v.data as String)).map((doc) {
+  AsyncEither<List<SecondaryTitle>> fetchSecondaryTitles() => getIt
+      .get<NetClientProvider>()
+      .get(withTsdmAppJson(_pageUrl))
+      .mapHttp((v) => tsdmAppPageDocument(v.data))
+      .map((doc) {
         _formHash = doc.querySelector('input[name="formhash"]')?.attributes['value'] ?? _formHash;
         return SecondaryTitle.parseTitlesPage(doc);
       });
