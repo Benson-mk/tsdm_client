@@ -16,6 +16,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/features/checkin/utils/do_checkin.dart';
 import 'package:tsdm_client/features/checkin/utils/parse_checkin.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -72,6 +73,9 @@ final class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
+  // These tests script the web pages of a forum without the app API (tsdmapp plugin).
+  setUp(TsdmAppApi.markUnavailable);
+
   setUpAll(() {
     talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false));
     getIt

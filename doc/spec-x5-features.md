@@ -1418,3 +1418,24 @@ B. 論壇提醒屏蔽規則
 
   修正前，第 1、3 項會得到 AlreadyChecked。
 - 已知限制：已被誤記的帳號，當天首頁仍顯示已簽到，要到隔天才恢復；當天請在網頁補簽。
+
+## 51. 論壇 App 接口（tsdmapp 插件）第一階段（2026-10-06）
+
+- 背景：App 全靠抓網頁解析 HTML，論壇改版或改字就壞（簽到、通知漏收、首頁分頁…）。改由論壇插件 `tsdmapp` 提供固定 JSON：`plugin.php?id=tsdmapp:api&action=status|notify|checkin`。插件在 `~/discuz-plugin-work/projects/tsdmapp-work`（1.1.0：唯讀、只回本人資料、後台總開關、每帳號頻率限制 429）。
+- App：`lib/features/tsdmapp/tsdmapp_api.dart`
+  - `TsdmAppApi.ask`：用帶 Cookie 的同一個 client 問。回應不是 JSON（沒裝插件），或回 `error: off`（站方關閉），就一小時內不再問。429、斷線只影響這一次。
+  - 提醒輪詢（`fetchNotificationWith` 有 timestamp 時）：先問 `notify&since=`。
+    - 提醒、私信在 since 之後都沒有，公共消息也沒有未讀 → 不抓三頁，回空結果和論壇時鐘。
+    - 有新東西 → 照舊抓三頁。網頁仍是顯示內容的來源，而且抓提醒頁就是論壇把提醒標為已讀的時機，行為不變。
+    - API 回未登入 → 視同 session 過期。
+    - 公共消息只看未讀：它的時間是撰寫時間（§45、#154）。
+  - 簽到（`doCheckin`）：先問 `checkin`。
+    - 已簽 → 已簽到，不再發請求。
+    - 未開放 → 未開放（不記錄）。
+    - 開放且未簽 → 照舊走網頁表單。
+    - 未登入 → NotAuthorized。
+    - 沒裝簽到插件，或拿不到 API 回答 → 照舊讀簽到頁（§50 的判斷）。
+- 驗證：
+  - test_191：閘門判斷；沒裝、關閉、429、斷線、舊版插件；提醒輪詢只發 1 個請求或照舊 4 個；簽到各狀態。
+  - 依序回應網頁的舊測試（036、046、060、190）明確設定成「沒有 API」。
+  - JSON 格式取自測試站插件 1.1.0 的實際回應。

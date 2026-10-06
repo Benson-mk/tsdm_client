@@ -47,6 +47,9 @@ final class NotificationV2 with NotificationV2Mappable {
   static List<uh.Element> broadcastMessageNodes(uh.Document document) =>
       document.querySelectorAll('dl[id^="gpmlist_"]');
 
+  /// No notification at all, what a fetch with nothing new returns.
+  static const empty = NotificationV2(status: 0, noticeList: [], personalMessageList: [], broadcastMessageList: []);
+
   /// Parse all kinds of notification from the three html documents.
   ///
   /// * [noticeDoc]: `home.php?mod=space&do=notice`.

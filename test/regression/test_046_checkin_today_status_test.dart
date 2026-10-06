@@ -18,6 +18,7 @@ import 'package:tsdm_client/features/notification/repository/notification_info_r
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -99,6 +100,9 @@ final class _OfflineAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  // These tests script the web pages of a forum without the app API (tsdmapp plugin).
+  setUp(TsdmAppApi.markUnavailable);
+
   late AppDatabase db;
   late StorageProvider storage;
   late SettingsRepository settings;

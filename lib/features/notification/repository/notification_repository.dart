@@ -7,6 +7,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
@@ -121,9 +122,26 @@ final class NotificationRepository with LoggerMixin {
   ///
   /// The returned `serverTime` is the earliest `Date` header of the three answers, null when
   /// the server sent none: the caller stores the lower bound of its next fetch from that clock (GitHub #71).
+  ///
+  /// A polling fetch (with [timestamp]) asks the forum's app API first when it has one ([TsdmAppApi]): when nothing
+  /// arrived since then, the three pages are not fetched and an empty result with the forum's clock is returned. The
+  /// pages stay the source of every notification shown: fetching the notice page is also what marks the notices read
+  /// on the forum, as it always did.
   AsyncEither<FetchedNotification> fetchNotificationWith(NetClientProvider client, {int? timestamp}) =>
       AsyncEither(() async {
         final since = _buildSinceTimestamp(timestamp);
+        if (timestamp != null) {
+          switch (notifyGateOf(await TsdmAppApi.ask(client, 'notify', {'since': '$since'}), since: since)) {
+            case TsdmAppNothingNew(:final serverTime):
+              debug('nothing new since $since by the app api, pages skipped');
+              return right((info: NotificationV2.empty, serverTime: serverTime));
+            case TsdmAppNotLoggedIn():
+              error('failed to fetch notification: not logged in (app api)');
+              return left(NotificationUserNotFound());
+            case TsdmAppFetchPages():
+              break;
+          }
+        }
         final results = await Future.wait([
           _fetchPageWithTime(client, noticeUrl).run(),
           _fetchPageWithTime(client, personalMessageUrl).run(),

@@ -8,6 +8,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/features/checkin/repository/auto_checkin_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -51,7 +52,11 @@ final class _ScriptedAdapter implements HttpClientAdapter {
   var _next = 0;
 
   @override
-  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
     requests.add('${options.method} ${options.uri.queryParameters['operation'] ?? 'page'}');
     if (_next >= script.length) {
       fail('unexpected request #${_next + 1}: ${requests.last}');
@@ -72,6 +77,9 @@ final class _ScriptedAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  // These tests script the web pages of a forum without the app API (tsdmapp plugin).
+  setUp(TsdmAppApi.markUnavailable);
+
   late AppDatabase db;
   late StorageProvider storage;
   late SettingsRepository settings;
@@ -180,7 +188,13 @@ void main() {
   test('a Retry-After header longer than the schedule is honored', () async {
     final r = repo(
       [
-        (429, 'Too Many Requests', {'retry-after': ['1']}),
+        (
+          429,
+          'Too Many Requests',
+          {
+            'retry-after': ['1'],
+          },
+        ),
         (200, _signPage, {}),
         (200, _successXml, {}),
       ],
