@@ -9,7 +9,7 @@ import 'package:tsdm_client/features/update/repository/release_update_repository
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/widgets/shutdown.dart';
 
-/// Starts a process detached from the app, so it outlives it.
+/// Starts a process that outlives the app, without anything on screen.
 typedef DetachedLauncher = Future<void> Function(String executable, List<String> arguments);
 
 /// Installs the portable Windows build over the folder the app runs from.
@@ -80,8 +80,15 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     return File(full).existsSync() ? full : 'powershell.exe';
   }
 
+  /// Not [ProcessStartMode.detached]: on Windows that is `DETACHED_PROCESS`, a process without any console, and
+  /// PowerShell then exits at once without running the script (GitHub #172, reproduced). The normal mode starts it
+  /// with `CREATE_NO_WINDOW`: a hidden console, nothing on screen, and a child that outlives the app like any process
+  /// on Windows. Its pipes are drained so it never blocks on output; they break when the app exits, and the script
+  /// writes nothing to them.
   static Future<void> _launchDetached(String executable, List<String> arguments) async {
-    await Process.start(executable, arguments, mode: ProcessStartMode.detached);
+    final process = await Process.start(executable, arguments);
+    unawaited(process.stdout.drain<void>());
+    unawaited(process.stderr.drain<void>());
   }
 
   @override

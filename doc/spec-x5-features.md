@@ -1521,6 +1521,12 @@ B. 論壇提醒屏蔽規則
   - 以 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 的完整路徑啟動（`powershellPath`），檔案不存在時才退回 `powershell.exe`。
   - `install()` 記錄更新資料夾與安裝資料夾、解壓完成、啟動的程式；檔案錯誤與 `ProcessException` 記 error。等不到 marker 時記錄腳本是否還在（防毒刪除）、marker 與 `update.log` 的內容。
   - `UpdateDownloadCubit` 的下載、安裝失敗都記 warning，附上失敗種類或例外。
+- 第二個測試包（wintest.2）回報的 log：`release unpacked, starting C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`，20 秒後 `script present, marker missing, log missing`，兩次一樣；只有 Defender，沒有提示，檔案都在。PowerShell 有啟動但腳本第一行都沒執行。
+- **根因：`ProcessStartMode.detached`。** Dart 的 `process_win.cc` 對非 attached 模式加 `DETACHED_PROCESS`（子程序沒有任何主控台），std handle 指向 NUL；一般模式則加 `CREATE_NO_WINDOW`（隱藏的主控台）並接 pipe。在使用者的 Windows 上以 P/Invoke `CreateProcessW` 重現（`%TEMP%\tsdm-ps-test`，假的 App 程序與目標資料夾）：
+  - `DETACHED_PROCESS` + NUL：powershell.exe 立刻結束、exit code 0，marker、日誌都沒有，與回報完全一致。
+  - `CREATE_NO_WINDOW` + NUL：marker 寫入，腳本等到假 App 結束，`backed up 2 files`、`installed 3 files`，目標資料夾其他檔案保留。
+  - `CREATE_NO_WINDOW` + pipe、父程序立刻結束（等同 App 退出後 pipe 斷掉）：腳本照常跑完。
+  - 修正：`_launchDetached` 改用一般模式 `Process.start`，並 `drain` stdout／stderr。Windows 不會因父程序結束而終止子程序，Dart 也沒有用 Job object。腳本的腳本本身沒有改。
 - 未處理的可能性：若 App 由會在結束時終止子程序的 Job（某些啟動器）啟動，PowerShell 會跟著被結束。腳本日誌只會停在 `started`，下次回報可以看出來；屆時再考慮脫離 Job 的啟動方式。
 - **驗證**：
   - test_195：兩個輪詢者在半個間隔內第二個略過、下一個間隔照常；七種相位差下十分鐘內都只拉 10～11 次；帳號互不影響、時鐘調回不擋；App 剛拉過時服務的 tick 略過且沒有發出請求；第一次完全連不上時重試成功、持續連不上只重試一次、有狀態碼的錯誤不重試；腳本含啟動與退出的日誌、等待 600 秒、marker 寫在日誌之前、全 ASCII；上次嘗試的日誌只寫進 App 日誌一次並刪除 marker；腳本沒回報時日誌記下更新資料夾，以及腳本、marker、日誌的狀態，非 Windows 環境退回 `powershell.exe`。
