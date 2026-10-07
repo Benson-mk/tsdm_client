@@ -29,7 +29,7 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     String? updateDirectory,
     DetachedLauncher? launch,
     Future<void> Function()? quit,
-    Duration startTimeout = const Duration(seconds: 5),
+    Duration startTimeout = const Duration(seconds: 20),
   }) : _executable = executable,
        _updateDirectory = updateDirectory,
        _launch = launch ?? _launchDetached,
@@ -71,6 +71,13 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     } on Exception catch (e) {
       talker.warning('failed to read the last update attempt: $e');
     }
+  }
+
+  /// Windows PowerShell by its full path: a PATH without System32 must not stop the update.
+  static String get powershellPath {
+    final root = Platform.environment['SystemRoot'] ?? Platform.environment['windir'] ?? r'C:\Windows';
+    final full = p.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    return File(full).existsSync() ? full : 'powershell.exe';
   }
 
   static Future<void> _launchDetached(String executable, List<String> arguments) async {
@@ -118,14 +125,18 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     final staging = Directory(p.join(updates, 'staging-${update.versionCode}'));
     // A new backup folder every time: one kept after an incomplete rollback is never overwritten.
     final backup = p.join(updates, 'backup-${update.versionCode}-${DateTime.now().millisecondsSinceEpoch}');
+    final script = File(p.join(updates, scriptName));
+    final log = File(p.join(updates, logName));
+    final powershell = powershellPath;
+    talker.info('windows update: install ${update.versionCode} from $updates into ${installDir.path}');
     try {
       if (staging.existsSync()) await staging.delete(recursive: true);
       await extractRelease(File(update.path), staging);
-      final script = File(p.join(updates, scriptName));
       await script.writeAsString(updateScript, flush: true);
       // A marker left by an earlier attempt must not pass for this one.
       if (marker.existsSync()) await marker.delete();
-      await _launch('powershell.exe', [
+      talker.debug('windows update: release unpacked, starting $powershell');
+      await _launch(powershell, [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
@@ -143,21 +154,38 @@ class WindowsUpdateInstaller implements UpdateInstaller {
         '-Backup',
         backup,
         '-Log',
-        p.join(updates, logName),
+        log.path,
         '-Marker',
         marker.path,
         '-Nonce',
         nonce,
       ]);
-    } on FileSystemException {
+    } on FileSystemException catch (e) {
+      talker.error('windows update: file error before the script started: $e');
       throw const UpdateDownloadException(UpdateDownloadFailure.storage);
-    } on ProcessException {
+    } on ProcessException catch (e) {
+      talker.error('windows update: PowerShell could not be started: $e');
       throw const UpdateDownloadException(UpdateDownloadFailure.install);
     }
     // Started is not running: the app stays open unless the script reports in.
     if (!await _waitForStart(marker, nonce)) {
+      // What is left tells why (GitHub #172): an antivirus removes the script, a policy stops PowerShell before the
+      // first line, a slow start writes the marker later.
+      String read(File f) {
+        try {
+          return f.existsSync() ? '"${f.readAsStringSync().trim()}"' : 'missing';
+        } on FileSystemException catch (e) {
+          return 'unreadable ($e)';
+        }
+      }
+
+      talker.error(
+        'windows update: the script did not report in within ${_startTimeout.inSeconds}s; '
+        'script ${script.existsSync() ? 'present' : 'missing'}, marker ${read(marker)}, log ${read(log)}',
+      );
       throw const UpdateDownloadException(UpdateDownloadFailure.install);
     }
+    talker.info('windows update: the script runs, exiting');
     // Leave a moment for the page to show that the app restarts, then exit so the script can replace the files.
     unawaited(Future<void>.delayed(const Duration(milliseconds: 800), _quit));
     return true;

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tsdm_client/features/update/models/latest_version_info.dart';
 import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/utils/git_info.dart';
 
 export 'package:tsdm_client/features/update/repository/release_update_repository.dart'
@@ -164,8 +165,10 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
       _downloaded = update;
       _stage(UpdateDownloadStatus.ready);
     } on UpdateDownloadException catch (error) {
+      _warn('update restore failed: ${error.failure}');
       if (_token == token && !token.isCancelled) _stage(UpdateDownloadStatus.failed, failure: error.failure);
-    } on Exception {
+    } on Exception catch (error) {
+      _warn('update restore failed: $error');
       if (_token == token && !token.isCancelled) {
         _stage(UpdateDownloadStatus.failed, failure: UpdateDownloadFailure.network);
       }
@@ -215,8 +218,10 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
       _downloaded = update;
       _stage(UpdateDownloadStatus.ready);
     } on UpdateDownloadException catch (error) {
+      _warn('update download failed: ${error.failure}');
       if (_token == token && !token.isCancelled) _stage(UpdateDownloadStatus.failed, failure: error.failure);
-    } on Exception {
+    } on Exception catch (error) {
+      _warn('update download failed: $error');
       if (_token == token && !token.isCancelled) {
         _stage(UpdateDownloadStatus.failed, failure: UpdateDownloadFailure.network);
       }
@@ -246,14 +251,17 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
       }
       _stage(UpdateDownloadStatus.installerOpened);
     } on UpdateDownloadException catch (error) {
+      _warn('update install failed: ${error.failure}');
       _stage(UpdateDownloadStatus.failed, failure: error.failure);
     } on PlatformException catch (error) {
+      _warn('update install failed: $error');
       if (error.code == 'install_permission_required') {
         _stage(UpdateDownloadStatus.permissionRequired);
       } else {
         _stage(UpdateDownloadStatus.failed, failure: UpdateDownloadFailure.install);
       }
-    } on Exception {
+    } on Exception catch (error) {
+      _warn('update install failed: $error');
       _stage(UpdateDownloadStatus.failed, failure: UpdateDownloadFailure.install);
     }
   }
@@ -267,6 +275,17 @@ class UpdateDownloadCubit extends Cubit<UpdateDownloadState> {
       }
     } on Exception {
       _stage(UpdateDownloadStatus.failed, failure: UpdateDownloadFailure.install);
+    }
+  }
+
+  /// Failures are logged for reports (GitHub #172); logging must not throw where no logger was set up (tests).
+  static void _warn(String message) {
+    try {
+      talker.warning(message);
+      // The logger is a late global: reading it before initLogger throws a LateInitializationError.
+      // ignore: avoid_catching_errors
+    } on Error {
+      // Nothing to log to.
     }
   }
 

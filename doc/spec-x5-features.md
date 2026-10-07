@@ -1516,9 +1516,14 @@ B. 論壇提醒屏蔽規則
 - 更新腳本：寫完 marker、清空日誌後立刻記 `started, waiting for the app (process N) to exit`，App 結束後記 `the app exited`；`WaitForExit` 由 60 秒延長為 600 秒。腳本仍只含 ASCII。
 - `WindowsUpdateInstaller.reportLastAttempt()`：`apply-update.started` 存在時，把 `update.log` 全文以 info 寫進 App 日誌，再刪除 marker，因此每次嘗試只回報一次。`main.dart` 在 Windows 啟動時以 `unawaited` 呼叫，錯誤只記 warning。
 - 啟動日誌的分隔行加上 `appFullVersion`（版本、commit、日期）。
+- 第一個測試包（1.33.0-wintest.1）回報：按安裝後顯示「無法開始更新」、App 沒退出，日誌裡沒有任何更新紀錄。也就是 5 秒內沒讀到 marker（或 PowerShell 啟動不了），但看不出是哪一種。第二輪修正：
+  - 等 marker 的時間由 5 秒延長為 20 秒：冷啟動的 PowerShell 加上防毒掃描腳本，可能超過 5 秒。
+  - 以 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 的完整路徑啟動（`powershellPath`），檔案不存在時才退回 `powershell.exe`。
+  - `install()` 記錄更新資料夾與安裝資料夾、解壓完成、啟動的程式；檔案錯誤與 `ProcessException` 記 error。等不到 marker 時記錄腳本是否還在（防毒刪除）、marker 與 `update.log` 的內容。
+  - `UpdateDownloadCubit` 的下載、安裝失敗都記 warning，附上失敗種類或例外。
 - 未處理的可能性：若 App 由會在結束時終止子程序的 Job（某些啟動器）啟動，PowerShell 會跟著被結束。腳本日誌只會停在 `started`，下次回報可以看出來；屆時再考慮脫離 Job 的啟動方式。
 - **驗證**：
-  - test_195：兩個輪詢者在半個間隔內第二個略過、下一個間隔照常；七種相位差下十分鐘內都只拉 10～11 次；帳號互不影響、時鐘調回不擋；App 剛拉過時服務的 tick 略過且沒有發出請求；第一次完全連不上時重試成功、持續連不上只重試一次、有狀態碼的錯誤不重試；腳本含啟動與退出的日誌、等待 600 秒、marker 寫在日誌之前、全 ASCII；上次嘗試的日誌只寫進 App 日誌一次並刪除 marker。
+  - test_195：兩個輪詢者在半個間隔內第二個略過、下一個間隔照常；七種相位差下十分鐘內都只拉 10～11 次；帳號互不影響、時鐘調回不擋；App 剛拉過時服務的 tick 略過且沒有發出請求；第一次完全連不上時重試成功、持續連不上只重試一次、有狀態碼的錯誤不重試；腳本含啟動與退出的日誌、等待 600 秒、marker 寫在日誌之前、全 ASCII；上次嘗試的日誌只寫進 App 日誌一次並刪除 marker；腳本沒回報時日誌記下更新資料夾，以及腳本、marker、日誌的狀態，非 Windows 環境退回 `powershell.exe`。
   - test_090 的 tick 改用相隔一分鐘的 `now`。
   - 未在實機或 Windows 上執行。
 

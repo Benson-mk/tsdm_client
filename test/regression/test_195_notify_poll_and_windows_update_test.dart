@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,6 +28,7 @@ import 'package:tsdm_client/features/notification/repository/notification_sync_a
 import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
+import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
 import 'package:tsdm_client/features/update/repository/windows_update_installer.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -204,6 +206,43 @@ void main() {
       expect(script.codeUnits.every((c) => c < 128), isTrue);
       // The log is only written after the marker that lets the app exit.
       expect(script.indexOf(r'Set-Content -LiteralPath $Marker'), lessThan(script.indexOf("Write-Log ('started")));
+    });
+
+    test('a script that never reports in leaves what was found in the app log', () async {
+      final dir = await Directory.systemTemp.createTemp('tsdm_update_');
+      addTearDown(() => dir.delete(recursive: true));
+      final app = await Directory(p.join(dir.path, 'app')).create();
+      File(p.join(app.path, 'tsdm_client.exe')).writeAsStringSync('old exe');
+      File(p.join(app.path, 'flutter_windows.dll')).writeAsStringSync('old engine');
+      final updates = (await Directory(p.join(dir.path, 'updates')).create()).path;
+      final archive = Archive()
+        ..addFile(ArchiveFile.bytes('tsdm_client/tsdm_client.exe', utf8.encode('new exe')))
+        ..addFile(ArchiveFile.bytes('tsdm_client/flutter_windows.dll', utf8.encode('new engine')));
+      final zip = File(p.join(updates, 'update-125-1.zip'))..writeAsBytesSync(ZipEncoder().encodeBytes(archive));
+      final logs = <String>[];
+      final subscription = talker.stream.listen((e) => logs.add(e.message ?? ''));
+      addTearDown(subscription.cancel);
+      String? launched;
+      final installer = WindowsUpdateInstaller(
+        updateDirectory: updates,
+        executable: p.join(app.path, 'tsdm_client.exe'),
+        startTimeout: const Duration(milliseconds: 300),
+        launch: (executable, arguments) async => launched = executable,
+        quit: () async => fail('must not quit'),
+      );
+
+      await expectLater(
+        installer.install(DownloadedUpdate(path: zip.path, version: '1.33.0', versionCode: 125)),
+        throwsA(isA<UpdateDownloadException>()),
+      );
+      await pumpEventQueue();
+      // Off Windows the full path does not exist: the name is used as before.
+      expect(launched, 'powershell.exe');
+      expect(logs.any((e) => e.contains('install 125 from $updates')), isTrue);
+      expect(
+        logs.any((e) => e.contains('did not report in') && e.contains('script present, marker missing, log missing')),
+        isTrue,
+      );
     });
 
     test('the last attempt is copied into the app log once', () async {
