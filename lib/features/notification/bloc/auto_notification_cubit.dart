@@ -8,6 +8,7 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
@@ -120,6 +121,13 @@ final class AutoNotificationCubit extends Cubit<AutoNoticeState> with LoggerMixi
     final uid = _authenticationRepository.currentUser?.uid;
     if (uid == null) {
       debug('skip auto fetch notice due to not-login state');
+      return;
+    }
+
+    // The Android background service may have polled moments ago (GitHub #173); its rows reach the page by itself.
+    if (!await NotificationPollSlot.take(_storageProvider, uid, duration)) {
+      debug('skip auto fetch: polled by the background service moments ago');
+      emit(AutoNoticeStateTicking(total: duration, remain: _remainingTick));
       return;
     }
 

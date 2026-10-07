@@ -1,6 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
+import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
@@ -100,6 +101,9 @@ final class BackgroundSyncDone extends BackgroundSyncOutcome {
 /// The service is meant to follow the in-app auto sync: with the interval set to never, or nobody logged in, the tick
 /// fetches nothing.
 ///
+/// The app's own auto sync shares the poll ([NotificationPollSlot], GitHub #173): a tick within half an interval of
+/// its last poll fetches nothing. [now] is the time of the tick, the current time when not given.
+///
 /// [prepareNetwork] runs right before the fetch ([refreshBackgroundNetworkSettings] in the service). When it throws
 /// the tick fetches nothing: the proxy the user asked for could not be read, and fetching without it would be a
 /// direct connection the user did not choose.
@@ -111,6 +115,7 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   required StorageProvider storage,
   required NotificationSyncAllRepository repository,
   Future<void> Function()? prepareNetwork,
+  DateTime? now,
 }) async {
   final settings = await readBackgroundSyncSettings(storage);
   if (!settings.enabled) {
@@ -121,6 +126,11 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   }
   if (settings.loginUid <= 0) {
     return const BackgroundSyncSkipped('not logged in');
+  }
+  // The app's own auto sync may have polled moments ago (GitHub #173).
+  final interval = Duration(seconds: settings.intervalSeconds);
+  if (!await NotificationPollSlot.take(storage, settings.loginUid, interval, now: now)) {
+    return const BackgroundSyncSkipped('polled by the app moments ago');
   }
   if (prepareNetwork != null) {
     try {

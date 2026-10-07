@@ -1500,3 +1500,25 @@ B. 論壇提醒屏蔽規則
   - test_194 用測試站成對素材，涵蓋勳章中心、稱號、稱號商店、成就、首頁（狀態、分頁區塊、登入使用者、每日登入網址、紅包設定、formhash）、個人資料、搜尋，App 解析結果與網頁一致。
   - test_193 素材以 1.4.0 重抓。
   - 正式站樣式另外離線比對（不進 repo），涵蓋私信對話、收藏、搜尋、勳章、稱號、商店、成就、首頁、個人資料，全部一致。測試帳號沒有收藏、稱號、成就，這幾頁只比到空列表。
+
+## 55. 通知重複拉取與 Windows 更新診斷（2026-10-07，#173、#172）
+
+**#173 背景拉取常失敗。** 回報的 log 裡，3 次自動拉取失敗都是網路層錯誤（`Unable to resolve host`、timeout），同時間的一般網頁也一起失敗，與接口無關；另有 1 次 `notify` 被插件以 429（`error: busy`）擋下，之後改抓網頁成功。429 的原因是 Android 開了背景訊息服務（#80）時，App 內的 `AutoNotificationCubit` 與服務 isolate 的 `backgroundSyncTick` 各有一個計時器、同一間隔各拉一次，兩邊落在插件 3 秒的間隔內就撞上。
+
+- **共用一次拉取**：新增 `NotificationPollSlot`（`lib/features/notification/utils/poll_slot.dart`），在共用資料庫的設定表記 `notificationPolledAt.<uid>`（毫秒）。`take()` 讀上次時間，距今不到半個間隔就回 false（這次不拉），否則寫入現在時間並回 true；時間在未來（時鐘被調回）不擋。兩個計時器不論相位差多少，每個間隔只會拉一次。
+  - `AutoNotificationCubit._onTimeout`：取得 uid 後先 `take()`，失敗時記 debug、回到 ticking 狀態並結束；服務存進去的資料由既有的 `BackgroundSyncBridgeCubit` 帶進頁面。
+  - `backgroundSyncTick`：確認已登入後先 `take()`，失敗回 `BackgroundSyncSkipped('polled by the app moments ago')`；App 存的資料，服務下次拉取時會判定為已知。新增選用參數 `now`（測試用）。
+- **連不上時重試一次**：`NotificationRepository.fetchNotificationWith` 拆出 `_fetchNotificationOnce`。輪詢（有 `timestamp`）的結果若是 `HttpHandshakeFailedException` 且 `statusCode == null`（沒有任何回應：DNS、連線、逾時），等 `retryDelay`（預設 5 秒，建構子可設定）後整個流程再跑一次；有狀態碼的錯誤（含 429、5xx）不重試。
+
+**#172 Windows App 內更新沒有套用。** 回報附的是之後手動重開的 log，沒有更新過程，`update.log` 也沒附，無法確定斷在哪一步。依症狀（App 關閉、沒有重開、仍是舊版）只可能是腳本等不到 App 結束而放棄，或腳本在換檔前被中斷；換檔中途失敗會還原並重開舊版，不符合。這次先補強並讓下次回報能看出原因：
+
+- `exitApp()`：`StorageProvider.dispose()` 加 3 秒逾時並攔下所有錯誤，桌面版之後一定執行 `exit(0)`。原本 dispose 出錯時 `exit` 不會執行，而安裝流程是以 `unawaited` 呼叫，錯誤無人處理、App 不退出。
+- 更新腳本：寫完 marker、清空日誌後立刻記 `started, waiting for the app (process N) to exit`，App 結束後記 `the app exited`；`WaitForExit` 由 60 秒延長為 600 秒。腳本仍只含 ASCII。
+- `WindowsUpdateInstaller.reportLastAttempt()`：`apply-update.started` 存在時，把 `update.log` 全文以 info 寫進 App 日誌，再刪除 marker，因此每次嘗試只回報一次。`main.dart` 在 Windows 啟動時以 `unawaited` 呼叫，錯誤只記 warning。
+- 啟動日誌的分隔行加上 `appFullVersion`（版本、commit、日期）。
+- 未處理的可能性：若 App 由會在結束時終止子程序的 Job（某些啟動器）啟動，PowerShell 會跟著被結束。腳本日誌只會停在 `started`，下次回報可以看出來；屆時再考慮脫離 Job 的啟動方式。
+- **驗證**：
+  - test_195：兩個輪詢者在半個間隔內第二個略過、下一個間隔照常；七種相位差下十分鐘內都只拉 10～11 次；帳號互不影響、時鐘調回不擋；App 剛拉過時服務的 tick 略過且沒有發出請求；第一次完全連不上時重試成功、持續連不上只重試一次、有狀態碼的錯誤不重試；腳本含啟動與退出的日誌、等待 600 秒、marker 寫在日誌之前、全 ASCII；上次嘗試的日誌只寫進 App 日誌一次並刪除 marker。
+  - test_090 的 tick 改用相隔一分鐘的 `now`。
+  - 未在實機或 Windows 上執行。
+

@@ -6,6 +6,7 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/widgets/shutdown.dart';
 
 /// Starts a process detached from the app, so it outlives it.
@@ -55,6 +56,22 @@ class WindowsUpdateInstaller implements UpdateInstaller {
 
   /// Written by the update script as its first action, holding the nonce it was started with.
   static const startedMarkerName = 'apply-update.started';
+
+  /// Copy the log of the last update attempt into the app's log, once: a report of an update that did not apply then
+  /// carries what the script did (GitHub #172). Nothing happens when no attempt was made since the last report.
+  Future<void> reportLastAttempt() async {
+    try {
+      final updates = await directory();
+      final marker = File(p.join(updates, startedMarkerName));
+      if (!marker.existsSync()) return;
+      final log = File(p.join(updates, logName));
+      final text = log.existsSync() ? (await log.readAsString()).trim() : '';
+      talker.info('last update attempt, script log:\n${text.isEmpty ? '(empty)' : text}');
+      await marker.delete();
+    } on Exception catch (e) {
+      talker.warning('failed to read the last update attempt: $e');
+    }
+  }
 
   static Future<void> _launchDetached(String executable, List<String> arguments) async {
     await Process.start(executable, arguments, mode: ProcessStartMode.detached);
@@ -252,10 +269,14 @@ function Copy-WithRetry([string]$From, [string]$To) {
   Copy-Item -LiteralPath $From -Destination $To -Force
 }
 Set-Content -LiteralPath $Log -Value '' -Encoding UTF8
+Write-Log ('started, waiting for the app (process {0}) to exit' -f $ProcessId)
 $exited = $true
 try {
+  # The app exits on its own right after this script reported in; the long wait covers an exit held up by the system
+  # or done by hand, still applying the update instead of leaving the old version.
   $app = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($app -and -not $app.WaitForExit(60000)) { $exited = $false; throw 'the app did not exit' }
+  if ($app -and -not $app.WaitForExit(600000)) { $exited = $false; throw 'the app did not exit' }
+  Write-Log 'the app exited'
   Start-Sleep -Milliseconds 500
   $files = @(Get-ChildItem -LiteralPath $Source -Recurse -File | ForEach-Object {
     $_.FullName.Substring($Source.TrimEnd('\').Length).TrimStart('\')

@@ -37,9 +37,14 @@ final class NotificationRepository with LoggerMixin {
   ///
   /// [storageProvider] records the session expiry of the current account (issue #25); the global one is used when
   /// not given and registered.
-  NotificationRepository({StorageProvider? storageProvider}) : _storageProvider = storageProvider;
+  ///
+  /// [retryDelay] is the wait before the one retry of a polling fetch that could not reach the forum.
+  NotificationRepository({StorageProvider? storageProvider, Duration retryDelay = const Duration(seconds: 5)})
+    : _storageProvider = storageProvider,
+      _retryDelay = retryDelay;
 
   final StorageProvider? _storageProvider;
+  final Duration _retryDelay;
 
   StorageProvider? get _storage =>
       _storageProvider ?? (getIt.isRegistered<StorageProvider>() ? getIt.get<StorageProvider>() : null);
@@ -127,7 +132,22 @@ final class NotificationRepository with LoggerMixin {
   /// arrived since then, the three pages are not fetched and an empty result with the forum's clock is returned. The
   /// pages stay the source of every notification shown: fetching the notice page is also what marks the notices read
   /// on the forum, as it always did.
+  ///
+  /// A polling fetch that could not reach the forum at all (no answer: name resolution, connection or timeout) is
+  /// tried once more after a few seconds: the network often comes back a moment after the device wakes up or the app
+  /// returns to the foreground (GitHub #173). An answer with an error status is not retried.
   AsyncEither<FetchedNotification> fetchNotificationWith(NetClientProvider client, {int? timestamp}) =>
+      AsyncEither(() async {
+        final first = await _fetchNotificationOnce(client, timestamp: timestamp).run();
+        if (first case Left(value: HttpHandshakeFailedException(statusCode: null) && final e) when timestamp != null) {
+          debug('forum not reached, trying again in ${_retryDelay.inSeconds}s: ${e.message}');
+          await Future<void>.delayed(_retryDelay);
+          return _fetchNotificationOnce(client, timestamp: timestamp).run();
+        }
+        return first;
+      });
+
+  AsyncEither<FetchedNotification> _fetchNotificationOnce(NetClientProvider client, {int? timestamp}) =>
       AsyncEither(() async {
         final since = _buildSinceTimestamp(timestamp);
         if (timestamp != null) {
