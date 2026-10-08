@@ -11,10 +11,12 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/rate/repository/rate_repository.dart';
+import 'package:tsdm_client/features/rate/repository/rate_window_cache.dart';
 import 'package:tsdm_client/features/rate/view/rate_post_page.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
@@ -22,6 +24,7 @@ import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
+import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
 
 /// Samples of Discuz! X5 (TSDM) answers:
@@ -102,6 +105,10 @@ String _windowWithFormHash(String formHash) {
   return window.replaceFirst('value="XXXXXXXX"', 'value="$formHash"');
 }
 
+/// The window of post [pid] with [formHash]: the live sample is of post [_pid].
+String _windowOf({required String formHash, required String pid}) =>
+    _windowWithFormHash(formHash).replaceFirst('name="pid" value="$_pid"', 'name="pid" value="$pid"');
+
 /// The answer to a rate window request the forum refuses (`showmessage` of an ajax GET, template
 /// common/showmessage.php `msgtype` 2), here `thread_rate_duplicate`.
 const _duplicateWindow =
@@ -122,6 +129,7 @@ void main() {
   });
 
   setUp(() async {
+    RateWindowCache.clear();
     db = AppDatabase(NativeDatabase.memory());
     final storage = StorageProvider(db, {}, {});
     settings = SettingsRepository(storage);
@@ -436,6 +444,189 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(SnackBar, tr.success), findsNothing);
       expect(submitButton().hitTestable(), findsOneWidget);
+    });
+  });
+  group('rate window kept per thread (forum report: rating floor after floor, 2026-10-08)', () {
+    const pidB = '77983793';
+    const rateActionB = '$baseUrl/forum.php?mod=misc&action=rate&tid=1264975&pid=$pidB';
+    const rateActionOther = '$baseUrl/forum.php?mod=misc&action=rate&tid=1264999&pid=77990000';
+
+    /// A home with a button per rate page: post A and B of one thread, a post of another thread.
+    Future<void> pumpApp(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      Widget button(BuildContext context, String label, String pid, String rateAction) => TextButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => RatePostPage(username: 'Alice', pid: pid, floor: '2', rateAction: rateAction),
+          ),
+        ),
+        child: Text(label),
+      );
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            scaffoldMessengerKey: snackbarKey,
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Column(
+                  children: [
+                    button(context, 'open A', _pid, _rateAction),
+                    button(context, 'open B', pidB, rateActionB),
+                    button(context, 'open other', '77990000', rateActionOther),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Future<void> open(WidgetTester tester, String label) async {
+      await tester.tap(find.text(label));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    Future<void> rate(WidgetTester tester, String value) async {
+      await tester.enterText(find.widgetWithText(TextFormField, '天使币'), value);
+      await tester.pump();
+      await tester.tap(find.byType(DebounceFilledButton));
+      await tester.pumpAndSettle();
+    }
+
+    String remaining(String score) => t.ratePostPage.scoreTodayRemaining(score: score);
+
+    setUp(() => settings.setValue(SettingsKeys.loginUid, 35));
+
+    testWidgets('the next floor of the thread shows the form at once, with what the last rate took off', (
+      tester,
+    ) async {
+      final held = Completer<void>();
+      final forum = _FakeForum(
+        windows: [
+          _windowWithFormHash('AAAAAAAA'),
+          _windowOf(formHash: 'BBBBBBBB', pid: pidB),
+        ],
+        submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
+        holds: {1: held},
+      );
+      useForum(forum);
+      await pumpApp(tester);
+
+      await open(tester, 'open A');
+      expect(find.text(remaining('20')), findsOneWidget);
+      await rate(tester, '5');
+      expect(find.byType(RatePostPage), findsNothing);
+
+      // Post B: its window is still loading, the form of the thread is already there, 20 - 5 left today.
+      await open(tester, 'open B');
+      expect(find.byType(RatePostPage), findsOneWidget);
+      expect(find.byType(CenteredCircularIndicator), findsNothing);
+      expect(find.widgetWithText(TextFormField, '天使币'), findsOneWidget);
+      expect(find.text(remaining('15')), findsOneWidget);
+      expect(forum.gets, hasLength(2));
+
+      // Rated before the window of B came back: with the kept form hash, for post B.
+      await rate(tester, '3');
+      expect(forum.posts.last, containsPair('formhash', 'AAAAAAAA'));
+      expect(forum.posts.last, containsPair('pid', pidB));
+      expect(forum.posts.last, containsPair('score2', '3'));
+      expect(find.byType(RatePostPage), findsNothing);
+      held.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the window of the floor replaces the kept one when it arrives before the rate', (tester) async {
+      final held = Completer<void>();
+      final forum = _FakeForum(
+        windows: [
+          _windowWithFormHash('AAAAAAAA'),
+          _windowOf(formHash: 'BBBBBBBB', pid: pidB),
+        ],
+        submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
+        holds: {1: held},
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+
+      await open(tester, 'open B');
+      expect(find.text(remaining('15')), findsOneWidget);
+      held.complete();
+      await tester.pumpAndSettle();
+      // The forum's own numbers and form hash.
+      expect(find.text(remaining('20')), findsOneWidget);
+      await rate(tester, '1');
+      expect(forum.posts.last, containsPair('formhash', 'BBBBBBBB'));
+      expect(forum.posts.last, containsPair('pid', pidB));
+    });
+
+    testWidgets('another thread loads its own window first', (tester) async {
+      final held = Completer<void>();
+      final forum = _FakeForum(
+        windows: [_windowWithFormHash('AAAAAAAA'), _windowWithFormHash('CCCCCCCC')],
+        submits: [_data('rate_submit_success_x5.xml')],
+        holds: {1: held},
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+
+      await open(tester, 'open other');
+      expect(find.byType(CenteredCircularIndicator), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '天使币'), findsNothing);
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextFormField, '天使币'), findsOneWidget);
+    });
+
+    testWidgets('a window the forum refuses for this floor still closes the kept form with the message', (
+      tester,
+    ) async {
+      final forum = _FakeForum(
+        windows: [_windowWithFormHash('AAAAAAAA'), _duplicateWindow],
+        submits: [_data('rate_submit_success_x5.xml')],
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+
+      await open(tester, 'open B');
+      await tester.pumpAndSettle();
+      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.widgetWithText(SnackBar, '抱歉，您不能对同一个帖子重复评分'), findsOneWidget);
+      expect(forum.posts, hasLength(1));
+    });
+
+    test('kept per account and thread, for half an hour; a rate takes its scores off', () async {
+      final window = RateRepository();
+      useForum(_FakeForum(windows: [_windowWithFormHash('AAAAAAAA')]));
+      final info = (await window.fetchInfo(pid: _pid, rateTarget: _rateAction).run()).unwrap();
+      final t0 = DateTime(2026, 10, 8, 9);
+
+      expect(RateWindowCache.tidOf(_rateAction), '1264975');
+      expect(RateWindowCache.tidOf('forum.php?mod=misc&action=rate&tid=7&pid=8'), '7');
+      expect(RateWindowCache.get('1264975'), isNull);
+
+      RateWindowCache.putRated(info, {'score2': '5', 'score4': '', 'score5': '-3'}, now: t0);
+      final kept = RateWindowCache.get('1264975', now: t0)!;
+      expect(kept.scoreList.map((e) => e.remaining), ['15', '40', '37']);
+      expect(kept.formHash, 'AAAAAAAA');
+      expect(RateWindowCache.get('1264999', now: t0), isNull);
+      expect(RateWindowCache.get('1264975', now: t0.add(const Duration(minutes: 29))), isNotNull);
+      expect(RateWindowCache.get('1264975', now: t0.add(const Duration(minutes: 31))), isNull);
+
+      RateWindowCache.put(info, now: t0);
+      await settings.setValue(SettingsKeys.loginUid, 36);
+      expect(RateWindowCache.get('1264975', now: t0), isNull, reason: 'another account');
+      await settings.setValue(SettingsKeys.loginUid, 35);
+      expect(RateWindowCache.get('1264975', now: t0), isNotNull);
     });
   });
 }

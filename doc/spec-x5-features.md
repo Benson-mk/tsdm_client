@@ -1500,3 +1500,12 @@ B. 論壇提醒屏蔽規則
   - test_194 用測試站成對素材，涵蓋勳章中心、稱號、稱號商店、成就、首頁（狀態、分頁區塊、登入使用者、每日登入網址、紅包設定、formhash）、個人資料、搜尋，App 解析結果與網頁一致。
   - test_193 素材以 1.4.0 重抓。
   - 正式站樣式另外離線比對（不進 repo），涵蓋私信對話、收藏、搜尋、勳章、稱號、商店、成就、首頁、個人資料，全部一致。測試帳號沒有收藏、稱號、成就，這幾頁只比到空列表。
+
+## 56. 評分視窗按帖保留（論壇回報：連續撒糖變慢，2026-10-08）
+
+- 回報：「如果去掉這個刷新的機制，撒糖會很快；之前 App 撒糖不會刷新」。調查：帖子頁在評分後本來就不重載（§35）；每次評分慢在 `RatePostPage` 一開啟就 GET 評分視窗（`fetchInfo`），轉圈結束才有表單，一樓一次。視窗內容除了 `pid` 和「今日剩餘」之外（formhash、分數列與區間、預設理由、`sendreasonpm` 是否強制、referer、handlekey）同一帳號在同一帖裡都相同；TSDM 允許連續評分，formhash 數天才換（§35.2）。
+- `RateWindowCache`（`lib/features/rate/repository/rate_window_cache.dart`）：以「登入 uid／tid」為鍵保留最後一次抓到的 `RateWindowInfo`，`maxAge` 30 分鐘；沒有登入 uid（`SettingsRepository.loginUid` 為 0）時不保留。`tidOf()` 從 rateAction 網址取 tid。`put()` 在每次抓到視窗時（首次、背景、被拒後重抓）呼叫；`putRated()` 在評分成功時把送出的各分數（取絕對值）從「今日剩餘」扣掉再保留，剩餘或分數不是整數的欄位不動。
+- `RateBloc._onRateFetchInfoRequested`：有保留的視窗時直接 `gotInfo`，`info` 用保留的視窗換上這次的 `pid`，不經過 `fetchingInfo`；接著在同一個 handler 裡抓這一樓的視窗：成功就 `put()`，而且只在 `status` 仍為 `gotInfo` 且頁面的 pid 沒變時以新視窗取代 `info`（使用者已送出就不動）；論壇拒絕這一樓（`RateInfoWithErrorException`，例如不能重複評、不能評自己）且仍在 `gotInfo` 時照舊 `failed`＋`shouldRetry=false`，頁面關閉並顯示原因；其他錯誤忽略，保留的視窗照用，過期的 formhash 會被論壇以訊息拒絕、進入 `rateFailed` 重抓。沒有保留時流程不變。
+- 不做的：跨帳號、一鍵全樓、免開頁直接套範本送出。
+- 驗證（test_098 新群組）：評完 A 樓再開同帖 B 樓，B 的視窗還沒回來時表單已在、天使币剩餘 20→15、此時送出用保留的 formhash 與 B 的 pid；B 的視窗先回來時剩餘與 formhash 換成論壇的；另一帖先轉圈再有表單；論壇拒絕 B 樓時頁面關閉並顯示原因、沒有送出；快取按帳號與帖分開、30 分鐘過期、扣分計算（'5'、''、'-3' → 15、40、37）。
+
