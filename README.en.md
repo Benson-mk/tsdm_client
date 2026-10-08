@@ -16,15 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.33.0 (2026-10-06)
+## Latest update: 1.33.1 (2026-10-09)
 
-- With the forum's app API plugin 1.4.0, threads, forums, home, messages, favorites, search, medals, titles and profiles are read in the forum's JSON mode, so header and sidebar changes on the forum no longer break the app; without the plugin the web pages are read as before.
-- Interactive content: rotating the screen no longer reloads it; only scripts the author wrote count as interactive.
-- In-app update (Windows): the app no longer closes when the update script is blocked; folders that cannot be updated are reported before downloading.
-- Android build number 125, installs over earlier releases and test builds.
-
-[Download 1.33.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.0) · [Full changelog](./CHANGELOG.md)
-
+- Message sync (Android): the background service's requests had no timeout, so a request held while the phone slept could hang for over an hour with no new messages meanwhile; requests now time out, a sync has a deadline, and messages that arrive after it are still announced. With the service on, the app and the service no longer each poll.
+- Settings → View historical logs: the background service's own log can now be viewed and exported.
+- In-app update (Windows): "cannot start the update", and the app closing without updating, are fixed; the upgrade from 1.33.0 still has to be installed by hand, later ones update in the app.
+- Rating: rating floor after floor in one thread shows the form at once instead of loading the rate window for every floor.
+- Android build number 126, installs over earlier releases and test builds.
+[Download 1.33.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.1) · [Full changelog](./CHANGELOG.md)
 ## What it is
 
 A cross-platform client for the [天使动漫 forum](https://www.tsdm39.com/). When the forum moved to Discuz! X5 in 2026 the original client could no longer parse its pages; this project took over maintenance at the forum's request, adapted the app to the X5 page structure and keeps adding features. It is the client version recognised by the forum as official.
