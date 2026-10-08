@@ -301,7 +301,8 @@ void main() {
       expect(script, contains('a folder is in the way'));
 
       final launch = installer.launches.single;
-      expect(launch.first, 'powershell.exe');
+      // The full path on a Windows machine, the name where it does not exist.
+      expect(launch.first, anyOf('powershell.exe', endsWith(r'\WindowsPowerShell\v1.0\powershell.exe')));
       String arg(String name) => launch[launch.indexOf(name) + 1];
       expect(arg('-File'), p.join(updates, WindowsUpdateInstaller.scriptName));
       expect(arg('-ProcessId'), '$pid');

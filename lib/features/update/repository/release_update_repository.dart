@@ -386,6 +386,10 @@ class ReleaseUpdateRepository {
   static final _artifact = RegExp(r'^update-([0-9]+)-[0-9]+\.(apk|zip|part)$');
   static final _windowsWorkDirectory = RegExp(r'^(staging-[0-9]+|backup-[0-9]+(-[0-9]+)?)$');
 
+  /// A cancel marker of a Windows update attempt (see `WindowsUpdateInstaller.cancelledMarkerName`); kept for an
+  /// hour, far longer than the script it is for could still be waiting.
+  static final _windowsCancelMarker = RegExp(r'^apply-update\.started\.[0-9a-f]+\.cancelled$');
+
   /// Removes what no later step will use: unfinished downloads, and downloads of any version but [keepVersionCode]
   /// (an installed or replaced release). Windows also leaves the unpacked and backed up folders of an applied update;
   /// a backup marked by an incomplete rollback (`<backup>.incomplete` next to it) is kept with its marker.
@@ -401,6 +405,9 @@ class ReleaseUpdateRepository {
         if (entry is File) {
           final match = _artifact.firstMatch(name);
           if (match != null && (match.group(2) == 'part' || int.parse(match.group(1)!) != keepVersionCode)) {
+            await _delete(entry);
+          } else if (_windowsCancelMarker.hasMatch(name) &&
+              DateTime.now().difference(entry.statSync().modified) > const Duration(hours: 1)) {
             await _delete(entry);
           }
         } else if (entry is Directory &&

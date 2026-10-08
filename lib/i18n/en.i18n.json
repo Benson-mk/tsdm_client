@@ -529,7 +529,8 @@
       "viewHistoryLog": {
         "title": "View historical log",
         "historicalLogs": "Historical logs",
-        "export": "Export"
+        "export": "Export",
+        "backgroundService": "Background service"
       },
       "copyDatabaseDir": "Copy database path",
       "testNotification": {

@@ -1501,6 +1501,59 @@ B. 論壇提醒屏蔽規則
   - test_193 素材以 1.4.0 重抓。
   - 正式站樣式另外離線比對（不進 repo），涵蓋私信對話、收藏、搜尋、勳章、稱號、商店、成就、首頁、個人資料，全部一致。測試帳號沒有收藏、稱號、成就，這幾頁只比到空列表。
 
+## 55. 通知重複拉取與 Windows 更新診斷（2026-10-07，#173、#172）
+
+**#173 背景拉取常失敗。** 回報的 log 裡，3 次自動拉取失敗都是網路層錯誤（`Unable to resolve host`、timeout），同時間的一般網頁也一起失敗，與接口無關；另有 1 次 `notify` 被插件以 429（`error: busy`）擋下，之後改抓網頁成功。429 的原因是 Android 開了背景訊息服務（#80）時，App 內的 `AutoNotificationCubit` 與服務 isolate 的 `backgroundSyncTick` 各有一個計時器、同一間隔各拉一次，兩邊落在插件 3 秒的間隔內就撞上。
+
+- **共用一次拉取**：新增 `NotificationPollSlot`（`lib/features/notification/utils/poll_slot.dart`），在共用資料庫的設定表記 `notificationPolledAt.<uid>`（毫秒）。`take()` 讀上次時間，距今不超過半個間隔就回 null（這次不拉），否則寫入現在時間並回傳這個時間戳（第二輪改為時間戳，供 `release()` 用）；時間在未來（時鐘被調回）不擋。兩個計時器不論相位差多少，每個間隔只會拉一次。
+  - `AutoNotificationCubit._onTimeout`：取得 uid 後先 `take()`，失敗時記 debug、回到 ticking 狀態並結束；服務存進去的資料由既有的 `BackgroundSyncBridgeCubit` 帶進頁面。
+  - `backgroundSyncTick`：確認已登入後先 `take()`，失敗回 `BackgroundSyncSkipped('polled by the app moments ago')`；App 存的資料，服務下次拉取時會判定為已知。新增選用參數 `now`（測試用）。
+- **連不上時重試一次**：`NotificationRepository.fetchNotificationWith` 拆出 `_fetchNotificationOnce`。輪詢（有 `timestamp`）的結果若是 `HttpHandshakeFailedException` 且 `statusCode == null`（沒有任何回應：DNS、連線、逾時），等 `retryDelay`（預設 5 秒，建構子可設定）後整個流程再跑一次；有狀態碼的錯誤（含 429、5xx）不重試。
+
+**#173 第二輪（2026-10-08）。** 測試包 1.33.1-test.1 回報：App 在前景或小窗模式時都正常；「純背景」時有一段時間沒有推送，之後一次拉到 21 條；兩台裝置同一網路。附的「log_2026-10-08.txt」是 App 自己的每日日誌（匯出檔名 `log_<日期>.txt`），只含兩段前景時間，中間沒有任何自動拉取紀錄；App 每次打開都記 `start app`，表示 UI isolate 在背景時已被系統回收，而服務通知的時間一直是 6:34，表示服務 isolate（同一程序）一直活著。所以純背景期間只有背景服務在拉，但它那段時間沒有拉到、也沒有存進任何東西（否則 11:01 不會一次「新」21 條）。要判斷是服務的 tick 失敗、被略過還是接口判定沒有新消息，需要服務自己的日誌 `tsdm_client_bg_<日期>.log`，但「查看歷史日誌」頁只列 `tsdm_client_<日期>.log`，使用者看不到也匯不出。這一輪：
+- `DebugHistoricalLogPage` 的檔名正則接受 `tsdm_client_(bg_)?<yyyyMMdd>.log`，`HistoricalLog.background` 標記服務日誌；列表標題「日期 · 背景服務」（三語 `viewHistoryLog.backgroundService`）、圖示 `sync`，同一天 App 的在前；匯出檔名 `log_bg_<日期>.txt`。
+- `NotificationPollSlot.take()` 改回傳取得的時間戳（null 表示略過），新增 `release(storage, uid, slot)`：存的值仍是這個 slot 時清為 0，讓另一邊可以立刻拉；之後另一邊已取走的不動。`AutoNotificationCubit._onTimeout` 拉取失敗時 release；`backgroundSyncTick` 的 `syncAll` 失敗或結果不是 `NotificationSyncResultSuccess` 時 release。避免 App 在背景拉取失敗（Kotlin client 逾時）卻佔掉服務那一輪。
+- 驗證：test_195 新增「失敗的拉取把這一輪還回去、過期的 release 不影響新 slot」「服務連不上論壇時 release，App 可立刻拉」。
+- **根因（同日稍後，使用者用 test.2 匯出服務日誌 `log_bg_2026-10-08.txt`）**：服務每分鐘的 tick 正常，但日誌裡有三段 67、76、229 分鐘的空白，各自的開頭都是一個 tick 剛 `build client without stored cookie` 就沒了下文，空白結束時才出現那個請求的錯誤（例如 8:03 發出的 privatepm 頁 GET 在 9:10 才報錯），而結束時間正好是使用者打開 App 的時間；最後一段 15:46 的 tick 到匯出時（16:18）仍未結束，16:00～16:01 的評分提醒因此漏掉。服務用的是 dart:io client（`buildDefaultDio(nativeHttp: false)`），`BaseOptions` 沒有任何 timeout；裝置休眠時系統把連線掛住，請求就一直不回，而 `backgroundSyncEntryPoint.tick()` 以 `ticking` 旗標跳過還在跑的 tick（而且不記 log），所以之後每一輪都靜悄悄地被跳過，直到 App 打開、網路恢復、那個請求才報錯結束。Kotlin client 有 15 s／30 s 逾時，所以前景和小窗模式不受影響。
+  - `buildDefaultDio`：`BaseOptions` 加 `connectTimeout` 20 s、`sendTimeout` 30 s、`receiveTimeout` 60 s（dart:io client 用於桌面版與背景服務；比 Kotlin 寬，因為插件頁面較慢）。
+  - `backgroundSyncTick` 新增 `deadline`（預設 `backgroundSyncDeadline` 3 分鐘）：`syncAll().run().timeout()` 逾時當作 `HttpRequestFailedException(null)`，記 warning，release poll slot，回 `BackgroundSyncSkipped('sync failed: …')`；下一輪重新建 client 拉取。
+  - `tick()` 跳過仍在跑的 tick 時記 debug。
+  - 驗證：test_195「論壇永不回應的 tick 在 deadline 結束並把這一輪還回去」。
+- **對抗性審查（2026-10-09）修正**：
+  - `take()` 原本在 `prepareNetwork`／`refreshCookieCache` 之前，這兩步失敗沒有 release，App 半個間隔內也不拉，兩邊都不拉。改成拿到 cookie 後、`syncAll` 前才 take，整段 `try/finally`，不是 `Success` 一律 release（含例外）。
+  - deadline 只放棄等待、不中止請求；放棄的那輪晚點完成時，`NotificationSyncAllRepository._currentInfo` 是共用欄位，它的結果會 append 進下一輪的 `finished`，下一輪明明成功卻回報上一輪的失敗（或推送上一輪的 latest）。`syncAll` 改用區域 list 回傳自己這輪的結果，`_currentInfo` 只做進度廣播；tick 取 `finished` 裡本帳號的最後一筆。
+  - 放棄的那輪晚點成功時，列已經存進資料庫但沒有推送，之後也不會再算新。`backgroundSyncTick` 新增 `onLate`：逾時後把那個 future 接到 `_outcomeOf()`（重讀設定判 Disabled／Stale），交給 entry 的 `report()`，與正常結果同樣推送、`invoke(synced)`。deadline 由 3 分鐘改 6 分鐘，高於 client 逾時加一次重試的最壞情況（約 330 s）。
+  - 5 秒重試讓 `AutoNotificationCubit` 停在 Pending，登入／切換帳號等 3 秒就被拒；`fetchNotificationWith` 加 `retry` 參數，只有 `NotificationSyncAllRepository`（背景服務、同步全部帳號）帶 `retry: true`，App 內自動同步不重試。
+  - 既有 bug：`_onTimeout` 先 `emit(Pending)` 再檢查 uid，未登入時狀態永遠 Pending，登出後再登入被 login_form 拒絕直到重啟。改成有 uid 才 emit Pending。
+  - `take()` 的半個間隔由 `<` 改 `<=`，兩個計時器恰好差半個間隔時不再每輪都拉兩次。
+  - `exitApp` 在 `exit(0)` 前 `closeLogSink()`（2 秒上限），關閉前的錯誤才會寫進檔案。
+  - 歷史日誌檔名正則 `\.log$` 跳脫、日期要是真日期（`20261399` 不列）。
+  - Windows 更新：App 等不到腳本回報（20 秒）時寫 `apply-update.started.<nonce>.cancelled`，腳本在 App 結束後、動任何檔案前檢查到就記錄並退出（否則遲到的腳本會在使用者之後自行關閉 App 時換檔重開，重試時兩支腳本同時換檔、開兩個實例）；`cleanup()` 刪超過一小時的取消檔。`$exited` 預設 `$false`，只在確認結束後設 `$true`；`Write-Log` 與清空日誌包 try/catch，日誌寫不進去不會讓腳本在重啟 App 前終止；`New-Item -Path`／`Copy-Item -Destination`／`Start-Process -FilePath` 會把 `[ ]` 當萬用字元，改用 `[System.IO.Directory]::CreateDirectory`、`[System.IO.File]::Copy`、`ProcessStartInfo`。腳本仍只含 ASCII。
+  - 驗證：test_195 新增 prepareNetwork 失敗後 App 可立刻拉、兩輪 `syncAll` 重疊各回自己的結果、逾時後晚到的結果交給 `onLate`、未登入時不停在 Pending、取消檔與腳本的取消檢查、`$exited` 預設與 .NET 呼叫；`powershell.exe` 斷言改為同時接受完整路徑（Windows 開發機）。
+
+**#172 Windows App 內更新沒有套用。** 回報附的是之後手動重開的 log，沒有更新過程，`update.log` 也沒附，無法確定斷在哪一步。依症狀（App 關閉、沒有重開、仍是舊版）只可能是腳本等不到 App 結束而放棄，或腳本在換檔前被中斷；換檔中途失敗會還原並重開舊版，不符合。這次先補強並讓下次回報能看出原因：
+
+- `exitApp()`：`StorageProvider.dispose()` 加 3 秒逾時並攔下所有錯誤，桌面版之後一定執行 `exit(0)`。原本 dispose 出錯時 `exit` 不會執行，而安裝流程是以 `unawaited` 呼叫，錯誤無人處理、App 不退出。
+- 更新腳本：寫完 marker、清空日誌後立刻記 `started, waiting for the app (process N) to exit`，App 結束後記 `the app exited`；`WaitForExit` 由 60 秒延長為 600 秒。腳本仍只含 ASCII。
+- `WindowsUpdateInstaller.reportLastAttempt()`：`apply-update.started` 存在時，把 `update.log` 全文以 info 寫進 App 日誌，再刪除 marker，因此每次嘗試只回報一次。`main.dart` 在 Windows 啟動時以 `unawaited` 呼叫，錯誤只記 warning。
+- 啟動日誌的分隔行加上 `appFullVersion`（版本、commit、日期）。
+- 第三個測試包（wintest.3）2026-10-08 回報「可以了，测试成功」，附的 log 以 1.33.0 正式版啟動（分隔行沒有版本號，是 1.33.0 的格式）。
+- 第一個測試包（1.33.0-wintest.1）回報：按安裝後顯示「無法開始更新」、App 沒退出，日誌裡沒有任何更新紀錄。也就是 5 秒內沒讀到 marker（或 PowerShell 啟動不了），但看不出是哪一種。第二輪修正：
+  - 等 marker 的時間由 5 秒延長為 20 秒：冷啟動的 PowerShell 加上防毒掃描腳本，可能超過 5 秒。
+  - 以 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 的完整路徑啟動（`powershellPath`），檔案不存在時才退回 `powershell.exe`。
+  - `install()` 記錄更新資料夾與安裝資料夾、解壓完成、啟動的程式；檔案錯誤與 `ProcessException` 記 error。等不到 marker 時記錄腳本是否還在（防毒刪除）、marker 與 `update.log` 的內容。
+  - `UpdateDownloadCubit` 的下載、安裝失敗都記 warning，附上失敗種類或例外。
+- 第二個測試包（wintest.2）回報的 log：`release unpacked, starting C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`，20 秒後 `script present, marker missing, log missing`，兩次一樣；只有 Defender，沒有提示，檔案都在。PowerShell 有啟動但腳本第一行都沒執行。
+- **根因：`ProcessStartMode.detached`。** Dart 的 `process_win.cc` 對非 attached 模式加 `DETACHED_PROCESS`（子程序沒有任何主控台），std handle 指向 NUL；一般模式則加 `CREATE_NO_WINDOW`（隱藏的主控台）並接 pipe。在使用者的 Windows 上以 P/Invoke `CreateProcessW` 重現（`%TEMP%\tsdm-ps-test`，假的 App 程序與目標資料夾）：
+  - `DETACHED_PROCESS` + NUL：powershell.exe 立刻結束、exit code 0，marker、日誌都沒有，與回報完全一致。
+  - `CREATE_NO_WINDOW` + NUL：marker 寫入，腳本等到假 App 結束，`backed up 2 files`、`installed 3 files`，目標資料夾其他檔案保留。
+  - `CREATE_NO_WINDOW` + pipe、父程序立刻結束（等同 App 退出後 pipe 斷掉）：腳本照常跑完。
+  - 修正：`_launchDetached` 改用一般模式 `Process.start`，並 `drain` stdout／stderr。Windows 不會因父程序結束而終止子程序，Dart 也沒有用 Job object。腳本的腳本本身沒有改。
+- 未處理的可能性：若 App 由會在結束時終止子程序的 Job（某些啟動器）啟動，PowerShell 會跟著被結束。腳本日誌只會停在 `started`，下次回報可以看出來；屆時再考慮脫離 Job 的啟動方式。
+- **驗證**：
+  - test_195：兩個輪詢者在半個間隔內第二個略過、下一個間隔照常；七種相位差下十分鐘內都只拉 10～11 次；帳號互不影響、時鐘調回不擋；App 剛拉過時服務的 tick 略過且沒有發出請求；第一次完全連不上時重試成功、持續連不上只重試一次、有狀態碼的錯誤不重試；腳本含啟動與退出的日誌、等待 600 秒、marker 寫在日誌之前、全 ASCII；上次嘗試的日誌只寫進 App 日誌一次並刪除 marker；腳本沒回報時日誌記下更新資料夾，以及腳本、marker、日誌的狀態，非 Windows 環境退回 `powershell.exe`。
+  - test_090 的 tick 改用相隔一分鐘的 `now`。
+  - 未在實機或 Windows 上執行。
 ## 56. 評分視窗按帖保留（論壇回報：連續撒糖變慢，2026-10-08）
 
 - 回報：「如果去掉這個刷新的機制，撒糖會很快；之前 App 撒糖不會刷新」。調查：帖子頁在評分後本來就不重載（§35）；每次評分慢在 `RatePostPage` 一開啟就 GET 評分視窗（`fetchInfo`），轉圈結束才有表單，一樓一次。視窗內容除了 `pid` 和「今日剩餘」之外（formhash、分數列與區間、預設理由、`sendreasonpm` 是否強制、referer、handlekey）同一帳號在同一帖裡都相同；TSDM 允許連續評分，formhash 數天才換（§35.2）。

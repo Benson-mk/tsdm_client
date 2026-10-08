@@ -7,12 +7,14 @@ import 'package:responsive_framework/responsive_framework.dart';
 import 'package:system_theme/system_theme.dart';
 import 'package:tsdm_client/app.dart';
 import 'package:tsdm_client/cmd.dart';
+import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/color.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_controller.dart';
 import 'package:tsdm_client/features/local_notice/callback.dart';
 import 'package:tsdm_client/features/local_notice/show.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/update/repository/windows_update_installer.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
@@ -47,7 +49,7 @@ Future<void> _boot(List<String> args) async {
 
   parseCmdArgs(args);
 
-  talker.debug('------------------- start app -------------------');
+  talker.debug('------------------- start app $appFullVersion -------------------');
   listenAndroidWindowEvents();
   await initProviders();
 
@@ -61,6 +63,11 @@ Future<void> _boot(List<String> args) async {
     await LocaleSettings.useDeviceLocale();
   } else {
     await LocaleSettings.setLocale(locale);
+  }
+
+  if (isWindows) {
+    // A report of an in-app update that did not apply then carries what the update script did (GitHub #172).
+    unawaited(WindowsUpdateInstaller().reportLastAttempt());
   }
 
   // Desktop only: init window manager and restore window bounds.

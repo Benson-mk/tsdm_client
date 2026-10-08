@@ -6,9 +6,10 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:tsdm_client/features/update/repository/release_update_repository.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/widgets/shutdown.dart';
 
-/// Starts a process detached from the app, so it outlives it.
+/// Starts a process that outlives the app, without anything on screen.
 typedef DetachedLauncher = Future<void> Function(String executable, List<String> arguments);
 
 /// Installs the portable Windows build over the folder the app runs from.
@@ -28,7 +29,7 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     String? updateDirectory,
     DetachedLauncher? launch,
     Future<void> Function()? quit,
-    Duration startTimeout = const Duration(seconds: 5),
+    Duration startTimeout = const Duration(seconds: 20),
   }) : _executable = executable,
        _updateDirectory = updateDirectory,
        _launch = launch ?? _launchDetached,
@@ -56,8 +57,43 @@ class WindowsUpdateInstaller implements UpdateInstaller {
   /// Written by the update script as its first action, holding the nonce it was started with.
   static const startedMarkerName = 'apply-update.started';
 
+  /// Written by the app when the script of [nonce] did not report in within [_startTimeout]: that script, should it
+  /// run after all, must not touch the installation. The app went on, the user may retry, another script may be
+  /// waiting for the same exit, and the app may close for good much later.
+  static String cancelledMarkerName(String nonce) => '$startedMarkerName.$nonce.cancelled';
+
+  /// Copy the log of the last update attempt into the app's log, once: a report of an update that did not apply then
+  /// carries what the script did (GitHub #172). Nothing happens when no attempt was made since the last report.
+  Future<void> reportLastAttempt() async {
+    try {
+      final updates = await directory();
+      final marker = File(p.join(updates, startedMarkerName));
+      if (!marker.existsSync()) return;
+      final log = File(p.join(updates, logName));
+      final text = log.existsSync() ? (await log.readAsString()).trim() : '';
+      talker.info('last update attempt, script log:\n${text.isEmpty ? '(empty)' : text}');
+      await marker.delete();
+    } on Exception catch (e) {
+      talker.warning('failed to read the last update attempt: $e');
+    }
+  }
+
+  /// Windows PowerShell by its full path: a PATH without System32 must not stop the update.
+  static String get powershellPath {
+    final root = Platform.environment['SystemRoot'] ?? Platform.environment['windir'] ?? r'C:\Windows';
+    final full = p.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    return File(full).existsSync() ? full : 'powershell.exe';
+  }
+
+  /// Not [ProcessStartMode.detached]: on Windows that is `DETACHED_PROCESS`, a process without any console, and
+  /// PowerShell then exits at once without running the script (GitHub #172, reproduced). The normal mode starts it
+  /// with `CREATE_NO_WINDOW`: a hidden console, nothing on screen, and a child that outlives the app like any process
+  /// on Windows. Its pipes are drained so it never blocks on output; they break when the app exits, and the script
+  /// writes nothing to them.
   static Future<void> _launchDetached(String executable, List<String> arguments) async {
-    await Process.start(executable, arguments, mode: ProcessStartMode.detached);
+    final process = await Process.start(executable, arguments);
+    unawaited(process.stdout.drain<void>());
+    unawaited(process.stderr.drain<void>());
   }
 
   @override
@@ -101,14 +137,18 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     final staging = Directory(p.join(updates, 'staging-${update.versionCode}'));
     // A new backup folder every time: one kept after an incomplete rollback is never overwritten.
     final backup = p.join(updates, 'backup-${update.versionCode}-${DateTime.now().millisecondsSinceEpoch}');
+    final script = File(p.join(updates, scriptName));
+    final log = File(p.join(updates, logName));
+    final powershell = powershellPath;
+    talker.info('windows update: install ${update.versionCode} from $updates into ${installDir.path}');
     try {
       if (staging.existsSync()) await staging.delete(recursive: true);
       await extractRelease(File(update.path), staging);
-      final script = File(p.join(updates, scriptName));
       await script.writeAsString(updateScript, flush: true);
       // A marker left by an earlier attempt must not pass for this one.
       if (marker.existsSync()) await marker.delete();
-      await _launch('powershell.exe', [
+      talker.debug('windows update: release unpacked, starting $powershell');
+      await _launch(powershell, [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
@@ -126,21 +166,44 @@ class WindowsUpdateInstaller implements UpdateInstaller {
         '-Backup',
         backup,
         '-Log',
-        p.join(updates, logName),
+        log.path,
         '-Marker',
         marker.path,
         '-Nonce',
         nonce,
       ]);
-    } on FileSystemException {
+    } on FileSystemException catch (e) {
+      talker.error('windows update: file error before the script started: $e');
       throw const UpdateDownloadException(UpdateDownloadFailure.storage);
-    } on ProcessException {
+    } on ProcessException catch (e) {
+      talker.error('windows update: PowerShell could not be started: $e');
       throw const UpdateDownloadException(UpdateDownloadFailure.install);
     }
     // Started is not running: the app stays open unless the script reports in.
     if (!await _waitForStart(marker, nonce)) {
+      // A script that starts late must stand down: the app is not exiting for it.
+      try {
+        await File(p.join(updates, cancelledMarkerName(nonce))).writeAsString(nonce, flush: true);
+      } on FileSystemException catch (e) {
+        talker.warning('windows update: could not write the cancel marker: $e');
+      }
+      // What is left tells why (GitHub #172): an antivirus removes the script, a policy stops PowerShell before the
+      // first line, a slow start writes the marker later.
+      String read(File f) {
+        try {
+          return f.existsSync() ? '"${f.readAsStringSync().trim()}"' : 'missing';
+        } on FileSystemException catch (e) {
+          return 'unreadable ($e)';
+        }
+      }
+
+      talker.error(
+        'windows update: the script did not report in within ${_startTimeout.inSeconds}s; '
+        'script ${script.existsSync() ? 'present' : 'missing'}, marker ${read(marker)}, log ${read(log)}',
+      );
       throw const UpdateDownloadException(UpdateDownloadFailure.install);
     }
+    talker.info('windows update: the script runs, exiting');
     // Leave a moment for the page to show that the app restarts, then exit so the script can replace the files.
     unawaited(Future<void>.delayed(const Duration(milliseconds: 800), _quit));
     return true;
@@ -240,22 +303,32 @@ param(
 # First of all tell the app that the script runs; it only exits after reading this nonce.
 Set-Content -LiteralPath $Marker -Value $Nonce -Encoding ASCII
 $ErrorActionPreference = 'Stop'
+# A log that cannot be written must not stop the update, nor the restart of the app.
 function Write-Log([string]$Message) {
-  Add-Content -LiteralPath $Log -Value ('{0} {1}' -f (Get-Date -Format o), $Message) -Encoding UTF8
+  try { Add-Content -LiteralPath $Log -Value ('{0} {1}' -f (Get-Date -Format o), $Message) -Encoding UTF8 } catch { }
 }
+# .NET file calls take paths as they are; the cmdlets' -Path and -Destination read [ ] as wildcards.
 function Copy-WithRetry([string]$From, [string]$To) {
   $parent = Split-Path -Parent $To
-  if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+  [System.IO.Directory]::CreateDirectory($parent) | Out-Null
   for ($i = 0; $i -lt 20; $i++) {
-    try { Copy-Item -LiteralPath $From -Destination $To -Force; return } catch { Start-Sleep -Milliseconds 500 }
+    try { [System.IO.File]::Copy($From, $To, $true); return } catch { Start-Sleep -Milliseconds 500 }
   }
-  Copy-Item -LiteralPath $From -Destination $To -Force
+  [System.IO.File]::Copy($From, $To, $true)
 }
-Set-Content -LiteralPath $Log -Value '' -Encoding UTF8
-$exited = $true
+try { Set-Content -LiteralPath $Log -Value '' -Encoding UTF8 } catch { }
+Write-Log ('started, waiting for the app (process {0}) to exit' -f $ProcessId)
+$exited = $false
 try {
+  # The app exits on its own right after this script reported in; the long wait covers an exit held up by the system
+  # or done by hand, still applying the update instead of leaving the old version.
   $app = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($app -and -not $app.WaitForExit(60000)) { $exited = $false; throw 'the app did not exit' }
+  if ($app -and -not $app.WaitForExit(600000)) { throw 'the app did not exit' }
+  $exited = $true
+  Write-Log 'the app exited'
+  # The app gave up on this attempt (this script reported in too late): it closed for some other reason, maybe much
+  # later, and another script may be about to apply a newer attempt. Nothing is touched, nothing is started.
+  if (Test-Path -LiteralPath ($Marker + '.' + $Nonce + '.cancelled')) { Write-Log 'the app gave up on this attempt, nothing changed'; exit }
   Start-Sleep -Milliseconds 500
   $files = @(Get-ChildItem -LiteralPath $Source -Recurse -File | ForEach-Object {
     $_.FullName.Substring($Source.TrimEnd('\').Length).TrimStart('\')
@@ -312,7 +385,11 @@ try {
   Write-Log ('failed: {0}' -f $_)
 }
 if ($exited) {
-  Start-Process -FilePath (Join-Path $Target 'tsdm_client.exe') -WorkingDirectory $Target
+  $start = New-Object System.Diagnostics.ProcessStartInfo
+  $start.FileName = Join-Path $Target 'tsdm_client.exe'
+  $start.WorkingDirectory = $Target
+  $start.UseShellExecute = $true
+  [System.Diagnostics.Process]::Start($start) | Out-Null
 } else {
   # The app is still open: starting it again would run two instances on the same data.
   Write-Log 'the app is still running, not starting another instance'

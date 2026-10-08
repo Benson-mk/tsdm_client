@@ -167,22 +167,14 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
     await service.stopSelf();
   }
 
-  Future<void> tick() async {
-    if (ticking || stopping) {
+  /// Act on what a tick (or a fetch given up by one, answered later) brought.
+  Future<void> report(BackgroundSyncOutcome outcome) async {
+    if (stopping) {
+      // The app asked for the stop while the fetch was in flight: whatever came back is stored, not announced.
+      talker.debug('background sync: stopping, result of the last fetch not announced');
       return;
     }
-    ticking = true;
     try {
-      final outcome = await backgroundSyncTick(
-        storage: runtime.storage,
-        repository: runtime.repository,
-        prepareNetwork: runtime.refreshNetwork,
-      );
-      if (stopping) {
-        // The app asked for the stop while the fetch was in flight: whatever came back is stored, not announced.
-        talker.debug('background sync: stopping, result of the last fetch not announced');
-        return;
-      }
       switch (outcome) {
         case BackgroundSyncDisabled():
           await stop('switched off');
@@ -204,6 +196,30 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
             });
           }
       }
+    } on Object catch (e, st) {
+      talker.handle(e, st, 'background sync: reporting failed');
+    } finally {
+      await logSink.flush();
+    }
+  }
+
+  Future<void> tick() async {
+    if (stopping) {
+      return;
+    }
+    if (ticking) {
+      talker.debug('background sync: the previous tick is still running, skipped');
+      return;
+    }
+    ticking = true;
+    try {
+      final outcome = await backgroundSyncTick(
+        storage: runtime.storage,
+        repository: runtime.repository,
+        prepareNetwork: runtime.refreshNetwork,
+        onLate: (late) => unawaited(report(late)),
+      );
+      await report(outcome);
     } on Object catch (e, st) {
       talker.handle(e, st, 'background sync: tick failed');
     } finally {
