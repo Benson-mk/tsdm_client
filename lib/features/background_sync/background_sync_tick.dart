@@ -1,9 +1,20 @@
+import 'dart:async';
+
 import 'package:fpdart/fpdart.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
+import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+
+/// How long one tick of the background message service may take before it is given up.
+///
+/// Above the worst case of the client's own timeouts with the one retry (GitHub #173): the deadline is for a fetch
+/// the system holds past them.
+const backgroundSyncDeadline = Duration(minutes: 6);
 
 /// The settings one background sync reads fresh from the database.
 ///
@@ -100,6 +111,14 @@ final class BackgroundSyncDone extends BackgroundSyncOutcome {
 /// The service is meant to follow the in-app auto sync: with the interval set to never, or nobody logged in, the tick
 /// fetches nothing.
 ///
+/// The app's own auto sync shares the poll ([NotificationPollSlot], GitHub #173): a tick within half an interval of
+/// its last poll fetches nothing; a tick that fetched nothing gives the poll back. [now] is the time of the tick,
+/// the current time when not given.
+///
+/// A fetch not answered within [deadline] is given up ([BackgroundSyncSkipped]) so the next tick fetches afresh;
+/// what it brings when it does answer is stored like any fetch, so it is handed to [onLate] as the outcome it would
+/// have been: a message stored without its notification would never be announced, the next fetch finds it known.
+///
 /// [prepareNetwork] runs right before the fetch ([refreshBackgroundNetworkSettings] in the service). When it throws
 /// the tick fetches nothing: the proxy the user asked for could not be read, and fetching without it would be a
 /// direct connection the user did not choose.
@@ -111,6 +130,9 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   required StorageProvider storage,
   required NotificationSyncAllRepository repository,
   Future<void> Function()? prepareNetwork,
+  DateTime? now,
+  Duration deadline = backgroundSyncDeadline,
+  void Function(BackgroundSyncOutcome late)? onLate,
 }) async {
   final settings = await readBackgroundSyncSettings(storage);
   if (!settings.enabled) {
@@ -131,8 +153,53 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   }
   // The app may have logged in, out or switched accounts since the last tick.
   await storage.refreshCookieCache();
-  final user = UserLoginInfo(username: null, uid: settings.loginUid);
-  final info = await repository.syncAll(accounts: [user]).run();
+  // The app's own auto sync may have polled moments ago (GitHub #173). Taken only now, with everything a fetch
+  // needs in hand: taken earlier, a tick that could not fetch kept the app from polling too.
+  final uid = settings.loginUid;
+  final slot = await NotificationPollSlot.take(storage, uid, Duration(seconds: settings.intervalSeconds), now: now);
+  if (slot == null) {
+    return const BackgroundSyncSkipped('polled by the app moments ago');
+  }
+  var fetched = false;
+  try {
+    final run = repository.syncAll(accounts: [UserLoginInfo(username: null, uid: uid)]).run();
+    var timedOut = false;
+    final info = await run.timeout(
+      deadline,
+      onTimeout: () {
+        timedOut = true;
+        return left(HttpRequestFailedException(null));
+      },
+    );
+    if (timedOut) {
+      // A fetch the system holds (the device asleep) hung for hours and every later tick waited behind it: past
+      // the deadline this tick is over. What it brings later is announced by `onLate`, see above.
+      talker.warning('background sync: no answer within ${deadline.inSeconds}s, giving up this tick');
+      unawaited(
+        run.then(
+          (late) async => onLate?.call(await _outcomeOf(late, storage, settings)),
+          onError: (Object e) => talker.warning('background sync: the fetch given up failed later: $e'),
+        ),
+      );
+      return BackgroundSyncSkipped('no answer within ${deadline.inSeconds}s');
+    }
+    final outcome = await _outcomeOf(info, storage, settings);
+    fetched = outcome is BackgroundSyncDone && outcome.result is NotificationSyncResultSuccess;
+    return outcome;
+  } finally {
+    if (!fetched) {
+      // Nothing came of this poll: the app's own sync may take the interval after all.
+      await NotificationPollSlot.release(storage, uid, slot);
+    }
+  }
+}
+
+/// The outcome of a finished fetch, against the settings read again now (see [backgroundSyncTick]).
+Future<BackgroundSyncOutcome> _outcomeOf(
+  Either<AppException, NotificationSyncAllInfo> info,
+  StorageProvider storage,
+  BackgroundSyncSettings settings,
+) async {
   final after = await readBackgroundSyncSettings(storage);
   if (!after.enabled) {
     return const BackgroundSyncDisabled();
@@ -147,7 +214,9 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
     Left(:final value) => BackgroundSyncSkipped('sync failed: $value'),
     Right(:final value) => BackgroundSyncDone(
       uid: settings.loginUid,
-      result: value.finished.firstOrNull?.$2 ?? const NotificationSyncResultFailed('no result'),
+      result:
+          value.finished.where((e) => e.$1.uid == settings.loginUid).lastOrNull?.$2 ??
+          const NotificationSyncResultFailed('no result'),
     ),
   };
 }

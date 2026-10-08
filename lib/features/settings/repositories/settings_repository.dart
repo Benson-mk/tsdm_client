@@ -278,6 +278,12 @@ final class SettingsRepository with LoggerMixin {
     return Dio()
       ..httpClientAdapter = httpClientAdapter
       ..options = BaseOptions(
+        // The dart:io client has no limit of its own: a request the system holds (the device asleep, the network
+        // gone) hung for hours in the background message service, and every later sync waited behind it
+        // (GitHub #173). The Kotlin client has 15 s / 30 s; these are wider for the forum's slower pages.
+        connectTimeout: const Duration(seconds: 20),
+        sendTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
         headers: <String, String>{
           HttpHeaders.acceptHeader: _state.netClientAccept,
           HttpHeaders.acceptEncodingHeader: _state.netClientAcceptEncoding,

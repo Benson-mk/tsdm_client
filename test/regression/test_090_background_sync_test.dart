@@ -148,6 +148,10 @@ final class _RecordingNotificationBloc extends NotificationBloc {
   void add(NotificationEvent event) => events.add(event);
 }
 
+/// Ticks one interval apart: the poll shared with the app's auto sync (GitHub #173) never skips them.
+var _ticks = 0;
+DateTime nextTick() => DateTime(2026, 10, 7).add(Duration(minutes: _ticks++));
+
 void main() {
   late AppDatabase db;
   late StorageProvider storage;
@@ -198,7 +202,10 @@ void main() {
       expect(SettingsKeys.enableBackgroundMessageService.defaultValue, isFalse);
       final read = await readBackgroundSyncSettings(storage);
       expect(read.enabled, isFalse);
-      expect(await backgroundSyncTick(storage: storage, repository: repository()), isA<BackgroundSyncDisabled>());
+      expect(
+        await backgroundSyncTick(now: nextTick(), storage: storage, repository: repository()),
+        isA<BackgroundSyncDisabled>(),
+      );
       expect(adapter.requests, isEmpty);
     });
 
@@ -206,12 +213,12 @@ void main() {
       await settings.setValue(SettingsKeys.enableBackgroundMessageService, true);
       await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 0);
       expect(
-        await backgroundSyncTick(storage: storage, repository: repository()),
+        await backgroundSyncTick(now: nextTick(), storage: storage, repository: repository()),
         isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', 'auto sync is off'),
       );
       await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 60);
       expect(
-        await backgroundSyncTick(storage: storage, repository: repository()),
+        await backgroundSyncTick(now: nextTick(), storage: storage, repository: repository()),
         isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', 'not logged in'),
       );
       expect(adapter.requests, isEmpty);
@@ -223,7 +230,7 @@ void main() {
       addTearDown(repo.dispose);
       adapter.notice = _noticePage([_notice(11)]);
 
-      final first = await backgroundSyncTick(storage: storage, repository: repo);
+      final first = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo);
       expect(first, isA<BackgroundSyncDone>());
       final done = first as BackgroundSyncDone;
       expect(done.uid, _alice.uid);
@@ -238,13 +245,13 @@ void main() {
       );
 
       // The same page again: the row is known, nothing to announce.
-      final again = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final again = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(again.latest, isNull);
 
       // One more notice, stamped inside the window of the next fetch: still news (a dedup on the newest timestamp
       // alone missed a second notice in the same minute, PR #80 review).
       adapter.notice = _noticePage([_notice(12, at: DateTime.now().add(const Duration(minutes: 1))), _notice(11)]);
-      final more = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final more = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(more.latest, isA<NotificationAutoSyncInfoNotice>().having((e) => e.notice, 'notice', 1));
       expect(adapter.requests.where((u) => u.queryParameters['do'] == 'notice'), hasLength(3));
     });
@@ -256,7 +263,7 @@ void main() {
       adapter
         ..notice = _noticePage([_notice(11)])
         ..pm = _pmPage(3001, 'hello there');
-      final done = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final done = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(
         done.latest,
         isA<NotificationAutoSyncInfoPm>()
@@ -295,7 +302,7 @@ void main() {
         // Notice 11 names no author (never hidden), notice 12 is one of the blocked peer.
         ..notice = _noticePage([_notice(12, author: 3001), _notice(11)])
         ..pm = _pmPage(3001, 'hello there');
-      final done = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final done = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(
         done.result,
         isA<NotificationSyncResultSuccess>()
@@ -312,7 +319,7 @@ void main() {
 
       // Unblocked, the next tick announces nothing old again; the recount from storage counts the peer once more.
       await blocks.unblock(ownerUid: _alice.uid, uid: 3001);
-      final again = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final again = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(again.latest, isNull, reason: 'what was stored while blocked is not news later');
       expect(
         again.result,
@@ -332,7 +339,7 @@ void main() {
         ..notice = _guestPage
         ..pm = _guestPage
         ..bm = _guestPage;
-      final done = await backgroundSyncTick(storage: storage, repository: repo) as BackgroundSyncDone;
+      final done = await backgroundSyncTick(now: nextTick(), storage: storage, repository: repo) as BackgroundSyncDone;
       expect(done.result, isA<NotificationSyncResultNotAuthorized>());
       expect(done.latest, isNull);
     });
@@ -355,7 +362,7 @@ void main() {
       adapter
         ..pm = _pmPage(1001, 'for Alice')
         ..holdNotice = Completer<void>();
-      final tick = backgroundSyncTick(storage: storage, repository: repository());
+      final tick = backgroundSyncTick(now: nextTick(), storage: storage, repository: repository());
       while (adapter.requests.isEmpty) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
@@ -436,6 +443,7 @@ void main() {
       await loggedIn();
       adapter.pm = _pmPage(1001, 'hi');
       final outcome = await backgroundSyncTick(
+        now: nextTick(),
         storage: storage,
         repository: repository(),
         prepareNetwork: () async => throw StateError('no platform'),
@@ -453,7 +461,7 @@ void main() {
       adapter
         ..notice = _noticePage([_notice(11)])
         ..holdNotice = Completer<void>();
-      final tick = backgroundSyncTick(storage: storage, repository: repo);
+      final tick = backgroundSyncTick(now: nextTick(), storage: storage, repository: repo);
       // Wait until the fetch started, then remove the account the way the app does: through its own provider on
       // the same database, which the service's cookie cache never sees.
       while (adapter.requests.isEmpty) {

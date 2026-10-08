@@ -297,10 +297,15 @@ void main() {
       final body = script.substring(script.indexOf(')\n') + 2).trimLeft();
       final firstStatement = body.split('\n').firstWhere((line) => !line.trimLeft().startsWith('#'));
       expect(firstStatement, startsWith(r'Set-Content -LiteralPath $Marker -Value $Nonce'));
-      expect(script, contains(r'$exited = $false; throw'));
-      final relaunch = script.indexOf('Start-Process');
+      // Only an exit the script saw counts: false until the wait returned.
+      expect(script, contains(r'$exited = $false'));
+      expect(script, contains(r"if ($app -and -not $app.WaitForExit(600000)) { throw 'the app did not exit' }"));
+      expect(script.indexOf(r'$exited = $true'), greaterThan(script.indexOf('WaitForExit(600000)')));
+      const relaunchCall = '[System.Diagnostics.Process]::Start(';
+      final relaunch = script.indexOf(relaunchCall);
       expect(relaunch, greaterThan(script.indexOf(r'if ($exited) {')));
-      expect(script.indexOf('Start-Process', relaunch + 1), -1, reason: 'one guarded relaunch');
+      expect(script.indexOf(relaunchCall, relaunch + 1), -1, reason: 'one guarded relaunch');
+      expect(script, isNot(contains('Start-Process')));
       expect(script, contains('not starting another instance'));
     });
   });
