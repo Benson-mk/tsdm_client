@@ -4,6 +4,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/rate/models/models.dart';
 import 'package:tsdm_client/features/rate/repository/rate_repository.dart';
+import 'package:tsdm_client/features/rate/repository/rate_window_cache.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
 part 'rate_bloc.mapper.dart';
@@ -35,23 +36,58 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
   Future<void> _onRateFetchInfoRequested(RateFetchInfoRequested event, RateEmitter emit) async {
     _pid = event.pid;
     _rateAction = event.rateAction;
-    emit(state.copyWith(status: RateStatus.fetchingInfo));
-    await _rateRepository.fetchInfo(pid: event.pid, rateTarget: event.rateAction).match((e) {
-      handle(e);
-      if (e case HttpRequestFailedException()) {
-        error('failed to fetch rate info: $e');
-        emit(state.copyWith(status: RateStatus.failed));
-      } else if (e case RateInfoWithErrorException()) {
-        error('failed to fetch rate info: $e');
-        // Do NOT retry if server returns an error.
-        emit(state.copyWith(status: RateStatus.failed, failedReason: e.message, shouldRetry: false));
-      } else if (e case RateInfoException()) {
-        error('failed to fetch rate info: $e');
-        emit(state.copyWith(status: RateStatus.failed, failedReason: e.toString()));
-      } else {
-        emit(state.copyWith(status: RateStatus.failed));
+    final tid = RateWindowCache.tidOf(event.rateAction);
+    final kept = tid == null ? null : RateWindowCache.get(tid);
+    if (kept != null) {
+      // The window of this thread from the last rate: the form shows at once, with this post; the window of this
+      // post loads behind it and only replaces the info (today's remaining scores, a new form hash) while the user
+      // has not sent anything. A window the forum refuses for this post still closes the page with its message.
+      debug('rate window of thread $tid kept from the last rate, loading this post behind it');
+      emit(state.copyWith(status: RateStatus.gotInfo, info: RateWindowCache.forPost(kept, event.pid)));
+      final rates = _rateCount;
+      switch (await _rateRepository.fetchInfo(pid: event.pid, rateTarget: event.rateAction).run()) {
+        case Right(:final value):
+          // A window from before a rate sent meanwhile would put back what that rate took off.
+          if (rates == _rateCount) RateWindowCache.put(value);
+          if (!emit.isDone && state.status == RateStatus.gotInfo && _pid == event.pid) {
+            emit(state.copyWith(info: value));
+          }
+        case Left(:final value):
+          handle(value);
+          if (value case RateInfoWithErrorException() when !emit.isDone && state.status == RateStatus.gotInfo) {
+            error('failed to fetch rate info: $value');
+            emit(state.copyWith(status: RateStatus.failed, failedReason: value.message, shouldRetry: false));
+          }
+        // Otherwise the kept window stays: the rate goes out with it, the forum refuses a stale one with a message.
       }
-    }, (v) => emit(state.copyWith(status: RateStatus.gotInfo, info: v))).run();
+      return;
+    }
+    emit(state.copyWith(status: RateStatus.fetchingInfo));
+    await _rateRepository
+        .fetchInfo(pid: event.pid, rateTarget: event.rateAction)
+        .match(
+          (e) {
+            handle(e);
+            if (e case HttpRequestFailedException()) {
+              error('failed to fetch rate info: $e');
+              emit(state.copyWith(status: RateStatus.failed));
+            } else if (e case RateInfoWithErrorException()) {
+              error('failed to fetch rate info: $e');
+              // Do NOT retry if server returns an error.
+              emit(state.copyWith(status: RateStatus.failed, failedReason: e.message, shouldRetry: false));
+            } else if (e case RateInfoException()) {
+              error('failed to fetch rate info: $e');
+              emit(state.copyWith(status: RateStatus.failed, failedReason: e.toString()));
+            } else {
+              emit(state.copyWith(status: RateStatus.failed));
+            }
+          },
+          (v) {
+            RateWindowCache.put(v);
+            emit(state.copyWith(status: RateStatus.gotInfo, info: v));
+          },
+        )
+        .run();
   }
 
   Future<void> _onRateRateRequested(RateRateRequested event, RateEmitter emit) async {
@@ -60,6 +96,8 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
 
     switch (await _rateRepository.rate(event.rateInfo).run()) {
       case Right():
+        // The next rate page of this thread starts from this window, with what this rate took off today's scores.
+        if (state.info case final info?) RateWindowCache.putRated(info, event.rateInfo);
         emit(state.copyWith(status: RateStatus.success));
       case Left(:final value):
         handle(value);
@@ -89,10 +127,18 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
     }
     final result = await _rateRepository.fetchInfo(pid: pid, rateTarget: rateAction).run();
     // Only while the form refused for this rate is shown: the user may have sent the rate again meanwhile.
-    if (result case Right(
-      :final value,
-    ) when !emit.isDone && rate == _rateCount && state.status == RateStatus.rateFailed) {
-      emit(state.copyWith(info: value));
+    final current = !emit.isDone && rate == _rateCount && state.status == RateStatus.rateFailed;
+    switch (result) {
+      case Right(:final value):
+        if (rate == _rateCount) RateWindowCache.put(value);
+        if (current) emit(state.copyWith(info: value));
+      case Left(value: RateInfoWithErrorException(:final message)) when current:
+        // The forum rates nothing on this post (own post, too old…): the page closes with its message, as it does
+        // when the window refuses before any form is shown.
+        error('failed to fetch rate info: $message');
+        emit(state.copyWith(status: RateStatus.failed, failedReason: message, shouldRetry: false));
+      case Left():
+        break;
     }
   }
 }
