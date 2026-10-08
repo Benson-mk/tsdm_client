@@ -1,10 +1,15 @@
 import 'package:fpdart/fpdart.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+
+/// How long one tick of the background message service may take before it is given up.
+const backgroundSyncDeadline = Duration(minutes: 3);
 
 /// The settings one background sync reads fresh from the database.
 ///
@@ -116,6 +121,7 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   required NotificationSyncAllRepository repository,
   Future<void> Function()? prepareNetwork,
   DateTime? now,
+  Duration deadline = backgroundSyncDeadline,
 }) async {
   final settings = await readBackgroundSyncSettings(storage);
   if (!settings.enabled) {
@@ -143,7 +149,15 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   // The app may have logged in, out or switched accounts since the last tick.
   await storage.refreshCookieCache();
   final user = UserLoginInfo(username: null, uid: settings.loginUid);
-  final info = await repository.syncAll(accounts: [user]).run();
+  // A fetch the system holds (the device asleep) hung for hours and every later tick waited behind it (GitHub
+  // #173): past the deadline this tick is over, the next one fetches afresh.
+  final info = await repository
+      .syncAll(accounts: [user])
+      .run()
+      .timeout(deadline, onTimeout: () => left(HttpRequestFailedException(null)));
+  if (info case Left(value: HttpRequestFailedException(statusCode: null))) {
+    talker.warning('background sync: no answer within ${deadline.inSeconds}s, giving up this tick');
+  }
   final fetched = switch (info) {
     Right(:final value) => value.finished.firstOrNull?.$2 is NotificationSyncResultSuccess,
     Left() => false,

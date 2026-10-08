@@ -11,6 +11,7 @@
 /// exiting.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -75,6 +76,20 @@ final class _Forum implements HttpClientAdapter {
         Headers.contentTypeHeader: ['application/json; charset=utf-8'],
       },
     );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// Never answers: a request the system holds while the device sleeps.
+final class _Silent implements HttpClientAdapter {
+  final requests = <Uri>[];
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) {
+    requests.add(options.uri);
+    return Completer<ResponseBody>().future;
   }
 
   @override
@@ -183,6 +198,39 @@ void main() {
       expect(outcome, isNot(isA<BackgroundSyncDone>().having((e) => e.latest, 'latest', isNotNull)));
       expect(forum.requests, isNotEmpty);
       // The app's sync may poll right away.
+      expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
+      await settings.dispose();
+    });
+
+    test('a tick the forum never answers ends at the deadline and gives the interval back', () async {
+      final settings = SettingsRepository(storage);
+      getIt.registerSingleton<SettingsRepository>(settings);
+      await settings.init();
+      await settings.setValue(SettingsKeys.loginUid, 7);
+      await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 60);
+      await settings.setValue(SettingsKeys.enableBackgroundMessageService, true);
+      await storage.saveCookie(
+        username: 'alice',
+        uid: 7,
+        cookie: {
+          '.index': '["$baseHost"]',
+          baseHost: '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=alice; Path=/;_crt=1"}}',
+        },
+      );
+      final silent = _Silent();
+      final outcome = await backgroundSyncTick(
+        storage: storage,
+        repository: NotificationSyncAllRepository(
+          storageProvider: storage,
+          notificationRepository: NotificationRepository(storageProvider: storage, retryDelay: Duration.zero),
+          clientFactory: (cookie) =>
+              NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = silent),
+          gap: Duration.zero,
+        ),
+        deadline: const Duration(milliseconds: 300),
+      ).timeout(const Duration(seconds: 5));
+      expect(outcome, isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', contains('sync failed')));
+      expect(silent.requests, isNotEmpty);
       expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
       await settings.dispose();
     });

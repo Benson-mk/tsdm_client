@@ -1514,7 +1514,11 @@ B. 論壇提醒屏蔽規則
 - `DebugHistoricalLogPage` 的檔名正則接受 `tsdm_client_(bg_)?<yyyyMMdd>.log`，`HistoricalLog.background` 標記服務日誌；列表標題「日期 · 背景服務」（三語 `viewHistoryLog.backgroundService`）、圖示 `sync`，同一天 App 的在前；匯出檔名 `log_bg_<日期>.txt`。
 - `NotificationPollSlot.take()` 改回傳取得的時間戳（null 表示略過），新增 `release(storage, uid, slot)`：存的值仍是這個 slot 時清為 0，讓另一邊可以立刻拉；之後另一邊已取走的不動。`AutoNotificationCubit._onTimeout` 拉取失敗時 release；`backgroundSyncTick` 的 `syncAll` 失敗或結果不是 `NotificationSyncResultSuccess` 時 release。避免 App 在背景拉取失敗（Kotlin client 逾時）卻佔掉服務那一輪。
 - 驗證：test_195 新增「失敗的拉取把這一輪還回去、過期的 release 不影響新 slot」「服務連不上論壇時 release，App 可立刻拉」。
-- 還不知道根因；等使用者附服務日誌。
+- **根因（同日稍後，使用者用 test.2 匯出服務日誌 `log_bg_2026-10-08.txt`）**：服務每分鐘的 tick 正常，但日誌裡有三段 67、76、229 分鐘的空白，各自的開頭都是一個 tick 剛 `build client without stored cookie` 就沒了下文，空白結束時才出現那個請求的錯誤（例如 8:03 發出的 privatepm 頁 GET 在 9:10 才報錯），而結束時間正好是使用者打開 App 的時間；最後一段 15:46 的 tick 到匯出時（16:18）仍未結束，16:00～16:01 的評分提醒因此漏掉。服務用的是 dart:io client（`buildDefaultDio(nativeHttp: false)`），`BaseOptions` 沒有任何 timeout；裝置休眠時系統把連線掛住，請求就一直不回，而 `backgroundSyncEntryPoint.tick()` 以 `ticking` 旗標跳過還在跑的 tick（而且不記 log），所以之後每一輪都靜悄悄地被跳過，直到 App 打開、網路恢復、那個請求才報錯結束。Kotlin client 有 15 s／30 s 逾時，所以前景和小窗模式不受影響。
+  - `buildDefaultDio`：`BaseOptions` 加 `connectTimeout` 20 s、`sendTimeout` 30 s、`receiveTimeout` 60 s（dart:io client 用於桌面版與背景服務；比 Kotlin 寬，因為插件頁面較慢）。
+  - `backgroundSyncTick` 新增 `deadline`（預設 `backgroundSyncDeadline` 3 分鐘）：`syncAll().run().timeout()` 逾時當作 `HttpRequestFailedException(null)`，記 warning，release poll slot，回 `BackgroundSyncSkipped('sync failed: …')`；下一輪重新建 client 拉取。
+  - `tick()` 跳過仍在跑的 tick 時記 debug。
+  - 驗證：test_195「論壇永不回應的 tick 在 deadline 結束並把這一輪還回去」。
 
 **#172 Windows App 內更新沒有套用。** 回報附的是之後手動重開的 log，沒有更新過程，`update.log` 也沒附，無法確定斷在哪一步。依症狀（App 關閉、沒有重開、仍是舊版）只可能是腳本等不到 App 結束而放棄，或腳本在換檔前被中斷；換檔中途失敗會還原並重開舊版，不符合。這次先補強並讓下次回報能看出原因：
 

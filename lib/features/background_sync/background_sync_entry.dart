@@ -168,7 +168,11 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
   }
 
   Future<void> tick() async {
-    if (ticking || stopping) {
+    if (stopping) {
+      return;
+    }
+    if (ticking) {
+      talker.debug('background sync: the previous tick is still running, skipped');
       return;
     }
     ticking = true;
