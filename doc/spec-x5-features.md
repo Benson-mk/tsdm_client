@@ -1507,5 +1507,12 @@ B. 論壇提醒屏蔽規則
 - `RateWindowCache`（`lib/features/rate/repository/rate_window_cache.dart`）：以「登入 uid／tid」為鍵保留最後一次抓到的 `RateWindowInfo`，`maxAge` 30 分鐘；沒有登入 uid（`SettingsRepository.loginUid` 為 0）時不保留。`tidOf()` 從 rateAction 網址取 tid。`put()` 在每次抓到視窗時（首次、背景、被拒後重抓）呼叫；`putRated()` 在評分成功時把送出的各分數（取絕對值）從「今日剩餘」扣掉再保留，剩餘或分數不是整數的欄位不動。
 - `RateBloc._onRateFetchInfoRequested`：有保留的視窗時直接 `gotInfo`，`info` 用保留的視窗換上這次的 `pid`，不經過 `fetchingInfo`；接著在同一個 handler 裡抓這一樓的視窗：成功就 `put()`，而且只在 `status` 仍為 `gotInfo` 且頁面的 pid 沒變時以新視窗取代 `info`（使用者已送出就不動）；論壇拒絕這一樓（`RateInfoWithErrorException`，例如不能重複評、不能評自己）且仍在 `gotInfo` 時照舊 `failed`＋`shouldRetry=false`，頁面關閉並顯示原因；其他錯誤忽略，保留的視窗照用，過期的 formhash 會被論壇以訊息拒絕、進入 `rateFailed` 重抓。沒有保留時流程不變。
 - 不做的：跨帳號、一鍵全樓、免開頁直接套範本送出。
+- 對抗性審查（2026-10-09）修正四項：
+  - 保留的表單讓理由下拉（`showDialog`）或範本頁可以疊在評分頁上；論壇此時拒絕這一樓，listener 的 `pop()` 關掉的是上面那層，評分頁留在 `failed` 永遠轉圈。listener 在 `shouldRetry == false` 時先 `popUntil` 回到評分頁自己的 route 再 pop。
+  - 評分送出前發出的視窗 GET 在送出後才回來，`put()` 會把扣過的今日剩餘蓋回去：kept 分支與 `_refreshInfo` 都記下發出時的 `_rateCount`，回來時不同就不存。
+  - `copyWith(pid:)` 漏改 referer 的 `#pid`：改用 `RateWindowCache.forPost()` 同時換 pid 與 referer 錨點（論壇只拿 referer 跳轉，無功能影響）。
+  - 被拒的評分重抓視窗時論壇也拒絕這一樓（自己的樓、太舊）：`_refreshInfo` 現在和首次載入一樣 `failed`＋`shouldRetry=false` 關頁顯示原因，不再留下送不出去的表單。
+  - `put()` 順手清掉過期項目。
+  - 驗證：test_098 新增四項（對話框開著時拒絕仍關頁、晚到的視窗不蓋回扣分、referer 帶新 pid、被拒後重抓也被拒則關頁）。
 - 驗證（test_098 新群組）：評完 A 樓再開同帖 B 樓，B 的視窗還沒回來時表單已在、天使币剩餘 20→15、此時送出用保留的 formhash 與 B 的 pid；B 的視窗先回來時剩餘與 formhash 換成論壇的；另一帖先轉圈再有表單；論壇拒絕 B 樓時頁面關閉並顯示原因、沒有送出；快取按帳號與帖分開、30 分鐘過期、扣分計算（'5'、''、'-3' → 15、40、37）。
 

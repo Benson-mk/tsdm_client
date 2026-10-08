@@ -534,9 +534,77 @@ void main() {
       expect(forum.posts.last, containsPair('formhash', 'AAAAAAAA'));
       expect(forum.posts.last, containsPair('pid', pidB));
       expect(forum.posts.last, containsPair('score2', '3'));
+      expect(forum.posts.last['referer'], endsWith('#pid$pidB'));
       expect(find.byType(RatePostPage), findsNothing);
       held.complete();
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('a window from before the rate, arriving after it, does not put the scores back', (tester) async {
+      final heldB = Completer<void>();
+      final heldAgain = Completer<void>();
+      final forum = _FakeForum(
+        windows: [
+          _windowWithFormHash('AAAAAAAA'),
+          _windowOf(formHash: 'BBBBBBBB', pid: pidB),
+        ],
+        submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
+        holds: {1: heldB, 2: heldAgain},
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+      await open(tester, 'open B');
+      await rate(tester, '3');
+      // The window of B (20 left, from before both rates) comes back only now.
+      heldB.complete();
+      await tester.pumpAndSettle();
+
+      await open(tester, 'open B');
+      expect(find.text(remaining('12')), findsOneWidget);
+      heldAgain.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a refusal arriving while the reason dialog is open still closes the page', (tester) async {
+      final held = Completer<void>();
+      final forum = _FakeForum(
+        windows: [_windowWithFormHash('AAAAAAAA'), _duplicateWindow],
+        submits: [_data('rate_submit_success_x5.xml')],
+        holds: {1: held},
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+
+      await open(tester, 'open B');
+      await tester.tap(find.byIcon(Icons.arrow_drop_down_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('很给力!'), findsOneWidget);
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('很给力!'), findsNothing);
+      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.byType(CenteredCircularIndicator), findsNothing);
+      expect(find.widgetWithText(SnackBar, '抱歉，您不能对同一个帖子重复评分'), findsOneWidget);
+      expect(forum.posts, hasLength(1));
+    });
+
+    testWidgets('a refused rate whose reloaded window is refused too closes the page with the message', (
+      tester,
+    ) async {
+      final forum = _FakeForum(
+        windows: [_windowWithFormHash('AAAAAAAA'), _duplicateWindow],
+        submits: [_data('rate_submit_rejected_x5.xml')],
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      await open(tester, 'open A');
+      await rate(tester, '5');
+      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.widgetWithText(SnackBar, '抱歉，您不能对同一个帖子重复评分'), findsOneWidget);
     });
 
     testWidgets('the window of the floor replaces the kept one when it arrives before the rate', (tester) async {
@@ -613,6 +681,11 @@ void main() {
       expect(RateWindowCache.tidOf(_rateAction), '1264975');
       expect(RateWindowCache.tidOf('forum.php?mod=misc&action=rate&tid=7&pid=8'), '7');
       expect(RateWindowCache.get('1264975'), isNull);
+
+      final forB = RateWindowCache.forPost(info, '77983793');
+      expect(forB.pid, '77983793');
+      expect(forB.referer, endsWith('#pid77983793'));
+      expect(forB.formHash, info.formHash);
 
       RateWindowCache.putRated(info, {'score2': '5', 'score4': '', 'score5': '-3'}, now: t0);
       final kept = RateWindowCache.get('1264975', now: t0)!;

@@ -43,15 +43,12 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
       // post loads behind it and only replaces the info (today's remaining scores, a new form hash) while the user
       // has not sent anything. A window the forum refuses for this post still closes the page with its message.
       debug('rate window of thread $tid kept from the last rate, loading this post behind it');
-      emit(
-        state.copyWith(
-          status: RateStatus.gotInfo,
-          info: kept.copyWith(pid: event.pid),
-        ),
-      );
+      emit(state.copyWith(status: RateStatus.gotInfo, info: RateWindowCache.forPost(kept, event.pid)));
+      final rates = _rateCount;
       switch (await _rateRepository.fetchInfo(pid: event.pid, rateTarget: event.rateAction).run()) {
         case Right(:final value):
-          RateWindowCache.put(value);
+          // A window from before a rate sent meanwhile would put back what that rate took off.
+          if (rates == _rateCount) RateWindowCache.put(value);
           if (!emit.isDone && state.status == RateStatus.gotInfo && _pid == event.pid) {
             emit(state.copyWith(info: value));
           }
@@ -130,11 +127,18 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
     }
     final result = await _rateRepository.fetchInfo(pid: pid, rateTarget: rateAction).run();
     // Only while the form refused for this rate is shown: the user may have sent the rate again meanwhile.
-    if (result case Right(:final value)) {
-      RateWindowCache.put(value);
-      if (!emit.isDone && rate == _rateCount && state.status == RateStatus.rateFailed) {
-        emit(state.copyWith(info: value));
-      }
+    final current = !emit.isDone && rate == _rateCount && state.status == RateStatus.rateFailed;
+    switch (result) {
+      case Right(:final value):
+        if (rate == _rateCount) RateWindowCache.put(value);
+        if (current) emit(state.copyWith(info: value));
+      case Left(value: RateInfoWithErrorException(:final message)) when current:
+        // The forum rates nothing on this post (own post, too old…): the page closes with its message, as it does
+        // when the window refuses before any form is shown.
+        error('failed to fetch rate info: $message');
+        emit(state.copyWith(status: RateStatus.failed, failedReason: message, shouldRetry: false));
+      case Left():
+        break;
     }
   }
 }

@@ -43,10 +43,17 @@ abstract final class RateWindowCache {
   /// Keep [info] as the window of its thread for the current account.
   static void put(RateWindowInfo info, {DateTime? now}) {
     final key = _key(info.tid);
+    final time = now ?? DateTime.now();
+    _windows.removeWhere((_, kept) => time.difference(kept.time) > maxAge);
     if (key != null) {
-      _windows[key] = (info: info, time: now ?? DateTime.now());
+      _windows[key] = (info: info, time: time);
     }
   }
+
+  /// The kept window [info] as the window of post [pid] of the same thread: the post id, and the `#pid` anchor of
+  /// the referer the forum sends the browser back to.
+  static RateWindowInfo forPost(RateWindowInfo info, String pid) =>
+      info.copyWith(pid: pid, referer: info.referer.replaceFirst('#pid${info.pid}', '#pid$pid'));
 
   /// Keep the window of a rate just accepted: [rated] (score id to value, as sent) is taken off today's remaining
   /// scores, so the next page shows what is left without waiting for the forum. The real window replaces it when it

@@ -433,6 +433,12 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
             // Failed to load the rate info: show reason and pop back if we should not retry.
             showSnackBar(context: context, message: state.failedReason ?? tr.failedToRate);
             if (state.shouldRetry == false) {
+              // With a kept window the form is usable before the forum answered: the reason dialog or the template
+              // page may be open above this page, and popping only them would leave this page behind, loading forever.
+              final route = ModalRoute.of(context);
+              if (route != null && !route.isCurrent) {
+                Navigator.of(context).popUntil((r) => r == route);
+              }
               Navigator.of(context).pop();
               return;
             }
