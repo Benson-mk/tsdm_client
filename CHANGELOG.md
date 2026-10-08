@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.33.2] - 2026-10-09
+
+### Fixed
+
+- Android：内部版本号提高至 129。1.33.1 的版本号（126）低于测试包 1.33.1-test.2 / test.3（127、128），装过测试包的设备提示「系统已存在更高版本，无法安装」。
+
 ## [1.33.1] - 2026-10-09
 
 ### Changed

@@ -16,14 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.33.1 (2026-10-09)
+## Latest update: 1.33.2 (2026-10-09)
 
 - Message sync (Android): the background service's requests had no timeout, so a request held while the phone slept could hang for over an hour with no new messages meanwhile; requests now time out, a sync has a deadline, and messages that arrive after it are still announced. With the service on, the app and the service no longer each poll.
 - Settings → View historical logs: the background service's own log can now be viewed and exported.
 - In-app update (Windows): "cannot start the update", and the app closing without updating, are fixed; the upgrade from 1.33.0 still has to be installed by hand, later ones update in the app.
 - Rating: rating floor after floor in one thread shows the form at once instead of loading the rate window for every floor.
-- Android build number 126, installs over earlier releases and test builds.
-[Download 1.33.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.1) · [Full changelog](./CHANGELOG.md)
+- Android build number 129, installs over earlier releases and test builds (1.33.1's number was below the test builds, so devices with one could not install it; hence 1.33.2).
+[Download 1.33.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.33.2) · [Full changelog](./CHANGELOG.md)
 ## What it is
 
 A cross-platform client for the [天使动漫 forum](https://www.tsdm39.com/). When the forum moved to Discuz! X5 in 2026 the original client could no longer parse its pages; this project took over maintenance at the forum's request, adapted the app to the X5 page structure and keeps adding features. It is the client version recognised by the forum as official.
