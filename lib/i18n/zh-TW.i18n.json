@@ -529,7 +529,8 @@
       "viewHistoryLog": {
         "title": "查看歷史日誌",
         "historicalLogs": "歷史日誌",
-        "export": "匯出"
+        "export": "匯出",
+        "backgroundService": "背景服務"
       },
       "copyDatabaseDir": "複製資料庫路徑",
       "testNotification": {

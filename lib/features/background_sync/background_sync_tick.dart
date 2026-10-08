@@ -129,7 +129,8 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   }
   // The app's own auto sync may have polled moments ago (GitHub #173).
   final interval = Duration(seconds: settings.intervalSeconds);
-  if (!await NotificationPollSlot.take(storage, settings.loginUid, interval, now: now)) {
+  final slot = await NotificationPollSlot.take(storage, settings.loginUid, interval, now: now);
+  if (slot == null) {
     return const BackgroundSyncSkipped('polled by the app moments ago');
   }
   if (prepareNetwork != null) {
@@ -143,6 +144,14 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   await storage.refreshCookieCache();
   final user = UserLoginInfo(username: null, uid: settings.loginUid);
   final info = await repository.syncAll(accounts: [user]).run();
+  final fetched = switch (info) {
+    Right(:final value) => value.finished.firstOrNull?.$2 is NotificationSyncResultSuccess,
+    Left() => false,
+  };
+  if (!fetched) {
+    // Nothing came of this poll: the app's own sync may take the interval after all.
+    await NotificationPollSlot.release(storage, settings.loginUid, slot);
+  }
   final after = await readBackgroundSyncSettings(storage);
   if (!after.enabled) {
     return const BackgroundSyncDisabled();

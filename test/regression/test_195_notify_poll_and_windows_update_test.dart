@@ -112,10 +112,10 @@ void main() {
     final t0 = DateTime(2026, 10, 7, 12);
 
     test('the second poller within half an interval skips, the next interval is polled again', () async {
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0), isTrue);
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 2))), isFalse);
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 29))), isFalse);
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 30))), isTrue);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0), isNotNull);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 2))), isNull);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 29))), isNull);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 30))), isNotNull);
     });
 
     test('whatever the phase of the two timers, each interval is polled once', () async {
@@ -125,17 +125,66 @@ void main() {
         var polls = 0;
         for (var minuteIndex = 0; minuteIndex < 10; minuteIndex++) {
           final app = t0.add(Duration(minutes: minuteIndex));
-          if (await NotificationPollSlot.take(storage, uid, minute, now: app)) polls++;
-          if (await NotificationPollSlot.take(storage, uid, minute, now: app.add(Duration(seconds: offset)))) polls++;
+          if (await NotificationPollSlot.take(storage, uid, minute, now: app) != null) {
+            polls++;
+          }
+          if (await NotificationPollSlot.take(storage, uid, minute, now: app.add(Duration(seconds: offset))) != null) {
+            polls++;
+          }
         }
         expect(polls, inInclusiveRange(10, 11), reason: 'offset $offset');
       }
     });
 
     test('accounts are separate, and a clock turned back does not block', () async {
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0), isTrue);
-      expect(await NotificationPollSlot.take(storage, 2, minute, now: t0), isTrue);
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.subtract(const Duration(hours: 1))), isTrue);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0), isNotNull);
+      expect(await NotificationPollSlot.take(storage, 2, minute, now: t0), isNotNull);
+      expect(
+        await NotificationPollSlot.take(storage, 1, minute, now: t0.subtract(const Duration(hours: 1))),
+        isNotNull,
+      );
+    });
+
+    test('a poll that brought nothing is given back; a poll taken since is left alone', () async {
+      final s1 = (await NotificationPollSlot.take(storage, 1, minute, now: t0))!;
+      await NotificationPollSlot.release(storage, 1, s1);
+      final s2 = await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 1)));
+      expect(s2, isNotNull, reason: 'the interval is free again');
+      // A stale release does not free the newer poll.
+      await NotificationPollSlot.release(storage, 1, s1);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 2))), isNull);
+    });
+
+    test('the background service gives the interval back when the forum was not reached', () async {
+      final settings = SettingsRepository(storage);
+      getIt.registerSingleton<SettingsRepository>(settings);
+      await settings.init();
+      await settings.setValue(SettingsKeys.loginUid, 7);
+      await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 60);
+      await settings.setValue(SettingsKeys.enableBackgroundMessageService, true);
+      await storage.saveCookie(
+        username: 'alice',
+        uid: 7,
+        cookie: {
+          '.index': '["$baseHost"]',
+          baseHost: '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=alice; Path=/;_crt=1"}}',
+        },
+      );
+      final forum = _Forum(offline: 99);
+      final outcome = await backgroundSyncTick(
+        storage: storage,
+        repository: NotificationSyncAllRepository(
+          storageProvider: storage,
+          notificationRepository: NotificationRepository(storageProvider: storage, retryDelay: Duration.zero),
+          clientFactory: (cookie) => _client(forum),
+          gap: Duration.zero,
+        ),
+      );
+      expect(outcome, isNot(isA<BackgroundSyncDone>().having((e) => e.latest, 'latest', isNotNull)));
+      expect(forum.requests, isNotEmpty);
+      // The app's sync may poll right away.
+      expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
+      await settings.dispose();
     });
 
     test('the background service skips a tick right after the app polled', () async {
@@ -146,7 +195,7 @@ void main() {
       await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 60);
       await settings.setValue(SettingsKeys.enableBackgroundMessageService, true);
       // The app's auto sync took the poll a moment ago.
-      expect(await NotificationPollSlot.take(storage, 7, minute), isTrue);
+      expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
       final forum = _Forum();
       final outcome = await backgroundSyncTick(
         storage: storage,

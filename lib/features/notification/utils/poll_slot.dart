@@ -13,15 +13,23 @@ abstract final class NotificationPollSlot {
 
   /// Take the poll of [uid] for an [interval] poller at [now] (default: the current time).
   ///
-  /// False when another poll started less than half an [interval] before: this one is not needed. A time in the
-  /// future (the clock was turned back) does not block.
-  static Future<bool> take(StorageProvider storage, int uid, Duration interval, {DateTime? now}) async {
+  /// The poll taken (its time, to [release] it), or null when another poll started less than half an [interval]
+  /// before: this one is not needed. A time in the future (the clock was turned back) does not block.
+  static Future<int?> take(StorageProvider storage, int uid, Duration interval, {DateTime? now}) async {
     final time = (now ?? DateTime.now()).millisecondsSinceEpoch;
     final last = await storage.getInt(key(uid));
     if (last != null && time >= last && time - last < interval.inMilliseconds ~/ 2) {
-      return false;
+      return null;
     }
     await storage.saveInt(key(uid), time);
-    return true;
+    return time;
+  }
+
+  /// Give back the poll taken as [slot] when it brought nothing (the forum was not reached): the other poller may
+  /// take the interval after all. A poll taken since is left alone.
+  static Future<void> release(StorageProvider storage, int uid, int slot) async {
+    if (await storage.getInt(key(uid)) == slot) {
+      await storage.saveInt(key(uid), 0);
+    }
   }
 }

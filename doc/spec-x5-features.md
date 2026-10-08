@@ -1510,12 +1510,19 @@ B. 論壇提醒屏蔽規則
   - `backgroundSyncTick`：確認已登入後先 `take()`，失敗回 `BackgroundSyncSkipped('polled by the app moments ago')`；App 存的資料，服務下次拉取時會判定為已知。新增選用參數 `now`（測試用）。
 - **連不上時重試一次**：`NotificationRepository.fetchNotificationWith` 拆出 `_fetchNotificationOnce`。輪詢（有 `timestamp`）的結果若是 `HttpHandshakeFailedException` 且 `statusCode == null`（沒有任何回應：DNS、連線、逾時），等 `retryDelay`（預設 5 秒，建構子可設定）後整個流程再跑一次；有狀態碼的錯誤（含 429、5xx）不重試。
 
+**#173 第二輪（2026-10-08）。** 測試包 1.33.1-test.1 回報：App 在前景或小窗模式時都正常；「純背景」時有一段時間沒有推送，之後一次拉到 21 條；兩台裝置同一網路。附的「log_2026-10-08.txt」是 App 自己的每日日誌（匯出檔名 `log_<日期>.txt`），只含兩段前景時間，中間沒有任何自動拉取紀錄；App 每次打開都記 `start app`，表示 UI isolate 在背景時已被系統回收，而服務通知的時間一直是 6:34，表示服務 isolate（同一程序）一直活著。所以純背景期間只有背景服務在拉，但它那段時間沒有拉到、也沒有存進任何東西（否則 11:01 不會一次「新」21 條）。要判斷是服務的 tick 失敗、被略過還是接口判定沒有新消息，需要服務自己的日誌 `tsdm_client_bg_<日期>.log`，但「查看歷史日誌」頁只列 `tsdm_client_<日期>.log`，使用者看不到也匯不出。這一輪：
+- `DebugHistoricalLogPage` 的檔名正則接受 `tsdm_client_(bg_)?<yyyyMMdd>.log`，`HistoricalLog.background` 標記服務日誌；列表標題「日期 · 背景服務」（三語 `viewHistoryLog.backgroundService`）、圖示 `sync`，同一天 App 的在前；匯出檔名 `log_bg_<日期>.txt`。
+- `NotificationPollSlot.take()` 改回傳取得的時間戳（null 表示略過），新增 `release(storage, uid, slot)`：存的值仍是這個 slot 時清為 0，讓另一邊可以立刻拉；之後另一邊已取走的不動。`AutoNotificationCubit._onTimeout` 拉取失敗時 release；`backgroundSyncTick` 的 `syncAll` 失敗或結果不是 `NotificationSyncResultSuccess` 時 release。避免 App 在背景拉取失敗（Kotlin client 逾時）卻佔掉服務那一輪。
+- 驗證：test_195 新增「失敗的拉取把這一輪還回去、過期的 release 不影響新 slot」「服務連不上論壇時 release，App 可立刻拉」。
+- 還不知道根因；等使用者附服務日誌。
+
 **#172 Windows App 內更新沒有套用。** 回報附的是之後手動重開的 log，沒有更新過程，`update.log` 也沒附，無法確定斷在哪一步。依症狀（App 關閉、沒有重開、仍是舊版）只可能是腳本等不到 App 結束而放棄，或腳本在換檔前被中斷；換檔中途失敗會還原並重開舊版，不符合。這次先補強並讓下次回報能看出原因：
 
 - `exitApp()`：`StorageProvider.dispose()` 加 3 秒逾時並攔下所有錯誤，桌面版之後一定執行 `exit(0)`。原本 dispose 出錯時 `exit` 不會執行，而安裝流程是以 `unawaited` 呼叫，錯誤無人處理、App 不退出。
 - 更新腳本：寫完 marker、清空日誌後立刻記 `started, waiting for the app (process N) to exit`，App 結束後記 `the app exited`；`WaitForExit` 由 60 秒延長為 600 秒。腳本仍只含 ASCII。
 - `WindowsUpdateInstaller.reportLastAttempt()`：`apply-update.started` 存在時，把 `update.log` 全文以 info 寫進 App 日誌，再刪除 marker，因此每次嘗試只回報一次。`main.dart` 在 Windows 啟動時以 `unawaited` 呼叫，錯誤只記 warning。
 - 啟動日誌的分隔行加上 `appFullVersion`（版本、commit、日期）。
+- 第三個測試包（wintest.3）2026-10-08 回報「可以了，测试成功」，附的 log 以 1.33.0 正式版啟動（分隔行沒有版本號，是 1.33.0 的格式）。
 - 第一個測試包（1.33.0-wintest.1）回報：按安裝後顯示「無法開始更新」、App 沒退出，日誌裡沒有任何更新紀錄。也就是 5 秒內沒讀到 marker（或 PowerShell 啟動不了），但看不出是哪一種。第二輪修正：
   - 等 marker 的時間由 5 秒延長為 20 秒：冷啟動的 PowerShell 加上防毒掃描腳本，可能超過 5 秒。
   - 以 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 的完整路徑啟動（`powershellPath`），檔案不存在時才退回 `powershell.exe`。

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/extensions/fp.dart';
@@ -125,7 +126,8 @@ final class AutoNotificationCubit extends Cubit<AutoNoticeState> with LoggerMixi
     }
 
     // The Android background service may have polled moments ago (GitHub #173); its rows reach the page by itself.
-    if (!await NotificationPollSlot.take(_storageProvider, uid, duration)) {
+    final slot = await NotificationPollSlot.take(_storageProvider, uid, duration);
+    if (slot == null) {
       debug('skip auto fetch: polled by the background service moments ago');
       emit(AutoNoticeStateTicking(total: duration, remain: _remainingTick));
       return;
@@ -143,11 +145,15 @@ final class AutoNotificationCubit extends Cubit<AutoNoticeState> with LoggerMixi
       }
     }
     debug('auto fetch since $lastFetchTime');
-    await _notificationRepository
+    final result = await _notificationRepository
         .fetchNotificationV2(uid: uid, timestamp: lastFetchTime)
         .flatMap((serverTime) => _emitDataState(uid, serverTime))
-        .mapLeft(_emitErrorState)
         .run();
+    if (result case Left(:final value)) {
+      _emitErrorState(value);
+      // Nothing came of this poll: the background service may take the interval after all.
+      await NotificationPollSlot.release(_storageProvider, uid, slot);
+    }
   }
 
   /// Start and schedule auto fetch actions.

@@ -70,7 +70,9 @@ class DebugHistoricalLogPage extends StatelessWidget with LoggerMixin {
 
     final logFiles = <HistoricalLog>[];
 
-    final nameRe = RegExp(r'^tsdm_client_(?<year>\d\d\d\d)(?<month>\d\d)(?<day>\d\d).log$');
+    // The app's own days, and those of the Android background message service (`_bg_`): a report of messages missed
+    // while the app was in the background needs the service's log, which only it writes (GitHub #173).
+    final nameRe = RegExp(r'^tsdm_client_(?<bg>bg_)?(?<year>\d\d\d\d)(?<month>\d\d)(?<day>\d\d).log$');
     for (final logFile in logDir.listSync()) {
       if (logFile.statSync().type != FileSystemEntityType.file) {
         continue;
@@ -86,11 +88,16 @@ class DebugHistoricalLogPage extends StatelessWidget with LoggerMixin {
       final day = m.namedGroup('day')!.parseToInt()!;
 
       final logTime = DateTime(year, month, day);
-      logFiles.add(HistoricalLog(logTime, File(logFile.path)));
+      logFiles.add(HistoricalLog(logTime, File(logFile.path), background: m.namedGroup('bg') != null));
     }
 
     return logFiles;
   }
+
+  /// The day, and whose log it is when not the app's.
+  static String _title(BuildContext context, HistoricalLog log) => log.background
+      ? '${log.time.yyyyMMDD()} · ${context.t.settingsPage.debugSection.viewHistoryLog.backgroundService}'
+      : log.time.yyyyMMDD();
 
   @override
   Widget build(BuildContext context) {
@@ -112,8 +119,12 @@ class DebugHistoricalLogPage extends StatelessWidget with LoggerMixin {
           return const CenteredCircularIndicator();
         }
 
-        // Newest day first.
-        final logFiles = snapshot.data!..sort((a, b) => b.time.compareTo(a.time));
+        // Newest day first, the app's log before the service's of the same day.
+        final logFiles = snapshot.data!
+          ..sort((a, b) {
+            final byDay = b.time.compareTo(a.time);
+            return byDay != 0 ? byDay : (a.background ? 1 : 0) - (b.background ? 1 : 0);
+          });
         if (logFiles.isEmpty) {
           return AppStateView(icon: Icons.history_toggle_off_outlined, message: context.t.general.noData);
         }
@@ -128,14 +139,14 @@ class DebugHistoricalLogPage extends StatelessWidget with LoggerMixin {
               onTap: () async => context.pushNamed(ScreenPaths.debugHistoricalLogDetail, extra: logFiles[idx]),
               child: Row(
                 children: [
-                  const AppIconTile(Icons.description_outlined),
+                  AppIconTile(logFiles[idx].background ? Icons.sync_outlined : Icons.description_outlined),
                   sizedBoxW12H12,
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          logFiles[idx].time.yyyyMMDD(),
+                          _title(context, logFiles[idx]),
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         Text(
@@ -222,7 +233,7 @@ class _DebugHistoricalLogDetailPageState extends State<DebugHistoricalLogDetailP
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.log.time.yyyyMMDD()),
+        title: Text(DebugHistoricalLogPage._title(context, widget.log)),
         actions: [
           IconButton(
             icon: const Icon(Icons.save_alt_outlined),
@@ -232,7 +243,7 @@ class _DebugHistoricalLogDetailPageState extends State<DebugHistoricalLogDetailP
                 return;
               }
               await FilePicker.platform.saveFile(
-                fileName: 'log_${widget.log.time.yyyyMMDD()}.txt',
+                fileName: 'log_${widget.log.background ? 'bg_' : ''}${widget.log.time.yyyyMMDD()}.txt',
                 bytes: utf8.encode(_logData!),
               );
             },
