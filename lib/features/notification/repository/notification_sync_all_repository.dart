@@ -65,10 +65,14 @@ final class NotificationSyncAllRepository with LoggerMixin {
   var _currentInfo = NotificationSyncAllInfo.empty();
 
   /// Sync the notifications of every account in [accounts], one at a time, and return the final progress.
+  ///
+  /// The returned `finished` holds this run's results only: the progress stream is shared, and a run given up by
+  /// the background service may still be writing to it while the next one runs (GitHub #173).
   AsyncEither<NotificationSyncAllInfo> syncAll({required List<UserLoginInfo> accounts}) => AsyncEither(() async {
     // Initialize each run without retaining the previous batch results.
     _currentInfo = NotificationSyncAllInfo.empty();
     _updateWaiting(accounts);
+    final finished = <(UserLoginInfo, NotificationSyncResult)>[];
     for (final (index, user) in accounts.indexed) {
       if (index > 0 && gap > Duration.zero) {
         await Future<void>.delayed(gap);
@@ -80,9 +84,10 @@ final class NotificationSyncAllRepository with LoggerMixin {
         // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
         await _storageProvider.markSessionExpired(user.uid!);
       }
+      finished.add((user, result));
       _updateFinished(user, result);
     }
-    return right(_currentInfo);
+    return right(NotificationSyncAllInfo(waiting: const [], running: const [], finished: finished));
   });
 
   /// Fetch and store the notifications of [user] with its own client.
@@ -114,7 +119,9 @@ final class NotificationSyncAllRepository with LoggerMixin {
     final timestamp = await _lastFetchTimestamp(uid);
 
     for (var attempt = 0; ; attempt++) {
-      final result = await _notificationRepository.fetchNotificationWith(client, timestamp: timestamp).run();
+      final result = await _notificationRepository
+          .fetchNotificationWith(client, timestamp: timestamp, retry: true)
+          .run();
       switch (result) {
         case Left(value: NotificationUserNotFound()):
           return const NotificationSyncResultNotAuthorized();

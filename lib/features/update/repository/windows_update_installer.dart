@@ -57,6 +57,11 @@ class WindowsUpdateInstaller implements UpdateInstaller {
   /// Written by the update script as its first action, holding the nonce it was started with.
   static const startedMarkerName = 'apply-update.started';
 
+  /// Written by the app when the script of [nonce] did not report in within [_startTimeout]: that script, should it
+  /// run after all, must not touch the installation. The app went on, the user may retry, another script may be
+  /// waiting for the same exit, and the app may close for good much later.
+  static String cancelledMarkerName(String nonce) => '$startedMarkerName.$nonce.cancelled';
+
   /// Copy the log of the last update attempt into the app's log, once: a report of an update that did not apply then
   /// carries what the script did (GitHub #172). Nothing happens when no attempt was made since the last report.
   Future<void> reportLastAttempt() async {
@@ -176,6 +181,12 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     }
     // Started is not running: the app stays open unless the script reports in.
     if (!await _waitForStart(marker, nonce)) {
+      // A script that starts late must stand down: the app is not exiting for it.
+      try {
+        await File(p.join(updates, cancelledMarkerName(nonce))).writeAsString(nonce, flush: true);
+      } on FileSystemException catch (e) {
+        talker.warning('windows update: could not write the cancel marker: $e');
+      }
       // What is left tells why (GitHub #172): an antivirus removes the script, a policy stops PowerShell before the
       // first line, a slow start writes the marker later.
       String read(File f) {
@@ -292,26 +303,32 @@ param(
 # First of all tell the app that the script runs; it only exits after reading this nonce.
 Set-Content -LiteralPath $Marker -Value $Nonce -Encoding ASCII
 $ErrorActionPreference = 'Stop'
+# A log that cannot be written must not stop the update, nor the restart of the app.
 function Write-Log([string]$Message) {
-  Add-Content -LiteralPath $Log -Value ('{0} {1}' -f (Get-Date -Format o), $Message) -Encoding UTF8
+  try { Add-Content -LiteralPath $Log -Value ('{0} {1}' -f (Get-Date -Format o), $Message) -Encoding UTF8 } catch { }
 }
+# .NET file calls take paths as they are; the cmdlets' -Path and -Destination read [ ] as wildcards.
 function Copy-WithRetry([string]$From, [string]$To) {
   $parent = Split-Path -Parent $To
-  if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+  [System.IO.Directory]::CreateDirectory($parent) | Out-Null
   for ($i = 0; $i -lt 20; $i++) {
-    try { Copy-Item -LiteralPath $From -Destination $To -Force; return } catch { Start-Sleep -Milliseconds 500 }
+    try { [System.IO.File]::Copy($From, $To, $true); return } catch { Start-Sleep -Milliseconds 500 }
   }
-  Copy-Item -LiteralPath $From -Destination $To -Force
+  [System.IO.File]::Copy($From, $To, $true)
 }
-Set-Content -LiteralPath $Log -Value '' -Encoding UTF8
+try { Set-Content -LiteralPath $Log -Value '' -Encoding UTF8 } catch { }
 Write-Log ('started, waiting for the app (process {0}) to exit' -f $ProcessId)
-$exited = $true
+$exited = $false
 try {
   # The app exits on its own right after this script reported in; the long wait covers an exit held up by the system
   # or done by hand, still applying the update instead of leaving the old version.
   $app = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($app -and -not $app.WaitForExit(600000)) { $exited = $false; throw 'the app did not exit' }
+  if ($app -and -not $app.WaitForExit(600000)) { throw 'the app did not exit' }
+  $exited = $true
   Write-Log 'the app exited'
+  # The app gave up on this attempt (this script reported in too late): it closed for some other reason, maybe much
+  # later, and another script may be about to apply a newer attempt. Nothing is touched, nothing is started.
+  if (Test-Path -LiteralPath ($Marker + '.' + $Nonce + '.cancelled')) { Write-Log 'the app gave up on this attempt, nothing changed'; exit }
   Start-Sleep -Milliseconds 500
   $files = @(Get-ChildItem -LiteralPath $Source -Recurse -File | ForEach-Object {
     $_.FullName.Substring($Source.TrimEnd('\').Length).TrimStart('\')
@@ -368,7 +385,11 @@ try {
   Write-Log ('failed: {0}' -f $_)
 }
 if ($exited) {
-  Start-Process -FilePath (Join-Path $Target 'tsdm_client.exe') -WorkingDirectory $Target
+  $start = New-Object System.Diagnostics.ProcessStartInfo
+  $start.FileName = Join-Path $Target 'tsdm_client.exe'
+  $start.WorkingDirectory = $Target
+  $start.UseShellExecute = $true
+  [System.Diagnostics.Process]::Start($start) | Out-Null
 } else {
   # The app is still open: starting it again would run two instances on the same data.
   Write-Log 'the app is still running, not starting another instance'

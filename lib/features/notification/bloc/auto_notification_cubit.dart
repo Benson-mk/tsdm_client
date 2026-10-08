@@ -116,14 +116,15 @@ final class AutoNotificationCubit extends Cubit<AutoNoticeState> with LoggerMixi
 
     debug('running auto fetch...');
 
-    // Mark as pending data.
-    emit(AutoNoticeStatePending(DateTime.now()));
-
     final uid = _authenticationRepository.currentUser?.uid;
     if (uid == null) {
+      // Not pending: the 1 s timer only counts while ticking, and the login flow waits for a pending fetch to end.
       debug('skip auto fetch notice due to not-login state');
       return;
     }
+
+    // Mark as pending data.
+    emit(AutoNoticeStatePending(DateTime.now()));
 
     // The Android background service may have polled moments ago (GitHub #173); its rows reach the page by itself.
     final slot = await NotificationPollSlot.take(_storageProvider, uid, duration);

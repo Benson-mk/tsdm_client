@@ -19,6 +19,12 @@ Future<void> exitApp() async {
   if (isAndroid || isIOS) {
     await SystemNavigator.pop(animated: true);
   } else {
+    // What was just logged reaches the file: `exit` does not flush the sink.
+    try {
+      await closeLogSink().timeout(const Duration(seconds: 2));
+    } on Object catch (_) {
+      // Exiting anyway.
+    }
     // CAUTION: unsafe operation.
     exit(0);
   }

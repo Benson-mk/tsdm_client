@@ -18,7 +18,7 @@ abstract final class NotificationPollSlot {
   static Future<int?> take(StorageProvider storage, int uid, Duration interval, {DateTime? now}) async {
     final time = (now ?? DateTime.now()).millisecondsSinceEpoch;
     final last = await storage.getInt(key(uid));
-    if (last != null && time >= last && time - last < interval.inMilliseconds ~/ 2) {
+    if (last != null && time >= last && time - last <= interval.inMilliseconds ~/ 2) {
       return null;
     }
     await storage.saveInt(key(uid), time);

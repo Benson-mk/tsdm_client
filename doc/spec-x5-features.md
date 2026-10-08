@@ -1505,7 +1505,7 @@ B. 論壇提醒屏蔽規則
 
 **#173 背景拉取常失敗。** 回報的 log 裡，3 次自動拉取失敗都是網路層錯誤（`Unable to resolve host`、timeout），同時間的一般網頁也一起失敗，與接口無關；另有 1 次 `notify` 被插件以 429（`error: busy`）擋下，之後改抓網頁成功。429 的原因是 Android 開了背景訊息服務（#80）時，App 內的 `AutoNotificationCubit` 與服務 isolate 的 `backgroundSyncTick` 各有一個計時器、同一間隔各拉一次，兩邊落在插件 3 秒的間隔內就撞上。
 
-- **共用一次拉取**：新增 `NotificationPollSlot`（`lib/features/notification/utils/poll_slot.dart`），在共用資料庫的設定表記 `notificationPolledAt.<uid>`（毫秒）。`take()` 讀上次時間，距今不到半個間隔就回 false（這次不拉），否則寫入現在時間並回 true；時間在未來（時鐘被調回）不擋。兩個計時器不論相位差多少，每個間隔只會拉一次。
+- **共用一次拉取**：新增 `NotificationPollSlot`（`lib/features/notification/utils/poll_slot.dart`），在共用資料庫的設定表記 `notificationPolledAt.<uid>`（毫秒）。`take()` 讀上次時間，距今不超過半個間隔就回 null（這次不拉），否則寫入現在時間並回傳這個時間戳（第二輪改為時間戳，供 `release()` 用）；時間在未來（時鐘被調回）不擋。兩個計時器不論相位差多少，每個間隔只會拉一次。
   - `AutoNotificationCubit._onTimeout`：取得 uid 後先 `take()`，失敗時記 debug、回到 ticking 狀態並結束；服務存進去的資料由既有的 `BackgroundSyncBridgeCubit` 帶進頁面。
   - `backgroundSyncTick`：確認已登入後先 `take()`，失敗回 `BackgroundSyncSkipped('polled by the app moments ago')`；App 存的資料，服務下次拉取時會判定為已知。新增選用參數 `now`（測試用）。
 - **連不上時重試一次**：`NotificationRepository.fetchNotificationWith` 拆出 `_fetchNotificationOnce`。輪詢（有 `timestamp`）的結果若是 `HttpHandshakeFailedException` 且 `statusCode == null`（沒有任何回應：DNS、連線、逾時），等 `retryDelay`（預設 5 秒，建構子可設定）後整個流程再跑一次；有狀態碼的錯誤（含 429、5xx）不重試。
@@ -1519,6 +1519,17 @@ B. 論壇提醒屏蔽規則
   - `backgroundSyncTick` 新增 `deadline`（預設 `backgroundSyncDeadline` 3 分鐘）：`syncAll().run().timeout()` 逾時當作 `HttpRequestFailedException(null)`，記 warning，release poll slot，回 `BackgroundSyncSkipped('sync failed: …')`；下一輪重新建 client 拉取。
   - `tick()` 跳過仍在跑的 tick 時記 debug。
   - 驗證：test_195「論壇永不回應的 tick 在 deadline 結束並把這一輪還回去」。
+- **對抗性審查（2026-10-09）修正**：
+  - `take()` 原本在 `prepareNetwork`／`refreshCookieCache` 之前，這兩步失敗沒有 release，App 半個間隔內也不拉，兩邊都不拉。改成拿到 cookie 後、`syncAll` 前才 take，整段 `try/finally`，不是 `Success` 一律 release（含例外）。
+  - deadline 只放棄等待、不中止請求；放棄的那輪晚點完成時，`NotificationSyncAllRepository._currentInfo` 是共用欄位，它的結果會 append 進下一輪的 `finished`，下一輪明明成功卻回報上一輪的失敗（或推送上一輪的 latest）。`syncAll` 改用區域 list 回傳自己這輪的結果，`_currentInfo` 只做進度廣播；tick 取 `finished` 裡本帳號的最後一筆。
+  - 放棄的那輪晚點成功時，列已經存進資料庫但沒有推送，之後也不會再算新。`backgroundSyncTick` 新增 `onLate`：逾時後把那個 future 接到 `_outcomeOf()`（重讀設定判 Disabled／Stale），交給 entry 的 `report()`，與正常結果同樣推送、`invoke(synced)`。deadline 由 3 分鐘改 6 分鐘，高於 client 逾時加一次重試的最壞情況（約 330 s）。
+  - 5 秒重試讓 `AutoNotificationCubit` 停在 Pending，登入／切換帳號等 3 秒就被拒；`fetchNotificationWith` 加 `retry` 參數，只有 `NotificationSyncAllRepository`（背景服務、同步全部帳號）帶 `retry: true`，App 內自動同步不重試。
+  - 既有 bug：`_onTimeout` 先 `emit(Pending)` 再檢查 uid，未登入時狀態永遠 Pending，登出後再登入被 login_form 拒絕直到重啟。改成有 uid 才 emit Pending。
+  - `take()` 的半個間隔由 `<` 改 `<=`，兩個計時器恰好差半個間隔時不再每輪都拉兩次。
+  - `exitApp` 在 `exit(0)` 前 `closeLogSink()`（2 秒上限），關閉前的錯誤才會寫進檔案。
+  - 歷史日誌檔名正則 `\.log$` 跳脫、日期要是真日期（`20261399` 不列）。
+  - Windows 更新：App 等不到腳本回報（20 秒）時寫 `apply-update.started.<nonce>.cancelled`，腳本在 App 結束後、動任何檔案前檢查到就記錄並退出（否則遲到的腳本會在使用者之後自行關閉 App 時換檔重開，重試時兩支腳本同時換檔、開兩個實例）；`cleanup()` 刪超過一小時的取消檔。`$exited` 預設 `$false`，只在確認結束後設 `$true`；`Write-Log` 與清空日誌包 try/catch，日誌寫不進去不會讓腳本在重啟 App 前終止；`New-Item -Path`／`Copy-Item -Destination`／`Start-Process -FilePath` 會把 `[ ]` 當萬用字元，改用 `[System.IO.Directory]::CreateDirectory`、`[System.IO.File]::Copy`、`ProcessStartInfo`。腳本仍只含 ASCII。
+  - 驗證：test_195 新增 prepareNetwork 失敗後 App 可立刻拉、兩輪 `syncAll` 重疊各回自己的結果、逾時後晚到的結果交給 `onLate`、未登入時不停在 Pending、取消檔與腳本的取消檢查、`$exited` 預設與 .NET 呼叫；`powershell.exe` 斷言改為同時接受完整路徑（Windows 開發機）。
 
 **#172 Windows App 內更新沒有套用。** 回報附的是之後手動重開的 log，沒有更新過程，`update.log` 也沒附，無法確定斷在哪一步。依症狀（App 關閉、沒有重開、仍是舊版）只可能是腳本等不到 App 結束而放棄，或腳本在換檔前被中斷；換檔中途失敗會還原並重開舊版，不符合。這次先補強並讓下次回報能看出原因：
 

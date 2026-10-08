@@ -23,7 +23,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_tick.dart';
+import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
+import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
@@ -96,6 +99,49 @@ final class _Silent implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+const _noticePage = '<html><body><div id="um"><a href="home.php?mod=space&amp;uid=7">alice</a></div></body></html>';
+const _emptyPage = '<html><body></body></html>';
+
+/// A forum on a first poll (no time stored: the three pages are fetched, the api is not asked). The n-th notice
+/// page request waits for `holds[n]`: answered when it completes with true, failed when with false; a notice page
+/// request without a hold fails at once. The other pages answer at once.
+final class _Held implements HttpClientAdapter {
+  _Held(this.holds);
+
+  final Map<int, Completer<bool>> holds;
+  final requests = <Uri>[];
+  var _notices = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options.uri);
+    final String page;
+    if (options.uri.queryParameters['do'] == 'notice') {
+      final hold = holds[_notices++];
+      if (hold == null || !await hold.future) {
+        throw DioException.connectionError(requestOptions: options, reason: 'offline');
+      }
+      page = _noticePage;
+    } else {
+      page = _emptyPage;
+    }
+    return ResponseBody.fromString(
+      page,
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 NetClientProvider _client(_Forum forum) =>
     NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum);
 
@@ -130,7 +176,9 @@ void main() {
       expect(await NotificationPollSlot.take(storage, 1, minute, now: t0), isNotNull);
       expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 2))), isNull);
       expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 29))), isNull);
-      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 30))), isNotNull);
+      // Exactly half an interval apart is still the same interval: both polling every time otherwise.
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 30))), isNull);
+      expect(await NotificationPollSlot.take(storage, 1, minute, now: t0.add(const Duration(seconds: 31))), isNotNull);
     });
 
     test('whatever the phase of the two timers, each interval is polled once', () async {
@@ -195,11 +243,131 @@ void main() {
           gap: Duration.zero,
         ),
       );
-      expect(outcome, isNot(isA<BackgroundSyncDone>().having((e) => e.latest, 'latest', isNotNull)));
+      expect(
+        outcome,
+        isA<BackgroundSyncDone>().having((e) => e.result, 'result', isA<NotificationSyncResultFailed>()),
+      );
       expect(forum.requests, isNotEmpty);
       // The app's sync may poll right away.
       expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
       await settings.dispose();
+    });
+
+    /// Alice (uid 7) logged in with the service on, every minute.
+    Future<SettingsRepository> loggedIn() async {
+      final settings = SettingsRepository(storage);
+      getIt.registerSingleton<SettingsRepository>(settings);
+      await settings.init();
+      await settings.setValue(SettingsKeys.loginUid, 7);
+      await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 60);
+      await settings.setValue(SettingsKeys.enableBackgroundMessageService, true);
+      await storage.saveCookie(
+        username: 'alice',
+        uid: 7,
+        cookie: {
+          '.index': '["$baseHost"]',
+          baseHost: '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=alice; Path=/;_crt=1"}}',
+        },
+      );
+      return settings;
+    }
+
+    NotificationSyncAllRepository syncing(HttpClientAdapter adapter) => NotificationSyncAllRepository(
+      storageProvider: storage,
+      notificationRepository: NotificationRepository(storageProvider: storage, retryDelay: Duration.zero),
+      clientFactory: (cookie) =>
+          NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = adapter),
+      gap: Duration.zero,
+    );
+
+    test('a tick that could not get its network settings leaves the interval to the app', () async {
+      final settings = await loggedIn();
+      final silent = _Silent();
+      final outcome = await backgroundSyncTick(
+        storage: storage,
+        repository: syncing(silent),
+        prepareNetwork: () async => throw StateError('no platform'),
+      );
+      expect(outcome, isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', contains('network settings')));
+      expect(silent.requests, isEmpty);
+      expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
+      await settings.dispose();
+    });
+
+    test('a tick given up reports what it fetched later, and the next tick reports its own fetch', () async {
+      final settings = await loggedIn();
+      final first = Completer<bool>();
+      final second = Completer<bool>();
+      final held = _Held({0: first, 1: second});
+      final repository = syncing(held);
+      final late = <BackgroundSyncOutcome>[];
+
+      final given = await backgroundSyncTick(
+        storage: storage,
+        repository: repository,
+        deadline: const Duration(milliseconds: 200),
+        onLate: late.add,
+      );
+      expect(given, isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', contains('no answer')));
+      expect(late, isEmpty);
+
+      // The next tick is in flight when the first fetch fails after all (the device woke up); its retry fails too.
+      final next = backgroundSyncTick(storage: storage, repository: repository, now: DateTime.now());
+      while (held.requests.length < 6) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      first.complete(false);
+      while (late.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        late.single,
+        isA<BackgroundSyncDone>().having((e) => e.result, 'result', isA<NotificationSyncResultFailed>()),
+      );
+      second.complete(true);
+      final outcome = await next;
+      expect(
+        outcome,
+        isA<BackgroundSyncDone>().having((e) => e.result, 'result', isA<NotificationSyncResultSuccess>()),
+        reason: 'the result of the fetch given up must not pass for this one',
+      );
+      await settings.dispose();
+    });
+
+    test('a fetch answered after the deadline is reported as the outcome it would have been', () async {
+      final settings = await loggedIn();
+      final first = Completer<bool>();
+      final late = <BackgroundSyncOutcome>[];
+      final given = await backgroundSyncTick(
+        storage: storage,
+        repository: syncing(_Held({0: first})),
+        deadline: const Duration(milliseconds: 200),
+        onLate: late.add,
+      );
+      expect(given, isA<BackgroundSyncSkipped>());
+      first.complete(true);
+      while (late.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        late.single,
+        isA<BackgroundSyncDone>()
+            .having((e) => e.uid, 'uid', 7)
+            .having((e) => e.result, 'result', isA<NotificationSyncResultSuccess>()),
+      );
+      await settings.dispose();
+    });
+
+    test('the in-app auto sync does not stay pending while nobody is logged in', () async {
+      final cubit = AutoNotificationCubit(
+        authenticationRepository: AuthenticationRepository(),
+        notificationRepository: NotificationRepository(storageProvider: storage),
+        storageProvider: storage,
+      )..start(const Duration(seconds: 1));
+      addTearDown(cubit.close);
+      await Future<void>.delayed(const Duration(milliseconds: 2500));
+      // A pending state here would never end: the timer only counts while ticking, and a login waits for it.
+      expect(cubit.state, isA<AutoNoticeStateTicking>());
     });
 
     test('a tick the forum never answers ends at the deadline and gives the interval back', () async {
@@ -229,7 +397,7 @@ void main() {
         ),
         deadline: const Duration(milliseconds: 300),
       ).timeout(const Duration(seconds: 5));
-      expect(outcome, isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', contains('sync failed')));
+      expect(outcome, isA<BackgroundSyncSkipped>().having((e) => e.reason, 'reason', contains('no answer')));
       expect(silent.requests, isNotEmpty);
       expect(await NotificationPollSlot.take(storage, 7, minute), isNotNull);
       await settings.dispose();
@@ -266,7 +434,7 @@ void main() {
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020).run();
+      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
       expect(result.isRight(), isTrue);
       expect(forum.requests, hasLength(5));
     });
@@ -276,7 +444,7 @@ void main() {
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020).run();
+      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
       expect(result.isLeft(), isTrue);
       // Each attempt asks the API, then the three pages.
       expect(forum.requests, hasLength(8));
@@ -288,7 +456,7 @@ void main() {
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020).run();
+      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
       expect(result.isLeft(), isTrue);
       expect(forum.requests, hasLength(3));
     });
@@ -333,13 +501,77 @@ void main() {
         throwsA(isA<UpdateDownloadException>()),
       );
       await pumpEventQueue();
-      // Off Windows the full path does not exist: the name is used as before.
-      expect(launched, 'powershell.exe');
+      // The full path on a Windows machine, the name where it does not exist.
+      expect(launched, anyOf('powershell.exe', endsWith(r'\WindowsPowerShell\v1.0\powershell.exe')));
       expect(logs.any((e) => e.contains('install 125 from $updates')), isTrue);
       expect(
         logs.any((e) => e.contains('did not report in') && e.contains('script present, marker missing, log missing')),
         isTrue,
       );
+    });
+
+    test('a script that reports in too late is told to stand down', () async {
+      final dir = await Directory.systemTemp.createTemp('tsdm_update_');
+      addTearDown(() => dir.delete(recursive: true));
+      final app = await Directory(p.join(dir.path, 'app')).create();
+      File(p.join(app.path, 'tsdm_client.exe')).writeAsStringSync('old exe');
+      File(p.join(app.path, 'flutter_windows.dll')).writeAsStringSync('old engine');
+      final updates = (await Directory(p.join(dir.path, 'updates')).create()).path;
+      final archive = Archive()
+        ..addFile(ArchiveFile.bytes('tsdm_client/tsdm_client.exe', utf8.encode('new exe')))
+        ..addFile(ArchiveFile.bytes('tsdm_client/flutter_windows.dll', utf8.encode('new engine')));
+      final zip = File(p.join(updates, 'update-125-1.zip'))..writeAsBytesSync(ZipEncoder().encodeBytes(archive));
+      String? nonce;
+      final installer = WindowsUpdateInstaller(
+        updateDirectory: updates,
+        executable: p.join(app.path, 'tsdm_client.exe'),
+        startTimeout: const Duration(milliseconds: 200),
+        // PowerShell held up by an antivirus: the script reports in only after the app gave up.
+        launch: (executable, arguments) async {
+          nonce = arguments[arguments.indexOf('-Nonce') + 1];
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 400), () {
+              File(arguments[arguments.indexOf('-Marker') + 1]).writeAsStringSync('$nonce\r\n');
+            }),
+          );
+        },
+        quit: () async => fail('must not quit'),
+      );
+      await expectLater(
+        installer.install(DownloadedUpdate(path: zip.path, version: '1.33.0', versionCode: 125)),
+        throwsA(isA<UpdateDownloadException>()),
+      );
+      final cancelled = File(p.join(updates, WindowsUpdateInstaller.cancelledMarkerName(nonce!)));
+      expect(cancelled.existsSync(), isTrue);
+      expect(cancelled.readAsStringSync(), nonce);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+
+      // The script: after the app exited and before touching a file, a cancelled attempt ends there.
+      const script = WindowsUpdateInstaller.updateScript;
+      final exited = script.indexOf("Write-Log 'the app exited'");
+      final standDown = script.indexOf(r"($Marker + '.' + $Nonce + '.cancelled')");
+      final firstFile = script.indexOf('Get-ChildItem');
+      expect(exited, greaterThan(0));
+      expect(standDown, inExclusiveRange(exited, firstFile));
+      expect(script.substring(standDown, firstFile), contains('exit'));
+      // Only an exit the script saw counts; the cmdlets that read [ ] as wildcards are not used on user paths.
+      expect(script, contains(r'$exited = $false'));
+      expect(script, contains(r'[System.IO.File]::Copy($From, $To, $true)'));
+      expect(script, contains('[System.IO.Directory]::CreateDirectory'));
+      expect(script, contains('System.Diagnostics.ProcessStartInfo'));
+      expect(script, isNot(contains('Start-Process')));
+      expect(script, isNot(contains('Copy-Item')));
+      expect(script, isNot(contains('New-Item')));
+      expect(script.codeUnits.every((c) => c < 128), isTrue);
+
+      // Cancel markers are cleaned after an hour, not before.
+      final old = File(p.join(updates, WindowsUpdateInstaller.cancelledMarkerName('abcd')))
+        ..writeAsStringSync('abcd')
+        ..setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 2)));
+      await ReleaseUpdateRepository(installer: installer).cleanup(keepVersionCode: 125);
+      expect(old.existsSync(), isFalse);
+      expect(cancelled.existsSync(), isTrue);
+      expect(zip.existsSync(), isTrue);
     });
 
     test('the last attempt is copied into the app log once', () async {

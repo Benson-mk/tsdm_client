@@ -133,19 +133,25 @@ final class NotificationRepository with LoggerMixin {
   /// pages stay the source of every notification shown: fetching the notice page is also what marks the notices read
   /// on the forum, as it always did.
   ///
-  /// A polling fetch that could not reach the forum at all (no answer: name resolution, connection or timeout) is
-  /// tried once more after a few seconds: the network often comes back a moment after the device wakes up or the app
-  /// returns to the foreground (GitHub #173). An answer with an error status is not retried.
-  AsyncEither<FetchedNotification> fetchNotificationWith(NetClientProvider client, {int? timestamp}) =>
-      AsyncEither(() async {
-        final first = await _fetchNotificationOnce(client, timestamp: timestamp).run();
-        if (first case Left(value: HttpHandshakeFailedException(statusCode: null) && final e) when timestamp != null) {
-          debug('forum not reached, trying again in ${_retryDelay.inSeconds}s: ${e.message}');
-          await Future<void>.delayed(_retryDelay);
-          return _fetchNotificationOnce(client, timestamp: timestamp).run();
-        }
-        return first;
-      });
+  /// With [retry], a polling fetch that could not reach the forum at all (no answer: name resolution, connection or
+  /// timeout) is tried once more after a few seconds: the network often comes back a moment after the device wakes
+  /// up (GitHub #173). An answer with an error status is not retried. The in-app auto sync does not ask for it: the
+  /// wait would hold its "fetching" state, which the login and account switch flows wait on.
+  AsyncEither<FetchedNotification> fetchNotificationWith(
+    NetClientProvider client, {
+    int? timestamp,
+    bool retry = false,
+  }) => AsyncEither(() async {
+    final first = await _fetchNotificationOnce(client, timestamp: timestamp).run();
+    if (first case Left(
+      value: HttpHandshakeFailedException(statusCode: null) && final e,
+    ) when retry && timestamp != null) {
+      debug('forum not reached, trying again in ${_retryDelay.inSeconds}s: ${e.message}');
+      await Future<void>.delayed(_retryDelay);
+      return _fetchNotificationOnce(client, timestamp: timestamp).run();
+    }
+    return first;
+  });
 
   AsyncEither<FetchedNotification> _fetchNotificationOnce(NetClientProvider client, {int? timestamp}) =>
       AsyncEither(() async {
