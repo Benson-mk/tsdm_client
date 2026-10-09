@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- 评分：评分成功后不再自动关闭页面，按钮上方显示「评分成功」，表单保留，今日剩余已扣掉这次的分数，可以直接再给同一楼评一次（例如分两次给）或改分数再评；想离开按返回即可。评分窗口会在后台重新读取，换上论坛最新的剩余和表单校验码。
+
 ## [1.33.2] - 2026-10-09
 
 ### Fixed

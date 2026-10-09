@@ -17,7 +17,7 @@ enum RateStatus {
   /// Doing the rate action.
   rating,
 
-  /// Rate succeed.
+  /// A rate was accepted; the page stays with the form for the next one, see [RateState.justRated].
   success,
 
   /// Failed to load the rate info (the rate window).
@@ -44,10 +44,21 @@ enum RateStatus {
 @MappableClass()
 final class RateState with RateStateMappable {
   /// Constructor.
-  const RateState({this.status = RateStatus.initial, this.info, this.failedReason, this.shouldRetry = true});
+  const RateState({
+    this.status = RateStatus.initial,
+    this.info,
+    this.failedReason,
+    this.shouldRetry = true,
+    this.justRated = false,
+  });
 
   /// Status.
   final RateStatus status;
+
+  /// The last rate sent from this page was accepted and nothing was sent since: the form stays for the next rate
+  /// (the same floor again, for a reward given in parts, or with other scores), with a notice above the submit
+  /// button. Cleared by the next rate.
+  final bool justRated;
 
   /// Info to show in rate.
   ///

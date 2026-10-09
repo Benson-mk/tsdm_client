@@ -55,10 +55,10 @@ abstract final class RateWindowCache {
   static RateWindowInfo forPost(RateWindowInfo info, String pid) =>
       info.copyWith(pid: pid, referer: info.referer.replaceFirst('#pid${info.pid}', '#pid$pid'));
 
-  /// Keep the window of a rate just accepted: [rated] (score id to value, as sent) is taken off today's remaining
-  /// scores, so the next page shows what is left without waiting for the forum. The real window replaces it when it
-  /// arrives.
-  static void putRated(RateWindowInfo info, Map<String, String> rated, {DateTime? now}) {
+  /// The window [info] after a rate just accepted: [rated] (score id to value, as sent) is taken off today's
+  /// remaining scores, so the form shows what is left without waiting for the forum. The real window replaces it
+  /// when it arrives.
+  static RateWindowInfo rated(RateWindowInfo info, Map<String, String> rated) {
     final scores = info.scoreList.map((score) {
       final value = int.tryParse(rated[score.id] ?? '');
       final remaining = int.tryParse(score.remaining.trim());
@@ -67,8 +67,12 @@ abstract final class RateWindowCache {
       }
       return score.copyWith(remaining: '${remaining - value.abs()}');
     }).toList();
-    put(info.copyWith(scoreList: scores), now: now);
+    return info.copyWith(scoreList: scores);
   }
+
+  /// Keep the window of a rate just accepted, see [rated].
+  static void putRated(RateWindowInfo info, Map<String, String> sent, {DateTime? now}) =>
+      put(rated(info, sent), now: now);
 
   /// Forget every window (tests, or after the account changed).
   static void clear() => _windows.clear();

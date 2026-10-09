@@ -48,9 +48,12 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
       switch (await _rateRepository.fetchInfo(pid: event.pid, rateTarget: event.rateAction).run()) {
         case Right(:final value):
           // A window from before a rate sent meanwhile would put back what that rate took off.
-          if (rates == _rateCount) RateWindowCache.put(value);
-          if (!emit.isDone && state.status == RateStatus.gotInfo && _pid == event.pid) {
-            emit(state.copyWith(info: value));
+          // Neither kept nor shown once a rate went out meanwhile: the form then shows what that rate took off.
+          if (rates == _rateCount) {
+            RateWindowCache.put(value);
+            if (!emit.isDone && state.status == RateStatus.gotInfo && _pid == event.pid) {
+              emit(state.copyWith(info: value));
+            }
           }
         case Left(:final value):
           handle(value);
@@ -92,13 +95,17 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
 
   Future<void> _onRateRateRequested(RateRateRequested event, RateEmitter emit) async {
     final rate = ++_rateCount;
-    emit(state.copyWith(status: RateStatus.rating, failedReason: null));
+    emit(state.copyWith(status: RateStatus.rating, failedReason: null, justRated: false));
 
     switch (await _rateRepository.rate(event.rateInfo).run()) {
       case Right():
-        // The next rate page of this thread starts from this window, with what this rate took off today's scores.
-        if (state.info case final info?) RateWindowCache.putRated(info, event.rateInfo);
-        emit(state.copyWith(status: RateStatus.success));
+        // The page stays with the form: the floor may get another rate right away. What this rate took off today's
+        // scores shows at once, the forum's own window loads behind it (and the next page of this thread starts
+        // from it too).
+        final rated = state.info == null ? null : RateWindowCache.rated(state.info!, event.rateInfo);
+        if (rated != null) RateWindowCache.put(rated);
+        emit(state.copyWith(status: RateStatus.gotInfo, info: rated ?? state.info, justRated: true));
+        await _refreshInfo(emit, rate);
       case Left(:final value):
         handle(value);
         error('failed to rate: $value');
@@ -117,8 +124,8 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
     }
   }
 
-  /// Load the rate window again behind the refused form: the form hash may have expired and the remaining scores
-  /// changed. The form and the reason stay on screen, a failure is ignored.
+  /// Load the rate window again behind the form after a rate: the form hash may have expired and the remaining
+  /// scores changed. The form (and the reason of a refused rate) stays on screen, a failure is ignored.
   Future<void> _refreshInfo(RateEmitter emit, int rate) async {
     final pid = _pid;
     final rateAction = _rateAction;
@@ -126,8 +133,11 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
       return;
     }
     final result = await _rateRepository.fetchInfo(pid: pid, rateTarget: rateAction).run();
-    // Only while the form refused for this rate is shown: the user may have sent the rate again meanwhile.
-    final current = !emit.isDone && rate == _rateCount && state.status == RateStatus.rateFailed;
+    // Only while the form of this rate is still shown: the user may have sent the rate again meanwhile.
+    final current =
+        !emit.isDone &&
+        rate == _rateCount &&
+        (state.status == RateStatus.rateFailed || (state.status == RateStatus.gotInfo && state.justRated));
     switch (result) {
       case Right(:final value):
         if (rate == _rateCount) RateWindowCache.put(value);

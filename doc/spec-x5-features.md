@@ -1569,3 +1569,10 @@ B. 論壇提醒屏蔽規則
   - 驗證：test_098 新增四項（對話框開著時拒絕仍關頁、晚到的視窗不蓋回扣分、referer 帶新 pid、被拒後重抓也被拒則關頁）。
 - 驗證（test_098 新群組）：評完 A 樓再開同帖 B 樓，B 的視窗還沒回來時表單已在、天使币剩餘 20→15、此時送出用保留的 formhash 與 B 的 pid；B 的視窗先回來時剩餘與 formhash 換成論壇的；另一帖先轉圈再有表單；論壇拒絕 B 樓時頁面關閉並顯示原因、沒有送出；快取按帳號與帖分開、30 分鐘過期、扣分計算（'5'、''、'-3' → 15、40、37）。
 
+## 57. 評分成功後留在頁面（2026-10-09）
+
+- 需求：按「評分」成功後不跳回帖子，更新剩餘後可以直接再評同一樓；分數和理由保留；成功提示放在按鈕上方。
+- `RateState.justRated`：最後一次送出被接受且之後沒再送出。`_onRateRateRequested` 成功時以 `RateWindowCache.rated()` 算出扣掉這次分數的視窗、`put()` 進快取，emit `gotInfo`＋`justRated: true`，接著 `_refreshInfo()` 背景重抓（和被拒時同一條路）；重抓回來時只在 `rate == _rateCount` 且狀態仍是 `rateFailed` 或 `gotInfo && justRated` 才取代 `info`。送出時 `justRated` 清掉。kept 分支的背景抓取也改成送出過就不存、不顯示（否則舊視窗會把剛扣的數字蓋回去）。
+- 頁面：移除成功 snackbar 與相關的 `_visibleRateSuccess`／`_openRatePages` 機制、不再 `pop`；`justRated` 時在送出鈕上方顯示 `AppNoticeBanner(tr.success)`（info 色），被拒的原因橫幅優先。`RateStatus.success` 保留但不再使用。
+- 驗證：test_098 改寫：成功後頁面仍在、提示在按鈕上方、分數保留、剩餘 20→15、再送一次用重抓後的 formhash、剩餘隨論壇答覆更新；被拒的原因取代成功提示；「同帖下一樓」各測試改為評完先返回再開下一樓，並多一個重抓視窗的答覆。
+

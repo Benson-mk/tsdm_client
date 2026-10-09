@@ -12,7 +12,6 @@ import 'package:tsdm_client/features/rate/models/models.dart';
 import 'package:tsdm_client/features/rate/repository/rate_repository.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
-import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -22,44 +21,6 @@ import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/debounce_buttons.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
-
-/// The "rate success" snack bar of the last rate while it is on screen: the messenger showing it and a token of that
-/// showing, null once it is gone.
-///
-/// The next rate page closes it: it floated over the submit button of that page for seconds. Other snack bars (a
-/// session expiry or check-in notice with an action button) are left alone.
-(ScaffoldMessengerState, Object)? _visibleRateSuccess;
-
-/// Rate pages on screen, without the one that just rated and is closing.
-final _openRatePages = <Object>{};
-
-void _showRateSuccess(String message) {
-  final messenger = snackbarKey.currentState;
-  if (messenger == null) {
-    return;
-  }
-  final token = Object();
-  final controller = messenger.showSnackBar(
-    SnackBar(
-      behavior: SnackBarBehavior.floating,
-      content: Text(message),
-      onVisible: () {
-        _visibleRateSuccess = (messenger, token);
-        // Queued behind another snack bar, it only shows now: the next rate page may already be open.
-        if (_openRatePages.isNotEmpty) {
-          messenger.hideCurrentSnackBar();
-        }
-      },
-    ),
-  );
-  unawaited(
-    controller.closed.whenComplete(() {
-      if (identical(_visibleRateSuccess?.$2, token)) {
-        _visibleRateSuccess = null;
-      }
-    }),
-  );
-}
 
 /// Page to rate a post in thread.
 class RatePostPage extends StatefulWidget {
@@ -320,6 +281,10 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
                 if (state.status == RateStatus.rateFailed) ...[
                   AppNoticeBanner(tone: AppNoticeTone.error, message: state.failedReason ?? tr.failedToRate),
                   sizedBoxW8H8,
+                ] else if (state.justRated) ...[
+                  // Rated, and the form is still here for the next one; above the button, never over it.
+                  AppNoticeBanner(message: tr.success),
+                  sizedBoxW8H8,
                 ],
                 DebounceFilledButton(
                   shouldDebounce: state.status.isLoading(),
@@ -389,21 +354,7 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
   }
 
   @override
-  void initState() {
-    super.initState();
-    _openRatePages.add(this);
-    // The "rate success" of the previous rate would float over the submit button of this page for seconds.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final messenger = snackbarKey.currentState;
-      if (messenger != null && identical(_visibleRateSuccess?.$1, messenger)) {
-        messenger.hideCurrentSnackBar();
-      }
-    });
-  }
-
-  @override
   void dispose() {
-    _openRatePages.remove(this);
     reasonController.dispose();
     if (scoreMap != null) {
       for (final e in scoreMap!.entries) {
@@ -443,11 +394,8 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
               return;
             }
             context.read<RateBloc>().add(RateFetchInfoRequested(pid: widget.pid, rateAction: widget.rateAction));
-          } else if (state.status == RateStatus.success) {
-            _openRatePages.remove(this);
-            _showRateSuccess(tr.success);
-            Navigator.of(context).pop();
           }
+          // An accepted rate keeps the page: the same floor may get another rate right away (RateState.justRated).
         },
         child: BlocBuilder<RateBloc, RateState>(
           builder: (context, state) {
