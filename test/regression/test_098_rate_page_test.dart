@@ -105,9 +105,13 @@ String _windowWithFormHash(String formHash) {
   return window.replaceFirst('value="XXXXXXXX"', 'value="$formHash"');
 }
 
-/// The window of post [pid] with [formHash]: the live sample is of post [_pid].
-String _windowOf({required String formHash, required String pid}) =>
-    _windowWithFormHash(formHash).replaceFirst('name="pid" value="$_pid"', 'name="pid" value="$pid"');
+/// The window of post [pid] with [formHash]: the live sample is of post [_pid]. [left] is today's remaining 天使币.
+String _windowOf({required String formHash, String pid = _pid, String left = '20'}) =>
+    _windowWithFormHash(
+          formHash,
+        )
+        .replaceFirst('name="pid" value="$_pid"', 'name="pid" value="$pid"')
+        .replaceFirst('<td>0 ~ 10</td><td>20</td>', '<td>0 ~ 10</td><td>$left</td>');
 
 /// The answer to a rate window request the forum refuses (`showmessage` of an ajax GET, template
 /// common/showmessage.php `msgtype` 2), here `thread_rate_duplicate`.
@@ -265,8 +269,11 @@ void main() {
       await submit(tester);
       expect(forum.posts.last, containsPair('formhash', 'BBBBBBBB'));
       expect(forum.posts.last, containsPair('score2', '5'));
-      expect(find.byType(RatePostPage), findsNothing);
-      expect(find.widgetWithText(SnackBar, tr.success), findsOneWidget);
+      // Accepted: the page stays for the next rate, the reason is gone, the window loads again behind the form.
+      expect(find.byType(RatePostPage), findsOneWidget);
+      expect(find.text(tr.success), findsOneWidget);
+      expect(find.text(_refused), findsNothing);
+      expect(forum.gets, hasLength(3));
     });
 
     testWidgets('a failed request shows the generic reason in place of the previous one', (tester) async {
@@ -333,7 +340,7 @@ void main() {
       await submit(tester);
       // The third rate uses the window of the second reload, not the late first one (B).
       expect(forum.posts.map((e) => e['formhash']), ['AAAAAAAA', 'AAAAAAAA', 'CCCCCCCC']);
-      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.text(t.ratePostPage.success), findsOneWidget);
     });
 
     testWidgets('notify the author only when the switch is on', (tester) async {
@@ -376,9 +383,13 @@ void main() {
       expect(forum.posts.single, containsPair('sendreasonpm', 'on'));
     });
 
-    testWidgets('the success of the previous rate does not cover the submit button of the next one', (tester) async {
+    testWidgets('an accepted rate keeps the page: the same floor can be rated again at once', (tester) async {
       final forum = _FakeForum(
-        windows: [_data('rate_window_x5.xml')],
+        windows: [
+          _windowOf(formHash: 'AAAAAAAA'),
+          _windowOf(formHash: 'BBBBBBBB', left: '15'),
+          _windowOf(formHash: 'CCCCCCCC', left: '10'),
+        ],
         submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
       );
       useForum(forum);
@@ -388,17 +399,40 @@ void main() {
       await openRatePage(tester);
       await setScore(tester, '5');
       await submit(tester);
-      expect(find.byType(RatePostPage), findsNothing);
-      expect(find.widgetWithText(SnackBar, tr.success), findsOneWidget);
-
-      // Rate the next post right away, well within the four seconds the snack bar stays.
-      await openRatePage(tester);
+      // Still here, with the score and a notice above the button (never over it); 5 taken off today's 20.
+      expect(find.byType(RatePostPage), findsOneWidget);
+      expect(find.text(tr.success), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '5'), findsOneWidget);
+      expect(find.text(tr.scoreTodayRemaining(score: '15')), findsOneWidget);
+      expect(submitButton().hitTestable(), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing);
-      await setScore(tester, '3');
+
+      // Again, with the form hash of the window loaded again behind the form.
       await submit(tester);
       expect(forum.posts, hasLength(2));
-      expect(forum.posts.last, containsPair('score2', '3'));
-      expect(find.byType(RatePostPage), findsNothing);
+      expect(forum.posts.last, containsPair('formhash', 'BBBBBBBB'));
+      expect(forum.posts.last, containsPair('score2', '5'));
+      expect(find.text(tr.success), findsOneWidget);
+      expect(find.text(tr.scoreTodayRemaining(score: '10')), findsOneWidget);
+    });
+
+    testWidgets('the notice of an accepted rate gives way to the reason of the next, refused one', (tester) async {
+      final forum = _FakeForum(
+        windows: [_data('rate_window_x5.xml')],
+        submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_rejected_x5.xml')],
+      );
+      useForum(forum);
+      await pumpApp(tester);
+      final tr = t.ratePostPage;
+
+      await openRatePage(tester);
+      await setScore(tester, '5');
+      await submit(tester);
+      expect(find.text(tr.success), findsOneWidget);
+      await submit(tester);
+      expect(find.text(tr.success), findsNothing);
+      expect(find.text(_refused), findsOneWidget);
+      expect(find.byType(RatePostPage), findsOneWidget);
     });
 
     testWidgets('other snack bars stay when a rate page opens', (tester) async {
@@ -416,34 +450,6 @@ void main() {
 
       await openRatePage(tester);
       expect(find.widgetWithText(SnackBar, 'session expired'), findsOneWidget);
-    });
-
-    testWidgets('a rate success queued behind another snack bar does not cover the next rate page', (tester) async {
-      final forum = _FakeForum(
-        windows: [_data('rate_window_x5.xml')],
-        submits: [_data('rate_submit_success_x5.xml')],
-      );
-      useForum(forum);
-      await pumpApp(tester);
-      final tr = t.ratePostPage;
-
-      await openRatePage(tester);
-      await setScore(tester, '5');
-      await tester.tap(submitButton());
-      // Another notice shows up while the rate is sent: the success waits behind it.
-      snackbarKey.currentState!.showSnackBar(
-        const SnackBar(behavior: SnackBarBehavior.floating, content: Text('other notice')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(RatePostPage), findsNothing);
-      expect(find.widgetWithText(SnackBar, 'other notice'), findsOneWidget);
-
-      await openRatePage(tester);
-      // The other notice times out, the success would show now, over the submit button of this page.
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pumpAndSettle();
-      expect(find.widgetWithText(SnackBar, tr.success), findsNothing);
-      expect(submitButton().hitTestable(), findsOneWidget);
     });
   });
   group('rate window kept per thread (forum report: rating floor after floor, 2026-10-08)', () {
@@ -497,6 +503,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// Leave the rate page (an accepted rate keeps it open).
+    Future<void> back(WidgetTester tester) async {
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+    }
+
+    /// The window the forum answers to the reload after a rate of post A: 5 taken off.
+    String afterA() => _windowOf(formHash: 'AAAAAAAA', left: '15');
+
     String remaining(String score) => t.ratePostPage.scoreTodayRemaining(score: score);
 
     setUp(() => settings.setValue(SettingsKeys.loginUid, 35));
@@ -508,10 +523,11 @@ void main() {
       final forum = _FakeForum(
         windows: [
           _windowWithFormHash('AAAAAAAA'),
+          afterA(),
           _windowOf(formHash: 'BBBBBBBB', pid: pidB),
         ],
         submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
-        holds: {1: held},
+        holds: {2: held},
       );
       useForum(forum);
       await pumpApp(tester);
@@ -519,7 +535,8 @@ void main() {
       await open(tester, 'open A');
       expect(find.text(remaining('20')), findsOneWidget);
       await rate(tester, '5');
-      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.text(t.ratePostPage.success), findsOneWidget);
+      await back(tester);
 
       // Post B: its window is still loading, the form of the thread is already there, 20 - 5 left today.
       await open(tester, 'open B');
@@ -527,7 +544,7 @@ void main() {
       expect(find.byType(CenteredCircularIndicator), findsNothing);
       expect(find.widgetWithText(TextFormField, '天使币'), findsOneWidget);
       expect(find.text(remaining('15')), findsOneWidget);
-      expect(forum.gets, hasLength(2));
+      expect(forum.gets, hasLength(3));
 
       // Rated before the window of B came back: with the kept form hash, for post B.
       await rate(tester, '3');
@@ -535,49 +552,55 @@ void main() {
       expect(forum.posts.last, containsPair('pid', pidB));
       expect(forum.posts.last, containsPair('score2', '3'));
       expect(forum.posts.last['referer'], endsWith('#pid$pidB'));
-      expect(find.byType(RatePostPage), findsNothing);
+      expect(find.text(t.ratePostPage.success), findsOneWidget);
+      await back(tester);
       held.complete();
       await tester.pumpAndSettle();
     });
 
     testWidgets('a window from before the rate, arriving after it, does not put the scores back', (tester) async {
       final heldB = Completer<void>();
-      final heldAgain = Completer<void>();
+      // The reloads after the rate of B and on the next page never come back: the kept numbers must hold.
+      final never = Completer<void>();
       final forum = _FakeForum(
         windows: [
           _windowWithFormHash('AAAAAAAA'),
+          afterA(),
           _windowOf(formHash: 'BBBBBBBB', pid: pidB),
         ],
         submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
-        holds: {1: heldB, 2: heldAgain},
+        holds: {2: heldB, 3: never, 4: never},
       );
       useForum(forum);
       await pumpApp(tester);
       await open(tester, 'open A');
       await rate(tester, '5');
+      await back(tester);
       await open(tester, 'open B');
       await rate(tester, '3');
+      expect(find.text(remaining('12')), findsOneWidget);
       // The window of B (20 left, from before both rates) comes back only now.
       heldB.complete();
       await tester.pumpAndSettle();
+      expect(find.text(remaining('12')), findsOneWidget);
 
+      await back(tester);
       await open(tester, 'open B');
       expect(find.text(remaining('12')), findsOneWidget);
-      heldAgain.complete();
-      await tester.pumpAndSettle();
     });
 
     testWidgets('a refusal arriving while the reason dialog is open still closes the page', (tester) async {
       final held = Completer<void>();
       final forum = _FakeForum(
-        windows: [_windowWithFormHash('AAAAAAAA'), _duplicateWindow],
+        windows: [_windowWithFormHash('AAAAAAAA'), afterA(), _duplicateWindow],
         submits: [_data('rate_submit_success_x5.xml')],
-        holds: {1: held},
+        holds: {2: held},
       );
       useForum(forum);
       await pumpApp(tester);
       await open(tester, 'open A');
       await rate(tester, '5');
+      await back(tester);
 
       await open(tester, 'open B');
       await tester.tap(find.byIcon(Icons.arrow_drop_down_outlined));
@@ -612,15 +635,17 @@ void main() {
       final forum = _FakeForum(
         windows: [
           _windowWithFormHash('AAAAAAAA'),
+          afterA(),
           _windowOf(formHash: 'BBBBBBBB', pid: pidB),
         ],
         submits: [_data('rate_submit_success_x5.xml'), _data('rate_submit_success_x5.xml')],
-        holds: {1: held},
+        holds: {2: held},
       );
       useForum(forum);
       await pumpApp(tester);
       await open(tester, 'open A');
       await rate(tester, '5');
+      await back(tester);
 
       await open(tester, 'open B');
       expect(find.text(remaining('15')), findsOneWidget);
@@ -636,14 +661,15 @@ void main() {
     testWidgets('another thread loads its own window first', (tester) async {
       final held = Completer<void>();
       final forum = _FakeForum(
-        windows: [_windowWithFormHash('AAAAAAAA'), _windowWithFormHash('CCCCCCCC')],
+        windows: [_windowWithFormHash('AAAAAAAA'), afterA(), _windowWithFormHash('CCCCCCCC')],
         submits: [_data('rate_submit_success_x5.xml')],
-        holds: {1: held},
+        holds: {2: held},
       );
       useForum(forum);
       await pumpApp(tester);
       await open(tester, 'open A');
       await rate(tester, '5');
+      await back(tester);
 
       await open(tester, 'open other');
       expect(find.byType(CenteredCircularIndicator), findsOneWidget);
@@ -657,13 +683,14 @@ void main() {
       tester,
     ) async {
       final forum = _FakeForum(
-        windows: [_windowWithFormHash('AAAAAAAA'), _duplicateWindow],
+        windows: [_windowWithFormHash('AAAAAAAA'), afterA(), _duplicateWindow],
         submits: [_data('rate_submit_success_x5.xml')],
       );
       useForum(forum);
       await pumpApp(tester);
       await open(tester, 'open A');
       await rate(tester, '5');
+      await back(tester);
 
       await open(tester, 'open B');
       await tester.pumpAndSettle();
