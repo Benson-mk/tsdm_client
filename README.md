@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.34.1（2026-10-10）
+## 最新更新：1.35.0（2026-10-11）
 
-- 勋章中心、称号商店：打开时要等好几秒、偶尔显示「论坛未提供可辨识的勋章列表」的问题已修复（打开页面时对论坛接口连问了两次，第二次被接口的频率限制挡下）。
-- 1.34.0：勋章中心、称号商店、我的称号改读论坛的 App 接口；「勋章与称号」新增称号兑换、我的勋章（有权限的账号另有发送勋章、称号颁发）；签到跨午夜的问题已修复。
-- Android 构建编号为 132，可直接覆盖之前的正式版与测试版。
+- 设置 → 外观新增「高刷新率」开关（仅 Android，默认开启）：90/120Hz 屏幕上被系统锁在 60Hz 的手机，滑动会更流畅；嫌耗电可关掉。
+- 1.34.1：勋章中心、称号商店打开慢、偶尔读不到勋章列表的问题已修复。
+- Android 构建编号为 134，可直接覆盖之前的正式版与测试版。
 
-[下载 1.34.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.34.1) · [完整更新日志](./CHANGELOG.md)
+[下载 1.35.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.35.0) · [完整更新日志](./CHANGELOG.md)
 
 ## 这是什么
 

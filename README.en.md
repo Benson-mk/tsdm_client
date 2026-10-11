@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.34.1 (2026-10-10)
+## Latest update: 1.35.0 (2026-10-11)
 
-- Medal centre and title shop: opening them took several seconds and now and then showed "the forum gives no medal list it can read"; fixed (the page asked the forum's app API twice when opened and its rate limit held back the second call).
-- 1.34.0: the medal centre, title shop and my titles read the forum's app API; "Medals & titles" adds title exchange and my medals (sending medals and issuing titles for accounts with permission); the check-in past midnight is fixed.
-- Android build number 132, installs over earlier releases and test builds.
+- Settings → Appearance adds a "High Refresh Rate" switch (Android only, on by default): phones whose system kept the app at 60Hz on a 90/120Hz screen now scroll smoother; turn it off to save battery.
+- 1.34.1: the medal centre and title shop opening slowly and now and then missing the medal list is fixed.
+- Android build number 134, installs over earlier releases and test builds.
 
-[Download 1.34.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.34.1) · [Full changelog](./CHANGELOG.md)
+[Download 1.35.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.35.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
