@@ -7,9 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bbcode_editor/flutter_bbcode_editor.dart' show BBCodeExt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart' hide State;
 import 'package:go_router/go_router.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/blocking/cubit/user_block_cubit.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
@@ -18,6 +20,13 @@ import 'package:tsdm_client/features/checkin/bloc/auto_checkin_bloc.dart';
 import 'package:tsdm_client/features/checkin/repository/auto_checkin_repository.dart';
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
+import 'package:tsdm_client/features/forum/bloc/forum_bloc.dart';
+import 'package:tsdm_client/features/forum/bloc/forum_group_bloc.dart';
+import 'package:tsdm_client/features/forum/models/models.dart';
+import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
+import 'package:tsdm_client/features/forum/utils/group.dart';
+import 'package:tsdm_client/features/forum/view/forum_group_page.dart';
+import 'package:tsdm_client/features/forum/view/forum_page.dart';
 import 'package:tsdm_client/features/homepage/widgets/user_operation_dialog.dart';
 import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
 import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
@@ -35,6 +44,7 @@ import 'package:tsdm_client/features/profile/repository/profile_repository.dart'
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/post_list.dart';
 import 'package:tsdm_client/features/thread_visit_history/bloc/thread_visit_history_bloc.dart';
@@ -51,9 +61,11 @@ import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
+import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
+import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// Roadmap item 2, follow-up of GitHub #184: the avatar menu lists the other saved accounts and switches with one tap.
@@ -61,7 +73,9 @@ import 'package:universal_html/parsing.dart';
 /// notification sync paused around it and always resumed (leaving the page while switching left it paused), a toast
 /// when that sync is busy, no switch while a reply is sent on any page. The profile page cache follows the account,
 /// and the thread page reloads for the new account (once shown, on the page being read) without losing an unsent
-/// reply.
+/// reply. A thread load still pending for the previous account is superseded by that reload: its answer, or the
+/// failure its dropped request ends with, never reaches the page (every floor showed twice, with "failed to load").
+/// The forum and forum group pages load again for the new account as well, once shown.
 ///
 /// The forum pages are synthetic (grounded in the Discuz templates), no real account or network.
 const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
@@ -152,6 +166,27 @@ final class _ProfileAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// A thread page holding floor [floor] (floor 1 by default), open for replies with [formHash], [breadcrumb] above it.
+String _threadHtml(String formHash, {int floor = 1, String breadcrumb = ''}) =>
+    '''
+<html><head><link rel="canonical" href="forum.php?mod=viewthread&tid=1264975" /></head><body>
+$breadcrumb
+<div id="postlist"><h1 class="ts"><span id="thread_subject">Switch title</span></h1><div class="bm">
+<div id="post_$floor"><table><tbody><tr>
+<td class="pls"></td>
+<td class="plc"><div class="pi"><strong><a href="forum.php?mod=redirect&goto=findpost&pid=$floor"><em>$floor</em></a>
+</strong><div class="authi"><a href="home.php?mod=space&amp;uid=1000" class="xi2">Alice</a></div></div>
+<div class="pct"><div class="pcb"><div class="t_f" id="postmessage_$floor">floor $floor text</div></div></div></td>
+</tr></tbody></table></div>
+</div></div>
+<form method="post" id="fastpostform" action="forum.php?mod=post&amp;action=reply&amp;fid=2&amp;tid=1264975&amp;replysubmit=yes">
+<input type="hidden" name="formhash" value="$formHash" />
+<input type="hidden" name="posttime" value="1760000000" />
+<input type="hidden" name="subject" value="" />
+<div class="area"><textarea name="message"></textarea></div>
+</form>
+</body></html>''';
+
 /// One thread page with one floor, open for replies, for every request; counts the thread loads.
 ///
 /// The reply form carries a formhash of the account whose cookie came with the request, like the forum's.
@@ -178,25 +213,7 @@ final class _ThreadAdapter implements HttpClientAdapter {
       '<div id="pt"><a href="forum.php">Home</a><a href="forum.php?mod=forumdisplay&amp;fid=2">SomeForum</a> '
       '<a href="forum.php?mod=viewthread&amp;tid=1264975">Switch title</a></div>';
 
-  String _page(String formHash) =>
-      '''
-<html><head><link rel="canonical" href="forum.php?mod=viewthread&tid=1264975" /></head><body>
-${breadcrumb ? _breadcrumb : ''}
-<div id="postlist"><h1 class="ts"><span id="thread_subject">Switch title</span></h1><div class="bm">
-<div id="post_1"><table><tbody><tr>
-<td class="pls"></td>
-<td class="plc"><div class="pi"><strong><a href="forum.php?mod=redirect&goto=findpost&pid=1"><em>1</em></a>
-</strong><div class="authi"><a href="home.php?mod=space&amp;uid=1000" class="xi2">Alice</a></div></div>
-<div class="pct"><div class="pcb"><div class="t_f" id="postmessage_1">floor 1 text</div></div></div></td>
-</tr></tbody></table></div>
-</div></div>
-<form method="post" id="fastpostform" action="forum.php?mod=post&amp;action=reply&amp;fid=2&amp;tid=1264975&amp;replysubmit=yes">
-<input type="hidden" name="formhash" value="$formHash" />
-<input type="hidden" name="posttime" value="1760000000" />
-<input type="hidden" name="subject" value="" />
-<div class="area"><textarea name="message"></textarea></div>
-</form>
-</body></html>''';
+  String _page(String formHash) => _threadHtml(formHash, breadcrumb: breadcrumb ? _breadcrumb : '');
 
   @override
   Future<ResponseBody> fetch(
@@ -236,6 +253,84 @@ ${breadcrumb ? _breadcrumb : ''}
 
   @override
   void close({bool force = false}) {}
+}
+
+/// Thread loads the test answers one by one: every load waits for an answer of its own.
+final class _HeldThreadRepository extends Fake implements ThreadRepository {
+  /// The answer of every load, in the order asked.
+  final answers = <Completer<Either<AppException, uh.Document>>>[];
+
+  /// The page asked for by every load.
+  final pages = <int>[];
+
+  @override
+  AsyncEither<uh.Document> fetchThread({
+    String? tid,
+    String? pid,
+    int pageNumber = 1,
+    String? onlyVisibleUid,
+    bool? reverseOrder,
+    int? exactOrder,
+  }) {
+    final answer = Completer<Either<AppException, uh.Document>>();
+    answers.add(answer);
+    pages.add(pageNumber);
+    return AsyncEither(() => answer.future);
+  }
+}
+
+/// A forum without threads whose only sub forum is [board].
+String _subForumsPage(String board) =>
+    '''
+<html><body><div id="ct" class="wp cl"><div class="bm bml pbn"><div class="bm_h cl"><h1 class="xs2">
+<a href="forum.php?mod=forumdisplay&amp;fid=73">SomeForum</a></h1></div></div>
+<div class="bm bmw"><div id="subforum_73" class="bm_c"><table class="fl_tb"><tr><td class="fl_icn"></td>
+<td><h2><a href="forum.php?mod=forumdisplay&amp;fid=2000">$board</a></h2></td>
+<td class="fl_i"><span class="xi2">1</span><span class="xg1"> / 2</span></td></tr><tr class="fl_row"></tr>
+</table></div></div></div></body></html>''';
+
+/// The forum index with group 1 holding [board] only.
+String _groupHtml(String board) =>
+    '''
+<html><body><div id="ct"><div class="mn"><div class="fl bm"><div class="bm bmw  cl"><div class="bm_h cl">
+<h2><a href="forum.php?gid=1">SomeGroup</a></h2></div><div id="category_1" class="bm_c"><table class="fl_tb">
+<tr><td class="fl_icn"></td><td><h2><a href="forum.php?mod=forumdisplay&amp;fid=2000">$board</a></h2></td>
+<td class="fl_i"><span class="xi2">1</span><span class="xg1"> / 2</span></td></tr>
+<tr class="fl_row"></tr></table></div></div></div></div></div></body></html>''';
+
+/// The boards the account in use may see, in a forum and in a forum group: "Alice board" for Alice, "Bob board" for
+/// Bob, as of when the request goes out. Answers once [gate] completes; records every load.
+final class _BoardsRepository implements ForumRepository {
+  _BoardsRepository(this._uid);
+
+  final int? Function() _uid;
+
+  /// Holds the answers back while set.
+  Completer<void>? gate;
+
+  /// The filter of every forum load.
+  final forumLoads = <FilterState>[];
+
+  int groupLoads = 0;
+
+  String _board() => _uid() == _bob.uid ? 'Bob board' : 'Alice board';
+
+  @override
+  AsyncEither<uh.Document> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
+      AsyncEither(() async {
+        forumLoads.add(filterState);
+        final board = _board();
+        await gate?.future;
+        return right(parseHtmlDocument(_subForumsPage(board)));
+      });
+
+  @override
+  AsyncEither<ForumGroup?> fetchForumGroup(String gid) => AsyncEither(() async {
+    groupLoads++;
+    final board = _board();
+    await gate?.future;
+    return right(buildGroupListFromDocument(parseHtmlDocument(_groupHtml(board))).firstOrNull);
+  });
 }
 
 /// Notification bloc holding a fixed state; the thread page only reads it.
@@ -1184,11 +1279,330 @@ void main() {
       await _dispose(tester);
     });
 
+    // Integration review: the reload for the new account began while a load of Alice was pending. Her request ended
+    // with IdentityChangedException after the reload had cleared the page, put her floors back with "failed to load",
+    // and Bob's were appended to them: every floor twice.
+    for (final jump in [false, true]) {
+      final name = jump ? 'jump' : 'refresh';
+      testWidgets('a $name pending for the previous account never comes back: every floor once, no failure', (
+        tester,
+      ) async {
+        await pumpThread(tester, pageNumber: jump ? '3' : '1');
+        final bloc = BlocProvider.of<ThreadBloc>(tester.element(find.byType(PostList)));
+        // Alice reloads the page, the forum is slow.
+        thread.gate = Completer<void>();
+        bloc.add(jump ? const ThreadJumpPageRequested(3) : ThreadRefreshRequested());
+        await _settle(tester);
+        expect(thread.requests, 2);
+
+        // Switched to Bob meanwhile: the page reloads for him at once, Alice's answer is yet to come.
+        await switchNow(tester, _bob);
+        expect(thread.requests, 3);
+        expect(thread.pages.last, jump ? '3' : '1');
+        thread.gate!.complete();
+        thread.gate = null;
+        await _settle(tester);
+
+        expect(bloc.state.status, ThreadStatus.success);
+        expect(bloc.state.postList, hasLength(1));
+        expect(find.byType(PostCard), findsOneWidget, reason: 'every floor once');
+        expect(find.text(t.general.failedToLoad), findsNothing, reason: "Alice's dropped request is no failure");
+        expect(formHash(tester), 'hashOfBob');
+        expect(tester.takeException(), isNull);
+        await _dispose(tester);
+      });
+    }
+
     testWidgets('the same account reported again does not reload', (tester) async {
       await pumpThread(tester);
       await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
       await _settle(tester);
       expect(thread.requests, 1);
+      await _dispose(tester);
+    });
+  });
+  group('thread loads', () {
+    late _HeldThreadRepository repo;
+    late ThreadBloc bloc;
+    final states = <ThreadState>[];
+
+    Future<void> answer(int load, Either<AppException, uh.Document> result) async {
+      repo.answers[load].complete(result);
+      await pumpEventQueue();
+    }
+
+    uh.Document page(String formHash, {int floor = 1}) => parseHtmlDocument(_threadHtml(formHash, floor: floor));
+
+    setUp(() async {
+      repo = _HeldThreadRepository();
+      bloc = ThreadBloc(
+        tid: '1264975',
+        pid: null,
+        onlyVisibleUid: null,
+        reverseOrder: null,
+        exactOrder: null,
+        threadRepository: repo,
+      );
+      final sub = bloc.stream.listen(states.add);
+      addTearDown(() async {
+        for (final pending in repo.answers.where((e) => !e.isCompleted)) {
+          pending.complete(left(IdentityChangedException()));
+        }
+        await pumpEventQueue();
+        await sub.cancel();
+        await bloc.close();
+      });
+      // Alice opens the thread.
+      bloc.add(const ThreadLoadMoreRequested(1));
+      await pumpEventQueue();
+      await answer(0, right(page('hashOfAlice')));
+      expect(bloc.state.status, ThreadStatus.success);
+      expect(bloc.state.postList, hasLength(1));
+      states.clear();
+    });
+
+    /// Bob's page is on screen, once, and nothing failed on the way.
+    void expectBobsPage() {
+      expect(bloc.state.status, ThreadStatus.success);
+      expect(bloc.state.postList.map((e) => e.postFloor), [1], reason: 'every floor once');
+      expect(bloc.state.replyParameters?.formHash, 'hashOfBob');
+      expect(states.where((e) => e.status == ThreadStatus.failure), isEmpty, reason: 'no "failed to load"');
+    }
+
+    for (final jump in [false, true]) {
+      final name = jump ? 'jump' : 'refresh';
+      ThreadEvent reload() => jump ? const ThreadJumpPageRequested(3) : ThreadRefreshRequested();
+
+      test("$name: Alice's pending one ends dropped after the reload for Bob began", () async {
+        // Alice's own, then the reload for Bob.
+        bloc
+          ..add(reload())
+          ..add(reload());
+        await pumpEventQueue();
+        expect(repo.pages, [
+          1,
+          if (jump) ...[3, 3] else ...[1, 1],
+        ]);
+        await answer(1, left(IdentityChangedException()));
+        await answer(2, right(page('hashOfBob')));
+        expectBobsPage();
+      });
+
+      test("$name: Alice's pending one ends dropped after Bob's page is on screen", () async {
+        bloc
+          ..add(reload())
+          ..add(reload());
+        await pumpEventQueue();
+        await answer(2, right(page('hashOfBob')));
+        await answer(1, left(IdentityChangedException()));
+        expectBobsPage();
+      });
+
+      test('$name: a late answer of a superseded load is dropped too', () async {
+        bloc
+          ..add(reload())
+          ..add(reload());
+        await pumpEventQueue();
+        await answer(2, right(page('hashOfBob')));
+        await answer(1, right(page('hashOfAlice')));
+        expectBobsPage();
+      });
+    }
+
+    for (final dropped in [false, true]) {
+      test('load more begun before a reload never appends to it (${dropped ? 'dropped' : 'answered'})', () async {
+        bloc.add(const ThreadLoadMoreRequested(2));
+        await pumpEventQueue();
+        bloc.add(ThreadRefreshRequested());
+        await pumpEventQueue();
+        expect(repo.pages, [1, 2, 1]);
+        await answer(1, dropped ? left(IdentityChangedException()) : right(page('hashOfAlice', floor: 2)));
+        await answer(2, right(page('hashOfBob')));
+        expectBobsPage();
+      });
+    }
+
+    test('load more still appends to the page it began on', () async {
+      bloc.add(const ThreadLoadMoreRequested(2));
+      await pumpEventQueue();
+      await answer(1, right(page('hashOfAlice', floor: 2)));
+      expect(bloc.state.postList.map((e) => e.postFloor), [1, 2]);
+    });
+
+    test('a request dropped for the previous account is no failure: the page waits for the reload', () async {
+      bloc.add(ThreadRefreshRequested());
+      await pumpEventQueue();
+      await answer(1, left(IdentityChangedException()));
+      expect(bloc.state.status, ThreadStatus.loading);
+      expect(states.where((e) => e.status == ThreadStatus.failure), isEmpty);
+
+      bloc.add(ThreadRefreshRequested());
+      await pumpEventQueue();
+      await answer(2, right(page('hashOfBob')));
+      expectBobsPage();
+    });
+
+    test('a failure of the latest load still shows, the floors kept', () async {
+      bloc.add(ThreadRefreshRequested());
+      await pumpEventQueue();
+      await answer(1, left(HttpRequestFailedException(500)));
+      expect(bloc.state.status, ThreadStatus.failure);
+      expect(bloc.state.postList.map((e) => e.postFloor), [1]);
+    });
+  });
+
+  group('forum pages', () {
+    late _BoardsRepository boards;
+    late SettingsBloc settingsBloc;
+
+    setUp(() async {
+      await saveAccounts([_bob]);
+      boards = _BoardsRepository(() => auth.effectiveCurrentUid);
+      settingsBloc = SettingsBloc(settingsRepository: settings, fragmentsRepository: FragmentsRepository());
+    });
+
+    tearDown(() async {
+      if (boards.gate case final gate? when !gate.isCompleted) {
+        gate.complete();
+      }
+      await settingsBloc.close();
+    });
+
+    /// [page] opened; `/other` is a plain page to push above it. Returns the router.
+    Future<GoRouter> pumpBoards(WidgetTester tester, Widget page) async {
+      final info = NotificationInfoRepository();
+      final counts = NotificationStateCubit(info);
+      final router = GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => page),
+          GoRoute(
+            path: '/other',
+            builder: (_, _) => const Scaffold(body: Center(child: Text('other page'))),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        router.dispose();
+        await info.dispose();
+        await counts.close();
+      });
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<AuthenticationRepository>.value(value: auth),
+              RepositoryProvider<ForumRepository>.value(value: boards),
+              RepositoryProvider<FavoriteRepository>(create: (_) => FavoriteRepository()),
+            ],
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<SettingsBloc>.value(value: settingsBloc),
+                BlocProvider<NotificationBloc>.value(value: _Notifications()),
+                BlocProvider<NotificationStateCubit>.value(value: counts),
+              ],
+              child: MaterialApp.router(routerConfig: router, scaffoldMessengerKey: snackbarKey),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.text('Alice board'), findsOneWidget);
+      return router;
+    }
+
+    Future<void> switchNow(WidgetTester tester, UserLoginInfo user) async {
+      final result = await tester.runAsync(() => auth.switchUser(user).run());
+      expect(result!.isRight(), isTrue, reason: '$result');
+      await _settle(tester);
+    }
+
+    void expectBobsBoards(WidgetTester tester) {
+      expect(find.text('Bob board'), findsOneWidget);
+      expect(find.text('Alice board'), findsNothing);
+      expect(find.text(t.general.retry), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+
+    final pages = <String, (Widget, int Function(_BoardsRepository))>{
+      'forum page': (const ForumPage(fid: '73'), (boards) => boards.forumLoads.length),
+      'forum group page': (const ForumGroupPage(gid: '1'), (boards) => boards.groupLoads),
+    };
+
+    for (final MapEntry(key: name, value: (page, loads)) in pages.entries) {
+      group(name, () {
+        testWidgets('loads again for the new account', (tester) async {
+          await pumpBoards(tester, page);
+          expect(loads(boards), 1);
+
+          await switchNow(tester, _bob);
+          expect(loads(boards), 2);
+          expectBobsBoards(tester);
+          await _dispose(tester);
+        });
+
+        testWidgets('under another page: loads again once it shows again, not before', (tester) async {
+          final router = await pumpBoards(tester, page);
+          unawaited(router.push('/other'));
+          await _settle(tester);
+
+          await switchNow(tester, _bob);
+          expect(loads(boards), 1, reason: 'not loaded while covered');
+          router.pop();
+          await _settle(tester);
+          expect(loads(boards), 2);
+          expectBobsBoards(tester);
+          await _settle(tester);
+          expect(loads(boards), 2, reason: 'once');
+          await _dispose(tester);
+        });
+
+        testWidgets('the same account reported again does not load again', (tester) async {
+          await pumpBoards(tester, page);
+          await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+          await _settle(tester);
+          expect(loads(boards), 1);
+          await _dispose(tester);
+        });
+
+        testWidgets("a load still pending for the previous account never shows Alice's boards", (tester) async {
+          await pumpBoards(tester, page);
+          boards.gate = Completer<void>();
+          final context = tester.element(find.text('Alice board'));
+          if (page is ForumPage) {
+            context.read<ForumBloc>().add(ForumRefreshRequested());
+          } else {
+            context.read<ForumGroupBloc>().add(const ForumGroupLoadRequested('1'));
+          }
+          await _settle(tester);
+          expect(loads(boards), 2);
+
+          await switchNow(tester, _bob);
+          expect(loads(boards), 3);
+          boards.gate!.complete();
+          await _settle(tester);
+          expectBobsBoards(tester);
+          await _dispose(tester);
+        });
+      });
+    }
+
+    testWidgets('the forum page keeps the chosen thread filter', (tester) async {
+      await pumpBoards(tester, const ForumPage(fid: '73'));
+      const filter = FilterState(
+        filter: 'typeid',
+        filterType: FilterType(name: 'Art', typeID: '7'),
+      );
+      tester
+          .element(find.text('Alice board'))
+          .read<ForumBloc>()
+          .add(const ForumChangeThreadFilterStateRequested(filter));
+      await _settle(tester);
+      expect(boards.forumLoads.last.filterType?.typeID, '7');
+
+      await switchNow(tester, _bob);
+      expect(boards.forumLoads, hasLength(3));
+      expect(boards.forumLoads.last.filterType?.typeID, '7', reason: 'still filtered for Bob');
+      expect(find.text('Bob board'), findsOneWidget);
       await _dispose(tester);
     });
   });

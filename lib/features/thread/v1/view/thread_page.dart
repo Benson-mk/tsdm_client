@@ -210,7 +210,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   /// Only the page on top reloads at once; a thread page under another page (or under the menu the switch came from)
   /// reloads when it shows again. Reloading every open thread page sent one request each, and each recorded a visit
   /// of the new account to a thread it had not opened. The reload stays on the page being read rather than the first
-  /// one. A page asking to log in reloads as well: the new account may see the thread.
+  /// one. A page asking to log in reloads as well: the new account may see the thread. A load still pending for the
+  /// previous account (opening, refresh, jump, load more) is superseded by the reload and dropped (see [ThreadBloc]).
   void _reloadForAccount() {
     final bloc = _threadBloc;
     if (!mounted || bloc == null || bloc.isClosed) {
