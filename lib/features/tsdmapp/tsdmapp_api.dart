@@ -200,9 +200,18 @@ TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since})
 const tsdmAppJsonQuery = 'tsdmapp=json';
 
 /// Add [tsdmAppJsonQuery] to [url]; an AJAX url (`inajax=1`, answered as an XML fragment) is left as it is.
-String withTsdmAppJson(String url) => url.contains('inajax=1') || url.contains(tsdmAppJsonQuery)
-    ? url
-    : '$url${url.contains('?') ? '&' : '?'}$tsdmAppJsonQuery';
+///
+/// The parameter goes before a `#fragment`, which is never sent to the server: the chat history url ends with `#last`
+/// and so was always answered the web page (roadmap item 3).
+String withTsdmAppJson(String url) {
+  final hash = url.indexOf('#');
+  final base = hash < 0 ? url : url.substring(0, hash);
+  if (base.contains('inajax=1') || base.contains(tsdmAppJsonQuery)) {
+    return url;
+  }
+  final separator = !base.contains('?') ? '?' : (base.endsWith('?') || base.endsWith('&') ? '' : '&');
+  return '$base$separator$tsdmAppJsonQuery${hash < 0 ? '' : url.substring(hash)}';
+}
 
 /// The document to parse from a forum page answer [data]: the web page itself, or the page rebuilt from the blocks of
 /// a JSON answer. A thread answer also gets the `<link>` to the thread the thread parser reads the tid from.
