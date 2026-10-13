@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/homepage/widgets/user_operation_dialog.dart';
 import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
+import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 
 /// The [CurrentAccountState] above [context], watched; null when no [CurrentAccountCubit] is provided.
 ///
@@ -49,16 +51,23 @@ class CurrentAccountAvatarButton extends StatelessWidget {
           disableHero: true,
         ),
       ),
-      onPressed: () async => showHeroDialog(
-        context,
-        (context, _, _) => UserOperationDialog(
-          username: username,
-          avatarUrl: state.avatarUrl,
-          heroTag: 'CurrentAccount_$username',
-          // Only the homepage knows the latest thread; the entry shows disabled elsewhere.
-          latestThreadUrl: null,
-        ),
-      ),
+      onPressed: () async {
+        // The thread and chat pages send replies from here: the dialog refuses to switch while one is sent.
+        final replyBloc = context.readOrNull<ReplyBloc>();
+        await showHeroDialog<void>(
+          context,
+          (context, _, _) => UserOperationDialog(
+            username: username,
+            avatarUrl: state.avatarUrl,
+            heroTag: 'CurrentAccount_$username',
+            // Only the homepage knows the latest thread; the entry shows disabled elsewhere.
+            latestThreadUrl: null,
+            replySending: replyBloc == null
+                ? null
+                : () => !replyBloc.isClosed && replyBloc.state.status == ReplyStatus.loading,
+          ),
+        );
+      },
     );
     if (!lastAction) {
       return button;
