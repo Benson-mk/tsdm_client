@@ -371,7 +371,7 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
             create: (context) {
               final auth = context.repo<AuthenticationRepository>();
               return CurrentAccountCubit(
-                currentUser: () => auth.currentUser,
+                currentUser: () => auth.effectiveCurrentUser,
                 authStatus: auth.status,
                 accounts: getIt.get<StorageProvider>().allUsersStream(),
               );

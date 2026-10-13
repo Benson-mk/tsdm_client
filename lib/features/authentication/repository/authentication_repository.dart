@@ -99,6 +99,27 @@ class AuthenticationRepository with LoggerMixin {
       _validUid(getIt.get<CookieProvider>().userLoginInfo.uid) ??
       _validUid(getIt.get<SettingsRepository>().currentSettings.loginUid);
 
+  /// The account this device acts as, also before the stored session was verified: [currentUser], else the account
+  /// named by the global [CookieProvider] or the settings, like [effectiveCurrentUid].
+  ///
+  /// Pages show it so users with several accounts see which one they post as (GitHub #184), also after an offline
+  /// start or when the app was opened from a link before the homepage verified the session. Null when no account is in
+  /// use or its username is unknown.
+  UserLoginInfo? get effectiveCurrentUser {
+    if (_authedUser != null) {
+      return _authedUser;
+    }
+    final cookieUser = getIt.get<CookieProvider>().userLoginInfo;
+    if (_validUid(cookieUser.uid) != null && (cookieUser.username?.isNotEmpty ?? false)) {
+      return cookieUser;
+    }
+    final settings = getIt.get<SettingsRepository>().currentSettings;
+    if (_validUid(settings.loginUid) != null && settings.loginUsername.isNotEmpty) {
+      return UserLoginInfo(username: settings.loginUsername, uid: settings.loginUid);
+    }
+    return null;
+  }
+
   static int? _validUid(int? uid) => uid != null && uid > 0 ? uid : null;
 
   /// Whether [document] is the page the forum renders for a guest: the login form without the user node.

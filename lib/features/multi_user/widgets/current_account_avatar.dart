@@ -30,7 +30,6 @@ class CurrentAccountAvatarButton extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final username = state.username;
-    final heroTag = 'CurrentAccount_$username';
     return IconButton(
       key: const ValueKey('current_account_avatar_button'),
       tooltip: context.t.currentAccount.tooltip(username: username),
@@ -41,7 +40,9 @@ class CurrentAccountAvatarButton extends StatelessWidget {
           key: ValueKey(username),
           username: username,
           avatarUrl: state.avatarUrl,
-          heroTag: heroTag,
+          // The button sits in pages kept alive off screen (the topics tab), where a hero would fly in from the
+          // corner; the operations dialog does not pair with it either.
+          disableHero: true,
         ),
       ),
       onPressed: () async => showHeroDialog(
@@ -49,7 +50,7 @@ class CurrentAccountAvatarButton extends StatelessWidget {
         (context, _, _) => UserOperationDialog(
           username: username,
           avatarUrl: state.avatarUrl,
-          heroTag: heroTag,
+          heroTag: 'CurrentAccount_$username',
           // Only the homepage knows the latest thread; the entry shows disabled elsewhere.
           latestThreadUrl: null,
         ),
@@ -96,6 +97,78 @@ class CurrentAccountChip extends StatelessWidget {
               child: Text(username, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The [PostingAsBar] for an app bar `bottom`, or null when it is not shown (one saved account, not logged in).
+///
+/// Watches the account, so the bar appears, disappears and renames itself on account changes.
+PreferredSizeWidget? postingAsBarOf(BuildContext context) {
+  final account = watchCurrentAccount(context);
+  if (account == null || !account.showsAccount) {
+    return null;
+  }
+  return PostingAsBar(username: account.username, avatarUrl: account.avatarUrl);
+}
+
+/// A line under the app bar title of an editor naming the account the post goes out as (#184).
+///
+/// Users with several saved accounts sometimes posted with the wrong one. A line of its own keeps the title and the
+/// action buttons their room on a narrow phone, like the peer line of the chat pages. Build it with
+/// [postingAsBarOf].
+class PostingAsBar extends StatelessWidget implements PreferredSizeWidget {
+  /// Constructor.
+  const PostingAsBar({required this.username, required this.avatarUrl, super.key});
+
+  /// Name of the account in use.
+  final String username;
+
+  /// Avatar of the account in use on the forum.
+  final String? avatarUrl;
+
+  /// Height of the line.
+  static const height = 36.0;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(height);
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // A fixed height line: large fonts are clamped a little so the line is not cut, like the chat peer line.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: SizedBox(
+        key: const ValueKey('posting-as-bar'),
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(
+            spacing: 6,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: HeroUserAvatar(
+                  key: ValueKey(username),
+                  username: username,
+                  avatarUrl: avatarUrl,
+                  disableHero: true,
+                ),
+              ),
+              Flexible(
+                child: Text(
+                  context.t.currentAccount.postingAs(username: username),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/need_login/view/need_login_page.dart';
 import 'package:tsdm_client/features/root/stream/scroll_to_top_stream.dart';
 import 'package:tsdm_client/features/topics/bloc/topics_bloc.dart';
@@ -235,6 +236,8 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
                     tooltip: context.t.searchPage.title,
                     onPressed: () async => context.pushNamed(ScreenPaths.search),
                   ),
+                  // Which account browses the forums, with more than one saved account (GitHub #184).
+                  const CurrentAccountAvatarButton(),
                 ],
                 bottom: state.forumGroupList.isNotEmpty ? tabBar : null,
               ),

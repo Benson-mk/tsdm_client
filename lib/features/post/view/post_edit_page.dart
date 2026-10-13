@@ -18,6 +18,7 @@ import 'package:tsdm_client/features/authentication/repository/authentication_re
 import 'package:tsdm_client/features/editor/widgets/editor_frame.dart';
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/editor/widgets/toolbar.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/post/bloc/post_edit_bloc.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post/models/poll_create.dart';
@@ -1027,6 +1028,9 @@ class _PostEditPageState extends State<PostEditPage> with LoggerMixin {
               resizeToAvoidBottomInset: false,
               appBar: AppBar(
                 title: Text(title),
+                // Under the title, not among the actions: beside three buttons a name squeezed the title away on a
+                // phone (#184).
+                bottom: postingAsBarOf(context),
                 actions: [
                   if (widget.editType == PostEditType.newThread &&
                       widget.pollOffered &&

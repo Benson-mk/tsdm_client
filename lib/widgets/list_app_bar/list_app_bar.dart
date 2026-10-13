@@ -10,6 +10,7 @@ import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/jump_page/cubit/jump_page_cubit.dart';
 import 'package:tsdm_client/features/jump_page/widgets/jump_page_dialog.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
@@ -34,6 +35,10 @@ class MenuCustomItem {
   /// The callback to run when item is selected.
   final FutureOr<void> Function() onSelected;
 }
+
+/// Below this window width (scaled with the text) the page pill leaves out the total pages while the current account
+/// button is shown.
+const double _compactPillWidth = 360;
 
 /// A app bar contains list and provides features including:
 ///
@@ -136,6 +141,12 @@ class ListAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final isLogin = context.select<AuthenticationRepository, bool>((repo) => repo.currentUser != null);
 
+    // The current account button (GitHub #184) costs 48px. On a narrow window or with large text the page pill then
+    // drops its " / total" part, so the actions still fit a 320px wide phone; the jump dialog shows the total anyway.
+    final showsAccount = watchCurrentAccount(context)?.showsAccount ?? false;
+    final compactPagePill =
+        showsAccount && MediaQuery.sizeOf(context).width < MediaQuery.textScalerOf(context).scale(_compactPillWidth);
+
     return AppBar(
       title: title == null ? null : Text(title!),
       // TODO: Currently we always use a compact layout in list app bar for larger main content space.
@@ -187,6 +198,9 @@ class ListAppBar extends StatelessWidget implements PreferredSizeWidget {
          */
 
         // Using three or more actions violates material design spec, but just do it.
+        // The account that replies or posts from here, only with more than one saved account (GitHub #184). Both
+        // pages using this app bar (forum, thread) are where one posts; see `compactPagePill` for the 48px it costs.
+        const CurrentAccountAvatarButton(),
         const NoticeButton(),
         // Current page as a tonal pill ("3 / 12"), opening the jump dialog.
         if (onJumpPage != null)
@@ -207,7 +221,7 @@ class ListAppBar extends StatelessWidget implements PreferredSizeWidget {
                     const Icon(Icons.auto_stories_outlined, size: 16),
                     sizedBoxW4H4,
                     Text('${canJumpPage ? currentPage : "-"}'),
-                    if (canJumpPage && totalPages > 0)
+                    if (canJumpPage && totalPages > 0 && !compactPagePill)
                       Text(' / $totalPages', style: Theme.of(context).textTheme.labelSmall),
                   ],
                 ),

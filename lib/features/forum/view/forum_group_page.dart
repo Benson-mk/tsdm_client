@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_group_bloc.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
@@ -75,7 +76,11 @@ class _ForumGroupPageState extends State<ForumGroupPage> {
           }
 
           return Scaffold(
-            appBar: AppBar(title: Text(title ?? widget.title ?? '')),
+            appBar: AppBar(
+              title: Text(title ?? widget.title ?? ''),
+              // Which account browses the forums, with more than one saved account (GitHub #184).
+              actions: const [CurrentAccountAvatarButton()],
+            ),
             body: SafeArea(bottom: false, child: body),
           );
         },

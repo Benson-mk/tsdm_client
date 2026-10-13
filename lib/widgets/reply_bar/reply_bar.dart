@@ -16,6 +16,7 @@ import 'package:tsdm_client/features/chat/models/models.dart';
 import 'package:tsdm_client/features/editor/widgets/editor_frame.dart';
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/editor/widgets/toolbar.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/root/models/models.dart';
 import 'package:tsdm_client/features/root/stream/root_location_stream.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -28,6 +29,7 @@ import 'package:tsdm_client/utils/bbcode/spoiler_normalizer.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
+import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 
@@ -183,6 +185,12 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
   Widget build(BuildContext context) {
     final hasLogin = context.select<AuthenticationRepository, bool>((repo) => repo.currentUser != null);
     final closed = context.select<ReplyBloc, bool>((bloc) => bloc.state.closed);
+    // With several saved accounts the empty box names the account the reply goes out as (#184); watched, so an
+    // account switch renames it.
+    final account = watchCurrentAccount(context);
+    final hintText = (account?.showsAccount ?? false)
+        ? context.t.currentAccount.replyAs(username: account!.username)
+        : context.t.threadPage.sendReplyHint;
 
     Future<void> Function()? onTapCallback;
 
@@ -252,7 +260,7 @@ class _ReplyBarWrapperState extends State<ReplyBar> {
                     isDense: true,
                     filled: true,
                     fillColor: colorScheme.surface,
-                    hintText: context.t.threadPage.sendReplyHint,
+                    hintText: hintText,
                     prefixIcon: Icon(
                       onTapCallback == null ? Icons.lock_outline : Icons.edit_outlined,
                       size: 20,
@@ -816,7 +824,10 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
                   focusNode.requestFocus();
                 },
               ),
-              const Spacer(),
+              // The account the reply goes out as, in the free room before the buttons (#184).
+              const Expanded(
+                child: Align(alignment: AlignmentDirectional.centerStart, child: _CurrentAccountLabel()),
+              ),
               Tooltip(
                 // "Collapse": the draft is kept in the reply box below.
                 message: MaterialLocalizations.of(context).expandedIconTapHint,
@@ -939,6 +950,55 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
 
           return _buildContent(context, state);
         },
+      ),
+    );
+  }
+}
+
+/// Avatar and name of the account a reply goes out as, beside the send button of the editor (#184).
+///
+/// Only with more than one saved account, like [CurrentAccountChip]; unlike it the name shrinks to the room left in
+/// the button row, so a long name never pushes the send button off a narrow phone.
+class _CurrentAccountLabel extends StatelessWidget {
+  const _CurrentAccountLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final account = watchCurrentAccount(context);
+    if (account == null || !account.showsAccount) {
+      return const SizedBox.shrink();
+    }
+    final username = account.username;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      key: const ValueKey('reply-bar-account'),
+      message: context.t.currentAccount.replyAs(username: username),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: HeroUserAvatar(
+                key: ValueKey(username),
+                username: username,
+                avatarUrl: account.avatarUrl,
+                disableHero: true,
+              ),
+            ),
+            Flexible(
+              child: Text(
+                username,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
