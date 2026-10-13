@@ -1,0 +1,920 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bbcode_editor/flutter_bbcode_editor.dart' show BBCodeExt;
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:talker_flutter/talker_flutter.dart';
+import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/blocking/cubit/user_block_cubit.dart';
+import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
+import 'package:tsdm_client/features/blocking/utils/thread_author_cache.dart';
+import 'package:tsdm_client/features/checkin/bloc/auto_checkin_bloc.dart';
+import 'package:tsdm_client/features/checkin/repository/auto_checkin_repository.dart';
+import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
+import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
+import 'package:tsdm_client/features/homepage/widgets/user_operation_dialog.dart';
+import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
+import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
+import 'package:tsdm_client/features/multi_user/view/manage_account_page.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
+import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_sync_all_cubit.dart';
+import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
+import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
+import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
+import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
+import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
+import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
+import 'package:tsdm_client/features/thread/v1/widgets/post_list.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
+import 'package:tsdm_client/shared/providers/providers.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
+import 'package:tsdm_client/widgets/heroes.dart';
+import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
+import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
+import 'package:universal_html/parsing.dart';
+
+/// Roadmap item 2, follow-up of GitHub #184: the avatar menu lists the other saved accounts and switches with one tap.
+/// The manage accounts page switches through the same helper (`switchAccount`): one switch at a time, the in-app
+/// notification sync paused around it and always resumed (leaving the page while switching left it paused), a toast
+/// when that sync is busy. The profile page cache follows the account, and the thread page reloads for the new account
+/// without losing an unsent reply.
+///
+/// The forum pages are synthetic (grounded in the Discuz templates), no real account or network.
+const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
+const _bob = UserLoginInfo(username: 'Bob', uid: 1001);
+const _carol = UserLoginInfo(username: 'Carol', uid: 1002);
+
+/// The check page as served to a logged-in [user].
+String _authedPage(UserLoginInfo user) =>
+    '<html><body><div id="inner_stat"><strong><a href="home.php?mod=space&amp;uid=${user.uid}">${user.username}</a> '
+    '</strong></div><input type="hidden" name="formhash" value="XXXXXXXX" /></body></html>';
+
+/// What the forum renders for a guest: the login form, no user node.
+const _guestPage =
+    '<html><body><form id="lsform" method="post"><input type="hidden" name="formhash" value="XXXXXXXX" /> '
+    '<input name="username" /></form><div id="messagetext"><p>请先登录后才能继续浏览</p></div></body></html>';
+
+/// Cookie row in the format the persistent cookie jar reads back: the auth cookie is sent with every request.
+Map<String, String> _cookieOf(UserLoginInfo user) => {
+  '.index': '["$baseHost"]',
+  baseHost: '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=${user.username!.toLowerCase()}; Path=/;_crt=1"}}',
+};
+
+/// The forum as seen by the isolated client of the switch: [body] for every request, once [gate] completes.
+final class _SwitchAdapter implements HttpClientAdapter {
+  String body = _authedPage(_bob);
+  Completer<void>? gate;
+  final requests = <RequestOptions>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    if (gate != null) {
+      await gate!.future;
+    }
+    return ResponseBody.fromString(
+      body,
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// Avatars are not downloaded in tests.
+final class _OfflineAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) =>
+      throw DioException.connectionError(requestOptions: options, reason: 'offline');
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The profile page of the uid asked for, once [gate] completes; records the uids asked for.
+final class _ProfileAdapter implements HttpClientAdapter {
+  Completer<void>? gate;
+  final uids = <String>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final uid = options.uri.queryParameters['uid'] ?? '';
+    uids.add(uid);
+    if (gate != null) {
+      await gate!.future;
+    }
+    return ResponseBody.fromString(
+      '<html><body><div id="ct">profile of $uid</div></body></html>',
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// One thread page with one floor, open for replies, for every request; counts the thread loads.
+///
+/// The reply form carries a formhash of the account whose cookie came with the request, like the forum's.
+final class _ThreadAdapter implements HttpClientAdapter {
+  int requests = 0;
+
+  /// Holds the answers back while set.
+  Completer<void>? gate;
+
+  static String _page(String formHash) =>
+      '''
+<html><head><link rel="canonical" href="forum.php?mod=viewthread&tid=1264975" /></head><body>
+<div id="postlist"><h1 class="ts"><span id="thread_subject">Switch title</span></h1><div class="bm">
+<div id="post_1"><table><tbody><tr>
+<td class="pls"></td>
+<td class="plc"><div class="pi"><strong><a href="forum.php?mod=redirect&goto=findpost&pid=1"><em>1</em></a>
+</strong><div class="authi"><a href="home.php?mod=space&amp;uid=1000" class="xi2">Alice</a></div></div>
+<div class="pct"><div class="pcb"><div class="t_f" id="postmessage_1">floor 1 text</div></div></div></td>
+</tr></tbody></table></div>
+</div></div>
+<form method="post" id="fastpostform" action="forum.php?mod=post&amp;action=reply&amp;fid=2&amp;tid=1264975&amp;replysubmit=yes">
+<input type="hidden" name="formhash" value="$formHash" />
+<input type="hidden" name="posttime" value="1760000000" />
+<input type="hidden" name="subject" value="" />
+<div class="area"><textarea name="message"></textarea></div>
+</form>
+</body></html>''';
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    expect(options.method, 'GET', reason: 'never a forum write');
+    if (options.uri.queryParameters['mod'] == 'viewthread') {
+      requests++;
+    }
+    if (gate != null) {
+      await gate!.future;
+    }
+    final cookie = '${options.headers['cookie'] ?? options.headers['Cookie'] ?? ''}';
+    final formHash = cookie.contains('auth=bob')
+        ? 'hashOfBob'
+        : (cookie.contains('auth=alice') ? 'hashOfAlice' : 'none');
+    return ResponseBody.fromString(
+      _page(formHash),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// Notification bloc holding a fixed state; the thread page only reads it.
+final class _Notifications extends Fake implements NotificationBloc {
+  @override
+  void add(NotificationEvent event) {}
+
+  @override
+  NotificationState get state => const NotificationState(status: NotificationStatus.success);
+
+  @override
+  Stream<NotificationState> get stream => const Stream.empty();
+
+  @override
+  bool get isClosed => false;
+
+  @override
+  Future<void> close() async {}
+}
+
+/// Frames with real time in between: the database and its streams answer on the real event loop.
+Future<void> _settle(WidgetTester tester, {int rounds = 8}) async {
+  for (var i = 0; i < rounds; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+/// Lets the snack bar and the database stream timers fire before the framework checks for pending timers.
+Future<void> _dispose(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox());
+  await tester.pump(const Duration(seconds: 5));
+}
+
+/// The homepage app bar, reduced to the avatar that opens the menu the way the real one does.
+class _Home extends StatelessWidget {
+  const _Home();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      actions: [
+        IconButton(
+          key: const ValueKey('home-avatar'),
+          icon: const Icon(Icons.person),
+          onPressed: () async => showHeroDialog<void>(
+            context,
+            (context, _, _) =>
+                const UserOperationDialog(username: 'Alice', avatarUrl: null, heroTag: 'Alice', latestThreadUrl: null),
+          ),
+        ),
+      ],
+    ),
+    body: const Center(child: Text('homepage')),
+  );
+}
+
+void main() {
+  late AppDatabase db;
+  late StorageProvider storage;
+  late SettingsRepository settings;
+  late AuthenticationRepository auth;
+  late _SwitchAdapter forum;
+
+  setUpAll(() async {
+    talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false));
+    await LocaleSettings.setLocale(AppLocale.en);
+  });
+
+  setUp(() async {
+    db = AppDatabase(NativeDatabase.memory());
+    storage = StorageProvider(db, {}, {});
+    settings = SettingsRepository(storage);
+    getIt
+      ..registerSingleton<StorageProvider>(storage)
+      ..registerSingleton<SettingsRepository>(settings)
+      ..registerSingleton<NetErrorSaver>(NetErrorSaver())
+      ..registerFactory<CookieProvider>(CookieProvider.buildEmpty, instanceName: ServiceKeys.empty)
+      ..registerSingleton<ImageCacheProvider>(
+        ImageCacheProvider(NetClientProvider.buildNoCookie(dio: Dio()..httpClientAdapter = _OfflineAdapter())),
+      );
+    await settings.init();
+    // Alice is logged in on this device.
+    await storage.saveCookie(username: 'Alice', uid: 1000, cookie: _cookieOf(_alice));
+    await settings.setValue<int>(SettingsKeys.loginUid, 1000);
+    await settings.setValue<String>(SettingsKeys.loginUsername, 'Alice');
+    getIt.registerSingleton<CookieProvider>(CookieProvider(_alice, _cookieOf(_alice)));
+    forum = _SwitchAdapter();
+    auth = AuthenticationRepository(
+      user: _alice,
+      clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+        dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+        cookie: cookie,
+      ),
+    );
+  });
+
+  tearDown(() async {
+    await auth.dispose();
+    await getIt.get<ImageCacheProvider>().dispose();
+    await getIt.reset();
+    await settings.dispose();
+    await db.close();
+  });
+
+  Future<void> saveAccounts(List<UserLoginInfo> users) async {
+    for (final u in users) {
+      await storage.saveCookie(username: u.username!, uid: u.uid!, cookie: _cookieOf(u));
+    }
+  }
+
+  int? cookieUid() => getIt.get<CookieProvider>().userLoginInfo.uid;
+
+  /// The in-app notification sync of the app, ticking; built in the test zone so its timer runs on the pumps.
+  AutoNotificationCubit autoSync() {
+    final notifications = NotificationRepository();
+    final auto = AutoNotificationCubit(
+      authenticationRepository: auth,
+      notificationRepository: notifications,
+      storageProvider: storage,
+    )..start(const Duration(hours: 1));
+    addTearDown(() async {
+      await auto.close();
+      await notifications.dispose();
+    });
+    return auto;
+  }
+
+  /// Whether the sync ticks: a resumed sync restarts its timer and says so on the next second.
+  Future<void> expectTicking(WidgetTester tester, AutoNotificationCubit auto) async {
+    await tester.pump(const Duration(seconds: 1));
+    expect(auto.state, isA<AutoNoticeStateTicking>(), reason: 'the in-app notification sync runs again');
+  }
+
+  Finder row(UserLoginInfo user) => find.byKey(ValueKey('quick-switch-${user.uid}'));
+  final dialog = find.byType(UserOperationDialog);
+
+  group('avatar menu', () {
+    late AutoNotificationCubit auto;
+
+    /// [home] with the providers of the app and the routes the menu opens.
+    Future<void> pumpHome(
+      WidgetTester tester, {
+      Widget home = const _Home(),
+      CurrentAccountCubit? accounts,
+    }) async {
+      auto = autoSync();
+      final router = GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => home),
+          GoRoute(
+            path: ScreenPaths.manageAccount,
+            name: ScreenPaths.manageAccount,
+            builder: (_, _) => const Scaffold(body: Center(child: Text('manage account page'))),
+          ),
+          GoRoute(
+            path: ScreenPaths.login,
+            name: ScreenPaths.login,
+            builder: (_, state) =>
+                Scaffold(body: Center(child: Text('login ${state.uri.queryParameters['username']}'))),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      Widget app = MaterialApp.router(routerConfig: router, scaffoldMessengerKey: snackbarKey);
+      if (accounts != null) {
+        app = BlocProvider<CurrentAccountCubit>.value(value: accounts, child: app);
+      }
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: RepositoryProvider<AuthenticationRepository>.value(
+            value: auth,
+            child: BlocProvider<AutoNotificationCubit>.value(value: auto, child: app),
+          ),
+        ),
+      );
+      await _settle(tester);
+      await expectTicking(tester, auto);
+    }
+
+    Future<void> openMenu(WidgetTester tester, {Finder? button}) async {
+      await tester.tap(button ?? find.byKey(const ValueKey('home-avatar')));
+      await _settle(tester);
+      expect(dialog, findsOneWidget);
+    }
+
+    Future<void> finish(WidgetTester tester) async {
+      auto.stop();
+      await _dispose(tester);
+    }
+
+    testWidgets('a single saved account: no account list, the menu is as before', (tester) async {
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      expect(find.text(t.manageAccountPage.switchAccount.title), findsNothing);
+      expect(find.byType(HeroUserAvatar), findsOneWidget, reason: 'only the avatar of the title');
+      final entries = tester.widgetList<ListTile>(find.descendant(of: dialog, matching: find.byType(ListTile)));
+      expect(entries, hasLength(7), reason: 'profile, medals, history, threads, favorites, manage, latest');
+      expect(tester.takeException(), isNull);
+      await finish(tester);
+    });
+
+    testWidgets('lists the other accounts above the menu, never the current one', (tester) async {
+      await saveAccounts([_bob, _carol]);
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      expect(find.text(t.manageAccountPage.switchAccount.title), findsOneWidget);
+      expect(row(_alice), findsNothing, reason: 'the account in use is the title');
+      expect(find.descendant(of: dialog, matching: find.text('Alice')), findsOneWidget);
+      expect(row(_bob), findsOneWidget);
+      expect(row(_carol), findsOneWidget);
+      // Same order as the manage accounts page, above the entries of the account in use.
+      expect(tester.getTopLeft(row(_bob)).dy, lessThan(tester.getTopLeft(row(_carol)).dy));
+      final profile = find.widgetWithText(ListTile, t.profilePage.title);
+      expect(tester.getTopLeft(row(_carol)).dy, lessThan(tester.getTopLeft(profile).dy));
+
+      final avatar = find.descendant(of: row(_bob), matching: find.byType(HeroUserAvatar));
+      expect(tester.getSize(avatar), const Size(32, 32));
+      expect(tester.widget<HeroUserAvatar>(avatar).disableHero, isTrue, reason: 'the title avatar is the hero');
+      expect(tester.widget<HeroUserAvatar>(avatar).avatarUrl, avatarUrlOfUid('1001'));
+      expect(tester.takeException(), isNull);
+      await finish(tester);
+    });
+
+    testWidgets('more than four other accounts: four rows and a row to the manage accounts page', (tester) async {
+      final others = [for (var i = 0; i < 6; i++) UserLoginInfo(username: 'U$i', uid: 2000 + i)];
+      await saveAccounts(others);
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      for (final u in others.take(4)) {
+        expect(row(u), findsOneWidget);
+      }
+      expect(row(others[4]), findsNothing);
+      expect(row(others[5]), findsNothing);
+      final more = find.text(t.currentAccount.moreAccounts(count: 2));
+      expect(more, findsOneWidget);
+      expect(find.text('2 more account(s)'), findsOneWidget);
+
+      await tester.ensureVisible(more);
+      await tester.tap(more);
+      await _settle(tester);
+      expect(dialog, findsNothing);
+      expect(find.text('manage account page'), findsOneWidget);
+      await finish(tester);
+    });
+
+    testWidgets('a tap switches: cookie and settings name the account, the menu closes with a toast', (tester) async {
+      await saveAccounts([_bob, _carol]);
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      await tester.tap(row(_bob));
+      await _settle(tester);
+
+      expect(forum.requests, hasLength(1), reason: 'one check of the stored login');
+      expect(cookieUid(), 1001);
+      expect(settings.currentSettings.loginUid, 1001);
+      expect(settings.currentSettings.loginUsername, 'Bob');
+      expect(auth.currentUser?.uid, 1001);
+      expect(dialog, findsNothing);
+      expect(find.text('Switched to Bob'), findsOneWidget);
+      expect(isSwitchingAccount, isFalse);
+      await expectTicking(tester, auto);
+      await finish(tester);
+    });
+
+    testWidgets('a guest page: the menu stays open, says the login expired and marks the row', (tester) async {
+      await saveAccounts([_bob]);
+      forum.body = _guestPage;
+      await pumpHome(tester);
+      await openMenu(tester);
+      expect(
+        find.descendant(of: row(_bob), matching: find.text(t.manageAccountPage.sessionExpired.hint)),
+        findsNothing,
+      );
+
+      await tester.tap(row(_bob));
+      await _settle(tester);
+
+      expect(dialog, findsOneWidget);
+      expect(find.text(t.loginPage.perhapsExpired), findsOneWidget);
+      expect(cookieUid(), 1000, reason: 'Alice stays');
+      expect(settings.currentSettings.loginUid, 1000);
+      expect(
+        find.descendant(of: row(_bob), matching: find.text(t.manageAccountPage.sessionExpired.hint)),
+        findsOneWidget,
+      );
+      await expectTicking(tester, auto);
+
+      // An expired login is not switched to: the login page opens with the name.
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(dialog, findsNothing);
+      expect(find.text('login Bob'), findsOneWidget);
+      expect(forum.requests, hasLength(1));
+      await finish(tester);
+    });
+
+    testWidgets('the notification sync keeps fetching: no switch, a toast says to try again', (tester) async {
+      await saveAccounts([_bob]);
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      // A fetch in flight.
+      auto.emit(AutoNoticeStatePending(DateTime.now()));
+      await tester.tap(row(_bob));
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      expect(find.text(t.currentAccount.switchBusy), findsOneWidget);
+      expect(find.text('Notifications are syncing, try again in a moment'), findsOneWidget);
+      expect(forum.requests, isEmpty);
+      expect(cookieUid(), 1000);
+      expect(dialog, findsOneWidget);
+      expect(tester.widget<ListTile>(row(_bob)).enabled, isTrue, reason: 'can be tried again');
+
+      // The fetch ended: nothing of the switch holds the sync, and the next tap switches.
+      auto.emit(const AutoNoticeStateTicking(total: Duration(hours: 1), remain: Duration(minutes: 59)));
+      await expectTicking(tester, auto);
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(cookieUid(), 1001);
+      expect(dialog, findsNothing);
+      await expectTicking(tester, auto);
+      await finish(tester);
+    });
+
+    testWidgets('cannot be dismissed while switching, and every entry waits', (tester) async {
+      await saveAccounts([_bob, _carol]);
+      forum.gate = Completer<void>();
+      await pumpHome(tester);
+      await openMenu(tester);
+
+      await tester.tap(row(_bob));
+      await _settle(tester, rounds: 3);
+      expect(forum.requests, hasLength(1));
+      expect(auto.state, isA<AutoNoticeStatePaused>(), reason: 'paused while switching');
+      expect(find.descendant(of: row(_bob), matching: find.byType(CircularProgressIndicator)), findsOneWidget);
+
+      // Neither the barrier nor back closes it.
+      await tester.tapAt(const Offset(5, 590));
+      await tester.pump();
+      expect(dialog, findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(dialog, findsOneWidget);
+      expect(tester.widget<ListTile>(find.widgetWithText(ListTile, t.profilePage.title)).enabled, isFalse);
+      expect(tester.widget<ListTile>(row(_carol)).enabled, isFalse);
+      await tester.tap(row(_carol), warnIfMissed: false);
+      await tester.pump();
+      expect(forum.requests, hasLength(1), reason: 'no second switch');
+
+      forum.gate!.complete();
+      await _settle(tester);
+      expect(cookieUid(), 1001);
+      expect(dialog, findsNothing);
+      await expectTicking(tester, auto);
+      await finish(tester);
+    });
+
+    testWidgets('the app bar avatar of a page sending a reply: the switch is refused', (tester) async {
+      await saveAccounts([_bob]);
+      final accounts = CurrentAccountCubit(
+        currentUser: () => auth.effectiveCurrentUser,
+        authStatus: auth.status,
+        accounts: storage.allUsersStream(),
+      );
+      final reply = ReplyBloc(replyRepository: const ReplyRepository())
+        ..emit(const ReplyState(status: ReplyStatus.loading));
+      addTearDown(() async {
+        await reply.close();
+        await accounts.close();
+      });
+      await pumpHome(
+        tester,
+        accounts: accounts,
+        home: BlocProvider<ReplyBloc>.value(
+          value: reply,
+          child: Scaffold(
+            appBar: AppBar(title: const Text('thread'), actions: const [CurrentAccountAvatarButton()]),
+          ),
+        ),
+      );
+      final button = find.byKey(const ValueKey('current_account_avatar_button'));
+      expect(button, findsOneWidget);
+      await openMenu(tester, button: button);
+      expect(row(_bob), findsOneWidget, reason: 'the app bar avatar opens the same list');
+
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(find.text(t.currentAccount.replyBusy), findsOneWidget);
+      expect(forum.requests, isEmpty, reason: 'the reply is not dropped and sent twice');
+      expect(cookieUid(), 1000);
+      expect(dialog, findsOneWidget);
+
+      // Once the reply is done the switch goes through.
+      reply.emit(const ReplyState(status: ReplyStatus.failure));
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(cookieUid(), 1001);
+      expect(dialog, findsNothing);
+      await finish(tester);
+    });
+  });
+
+  group('manage accounts page', () {
+    late AutoCheckinBloc checkin;
+    late AutoNotificationCubit auto;
+
+    setUp(() {
+      checkin = AutoCheckinBloc(
+        autoCheckinRepository: AutoCheckinRepository(storageProvider: storage),
+        settingsRepository: settings,
+        storageProvider: storage,
+      );
+    });
+
+    tearDown(() async => checkin.close());
+
+    Future<void> pumpPage(WidgetTester tester) async {
+      await saveAccounts([_bob]);
+      auto = autoSync();
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: RepositoryProvider<AuthenticationRepository>.value(
+            value: auth,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<AutoCheckinBloc>.value(value: checkin),
+                BlocProvider<AutoNotificationCubit>.value(value: auto),
+                BlocProvider<NotificationSyncAllCubit>(
+                  create: (_) => NotificationSyncAllCubit(
+                    repository: NotificationSyncAllRepository(
+                      storageProvider: storage,
+                      notificationRepository: NotificationRepository(),
+                    ),
+                    storageProvider: storage,
+                    authenticationRepository: auth,
+                    infoRepository: NotificationInfoRepository(),
+                  ),
+                ),
+              ],
+              child: MaterialApp(scaffoldMessengerKey: snackbarKey, home: const ManageAccountPage()),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.text('Bob'), findsOneWidget);
+      await expectTicking(tester, auto);
+      // The dialog of Bob.
+      await tester.tap(find.text('Bob'));
+      await _settle(tester, rounds: 3);
+      expect(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount), findsOneWidget);
+    }
+
+    testWidgets('switching from the account dialog: same flow, it closes with the same toast', (tester) async {
+      await pumpPage(tester);
+      await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
+      await _settle(tester);
+
+      expect(cookieUid(), 1001);
+      expect(settings.currentSettings.loginUid, 1001);
+      expect(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount), findsNothing, reason: 'closed');
+      expect(find.text('Switched to Bob'), findsOneWidget);
+      await expectTicking(tester, auto);
+      auto.stop();
+      await _dispose(tester);
+    });
+
+    testWidgets('a guest page keeps the dialog open with the reason, the sync ticks again', (tester) async {
+      forum.body = _guestPage;
+      await pumpPage(tester);
+      await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
+      await _settle(tester);
+
+      expect(cookieUid(), 1000);
+      expect(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount), findsOneWidget, reason: 'still open');
+      expect(find.text(t.loginPage.perhapsExpired), findsOneWidget);
+      await expectTicking(tester, auto);
+      auto.stop();
+      await _dispose(tester);
+    });
+
+    testWidgets('leaving the page while switching does not leave the notification sync paused', (tester) async {
+      forum.gate = Completer<void>();
+      await pumpPage(tester);
+      await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
+      await _settle(tester, rounds: 3);
+      expect(forum.requests, hasLength(1));
+      expect(auto.state, isA<AutoNoticeStatePaused>());
+
+      // The page (and the bloc it holds) goes away before the forum answered.
+      await tester.pumpWidget(const SizedBox());
+      await _settle(tester, rounds: 3);
+      expect(isSwitchingAccount, isFalse);
+      await expectTicking(tester, auto);
+
+      // The switch itself still ends; nothing is shown and the sync keeps ticking.
+      forum.gate!.complete();
+      await _settle(tester);
+      expect(cookieUid(), 1001);
+      await expectTicking(tester, auto);
+      auto.stop();
+      await _dispose(tester);
+    });
+  });
+
+  group('profile cache', () {
+    late _ProfileAdapter profiles;
+
+    setUp(() {
+      profiles = _ProfileAdapter();
+      // No identity guard on this client: a page that arrives after a switch reaches the repository.
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = profiles),
+      );
+    });
+
+    test('a switch drops the profile of the previous account, the next load asks for the new one', () async {
+      await saveAccounts([_bob]);
+      final repo = ProfileRepository();
+      expect((await repo.fetchProfile().run()).isRight(), isTrue);
+      expect(repo.hasCache(), isTrue);
+      expect(repo.getCache()!.querySelector('#ct')?.text, contains('profile of 1000'));
+      expect((await repo.fetchProfile().run()).isRight(), isTrue);
+      expect(profiles.uids, ['1000'], reason: 'served from the cache');
+
+      expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+      expect(repo.hasCache(), isFalse, reason: "Alice's page is not Bob's");
+      expect(repo.getCache(), isNull);
+
+      final bob = await repo.fetchProfile().run();
+      expect(bob.getRight().toNullable()!.querySelector('#ct')?.text, contains('profile of 1001'));
+      expect(profiles.uids, ['1000', '1001']);
+      expect(repo.getCache()!.querySelector('#ct')?.text, contains('profile of 1001'));
+    });
+
+    test('removing the account in use drops it too', () async {
+      final repo = ProfileRepository();
+      expect((await repo.fetchProfile().run()).isRight(), isTrue);
+      expect(repo.hasCache(), isTrue);
+      expect((await auth.forgetCurrentUser().run()).isRight(), isTrue);
+      expect(repo.hasCache(), isFalse);
+      expect(repo.getCache(), isNull);
+    });
+
+    test('a page that arrives after a switch is not kept for the new account', () async {
+      await saveAccounts([_bob]);
+      final repo = ProfileRepository();
+      profiles.gate = Completer<void>();
+      final alice = repo.fetchProfile().run();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+      profiles.gate!.complete();
+      expect((await alice).isRight(), isTrue);
+      expect(repo.hasCache(), isFalse);
+
+      profiles.gate = null;
+      final bob = await repo.fetchProfile().run();
+      expect(bob.getRight().toNullable()!.querySelector('#ct')?.text, contains('profile of 1001'));
+    });
+  });
+
+  group('thread page', () {
+    late SettingsBloc settingsBloc;
+    late UserBlockRepository blocks;
+    late _ThreadAdapter thread;
+
+    setUp(() async {
+      await saveAccounts([_bob]);
+      thread = _ThreadAdapter();
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = thread),
+      );
+      settingsBloc = SettingsBloc(settingsRepository: settings, fragmentsRepository: FragmentsRepository());
+      blocks = UserBlockRepository(storage);
+      ThreadAuthorCache.clear();
+    });
+
+    tearDown(() async {
+      await settingsBloc.close();
+      await blocks.dispose();
+    });
+
+    Future<void> pumpThread(WidgetTester tester) async {
+      final info = NotificationInfoRepository();
+      final counts = NotificationStateCubit(info);
+      final cubit = UserBlockCubit(
+        repository: blocks,
+        currentUid: () => auth.effectiveCurrentUid,
+        authStatus: auth.status,
+      );
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const ThreadPage(
+              threadID: '1264975',
+              findPostID: null,
+              pageNumber: '1',
+              overrideReverseOrder: false,
+              overrideWithExactOrder: null,
+            ),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        router.dispose();
+        await cubit.close();
+        await info.dispose();
+        await counts.close();
+      });
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<AuthenticationRepository>.value(value: auth),
+              RepositoryProvider<FavoriteRepository>(create: (_) => FavoriteRepository()),
+            ],
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<SettingsBloc>.value(value: settingsBloc),
+                BlocProvider<UserBlockCubit>.value(value: cubit),
+                BlocProvider<NotificationBloc>.value(value: _Notifications()),
+                BlocProvider<NotificationStateCubit>.value(value: counts),
+              ],
+              child: MaterialApp.router(routerConfig: router, scaffoldMessengerKey: snackbarKey),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.textContaining('floor 1 text', findRichText: true), findsWidgets);
+      expect(thread.requests, 1, reason: 'opening the page loads it once');
+    }
+
+    TextEditingController replyBox(WidgetTester tester) =>
+        tester.widget<TextField>(find.byKey(const ValueKey('reply-bar-field'))).controller!;
+
+    String? formHash(WidgetTester tester) =>
+        BlocProvider.of<ReplyBloc>(tester.element(find.byType(PostList))).state.replyParameters?.formHash;
+
+    /// Lets the page show its loading state, the reply bar gone, as on a real network; then answers.
+    Future<void> reloadSlowly(WidgetTester tester, Future<void> Function() reload) async {
+      thread.gate = Completer<void>();
+      await reload();
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('reply-bar-field')), findsNothing, reason: 'no reply bar while loading');
+      thread.gate!.complete();
+      thread.gate = null;
+      await _settle(tester);
+    }
+
+    Future<void> switchToBob(WidgetTester tester) => reloadSlowly(tester, () async {
+      final result = await tester.runAsync(() => auth.switchUser(_bob).run());
+      expect(result!.isRight(), isTrue, reason: '$result');
+    });
+
+    testWidgets('an account change reloads the thread and keeps the unsent reply', (tester) async {
+      await pumpThread(tester);
+      expect(formHash(tester), 'hashOfAlice');
+      replyBox(tester).text = 'unsent reply';
+      await tester.pump();
+
+      await switchToBob(tester);
+      expect(thread.requests, 2, reason: 'reloaded for Bob: his formhash and his own floors');
+      expect(formHash(tester), 'hashOfBob', reason: "a reply goes out with Bob's formhash");
+      expect(find.textContaining('floor 1 text', findRichText: true), findsWidgets);
+      expect(replyBox(tester).text, 'unsent reply');
+      expect(tester.takeException(), isNull);
+      await _dispose(tester);
+    });
+
+    testWidgets('a reply written in the open editor survives the reload too', (tester) async {
+      await pumpThread(tester);
+      await tester.tap(find.byKey(const ValueKey('reply-bar-field')));
+      await _settle(tester, rounds: 4);
+      tester.widget<RichEditor>(find.byType(RichEditor)).controller.insertBBCode('written in the editor');
+      await tester.pump();
+
+      await switchToBob(tester);
+      expect(thread.requests, 2);
+      expect(find.byType(RichEditor), findsNothing, reason: 'the editor closed with the old bar');
+      expect(replyBox(tester).text, contains('written in the editor'));
+      expect(tester.takeException(), isNull);
+      await _dispose(tester);
+    });
+
+    testWidgets('a reload of the page keeps the unsent reply as well', (tester) async {
+      await pumpThread(tester);
+      replyBox(tester).text = 'unsent reply';
+      await tester.pump();
+
+      final bloc = BlocProvider.of<ThreadBloc>(tester.element(find.byType(PostList)));
+      await reloadSlowly(tester, () async => bloc.add(ThreadRefreshRequested()));
+      expect(thread.requests, 2);
+      expect(replyBox(tester).text, 'unsent reply');
+      await _dispose(tester);
+    });
+
+    testWidgets('the same account reported again does not reload', (tester) async {
+      await pumpThread(tester);
+      await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      await _settle(tester);
+      expect(thread.requests, 1);
+      await _dispose(tester);
+    });
+  });
+}
