@@ -21,6 +21,7 @@ import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/models/secondary_title.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/red_packet/models/models.dart';
+import 'package:tsdm_client/features/red_packet/utils/daily_red_packet_record.dart';
 import 'package:tsdm_client/features/red_packet/widgets/daily_red_packet_button.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -559,17 +560,20 @@ void main() {
       await dispose(tester);
     });
 
-    testWidgets('a reloaded page without a packet after a confirmed claim: none to claim, no date guessed', (
-      tester,
+    /// Claims [packet] on the entry, then shows the entry as the homepage does after a reload, which no longer offers
+    /// the claimed packet. [onCheck] is the packet check of the "none now" button.
+    Future<void> claimThenReloadWithoutPacket(
+      WidgetTester tester,
+      DailyRedPacketConfig packet,
+      VoidCallback onCheck,
     ) async {
-      var refreshes = 0;
       await pumpEntry(
         tester,
         DailyRedPacketEntry(
           uid: 1000,
-          config: _config,
+          config: packet,
           formHash: 'hash',
-          onCheck: () => refreshes++,
+          onCheck: onCheck,
           claim: (_) => TaskEither.right(const DailyRedPacketResult(ok: true, amount: '5', unit: 'coins')),
         ),
       );
@@ -578,18 +582,53 @@ void main() {
       await tester.pump();
       expect(find.text(tr.redPacket.daily.claimedToday), findsOneWidget);
 
-      // The app knows no clock of the forum: without a packet on the page it cannot tell which day it is there, so it
-      // does not say "claimed today"; the hint says it may be claimed already.
-      await pumpEntry(
-        tester,
-        DailyRedPacketEntry(uid: 1000, config: null, formHash: null, onCheck: () => refreshes++),
-      );
+      await pumpEntry(tester, DailyRedPacketEntry(uid: 1000, config: null, formHash: null, onCheck: onCheck));
+    }
+
+    // The claim record is the packet's `dateflag`, compared with the real calendar day (the entry has no clock to
+    // inject), so both days are spelled out here instead of leaning on whatever day the suite happens to run: a fixed
+    // "claimed" day would silently flip the expectation on the day the calendar reaches it.
+    testWidgets('a reloaded page without a packet after a claim of an earlier day: none to claim, never "claimed"', (
+      tester,
+    ) async {
+      // An explicit past day, not "yesterday": the test reads the same whenever it runs.
+      var refreshes = 0;
+      const earlier = DailyRedPacketConfig(entry: 2, dateFlag: '20200101', from: 'System', bless: 'Hi', unit: 'coins');
+      await claimThenReloadWithoutPacket(tester, earlier, () => refreshes++);
+
+      // That claim is not today's: the record says nothing about the packet of today, so the hint says it may be
+      // claimed already and a tap checks the packet again.
       expect(find.text(tr.redPacket.daily.claimedToday), findsNothing);
+      expect(find.byKey(const ValueKey('dailyRedPacket-recorded')), findsNothing);
       expect(find.text(tr.redPacket.daily.unavailable), findsOneWidget);
       expect(find.byTooltip(tr.redPacket.daily.unavailableHint), findsOneWidget);
       await tester.tap(find.text(tr.redPacket.daily.unavailable));
       await tester.pump();
       expect(refreshes, 1);
+      await dispose(tester);
+    });
+
+    testWidgets('a reloaded page without a packet after a claim of today: "claimed", from the app\'s record', (
+      tester,
+    ) async {
+      // Today's day is worked out here from the real clock, the one the entry compares with.
+      var refreshes = 0;
+      final today = DailyRedPacketConfig(
+        entry: 2,
+        dateFlag: dailyRedPacketDateFlag(DateTime.now()),
+        from: 'System',
+        bless: 'Hi',
+        unit: 'coins',
+      );
+      await claimThenReloadWithoutPacket(tester, today, () => refreshes++);
+
+      // Once claimed the page looks like a day without a packet; the app's own record keeps saying "claimed" for the
+      // rest of that day, and says it is the record (the website is not asked).
+      expect(find.byKey(const ValueKey('dailyRedPacket-recorded')), findsOneWidget);
+      expect(find.text(tr.redPacket.daily.claimedToday), findsOneWidget);
+      expect(find.byTooltip(tr.redPacket.daily.claimedRecordedHint), findsOneWidget);
+      expect(find.text(tr.redPacket.daily.unavailable), findsNothing);
+      expect(refreshes, 0);
       await dispose(tester);
     });
 
