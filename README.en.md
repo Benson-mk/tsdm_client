@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.36.0 (2026-10-13)
+## Latest update: 1.37.0 (2026-10-14)
 
-- Multiple accounts: with two or more saved accounts, the forum, board and thread app bars always show the avatar of the account in use; the reply box reads "Reply as X..." and the thread, edit and poll pages show "Posting as X", so posts no longer go out from the wrong account. Nothing changes with a single account.
-- 1.35.0: Settings → Appearance adds a "High Refresh Rate" switch (Android only).
-- Android build number 136, installs over earlier releases and test builds.
+- Multiple accounts: the avatar menu lists your other accounts, one tap switches; thread and board pages reload for the new account and keep an unsent reply. Fixed the profile showing the previous account after a switch and notification sync stalling when leaving mid-switch.
+- More pages go through the forum's app API (notifications, polls, board groups, latest threads); check-in no longer loads the whole check-in page. With the API plugin 1.6.0 the notice list, guide, my threads and friends follow.
+- Android build number 138, installs over earlier releases and test builds.
 
-[Download 1.36.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.36.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.37.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.37.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
