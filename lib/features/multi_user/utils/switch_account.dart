@@ -9,6 +9,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
+import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 
 /// How a [switchAccount] call ended.
 enum SwitchAccountResult {
@@ -24,7 +25,11 @@ enum SwitchAccountResult {
   /// Another switch was still running: this request was ignored.
   alreadySwitching,
 
-  /// The page holding the [SwitchUserBloc] went away before the switch ended; the switch itself may still finish.
+  /// A reply or a message was being sent, on any page: nothing was tried.
+  replyBusy,
+
+  /// The page holding the [SwitchUserBloc] went away before the switch ended; only returned once the switch itself
+  /// ended, whatever it did.
   abandoned,
 }
 
@@ -47,12 +52,17 @@ bool get isSwitchingAccount => _switching;
 /// so both behave the same:
 ///
 /// * Only one switch runs at a time: a tap while one is running returns [SwitchAccountResult.alreadySwitching].
+///   "Running" lasts until the switch itself ended, also when the page holding [bloc] went away meanwhile: closing
+///   the bloc does not stop the switch, and a second one started then would run with it, the last to end winning.
+/// * No switch while a reply or a message is sent, on whatever page ([ReplyBloc.sendingAny]): the switch drops the
+///   answer, the page shows a failure for a reply the forum stored, and sending it again posts it twice. The menu of
+///   another page or the manage accounts page would not see the sending page's own state.
 /// * The in-app notification sync is paused first, waiting a moment for a fetch in flight: the fetch reads the
 ///   current account when it starts and would store what the forum answered for the previous one. When it is still
 ///   fetching after about 3 seconds nothing is tried and a toast says so (it used to give up without a word).
-/// * The sync is resumed in a `finally`, whatever happens. It used to be resumed by a listener of the manage accounts
-///   page: leaving the page while switching closed the bloc before the result came, and the sync stayed paused
-///   until the app restarted.
+/// * The sync is resumed in a `finally` once the switch ended, whatever happens. It used to be resumed by a listener
+///   of the manage accounts page: leaving the page while switching closed the bloc before the result came, and the
+///   sync stayed paused until the app restarted.
 /// * A toast tells the result while [context] is still mounted; the caller closes its dialog on
 ///   [SwitchAccountResult.switched] and keeps it open otherwise, so the user can try again or log in again.
 Future<SwitchAccountResult> switchAccount(
@@ -63,6 +73,11 @@ Future<SwitchAccountResult> switchAccount(
   if (_switching) {
     talker.debug('switch account: another switch is running, ignored');
     return SwitchAccountResult.alreadySwitching;
+  }
+  if (ReplyBloc.sendingAny) {
+    talker.debug('switch account: a reply is being sent, not switching');
+    showSnackBar(context: context, message: context.t.currentAccount.replyBusy);
+    return SwitchAccountResult.replyBusy;
   }
   _switching = true;
   // App wide, outlives the dialog; missing only in tests that do not provide it.
@@ -80,7 +95,7 @@ Future<SwitchAccountResult> switchAccount(
         _ => tr.general.failedToLoad,
       },
       SwitchAccountResult.syncBusy => tr.currentAccount.switchBusy,
-      SwitchAccountResult.alreadySwitching || SwitchAccountResult.abandoned => null,
+      SwitchAccountResult.alreadySwitching || SwitchAccountResult.replyBusy || SwitchAccountResult.abandoned => null,
     };
     if (message != null) {
       showSnackBar(context: context, message: message);
@@ -117,7 +132,9 @@ Future<(SwitchAccountResult, AppException?)> _run(
       case SwitchUserFailure(:final reason):
         return (SwitchAccountResult.failed, reason);
       case SwitchUserInitial() || SwitchUserLoading():
-        talker.warning('switch account: the page went away before the switch ended');
+        // Closing the bloc did not stop the switch: hold the sync and other switches back until it ended.
+        talker.warning('switch account: the page went away before the switch ended, waiting for it');
+        await bloc.running;
         return (SwitchAccountResult.abandoned, null);
     }
   } finally {

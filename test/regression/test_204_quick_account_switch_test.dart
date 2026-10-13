@@ -19,6 +19,7 @@ import 'package:tsdm_client/features/checkin/repository/auto_checkin_repository.
 import 'package:tsdm_client/features/editor/widgets/rich_editor.dart';
 import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
 import 'package:tsdm_client/features/homepage/widgets/user_operation_dialog.dart';
+import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
 import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
 import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
 import 'package:tsdm_client/features/multi_user/view/manage_account_page.dart';
@@ -58,8 +59,9 @@ import 'package:universal_html/parsing.dart';
 /// Roadmap item 2, follow-up of GitHub #184: the avatar menu lists the other saved accounts and switches with one tap.
 /// The manage accounts page switches through the same helper (`switchAccount`): one switch at a time, the in-app
 /// notification sync paused around it and always resumed (leaving the page while switching left it paused), a toast
-/// when that sync is busy. The profile page cache follows the account, and the thread page reloads for the new account
-/// without losing an unsent reply.
+/// when that sync is busy, no switch while a reply is sent on any page. The profile page cache follows the account,
+/// and the thread page reloads for the new account (once shown, on the page being read) without losing an unsent
+/// reply.
 ///
 /// The forum pages are synthetic (grounded in the Discuz templates), no real account or network.
 const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
@@ -254,6 +256,32 @@ final class _Notifications extends Fake implements NotificationBloc {
   Future<void> close() async {}
 }
 
+/// The forum taking a reply: answers once [gate] completes, refusing it; counts the replies sent.
+final class _ReplyAdapter implements HttpClientAdapter {
+  final gate = Completer<void>();
+  int posts = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    posts++;
+    await gate.future;
+    return ResponseBody.fromString(
+      "<script>errorhandle_fastpost('closed', {});</script>",
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 /// Frames with real time in between: the database and its streams answer on the real event loop.
 Future<void> _settle(WidgetTester tester, {int rounds = 8}) async {
   for (var i = 0; i < rounds; i++) {
@@ -366,6 +394,40 @@ void main() {
   Future<void> expectTicking(WidgetTester tester, AutoNotificationCubit auto) async {
     await tester.pump(const Duration(seconds: 1));
     expect(auto.state, isA<AutoNoticeStateTicking>(), reason: 'the in-app notification sync runs again');
+  }
+
+  /// A reply sent from some thread page, held by the forum until [_ReplyAdapter.gate] completes.
+  Future<(ReplyBloc, _ReplyAdapter)> sendReply(WidgetTester tester) async {
+    final replies = _ReplyAdapter();
+    getIt.registerFactory<NetClientProvider>(
+      () => NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = replies),
+    );
+    final bloc = ReplyBloc(replyRepository: const ReplyRepository())
+      ..add(
+        const ReplyToThreadRequested(
+          replyParameters: ReplyParameters(fid: '2', tid: '1264975', postTime: null, formHash: 'x', subject: ''),
+          replyMessage: 'a reply',
+        ),
+      );
+    addTearDown(bloc.close);
+    // Runs first: a failed test does not leave the reply hanging.
+    addTearDown(() {
+      if (!replies.gate.isCompleted) {
+        replies.gate.complete();
+      }
+    });
+    await _settle(tester, rounds: 2);
+    expect(replies.posts, 1);
+    expect(ReplyBloc.sendingAny, isTrue);
+    return (bloc, replies);
+  }
+
+  /// The forum answered [reply]: nothing is being sent any more.
+  Future<void> replyAnswered(WidgetTester tester, (ReplyBloc, _ReplyAdapter) reply) async {
+    reply.$2.gate.complete();
+    await _settle(tester, rounds: 2);
+    expect(reply.$1.state.status, ReplyStatus.failure);
+    expect(ReplyBloc.sendingAny, isFalse);
   }
 
   Finder row(UserLoginInfo user) => find.byKey(ValueKey('quick-switch-${user.uid}'));
@@ -605,22 +667,15 @@ void main() {
         authStatus: auth.status,
         accounts: storage.allUsersStream(),
       );
-      final reply = ReplyBloc(replyRepository: const ReplyRepository())
-        ..emit(const ReplyState(status: ReplyStatus.loading));
-      addTearDown(() async {
-        await reply.close();
-        await accounts.close();
-      });
+      addTearDown(accounts.close);
       await pumpHome(
         tester,
         accounts: accounts,
-        home: BlocProvider<ReplyBloc>.value(
-          value: reply,
-          child: Scaffold(
-            appBar: AppBar(title: const Text('thread'), actions: const [CurrentAccountAvatarButton()]),
-          ),
+        home: Scaffold(
+          appBar: AppBar(title: const Text('thread'), actions: const [CurrentAccountAvatarButton()]),
         ),
       );
+      final reply = await sendReply(tester);
       final button = find.byKey(const ValueKey('current_account_avatar_button'));
       expect(button, findsOneWidget);
       await openMenu(tester, button: button);
@@ -632,13 +687,36 @@ void main() {
       expect(forum.requests, isEmpty, reason: 'the reply is not dropped and sent twice');
       expect(cookieUid(), 1000);
       expect(dialog, findsOneWidget);
+      expect(tester.widget<ListTile>(row(_bob)).enabled, isTrue);
+      await expectTicking(tester, auto);
 
       // Once the reply is done the switch goes through.
-      reply.emit(const ReplyState(status: ReplyStatus.failure));
+      await replyAnswered(tester, reply);
       await tester.tap(row(_bob));
       await _settle(tester);
       expect(cookieUid(), 1001);
       expect(dialog, findsNothing);
+      await finish(tester);
+    });
+
+    testWidgets('a reply sent from another page (the homepage menu, no reply bar here): refused too', (tester) async {
+      // The thread page sending it is under the page whose avatar is tapped (a link followed while it sends).
+      await saveAccounts([_bob]);
+      await pumpHome(tester);
+      final reply = await sendReply(tester);
+      await openMenu(tester);
+
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(find.text(t.currentAccount.replyBusy), findsOneWidget);
+      expect(forum.requests, isEmpty);
+      expect(cookieUid(), 1000);
+      expect(isSwitchingAccount, isFalse);
+
+      await replyAnswered(tester, reply);
+      await tester.tap(row(_bob));
+      await _settle(tester);
+      expect(cookieUid(), 1001);
       await finish(tester);
     });
   });
@@ -722,7 +800,29 @@ void main() {
       await _dispose(tester);
     });
 
-    testWidgets('leaving the page while switching does not leave the notification sync paused', (tester) async {
+    testWidgets('a reply being sent: the account dialog refuses to switch as well', (tester) async {
+      await pumpPage(tester);
+      final reply = await sendReply(tester);
+      await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
+      await _settle(tester);
+
+      expect(find.text(t.currentAccount.replyBusy), findsOneWidget);
+      expect(forum.requests, isEmpty);
+      expect(cookieUid(), 1000);
+      expect(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount), findsOneWidget, reason: 'still open');
+
+      await replyAnswered(tester, reply);
+      await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
+      await _settle(tester);
+      expect(cookieUid(), 1001);
+      auto.stop();
+      await _dispose(tester);
+    });
+
+    testWidgets('leaving the page while switching: the sync stays paused until the switch ended, then ticks', (
+      tester,
+    ) async {
+      SwitchAccountResult? secondSwitch;
       forum.gate = Completer<void>();
       await pumpPage(tester);
       await tester.tap(find.text(t.manageAccountPage.switchAccount.dialog.switchAccount));
@@ -730,16 +830,40 @@ void main() {
       expect(forum.requests, hasLength(1));
       expect(auto.state, isA<AutoNoticeStatePaused>());
 
-      // The page (and the bloc it holds) goes away before the forum answered.
+      // The page (and the bloc it holds) goes away before the forum answered. Closing the bloc does not stop the
+      // switch: the sync stays paused and no other switch starts until it ended.
       await tester.pumpWidget(const SizedBox());
       await _settle(tester, rounds: 3);
-      expect(isSwitchingAccount, isFalse);
-      await expectTicking(tester, auto);
+      expect(isSwitchingAccount, isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      expect(auto.state, isA<AutoNoticeStatePaused>());
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            scaffoldMessengerKey: snackbarKey,
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  final bloc = SwitchUserBloc(auth);
+                  secondSwitch = await switchAccount(context, bloc: bloc, userInfo: _carol);
+                  await bloc.close();
+                },
+                child: const Text('switch to Carol'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('switch to Carol'));
+      await tester.pump();
+      expect(secondSwitch, SwitchAccountResult.alreadySwitching);
+      expect(forum.requests, hasLength(1));
 
-      // The switch itself still ends; nothing is shown and the sync keeps ticking.
+      // The switch itself ends; nothing is shown, and only then the sync ticks again.
       forum.gate!.complete();
       await _settle(tester);
       expect(cookieUid(), 1001);
+      expect(isSwitchingAccount, isFalse);
       await expectTicking(tester, auto);
       auto.stop();
       await _dispose(tester);
