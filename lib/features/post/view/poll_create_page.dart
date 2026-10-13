@@ -9,6 +9,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/post/cubit/poll_create_cubit.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post/models/poll_create.dart';
@@ -820,6 +821,8 @@ class _PollCreatePageState extends State<PollCreatePage> {
             child: Scaffold(
               appBar: AppBar(
                 title: Text(context.t.pollCreate.title),
+                // The account the poll is posted as, like the thread editor (#184).
+                bottom: postingAsBarOf(context),
                 actions: [
                   if (canSwitch)
                     IconButton(

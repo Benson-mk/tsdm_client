@@ -67,7 +67,7 @@ class UserOperationDialog extends StatelessWidget with LoggerMixin {
     return CustomAlertDialog.sync(
       title: Row(
         children: [
-          HeroUserAvatar(username: username, avatarUrl: avatarUrl, heroTag: username, minRadius: 30),
+          HeroUserAvatar(username: username, avatarUrl: avatarUrl, heroTag: heroTag, minRadius: 30),
           sizedBoxW12H12,
           Expanded(
             child: SingleLineText(

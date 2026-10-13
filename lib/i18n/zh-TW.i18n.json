@@ -2407,5 +2407,10 @@
     "issueRecords": "最近頒發紀錄",
     "issueRecordsEmpty": "還沒有頒發紀錄。",
     "issueLogLine": "${by} → ${to}"
+  },
+  "currentAccount": {
+    "tooltip": "目前帳號：${username}",
+    "replyAs": "以 ${username} 回覆",
+    "postingAs": "以 ${username} 發表"
   }
 }

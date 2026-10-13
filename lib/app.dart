@@ -24,6 +24,7 @@ import 'package:tsdm_client/features/favorite/repository/favorite_repository.dar
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/home/cubit/init_cubit.dart';
 import 'package:tsdm_client/features/local_notice/show.dart';
+import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_auto_sync_cubit.dart';
@@ -363,6 +364,17 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
             create: (context) {
               final auth = context.repo<AuthenticationRepository>();
               return CurrentTitleCubit(currentUid: () => auth.currentUser?.uid, authStatus: auth.status);
+            },
+          ),
+          // The account in use and how many are saved, for the avatar in app bars and the editors (#184).
+          BlocProvider(
+            create: (context) {
+              final auth = context.repo<AuthenticationRepository>();
+              return CurrentAccountCubit(
+                currentUser: () => auth.effectiveCurrentUser,
+                authStatus: auth.status,
+                accounts: getIt.get<StorageProvider>().allUsersStream(),
+              );
             },
           ),
           // Top level: leaving the progress page must not cancel the run, like the auto checkin.
