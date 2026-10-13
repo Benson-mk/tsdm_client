@@ -2407,5 +2407,10 @@
     "issueRecords": "Latest issues",
     "issueRecordsEmpty": "No issues yet.",
     "issueLogLine": "${by} → ${to}"
+  },
+  "currentAccount": {
+    "tooltip": "Current account: ${username}",
+    "replyAs": "Reply as ${username}...",
+    "postingAs": "Posting as ${username}"
   }
 }

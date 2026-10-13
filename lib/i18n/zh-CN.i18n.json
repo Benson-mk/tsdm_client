@@ -2407,5 +2407,10 @@
     "issueRecords": "最近颁发记录",
     "issueRecordsEmpty": "还没有颁发记录。",
     "issueLogLine": "${by} → ${to}"
+  },
+  "currentAccount": {
+    "tooltip": "当前账号：${username}",
+    "replyAs": "以 ${username} 回复",
+    "postingAs": "以 ${username} 发表"
   }
 }
