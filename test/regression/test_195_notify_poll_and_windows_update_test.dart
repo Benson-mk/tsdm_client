@@ -43,6 +43,13 @@ import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 
+/// The time of a poll that just happened, in seconds.
+///
+/// The repository only keeps a polling time that is inside the last three days and falls back to three days ago
+/// otherwise (`_buildSinceTimestamp`). A fixed time went out of that window on 2026-10-10 and the tests quietly stopped
+/// covering the in-window branch, so the polls below are relative to the real clock.
+final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
 /// Answers `notify` with "nothing new" after failing [offline] times without an answer (or with [status]).
 final class _Forum implements HttpClientAdapter {
   _Forum({this.offline = 0, this.status});
@@ -50,6 +57,12 @@ final class _Forum implements HttpClientAdapter {
   int offline;
   final int? status;
   final requests = <RequestOptions>[];
+
+  /// The `since` of every request to the app API, in the order asked.
+  List<String?> get apiSinces => [
+    for (final r in requests)
+      if (r.uri.queryParameters['id'] == 'tsdmapp:api') r.uri.queryParameters['since'],
+  ];
 
   @override
   Future<ResponseBody> fetch(
@@ -431,32 +444,40 @@ void main() {
     test('a poll that did not reach the forum is tried once more', () async {
       // The first attempt reaches nothing: the API and the three pages fail.
       final forum = _Forum(offline: 4);
+      // Relative to now (see [_now]): the last poll is inside the three day window, so both attempts ask the app API
+      // from that very time. A fixed time would be clamped to three days ago once it gets old.
+      final polled = _now - 60;
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
+      ).fetchNotificationWith(_client(forum), timestamp: polled, retry: true).run();
       expect(result.isRight(), isTrue);
       expect(forum.requests, hasLength(5));
+      expect(forum.apiSinces, ['$polled', '$polled']);
     });
 
     test('only once: still offline is a failure', () async {
       final forum = _Forum(offline: 9);
+      // Relative to now, same reason as above.
+      final polled = _now - 60;
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
+      ).fetchNotificationWith(_client(forum), timestamp: polled, retry: true).run();
       expect(result.isLeft(), isTrue);
       // Each attempt asks the API, then the three pages.
       expect(forum.requests, hasLength(8));
+      expect(forum.apiSinces, ['$polled', '$polled']);
     });
 
     test('an answer with an error status is not retried', () async {
       TsdmAppApi.markUnavailable();
       final forum = _Forum(status: 502);
+      // Relative to now, same reason as above (a polling fetch is one with a time inside the window).
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,
-      ).fetchNotificationWith(_client(forum), timestamp: 1791346020, retry: true).run();
+      ).fetchNotificationWith(_client(forum), timestamp: _now - 60, retry: true).run();
       expect(result.isLeft(), isTrue);
       expect(forum.requests, hasLength(3));
     });
