@@ -1,10 +1,11 @@
 /// The JSON page answer the forum's app API (Discuz plugin `tsdmapp`, `tsdmapp.class.php`) gives for a web page,
 /// rebuilt here from the web page itself: the blocks the plugin keeps for that kind of page, cut by position exactly as
-/// its `skeleton()` does, plus the `<link>`s and the `discuz_uid` script of the page head (`headlinks()`).
+/// its `skeleton()` does, plus the `<title>` (since 1.6.0), the `<link>`s and the `discuz_uid` script of the page head
+/// (`headlinks()`).
 ///
 /// Tests feed a page fixture through this and the app's parser, and check the result is the one of the web page: the
 /// pages plugin 1.6.0 adds (notice, my threads, friends, guide) have no recorded JSON answer yet, and the others need
-/// none of their own.
+/// none of their own. The answers of 1.5.0, the plugin on the forum now, are the same without the title.
 library;
 
 import 'dart:convert';
@@ -25,8 +26,11 @@ _Rule _r(String start, {bool first = false, String? end}) =>
 final _Rule _pt = _r(r'<div\b[^>]*\bid="pt"');
 final _Rule _ct = _r(r'<div\b[^>]*\bid="ct"', end: r'<div\b[^>]*\bid="ft"');
 
-/// `$keep` of the plugin, by page type. `notice`, `thread`, `friend` and `guide` are the pages 1.6.0 adds, cut like
-/// the private message pages (`#pt`, `#ct` up to the footer).
+/// The page types plugin 1.6.0 adds: notice, my threads (`do=thread`, type `mythread`), friends and guide, cut like the
+/// private message pages (`#pt`, `#ct` up to the footer). Only 1.6.0 and later answer them.
+const pagesSince160 = {'notice', 'mythread', 'friend', 'guide'};
+
+/// `$keep` of the plugin, by page type.
 final Map<String, List<_Rule>> _keep = {
   'viewthread': [
     _pt,
@@ -38,7 +42,7 @@ final Map<String, List<_Rule>> _keep = {
     _r(r'<div\b[^>]*\bclass="pg"', first: true),
   ],
   'index': [_r(r'<div\b[^>]*\bid="hd"'), _pt, _ct],
-  for (final page in ['pm', 'favorite', 'search', 'notice', 'thread', 'friend', 'guide']) page: [_pt, _ct],
+  for (final page in ['pm', 'favorite', 'search', ...pagesSince160]) page: [_pt, _ct],
 };
 
 /// `$common` of the plugin: kept on every page.
@@ -130,18 +134,22 @@ String pageDocumentOf(String html, String type) {
   return '${formHash == null ? '' : '<input type="hidden" name="formhash" value="$formHash" />\n'}$out';
 }
 
-/// `headlinks()`: the `<link>`s of the page head and the script declaring `discuz_uid`.
-String pageHeadOf(String html) {
+/// `headlinks()`: the `<title>` of the page head when [title] (plugin 1.6.0 and later), its `<link>`s and the script
+/// declaring `discuz_uid`.
+String pageHeadOf(String html, {required bool title}) {
   final head = RegExp(r'<head\b.*?</head>', caseSensitive: false, dotAll: true).firstMatch(html)?.group(0) ?? '';
   return [
+    if (title) ?_re(r'<title\b[^>]*>[^<]*</title>').firstMatch(head)?.group(0),
     ..._re(r'<link\b[^>]*>').allMatches(head).map((m) => m.group(0)!),
     ?_re(r'<script\b[^>]*>[^<]*\bdiscuz_uid\s*=[^<]*</script>').firstMatch(head)?.group(0),
   ].join('\n');
 }
 
-/// The JSON answer of page [type] for the web page [html]. A forum notice on the page makes it a failure, which
+/// The JSON answer of page [type] for the web page [html], as plugin 1.6.0 gives it, or as 1.5.0 does when [v150] (the
+/// head without the title; it answers none of [pagesSince160]). A forum notice on the page makes it a failure, which
 /// still carries the blocks, as the plugin does.
-String pageAnswerOf(String html, String type) {
+String pageAnswerOf(String html, String type, {bool v150 = false}) {
+  assert(!v150 || !pagesSince160.contains(type), 'plugin 1.5.0 answers $type as the web page');
   final message = _re(r'<div\b[^>]*\bid="messagetext"').hasMatch(html);
   final uid = int.tryParse(RegExp(r"discuz_uid\s*=\s*'(\d+)'").firstMatch(html)?.group(1) ?? '') ?? 0;
   return jsonEncode({
@@ -156,7 +164,7 @@ String pageAnswerOf(String html, String type) {
       'type': type,
       'page': 1,
     },
-    'head': pageHeadOf(html),
+    'head': pageHeadOf(html, title: !v150),
     'document': pageDocumentOf(html, type),
   });
 }

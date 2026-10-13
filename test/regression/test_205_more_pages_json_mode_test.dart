@@ -8,8 +8,8 @@
 ///   friends list. Until then the forum answers them the web page, as before.
 ///
 /// Every such request carries the parameter (never an AJAX request or a form post), and the parser gives the same from
-/// the web page and from the JSON answer, whichever comes back. The JSON answers are cut from the page fixtures the way
-/// the plugin cuts them (`tsdmapp_page_cut.dart`, checked against recorded answers below).
+/// the web page and from the JSON answer of plugin 1.5.0 and 1.6.0, whichever comes back. The JSON answers are cut from
+/// the page fixtures the way the plugin cuts them (`tsdmapp_page_cut.dart`, checked against recorded answers below).
 ///
 /// Checkin: the API's form hash (`status`, or the `checkin` answer itself with plugin 1.6.0) replaces reading the
 /// checkin page; the form posted is the same.
@@ -151,19 +151,32 @@ void _use(_Forum forum) => getIt.registerFactory<NetClientProvider>(() => _clien
 
 bool _asksJson(RequestOptions r) => r.uri.queryParameters['tsdmapp'] == 'json';
 
-/// Run [fetch] against a forum answering every page request with [html], first as the web page, then as the JSON
-/// answer of page [type] cut from it: both give the same [view] of the result, and every page is asked in JSON mode.
+/// The app API plugin on the forum: none (or switched off), 1.5.0 (on the forum now), 1.6.0 (adds [pagesSince160] and
+/// the page title).
+enum _Plugin { none, v150, v160 }
+
+/// The forum's answer to a request for the web page [html] of page [type] (in JSON mode) with [plugin]: the web page
+/// when the plugin does not answer that page.
+_Answer _answerOf(String html, String type, _Plugin plugin) => switch (plugin) {
+  _Plugin.none => _html(html),
+  _Plugin.v150 when pagesSince160.contains(type) => _html(html),
+  _Plugin.v150 => _json(pageAnswerOf(html, type, v150: true)),
+  _Plugin.v160 => _json(pageAnswerOf(html, type)),
+};
+
+/// Run [fetch] against a forum answering every page request with [html] of page [type], with each [_Plugin]: all
+/// give the same [view] of the result, and every page is asked in JSON mode.
 ///
 /// Returns the view, for the caller to check it holds what the page shows.
-Future<Object?> _sameFromBoth<T>(
+Future<Object?> _sameWithEachPlugin<T>(
   String html,
   String type,
   Future<T> Function() fetch,
   Object? Function(T value) view,
 ) async {
   final views = <Object?>[];
-  for (final json in [false, true]) {
-    final forum = _Forum((_) => json ? _json(pageAnswerOf(html, type)) : _html(html));
+  for (final plugin in _Plugin.values) {
+    final forum = _Forum((_) => _answerOf(html, type, plugin));
     _use(forum);
     views.add(view(await fetch()));
     expect(forum.requests, isNotEmpty);
@@ -171,7 +184,9 @@ Future<Object?> _sameFromBoth<T>(
       expect(_asksJson(r), isTrue, reason: '${r.uri}');
     }
   }
-  expect(views.last, views.first);
+  for (final (i, v) in views.indexed.skip(1)) {
+    expect(v, views.first, reason: '${_Plugin.values[i]}');
+  }
   return views.first;
 }
 
@@ -329,7 +344,7 @@ void main() {
       test('$name: cut like the plugin did', () {
         final html = _read('tsdmapp/$name.html');
         final recorded = jsonDecode(_read('tsdmapp/$name.json')) as Map<String, dynamic>;
-        final cut = jsonDecode(pageAnswerOf(html, type)) as Map<String, dynamic>;
+        final cut = jsonDecode(pageAnswerOf(html, type, v150: true)) as Map<String, dynamic>;
         expect(norm(cut['document'] as String), norm(recorded['document'] as String));
         expect(cut['head'], recorded['head']);
       });
@@ -381,7 +396,7 @@ void main() {
   });
 
   test('chat history: asked in JSON mode for real now, parses the same', () async {
-    final view = await _sameFromBoth(
+    final view = await _sameWithEachPlugin(
       _read('chat_history_bare_url_x5.html'),
       'pm',
       () async => _right(await const ChatRepository().fetchChatHistory('1001').run()),
@@ -404,7 +419,7 @@ void main() {
   });
 
   group('notifications', () {
-    _Answer page(RequestOptions o, {required bool json}) {
+    _Answer page(RequestOptions o, {_Plugin plugin = _Plugin.v160}) {
       final q = o.uri.queryParameters;
       final (html, type) = switch ((q['do'], q['filter'])) {
         ('notice', _) => (_noticePage, 'notice'),
@@ -412,13 +427,13 @@ void main() {
         ('pm', 'announcepm') => (_announceList, 'pm'),
         _ => fail('unexpected request ${o.uri}'),
       };
-      return json ? _json(pageAnswerOf(html, type)) : _html(html);
+      return _answerOf(html, type, plugin);
     }
 
     test('the three pages, each in JSON mode, parse the same', () async {
       final views = <Object?>[];
-      for (final json in [false, true]) {
-        final forum = _Forum((o) => page(o, json: json));
+      for (final plugin in _Plugin.values) {
+        final forum = _Forum((o) => page(o, plugin: plugin));
         _use(forum);
         final repo = NotificationRepository();
         final notices = _right(await repo.fetchNotice().run());
@@ -435,7 +450,9 @@ void main() {
           for (final e in announces) e.toMap(),
         ]);
       }
-      expect(views.last, views.first);
+      for (final (i, v) in views.indexed.skip(1)) {
+        expect(v, views.first, reason: '${_Plugin.values[i]}');
+      }
     });
 
     test('polling (and the sync of every account, which passes its own client): the forum clock still read', () async {
@@ -453,7 +470,7 @@ void main() {
         'announces': <Object>[],
       };
       final forum = _Forum(
-        (o) => o.uri.queryParameters['id'] == 'tsdmapp:api' ? _json(notify) : page(o, json: true),
+        (o) => o.uri.queryParameters['id'] == 'tsdmapp:api' ? _json(notify) : page(o),
       );
       final result = await NotificationRepository().fetchNotificationWith(_client(forum), timestamp: now - 60).run();
       final value = _right(result);
@@ -467,7 +484,7 @@ void main() {
 
     test('a JSON answer the plugin failed to build is a failed fetch, not an empty list', () async {
       final forum = _Forum(
-        (o) => o.uri.queryParameters['do'] == 'notice' ? _json({'ok': 0, 'error': 'internal'}) : page(o, json: true),
+        (o) => o.uri.queryParameters['do'] == 'notice' ? _json({'ok': 0, 'error': 'internal'}) : page(o),
       );
       final result = await NotificationRepository().fetchNotificationWith(_client(forum)).run();
       expect(result.isLeft(), isTrue);
@@ -510,14 +527,11 @@ void main() {
       const pid = 3954;
       final html = _read('tsdmapp/thread_plain.html');
       final states = <Map<String, dynamic>>[];
-      for (final answer in [
-        _html(html, redirectTo: '$baseUrl/forum.php?mod=viewthread&tid=$tid&page=1#pid$pid'),
-        _json(
-          pageAnswerOf(html, 'viewthread'),
-          redirectTo: '$baseUrl/forum.php?mod=viewthread&tid=$tid&page=1&tsdmapp=json#pid$pid',
-        ),
-      ]) {
-        final forum = _Forum((_) => answer);
+      for (final plugin in _Plugin.values) {
+        final answer = _answerOf(html, 'viewthread', plugin);
+        // The plugin carries the JSON mode through the redirect.
+        final to = '$baseUrl/forum.php?mod=viewthread&tid=$tid&page=1${answer.json ? '&tsdmapp=json' : ''}#pid$pid';
+        final forum = _Forum((_) => (body: answer.body, json: answer.json, status: 200, redirectTo: to));
         _use(forum);
         final cubit = NotificationDetailCubit(notificationRepository: NotificationRepository());
         await cubit.fetchDetail('$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=$tid&pid=$pid');
@@ -535,7 +549,7 @@ void main() {
         });
         await cubit.close();
       }
-      expect(states.last, states.first);
+      expect(states.skip(1), everyElement(states.first));
       expect(states.first['page'], '1');
       expect(states.first['post'], isNotNull);
     });
@@ -559,7 +573,7 @@ void main() {
 <span class="xg1"><span title="2026-10-1 11:16">13 天前</span></span><br />
 <p class="pm_smry">Synthetic <b>broadcast</b> message</p>
 </dd></dl></div>''', uid: 1001);
-      final view = await _sameFromBoth(html, 'pm', () async {
+      final view = await _sameWithEachPlugin(html, 'pm', () async {
         final cubit = BroadcastMessageDetailCubit(NotificationRepository());
         await cubit.fetchDetail('5');
         final state = cubit.state;
@@ -579,7 +593,7 @@ void main() {
 
     test('the poll of the post: same options, results and form', () async {
       const url = '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=78025860';
-      final view = await _sameFromBoth(
+      final view = await _sameWithEachPlugin(
         pollPage(),
         'viewthread',
         () => PollRepository.network(getIt.get<NetClientProvider>()).fetch(url, 1000),
@@ -623,7 +637,7 @@ void main() {
   });
 
   test('forum group page: the same group (the forum serves it as its board index)', () async {
-    final view = await _sameFromBoth(
+    final view = await _sameWithEachPlugin(
       _read('forum_index_x5.html'),
       'index',
       () async => _right(await ForumRepository().fetchForumGroup('1').run()),
@@ -666,7 +680,7 @@ void main() {
     }
 
     test('查看新帖 (forum search since a time): same threads', () async {
-      final v = await _sameFromBoth(
+      final v = await _sameWithEachPlugin(
         _read('tsdmapp/s3_search.html'),
         'search',
         () => load('$baseUrl/search.php?mod=forum&srchfrom=86400&searchsubmit=yes'),
@@ -676,7 +690,7 @@ void main() {
     });
 
     test('guide list (plugin 1.6.0): same threads and next page', () async {
-      final v = await _sameFromBoth(
+      final v = await _sameWithEachPlugin(
         _read('guide_hot_x5.html'),
         'guide',
         () => load('$baseUrl/forum.php?mod=guide&view=hot'),
@@ -687,7 +701,7 @@ void main() {
   });
 
   test('guide index (plugin 1.6.0): the same modules', () async {
-    final view = await _sameFromBoth(
+    final view = await _sameWithEachPlugin(
       _read('guide_index_x5.html'),
       'guide',
       () async => _right(await const GuideIndexRepository().fetchGuideIndex().run()),
@@ -698,11 +712,8 @@ void main() {
 
   test('my threads and replies (plugin 1.6.0): same rows and next pages', () async {
     final views = <Object?>[];
-    for (final json in [false, true]) {
-      final forum = _Forum((o) {
-        final html = _myThreadPage(o.uri.queryParameters['type']!);
-        return json ? _json(pageAnswerOf(html, 'thread')) : _html(html);
-      });
+    for (final plugin in _Plugin.values) {
+      final forum = _Forum((o) => _answerOf(_myThreadPage(o.uri.queryParameters['type']!), 'mythread', plugin));
       _use(forum);
       final bloc = MyThreadBloc(myThreadRepository: MyThreadRepository())..add(MyThreadLoadInitialDataRequested());
       final state = await bloc.stream.firstWhere((s) => s.status != MyThreadStatus.loading);
@@ -717,7 +728,9 @@ void main() {
         state.nextReplyPageUrl,
       ]);
     }
-    expect(views.last, views.first);
+    for (final (i, v) in views.indexed.skip(1)) {
+      expect(v, views.first, reason: '${_Plugin.values[i]}');
+    }
     final first = views.first! as List;
     expect(first[0], hasLength(2));
     expect(first[1], hasLength(1));
@@ -726,9 +739,9 @@ void main() {
 
   group('draft box', () {
     test('the list (plugin 1.6.0): same drafts, the account checked through discuz_uid', () async {
-      final view = await _sameFromBoth(
+      final view = await _sameWithEachPlugin(
         _spacePage(_bodyOf(draftList(next: 2))),
-        'thread',
+        'mythread',
         () => DraftRepository.network(getIt.get<NetClientProvider>()).load(1000),
         (page) => [for (final e in page.entries) '${e.tid}|${e.fid}|${e.title}|${e.forumName}', page.nextPage],
       );
@@ -738,7 +751,7 @@ void main() {
     test('opening a draft reads its thread in JSON mode too', () async {
       final list = DraftRepository((_) async => _spacePage(_bodyOf(draftList())));
       final draft = (await list.load(1000)).entries.single;
-      final view = await _sameFromBoth(
+      final view = await _sameWithEachPlugin(
         _threadPage(_bodyOf(draftThread())),
         'viewthread',
         () => DraftRepository.network(getIt.get<NetClientProvider>()).resolve(draft, 1000),
@@ -756,7 +769,7 @@ void main() {
       ('friend_list_privacy_x5.html', null),
     ]) {
       test('$name: same list, count, next page, owner and notice', () async {
-        final view = await _sameFromBoth(
+        final view = await _sameWithEachPlugin(
           _read(name),
           'friend',
           () async => _right(await const FriendRepository().fetchPage(FriendRepository.listUrl(uid: '1001')).run()),

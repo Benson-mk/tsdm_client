@@ -59,7 +59,7 @@ final _cssColorRe = RegExp(r'color\s*:\s*([^;]+)');
 /// "加为好友" link, and those are not friends.
 FriendListPage parseFriendListPage(uh.Document document) {
   final title = document.querySelector('title')?.text ?? '';
-  final ownerName = _ownerRe.firstMatch(title)?.group(1)?.trim() ?? (title.isEmpty ? _ownerInBlocks(document) : null);
+  final ownerName = _ownerRe.firstMatch(title)?.group(1)?.trim();
   final lists = document.querySelectorAll('ul.buddy');
   if (lists.isEmpty) {
     final privacyMessage = document.querySelector('div.nfl h2.xs2')?.innerText.trim();
@@ -92,29 +92,6 @@ FriendListPage parseFriendListPage(uh.Document document) {
       .parseToInt();
   final nextPageUrl = document.querySelector('div.pg > a.nxt')?.attributes['href']?.prependHost();
   return FriendListPage(items: items, nextPageUrl: nextPageUrl, totalCount: totalCount, ownerName: ownerName);
-}
-
-/// The owner of a page without a title: the JSON page answer of the forum's app API keeps the page's blocks only
-/// (roadmap item 3).
-///
-/// The breadcrumb names another member before the friends link (`<a href="home.php?mod=space&uid=UID">NAME</a> ›
-/// <a href="…&do=friend…">好友</a>`). The own list's breadcrumb has no name (`好友 › 好友列表`): its owner is the
-/// logged-in user of the header. A page whose breadcrumb has no friends link (a privacy notice) names nobody, as its
-/// title does not either.
-String? _ownerInBlocks(uh.Document document) {
-  final links = document.querySelectorAll('div#pt a').toList();
-  final friends = links.indexWhere((a) => (a.attributes['href'] ?? '').contains('do=friend'));
-  if (friends < 0) {
-    return null;
-  }
-  final before = friends > 0 ? links[friends - 1] : null;
-  final href = before?.attributes['href'] ?? '';
-  final owner = href.contains('mod=space') && href.contains('uid=') && !href.contains('do=')
-      ? before
-      // The header user node is kept without the header around it, so the usual selectors with `div#hd` miss it.
-      : document.querySelector('div#um strong.vwmy a') ?? document.querySelector('div.block_name > a[href*="uid="]');
-  final name = owner?.innerText.trim();
-  return name == null || name.isEmpty ? null : name;
 }
 
 String? _colorInStyle(String? style) {
