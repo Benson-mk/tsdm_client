@@ -242,26 +242,42 @@ uh.Document tsdmAppPageDocument(Object? data) {
   );
 }
 
-/// Whether a forum page answer [data] is a JSON answer without the page's blocks: the plugin failed to build it
-/// (`{"ok":0,"error":"internal"}`). That is no page at all; a caller that would take an empty page for "nothing there"
-/// (the notification poll, which then moves its window on) treats it as a failed request.
-bool tsdmAppAnswerWithoutPage(Object? data) => switch (_tsdmAppAnswerJson(data)) {
-  final Map<dynamic, dynamic> json => json['document'] is! String,
-  _ => false,
+/// Whether a forum page answer [data] has no page at all: a JSON answer the plugin failed to build
+/// (`{"ok":0,"error":"internal"}`, without the page's blocks), or an empty JSON body (the request died before the plugin
+/// printed its answer; dio reads an empty `application/json` body as null). A caller that would take an empty page for
+/// "nothing there" (the notification poll, which then moves its window on; the draft box, which then finds no account
+/// on it) treats it as a failed request.
+bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
+  null => true,
+  _ => switch (_tsdmAppAnswerJson(data)) {
+    final Map<dynamic, dynamic> json => json['document'] is! String,
+    _ => false,
+  },
 };
 
-/// Whether a forum page answer [data] is a JSON answer holding neither the page (`ok` 1) nor a forum message (`error:
-/// message`: no permission, no such thread…, which the web page shows the same).
+/// Whether a thread page answer [data] holds neither the thread nor a forum message: no page at all
+/// ([tsdmAppAnswerWithoutPage]), or a JSON answer that is not `ok` 1, not a forum message (`error: message`: no
+/// permission, no such thread…, which the web page shows the same) and without posts in its document.
 ///
 /// A thread page gives that when the forum answered the antitheft (防采集) challenge instead: the plugin buffers the
 /// page from its first hook and turns whatever was printed into JSON when the request ends, and the challenge script is
 /// printed (and the request ended) before the thread is built. The answer is `{"ok":0,"error":"unknown"}` with only a
 /// form hash for a document, the script is lost, and the challenge can only be solved on the web page
 /// (`AntitheftInterceptor`).
-bool tsdmAppAnswerWithoutContent(Object? data) => switch (_tsdmAppAnswerJson(data)) {
-  final Map<dynamic, dynamic> json => json['ok'] != 1 && json['error'] != 'message',
-  _ => false,
-};
+///
+/// A guest may be served the forum's thread cache instead (`viewthread_loadcache`): the cached page is printed and the
+/// request ended before the thread is built too, so the answer is `unknown` as well, but its document holds the whole
+/// post list and is parsed as it is, as the web page would be. The cache is only read after the antitheft check passed.
+bool tsdmAppAnswerWithoutContent(Object? data) {
+  if (tsdmAppAnswerWithoutPage(data)) {
+    return true;
+  }
+  final json = _tsdmAppAnswerJson(data);
+  if (json == null || json['ok'] == 1 || json['error'] == 'message') {
+    return false;
+  }
+  return parseHtmlDocument(json['document'] as String).querySelector('div#postlist, div[id^="post_"]') == null;
+}
 
 /// The JSON object of a forum page answer [data], null when it is a web page.
 Map<dynamic, dynamic>? _tsdmAppAnswerJson(Object? data) {

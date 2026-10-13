@@ -12,7 +12,11 @@
 /// the page fixtures the way the plugin cuts them (`tsdmapp_page_cut.dart`, checked against recorded answers below).
 ///
 /// A thread page asked in JSON mode cannot carry the antitheft (防采集) challenge: the plugin wraps it in its JSON and
-/// the script is lost. The page is asked again without the JSON mode, where the challenge is solved as before.
+/// the script is lost. The page is asked again without the JSON mode, where the challenge is solved as before. The
+/// thread cache a guest is served is answered `unknown` too, but with the posts: it is read as it is, asked once.
+///
+/// A JSON answer without a page (the plugin failed to build it, or an empty body) is a failed request for the pages
+/// that would take an empty page for "nothing there": the notification poll, the draft box.
 ///
 /// Checkin: the API's form hash (`status`, or the `checkin` answer itself with plugin 1.6.0) replaces reading the
 /// checkin page; the form posted is the same.
@@ -51,6 +55,7 @@ import 'package:tsdm_client/features/notification/repository/notification_reposi
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
+import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -497,13 +502,21 @@ void main() {
       expect(pages.every(_asksJson), isTrue);
     });
 
-    test('a JSON answer the plugin failed to build is a failed fetch, not an empty list', () async {
-      final forum = _Forum(
-        (o) => o.uri.queryParameters['do'] == 'notice' ? _json({'ok': 0, 'error': 'internal'}) : page(o),
-      );
-      final result = await NotificationRepository().fetchNotificationWith(_client(forum)).run();
-      expect(result.isLeft(), isTrue);
+    test('a JSON answer without a page is a failed fetch, not an empty list nor an expired session', () async {
+      // dio reads an empty `application/json` body as null, and fails on a blank one.
+      for (final (label, answer) in [
+        ('a failed build', _json({'ok': 0, 'error': 'internal'})),
+        ('an empty body', _json('')),
+        ('a blank body', _json(' \n')),
+      ]) {
+        final forum = _Forum((o) => o.uri.queryParameters['do'] == 'notice' ? answer : page(o));
+        final result = await NotificationRepository().fetchNotificationWith(_client(forum)).run();
+        expect(result.isLeft(), isTrue, reason: label);
+        expect(result.getLeft().toNullable(), isNot(isA<NotificationUserNotFound>()), reason: label);
+        expect(forum.requests, hasLength(3), reason: label);
+      }
       expect(tsdmAppAnswerWithoutPage('{"ok":0,"error":"internal"}'), isTrue);
+      expect(tsdmAppAnswerWithoutPage(null), isTrue);
       expect(tsdmAppAnswerWithoutPage(pageAnswerOf(_noticePage, 'notice')), isFalse);
       expect(tsdmAppAnswerWithoutPage(_noticePage), isFalse);
     });
@@ -774,6 +787,18 @@ void main() {
       );
       expect(view, (fid: '4', tid: '123', pid: '456'));
     });
+
+    test('a JSON answer without a page is a failed read, not an expired session', () async {
+      for (final (label, answer, failure) in [
+        ('a failed build', _json({'ok': 0, 'error': 'internal'}), isA<HttpRequestFailedException>()),
+        ('an empty body', _json(''), isA<HttpRequestFailedException>()),
+        ('a blank body', _json(' \n'), isNot(isA<FormatException>())),
+      ]) {
+        final forum = _Forum((_) => answer);
+        await expectLater(DraftRepository.network(_client(forum)).load(1000), throwsA(failure), reason: label);
+        expect(forum.requests, hasLength(1), reason: label);
+      }
+    });
   });
 
   group('a thread page the forum challenges (防采集)', () {
@@ -862,13 +887,61 @@ void main() {
       );
     });
 
-    test('a thread answer the plugin failed to build: the web page instead', () async {
+    test('a thread answer without the posts: the web page instead (challenge, failed build, empty body)', () async {
       final html = _read('tsdmapp/thread_plain.html');
-      final forum = _Forum((o) => _asksJson(o) ? _json({'ok': 0, 'error': 'internal'}) : _html(html));
+      for (final (label, answer) in [
+        ('the challenge', _json(_challengedAnswer)),
+        (
+          'the challenge, a script left',
+          _json({
+            ..._challengedAnswer,
+            'document': '${_challengedAnswer['document']}<script type="text/javascript">var x = 1;</script>',
+          }),
+        ),
+        ('a failed build', _json({'ok': 0, 'error': 'internal'})),
+        ('an empty body', _json('')),
+      ]) {
+        final forum = _Forum((o) => _asksJson(o) ? answer : _html(html));
+        _use(forum);
+        final doc = _right(await ThreadRepository().fetchThread(tid: '9199345').run());
+        expect(doc.querySelector('#post_3954'), isNotNull, reason: label);
+        expect(forum.requests.map(_asksJson), [true, false], reason: label);
+      }
+    });
+
+    test('a guest served the thread cache: the posts of the answer are read, the thread asked once', () async {
+      // `viewthread_loadcache` prints the cached page and ends the request before the thread is built, as the
+      // challenge does: the plugin answers `unknown`, but its document holds the whole post list.
+      final html = _read('tsdmapp/thread_plain.html').replaceAll("discuz_uid = '31'", "discuz_uid = '0'");
+      final cached = <String, Object?>{
+        'ok': 0,
+        'error': 'unknown',
+        'head': pageHeadOf(html, title: true),
+        'document': pageDocumentOf(html, 'viewthread'),
+      };
+      expect(tsdmAppAnswerWithoutContent(cached), isFalse);
+      expect(tsdmAppAnswerWithoutContent(_challengedAnswer), isTrue);
+
+      final forum = _Forum((o) => _asksJson(o) ? _json(cached) : _html(html));
       _use(forum);
       final doc = _right(await ThreadRepository().fetchThread(tid: '9199345').run());
-      expect(doc.querySelector('#post_3954'), isNotNull);
-      expect(forum.requests.map(_asksJson), [true, false]);
+      final info = parseThreadDocument(doc, 1);
+      expect(info.tid, '9199345');
+      expect(info.postList.map((e) => e.postID), contains('3954'));
+      expect(forum.requests, hasLength(1));
+      expect(_asksJson(forum.requests.single), isTrue);
+
+      // The post of a notice, through the findpost redirect.
+      final redirected = _Forum(
+        (_) => _json(cached, redirectTo: '$baseUrl/forum.php?mod=viewthread&tid=9199345&page=1&tsdmapp=json#pid3954'),
+      );
+      _use(redirected);
+      final cubit = NotificationDetailCubit(notificationRepository: NotificationRepository());
+      addTearDown(cubit.close);
+      await cubit.fetchDetail('$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=9199345&pid=3954');
+      expect(cubit.state.status, NotificationDetailStatus.success);
+      expect(cubit.state.post?.postID, '3954');
+      expect(redirected.requests, hasLength(1));
     });
 
     test('a forum message, the thread or another page is the answer: not asked again', () async {

@@ -118,8 +118,8 @@ final class NotificationRepository with LoggerMixin {
   /// Same as [_fetchPageWith], plus the forum's clock from the answer's `Date` header (null when absent); a JSON
   /// answer carries it too.
   ///
-  /// A JSON answer the plugin failed to build has no page: it fails like a bad answer, so the poll does not take it
-  /// for an empty list and move its window past what it did not read.
+  /// A JSON answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or an empty body) fails
+  /// like a bad answer, so the poll does not take it for an empty list and move its window past what it did not read.
   static AsyncEither<(uh.Document, DateTime?)> _fetchPageWithTime(NetClientProvider client, String url) => AsyncEither(
     () async => switch (await client.get(withTsdmAppJson(url)).run()) {
       Left(:final value) => left(value),

@@ -78,8 +78,11 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
   /// Whether [data], the answer to [options], is a thread page asked in JSON mode that may hide the challenge.
   ///
   /// The JSON answer of a challenged thread holds neither the thread nor a forum message, and the challenge script is
-  /// lost in it ([tsdmAppAnswerWithoutContent]). Thread pages, and the `findpost` redirect ending on one, are the only
-  /// JSON mode pages the forum guards.
+  /// lost in it ([tsdmAppAnswerWithoutContent]). An answer without a page (the plugin failed to build it, or an empty
+  /// body) is asked again as well. An answer holding the posts is never asked again, whatever its `ok`: the thread
+  /// cache a guest is served is answered `unknown` with the whole post list, and asking again would read (and count a
+  /// view of) the thread twice. Thread pages, and the `findpost` redirect ending on one, are the only JSON mode pages
+  /// the forum guards.
   ///
   /// Marked as public for testing.
   static bool hidesChallenge(RequestOptions options, Object? data) {
@@ -173,8 +176,8 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
   /// Ask the page of [response] again without the JSON mode (see [hidesChallenge]), once.
   ///
   /// The forum then answers the challenge itself, which is solved here and its sign cached: later JSON mode requests
-  /// to the thread carry it and get the thread. Without a challenge (an answer the plugin failed to build) the web page
-  /// comes back, which every JSON mode caller parses as well.
+  /// to the thread carry it and get the thread. Without a challenge (an answer the plugin failed to build, or an empty
+  /// body) the web page comes back, which every JSON mode caller parses as well.
   Future<void> _askWebPage(Response<dynamic> response, ResponseInterceptorHandler handler) async {
     final options = response.requestOptions;
     final retryCount = (options.extra[_retryCountKey] as int?) ?? 0;
