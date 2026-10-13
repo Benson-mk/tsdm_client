@@ -21,7 +21,11 @@ CurrentAccountState? watchCurrentAccount(BuildContext context) {
 /// Tapping it opens the same user operations as the avatar on the homepage. Nothing is built otherwise.
 class CurrentAccountAvatarButton extends StatelessWidget {
   /// Constructor.
-  const CurrentAccountAvatarButton({super.key});
+  const CurrentAccountAvatarButton({this.lastAction = false, super.key});
+
+  /// Whether the button ends the app bar actions: it then keeps the 4px gap the homepage leaves after its avatar, so
+  /// the avatar sits at the same place on both pages.
+  final bool lastAction;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +34,7 @@ class CurrentAccountAvatarButton extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final username = state.username;
-    return IconButton(
+    final button = IconButton(
       key: const ValueKey('current_account_avatar_button'),
       tooltip: context.t.currentAccount.tooltip(username: username),
       icon: SizedBox(
@@ -56,6 +60,10 @@ class CurrentAccountAvatarButton extends StatelessWidget {
         ),
       ),
     );
+    if (!lastAction) {
+      return button;
+    }
+    return Padding(padding: const EdgeInsets.only(right: 4), child: button);
   }
 }
 

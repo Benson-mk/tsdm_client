@@ -79,7 +79,7 @@ class _ForumGroupPageState extends State<ForumGroupPage> {
             appBar: AppBar(
               title: Text(title ?? widget.title ?? ''),
               // Which account browses the forums, with more than one saved account (GitHub #184).
-              actions: const [CurrentAccountAvatarButton()],
+              actions: const [CurrentAccountAvatarButton(lastAction: true)],
             ),
             body: SafeArea(bottom: false, child: body),
           );

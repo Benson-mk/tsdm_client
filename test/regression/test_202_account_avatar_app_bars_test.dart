@@ -202,6 +202,36 @@ void main() {
     'forum group page': () => const ForumGroupPage(gid: '1', title: 'Group'),
   };
 
+  // GitHub #184 feedback: on the topics page the avatar sat a little further right than on the homepage, which leaves
+  // 4px after its avatar.
+  for (final MapEntry(key: name, value: page) in {
+    'topics page': () => const TopicsPage(),
+    'forum group page': () => const ForumGroupPage(gid: '1', title: 'Group'),
+  }.entries) {
+    testWidgets('$name: the avatar sits where the homepage avatar sits', (tester) async {
+      final cubit = await accountCubit(tester, [_alice, _bob]);
+      await pumpHost(tester, page(), cubit);
+      final shown = tester.getRect(find.byKey(const ValueKey('current_account_avatar_button')));
+
+      // The end of the homepage app bar: the avatar button, then a 4px gap.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(
+              actions: [
+                IconButton(key: const ValueKey('home'), icon: const SizedBox(width: 32, height: 32), onPressed: () {}),
+                const SizedBox(width: 4, height: 4),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(shown.right, tester.getRect(find.byKey(const ValueKey('home'))).right);
+      expect(shown.width, tester.getRect(find.byKey(const ValueKey('home'))).width);
+      await _settle(tester);
+    });
+  }
+
   for (final MapEntry(key: name, value: page) in pages.entries) {
     group(name, () {
       testWidgets('shows the account with two saved accounts', (tester) async {

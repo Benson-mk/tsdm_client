@@ -237,7 +237,7 @@ class _TopicsPageState extends State<TopicsPage> with TickerProviderStateMixin {
                     onPressed: () async => context.pushNamed(ScreenPaths.search),
                   ),
                   // Which account browses the forums, with more than one saved account (GitHub #184).
-                  const CurrentAccountAvatarButton(),
+                  const CurrentAccountAvatarButton(lastAction: true),
                 ],
                 bottom: state.forumGroupList.isNotEmpty ? tabBar : null,
               ),
