@@ -12,6 +12,8 @@ import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/authentication/repository/models/models.dart' show AuthStatus;
+import 'package:tsdm_client/features/authentication/utils/account_changes.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
 import 'package:tsdm_client/features/blocking/utils/block_filter.dart';
 import 'package:tsdm_client/features/blocking/utils/thread_author_cache.dart';
@@ -181,6 +183,28 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
 
   /// Account whose block list let [_shownTid] through: the list of another account starts over.
   int? _shownOwner;
+
+  /// The bloc of this page, created by the provider in [build]; kept to reload the page for another account.
+  ThreadBloc? _threadBloc;
+
+  /// Follows the account in use, see [_reloadForAccount].
+  StreamSubscription<AuthStatus>? _accountSub;
+
+  /// Reload the thread once the account in use changed, for example through the quick switch of the avatar menu
+  /// (GitHub #184 follow-up).
+  ///
+  /// The page holds what the forum rendered for the account that loaded it: the reply parameters (formhash) and the
+  /// actions on one's own floors. A reply sent after a switch went out with the new account's cookie and the old
+  /// account's formhash, and the forum refused it. An unsent reply stays in the reply bar through the reload
+  /// ([ReplyBarController]).
+  void _reloadForAccount() {
+    final bloc = _threadBloc;
+    // The need-login page reloads and replaces this page by itself once its login ended.
+    if (bloc == null || bloc.isClosed || bloc.state.needLogin) {
+      return;
+    }
+    bloc.add(ThreadRefreshRequested());
+  }
 
   bool _isUnattributable(ThreadState state) {
     final tid = state.tid ?? widget.threadID;
@@ -667,8 +691,20 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   }
 
   @override
+  void initState() {
+    super.initState();
+    _accountSub = listenAccountChanges(
+      context.read<AuthenticationRepository>(),
+      // Nothing to clear: the floors stay readable while logging in.
+      onLoggingIn: () {},
+      onChanged: _reloadForAccount,
+    );
+  }
+
+  @override
   void dispose() {
     _authorLookup++;
+    unawaited(_accountSub?.cancel());
     _listScrollController.dispose();
     super.dispose();
   }
@@ -682,7 +718,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
         RepositoryProvider<ThreadRepository>(create: (_) => ThreadRepository()),
         RepositoryProvider<ReplyRepository>(create: (_) => const ReplyRepository()),
         BlocProvider(
-          create: (context) => ThreadBloc(
+          create: (context) => _threadBloc = ThreadBloc(
             tid: widget.threadID,
             pid: widget.findPostID,
             onlyVisibleUid: widget.onlyVisibleUid,
