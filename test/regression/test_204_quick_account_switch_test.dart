@@ -36,6 +36,8 @@ import 'package:tsdm_client/features/settings/repositories/settings_repository.d
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/post_list.dart';
+import 'package:tsdm_client/features/thread_visit_history/bloc/thread_visit_history_bloc.dart';
+import 'package:tsdm_client/features/thread_visit_history/repository/thread_visit_history_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -154,12 +156,30 @@ final class _ProfileAdapter implements HttpClientAdapter {
 final class _ThreadAdapter implements HttpClientAdapter {
   int requests = 0;
 
+  /// The `page` asked for by every thread load.
+  final pages = <String?>[];
+
   /// Holds the answers back while set.
   Completer<void>? gate;
 
-  static String _page(String formHash) =>
+  /// With the forum path above the thread: the page then records the visit of the account in use.
+  bool breadcrumb = false;
+
+  /// Alice may not read the thread: she gets the login page.
+  bool aliceNeedsLogin = false;
+
+  static const _loginPage =
+      '<html><body><div id="messagetext"><p>login</p></div><div id="messagelogin"><form id="lsform"></form></div> '
+      '</body></html>';
+
+  static const _breadcrumb =
+      '<div id="pt"><a href="forum.php">Home</a><a href="forum.php?mod=forumdisplay&amp;fid=2">SomeForum</a> '
+      '<a href="forum.php?mod=viewthread&amp;tid=1264975">Switch title</a></div>';
+
+  String _page(String formHash) =>
       '''
 <html><head><link rel="canonical" href="forum.php?mod=viewthread&tid=1264975" /></head><body>
+${breadcrumb ? _breadcrumb : ''}
 <div id="postlist"><h1 class="ts"><span id="thread_subject">Switch title</span></h1><div class="bm">
 <div id="post_1"><table><tbody><tr>
 <td class="pls"></td>
@@ -185,11 +205,21 @@ final class _ThreadAdapter implements HttpClientAdapter {
     expect(options.method, 'GET', reason: 'never a forum write');
     if (options.uri.queryParameters['mod'] == 'viewthread') {
       requests++;
+      pages.add(options.uri.queryParameters['page']);
     }
     if (gate != null) {
       await gate!.future;
     }
     final cookie = '${options.headers['cookie'] ?? options.headers['Cookie'] ?? ''}';
+    if (aliceNeedsLogin && !cookie.contains('auth=bob')) {
+      return ResponseBody.fromString(
+        _loginPage,
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+        },
+      );
+    }
     final formHash = cookie.contains('auth=bob')
         ? 'hashOfBob'
         : (cookie.contains('auth=alice') ? 'hashOfAlice' : 'none');
@@ -793,7 +823,8 @@ void main() {
       await blocks.dispose();
     });
 
-    Future<void> pumpThread(WidgetTester tester) async {
+    /// The thread page opened on [pageNumber]; `/other` is a plain page to push above it. Returns the router.
+    Future<GoRouter> pumpThread(WidgetTester tester, {String pageNumber = '1', bool loaded = true}) async {
       final info = NotificationInfoRepository();
       final counts = NotificationStateCubit(info);
       final cubit = UserBlockCubit(
@@ -801,23 +832,29 @@ void main() {
         currentUid: () => auth.effectiveCurrentUid,
         authStatus: auth.status,
       );
+      final history = ThreadVisitHistoryBloc(ThreadVisitHistoryRepo(storage));
       final router = GoRouter(
         routes: [
           GoRoute(
             path: '/',
-            builder: (_, _) => const ThreadPage(
+            builder: (_, _) => ThreadPage(
               threadID: '1264975',
               findPostID: null,
-              pageNumber: '1',
+              pageNumber: pageNumber,
               overrideReverseOrder: false,
               overrideWithExactOrder: null,
             ),
+          ),
+          GoRoute(
+            path: '/other',
+            builder: (_, _) => const Scaffold(body: Center(child: Text('other page'))),
           ),
         ],
       );
       addTearDown(() async {
         router.dispose();
         await cubit.close();
+        await history.close();
         await info.dispose();
         await counts.close();
       });
@@ -834,6 +871,7 @@ void main() {
                 BlocProvider<UserBlockCubit>.value(value: cubit),
                 BlocProvider<NotificationBloc>.value(value: _Notifications()),
                 BlocProvider<NotificationStateCubit>.value(value: counts),
+                BlocProvider<ThreadVisitHistoryBloc>.value(value: history),
               ],
               child: MaterialApp.router(routerConfig: router, scaffoldMessengerKey: snackbarKey),
             ),
@@ -841,8 +879,23 @@ void main() {
         ),
       );
       await _settle(tester);
-      expect(find.textContaining('floor 1 text', findRichText: true), findsWidgets);
+      if (loaded) {
+        expect(find.textContaining('floor 1 text', findRichText: true), findsWidgets);
+      }
       expect(thread.requests, 1, reason: 'opening the page loads it once');
+      return router;
+    }
+
+    /// Threads in the visit history of [user].
+    Future<int> visits(WidgetTester tester, UserLoginInfo user) async {
+      final result = await tester.runAsync(() => storage.fetchThreadVisitHistoryByUid(user.uid!).run());
+      return result!.getOrElse((_) => []).length;
+    }
+
+    Future<void> switchNow(WidgetTester tester, UserLoginInfo user) async {
+      final result = await tester.runAsync(() => auth.switchUser(user).run());
+      expect(result!.isRight(), isTrue, reason: '$result');
+      await _settle(tester);
     }
 
     TextEditingController replyBox(WidgetTester tester) =>
@@ -906,6 +959,104 @@ void main() {
       await reloadSlowly(tester, () async => bloc.add(ThreadRefreshRequested()));
       expect(thread.requests, 2);
       expect(replyBox(tester).text, 'unsent reply');
+      await _dispose(tester);
+    });
+
+    testWidgets('a quick reload while the editor still closes keeps its text, without touching a locked tree', (
+      tester,
+    ) async {
+      await pumpThread(tester);
+      await tester.tap(find.byKey(const ValueKey('reply-bar-field')));
+      await _settle(tester, rounds: 4);
+      tester.widget<RichEditor>(find.byType(RichEditor)).controller.insertBBCode('written in the editor');
+      await tester.pump();
+
+      final bloc = BlocProvider.of<ThreadBloc>(tester.element(find.byType(PostList)));
+      thread.gate = Completer<void>();
+      bloc.add(ThreadRefreshRequested());
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('reply-bar-field')), findsNothing, reason: 'the old bar is gone');
+      expect(find.byType(RichEditor), findsOneWidget, reason: 'its editor is still closing');
+      // The forum answers before the editor finished closing: the new bar is there first.
+      thread.gate!.complete();
+      thread.gate = null;
+      for (var i = 0; i < 4; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(find.byKey(const ValueKey('reply-bar-field')), findsOneWidget);
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(tester.takeException(), isNull);
+      }
+      expect(find.byType(RichEditor), findsNothing);
+      expect(replyBox(tester).text, contains('written in the editor'));
+      await _dispose(tester);
+    });
+
+    testWidgets('a thread page under another page reloads once it shows again, not before', (tester) async {
+      thread.breadcrumb = true;
+      final router = await pumpThread(tester);
+      expect(await visits(tester, _alice), 1);
+      unawaited(router.push('/other'));
+      await _settle(tester);
+      expect(find.text('other page'), findsOneWidget);
+
+      await switchNow(tester, _bob);
+      await _settle(tester);
+      expect(thread.requests, 1, reason: 'not reloaded while covered');
+      expect(await visits(tester, _bob), 0, reason: 'Bob never opened the thread');
+
+      router.pop();
+      await _settle(tester);
+      expect(thread.requests, 2, reason: 'reloaded for Bob once shown again');
+      expect(formHash(tester), 'hashOfBob');
+      expect(await visits(tester, _bob), 1, reason: 'Bob reads it now');
+      await _settle(tester);
+      expect(thread.requests, 2, reason: 'once');
+      await _dispose(tester);
+    });
+
+    testWidgets('the menu the switch came from covers the page: it reloads once the menu closed', (tester) async {
+      await pumpThread(tester);
+      final page = tester.element(find.byType(PostList));
+      unawaited(
+        showDialog<void>(
+          context: page,
+          builder: (_) => const AlertDialog(content: Text('menu')),
+        ),
+      );
+      await _settle(tester);
+
+      await switchNow(tester, _bob);
+      expect(thread.requests, 1);
+      Navigator.of(tester.element(find.text('menu'))).pop();
+      await _settle(tester);
+      expect(thread.requests, 2);
+      expect(formHash(tester), 'hashOfBob');
+      await _dispose(tester);
+    });
+
+    testWidgets('the reload stays on the page being read', (tester) async {
+      await pumpThread(tester, pageNumber: '3');
+      expect(thread.pages, ['3']);
+
+      await switchNow(tester, _bob);
+      expect(thread.pages, ['3', '3'], reason: 'not back to the first page');
+      expect(formHash(tester), 'hashOfBob');
+      await _dispose(tester);
+    });
+
+    testWidgets('a page asking to log in reloads for an account that may read the thread', (tester) async {
+      thread.aliceNeedsLogin = true;
+      await pumpThread(tester, loaded: false);
+      expect(find.text(t.general.needLoginToSeeThisPage), findsOneWidget);
+
+      await switchNow(tester, _bob);
+      expect(thread.requests, 2);
+      expect(find.text(t.general.needLoginToSeeThisPage), findsNothing);
+      expect(find.textContaining('floor 1 text', findRichText: true), findsWidgets);
       await _dispose(tester);
     });
 

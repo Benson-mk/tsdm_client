@@ -211,7 +211,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     final info = parseThreadDocument(document, pageNumber);
 
     final threadState = ThreadState(
-      tid: info.tid,
+      // A login or no-permission page names no thread: keep the one asked for, or the next reload (after logging in,
+      // or for another account, GitHub #184 follow-up) would ask for no thread at all.
+      tid: info.tid ?? state.tid,
       pid: state.pid,
       replyParameters: info.replyParameters,
       status: ThreadStatus.success,

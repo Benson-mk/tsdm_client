@@ -902,12 +902,19 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
       // Closed because its bar went away (see [_manuallyDispose]): the page is gone, or it reloaded and builds a new
       // bar. The text written here is newer than what the old bar kept, give it to the new bar or keep it for it.
       // [ReplyBarController._outerTextController] is null or the box of a bar still alive.
-      final outer = widget.controller._outerTextController;
-      if (outer != null && !identical(outer, widget.outerTextController)) {
-        outer.text = text;
-      } else {
-        widget.controller._keptDraft = text.trim().isEmpty ? null : text;
-      }
+      //
+      // After this frame, like below: the tree is locked while disposing, and the box of a new bar shown before the
+      // sheet finished closing (a quick reload) would rebuild its field now.
+      final controller = widget.controller;
+      final disposedOuter = widget.outerTextController;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final outer = controller._outerTextController;
+        if (outer != null && !identical(outer, disposedOuter)) {
+          outer.text = text;
+        } else {
+          controller._keptDraft = text.trim().isEmpty ? null : text;
+        }
+      });
     }
     if (_canSyncBBCodeOnDispose) {
       // Only save text that intend to reply when that text is not empty.
