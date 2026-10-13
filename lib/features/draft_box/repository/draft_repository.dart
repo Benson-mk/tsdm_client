@@ -1,6 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/draft_box/models/draft_data.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
@@ -11,9 +12,13 @@ class DraftRepository {
   DraftRepository(this.getPage);
 
   /// Production transport.
+  ///
+  /// Pages are asked in the JSON mode of the forum's app API (roadmap item 3): the draft list (`do=thread`) since
+  /// plugin 1.6.0, the draft thread since 1.4.0. Both keep the `discuz_uid` the identity check reads; an older plugin
+  /// answers the web page.
   factory DraftRepository.network(NetClientProvider client) => DraftRepository(
-    (url) async => switch (await client.get(url).run()) {
-      Right(:final value) => value.data as String,
+    (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) => tsdmAppPageHtml(value.data),
       Left(:final value) => throw value,
     },
   );
