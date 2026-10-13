@@ -46,8 +46,9 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 /// The time of a poll that just happened, in seconds.
 ///
 /// The repository only keeps a polling time that is inside the last three days and falls back to three days ago
-/// otherwise (`_buildSinceTimestamp`). A fixed time went out of that window on 2026-10-10 and the tests quietly stopped
-/// covering the in-window branch, so the polls below are relative to the real clock.
+/// otherwise (`_buildSinceTimestamp`). The fixed time these tests used (2026-10-07) went out of that window a few days
+/// later and the tests quietly stopped covering the in-window branch, so the polls below are relative to the real
+/// clock.
 final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
 /// Answers `notify` with "nothing new" after failing [offline] times without an answer (or with [status]).
@@ -473,7 +474,8 @@ void main() {
     test('an answer with an error status is not retried', () async {
       TsdmAppApi.markUnavailable();
       final forum = _Forum(status: 502);
-      // Relative to now, same reason as above (a polling fetch is one with a time inside the window).
+      // Relative to now like the two above, for consistency only: any time makes this a polling fetch and the fetch
+      // fails on the status before `since` matters, so this test does not depend on the window.
       final result = await NotificationRepository(
         storageProvider: storage,
         retryDelay: Duration.zero,

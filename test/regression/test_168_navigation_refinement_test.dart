@@ -587,7 +587,7 @@ void main() {
 
     // The claim record is the packet's `dateflag`, compared with the real calendar day (the entry has no clock to
     // inject), so both days are spelled out here instead of leaning on whatever day the suite happens to run: a fixed
-    // "claimed" day silently flips the expectation when the calendar reaches it (it did on 2026-09-27).
+    // "claimed" day would silently flip the expectation on the day the calendar reaches it.
     testWidgets('a reloaded page without a packet after a claim of an earlier day: none to claim, never "claimed"', (
       tester,
     ) async {
