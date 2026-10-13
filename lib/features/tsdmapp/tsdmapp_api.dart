@@ -242,6 +242,21 @@ uh.Document tsdmAppPageDocument(Object? data) {
   );
 }
 
+/// Whether a forum page answer [data] is a JSON answer without the page's blocks: the plugin failed to build it
+/// (`{"ok":0,"error":"internal"}`). That is no page at all; a caller that would take an empty page for "nothing there"
+/// (the notification poll, which then moves its window on) treats it as a failed request.
+bool tsdmAppAnswerWithoutPage(Object? data) {
+  var json = data;
+  if (data is String && data.trimLeft().startsWith('{')) {
+    try {
+      json = jsonDecode(data);
+    } on FormatException {
+      return false;
+    }
+  }
+  return json is Map && json['document'] is! String;
+}
+
 /// The html of a forum page answer [data], for callers that hand a page around as a string: the web page itself, or
 /// the page rebuilt from the blocks of a JSON answer (see [tsdmAppPageDocument]).
 String tsdmAppPageHtml(Object? data) {
