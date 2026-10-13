@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## 最新更新：1.35.0（2026-10-11）
+## 最新更新：1.36.0（2026-10-13）
 
-- 設定 → 外觀新增「高刷新率」開關（僅 Android，預設開啟）：90/120Hz 螢幕上被系統鎖在 60Hz 的手機，滑動會更流暢；嫌耗電可關掉。
-- 1.34.1：勳章中心、頭銜商店打開慢、偶爾讀不到勳章列表的問題已修復。
-- Android 建置編號為 134，可直接覆蓋之前的正式版與測試版。
+- 多帳號：存了兩個以上帳號時，分區、版塊、帖子頁的標題列右上角常駐目前帳號頭像；回覆框顯示「以 XXX 回覆」，發帖、編輯、發起投票頁顯示「以 XXX 發表」，避免用錯帳號發帖。只有一個帳號時介面不變。
+- 1.35.0：設定 → 外觀新增「高刷新率」開關（僅 Android）。
+- Android 建置編號為 136，可直接覆蓋之前的正式版與測試版。
 
-[下載 1.35.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.35.0) · [完整更新日誌](./CHANGELOG.md)
+[下載 1.36.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.36.0) · [完整更新日誌](./CHANGELOG.md)
 
 ## 這是什麼
 

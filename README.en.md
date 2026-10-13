@@ -16,13 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.35.0 (2026-10-11)
+## Latest update: 1.36.0 (2026-10-13)
 
-- Settings → Appearance adds a "High Refresh Rate" switch (Android only, on by default): phones whose system kept the app at 60Hz on a 90/120Hz screen now scroll smoother; turn it off to save battery.
-- 1.34.1: the medal centre and title shop opening slowly and now and then missing the medal list is fixed.
-- Android build number 134, installs over earlier releases and test builds.
+- Multiple accounts: with two or more saved accounts, the forum, board and thread app bars always show the avatar of the account in use; the reply box reads "Reply as X..." and the thread, edit and poll pages show "Posting as X", so posts no longer go out from the wrong account. Nothing changes with a single account.
+- 1.35.0: Settings → Appearance adds a "High Refresh Rate" switch (Android only).
+- Android build number 136, installs over earlier releases and test builds.
 
-[Download 1.35.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.35.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.36.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.36.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
