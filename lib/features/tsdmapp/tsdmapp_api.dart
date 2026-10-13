@@ -245,16 +245,40 @@ uh.Document tsdmAppPageDocument(Object? data) {
 /// Whether a forum page answer [data] is a JSON answer without the page's blocks: the plugin failed to build it
 /// (`{"ok":0,"error":"internal"}`). That is no page at all; a caller that would take an empty page for "nothing there"
 /// (the notification poll, which then moves its window on) treats it as a failed request.
-bool tsdmAppAnswerWithoutPage(Object? data) {
-  var json = data;
-  if (data is String && data.trimLeft().startsWith('{')) {
-    try {
-      json = jsonDecode(data);
-    } on FormatException {
-      return false;
-    }
+bool tsdmAppAnswerWithoutPage(Object? data) => switch (_tsdmAppAnswerJson(data)) {
+  final Map<dynamic, dynamic> json => json['document'] is! String,
+  _ => false,
+};
+
+/// Whether a forum page answer [data] is a JSON answer holding neither the page (`ok` 1) nor a forum message (`error:
+/// message`: no permission, no such thread…, which the web page shows the same).
+///
+/// A thread page gives that when the forum answered the antitheft (防采集) challenge instead: the plugin buffers the
+/// page from its first hook and turns whatever was printed into JSON when the request ends, and the challenge script is
+/// printed (and the request ended) before the thread is built. The answer is `{"ok":0,"error":"unknown"}` with only a
+/// form hash for a document, the script is lost, and the challenge can only be solved on the web page
+/// (`AntitheftInterceptor`).
+bool tsdmAppAnswerWithoutContent(Object? data) => switch (_tsdmAppAnswerJson(data)) {
+  final Map<dynamic, dynamic> json => json['ok'] != 1 && json['error'] != 'message',
+  _ => false,
+};
+
+/// The JSON object of a forum page answer [data], null when it is a web page.
+Map<dynamic, dynamic>? _tsdmAppAnswerJson(Object? data) {
+  if (data is Map) {
+    return data;
   }
-  return json is Map && json['document'] is! String;
+  if (data is! String || !data.trimLeft().startsWith('{')) {
+    return null;
+  }
+  try {
+    return switch (jsonDecode(data)) {
+      final Map<dynamic, dynamic> json => json,
+      _ => null,
+    };
+  } on FormatException {
+    return null;
+  }
 }
 
 /// The html of a forum page answer [data], for callers that hand a page around as a string: the web page itself, or

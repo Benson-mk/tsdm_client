@@ -11,6 +11,9 @@
 /// the web page and from the JSON answer of plugin 1.5.0 and 1.6.0, whichever comes back. The JSON answers are cut from
 /// the page fixtures the way the plugin cuts them (`tsdmapp_page_cut.dart`, checked against recorded answers below).
 ///
+/// A thread page asked in JSON mode cannot carry the antitheft (防采集) challenge: the plugin wraps it in its JSON and
+/// the script is lost. The page is asked again without the JSON mode, where the challenge is solved as before.
+///
 /// Checkin: the API's form hash (`status`, or the `checkin` answer itself with plugin 1.6.0) replaces reading the
 /// checkin page; the form posted is the same.
 library;
@@ -47,13 +50,16 @@ import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
+import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/antitheft_interceptor.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
+import 'package:tsdm_client/utils/antitheft/antitheft_decoder.dart';
 
 import 'draft_fixtures.dart';
 import 'tsdmapp_page_cut.dart';
@@ -92,6 +98,15 @@ String _threadPage(String postList, {int uid = 1000, int tid = 123}) => _page(
   uid: uid,
   head: '<link href="$baseUrl/forum.php?mod=viewthread&amp;tid=$tid" rel="canonical" />',
 );
+
+/// What plugin 1.5.0 and 1.6.0 answer a thread page asked in JSON mode that the forum challenges (防采集): the script,
+/// printed before the thread was built, is lost; a form hash is all the document holds.
+const Map<String, Object?> _challengedAnswer = {
+  'ok': 0,
+  'error': 'unknown',
+  'head': '',
+  'document': '<input type="hidden" name="formhash" value="a1b2c3d4" />\n',
+};
 
 /// One answer of the fake forum.
 typedef _Answer = ({String body, bool json, int status, String? redirectTo});
@@ -758,6 +773,146 @@ void main() {
         (target) => target,
       );
       expect(view, (fid: '4', tid: '123', pid: '456'));
+    });
+  });
+
+  group('a thread page the forum challenges (防采集)', () {
+    // Recorded challenges of the forum, a thread each: the interceptor keeps the solved signs for the whole run.
+
+    /// A forum guarding thread [tid] with its recorded challenge, as the real one with the plugin does: without the
+    /// sign the challenge, lost in the plugin's answer in JSON mode ([_challengedAnswer]); with it, [thread]. A
+    /// findpost redirect ends on the thread page.
+    _Forum guarded(String tid, String thread) => _Forum((o) {
+      final q = o.uri.queryParameters;
+      final json = _asksJson(o);
+      final to = q['mod'] == 'redirect'
+          ? '$baseUrl/forum.php?mod=viewthread&tid=$tid&page=1${json ? '&tsdmapp=json' : ''}'
+          : null;
+      if (!q.containsKey(AntitheftDecoder.dsignKey)) {
+        return json ? _json(_challengedAnswer, redirectTo: to) : _html(_read('antitheft/$tid.html'), redirectTo: to);
+      }
+      return json ? _json(pageAnswerOf(thread, 'viewthread'), redirectTo: to) : _html(thread, redirectTo: to);
+    });
+
+    /// [forum] solved the challenge of [tid]: the page in JSON mode, the same page as the web page (the challenge),
+    /// the page with the sign. GETs only.
+    void expectSolved(_Forum forum, String tid) {
+      final sign = AntitheftDecoder.decode(_read('antitheft/$tid.html'))!.dsign;
+      expect(forum.requests.map((e) => e.method), ['GET', 'GET', 'GET']);
+      expect(forum.requests.map(_asksJson), [true, false, false]);
+      expect(forum.requests[1].uri.queryParameters, Map.of(forum.requests[0].uri.queryParameters)..remove('tsdmapp'));
+      expect(forum.requests.map((e) => e.uri.queryParameters[AntitheftDecoder.dsignKey]), [null, null, sign]);
+    }
+
+    test('the post of a notice', () async {
+      const tid = '1253561';
+      final forum = guarded(tid, _read('tsdmapp/thread_plain.html').replaceAll('9199345', tid));
+      _use(forum);
+      final cubit = NotificationDetailCubit(notificationRepository: NotificationRepository());
+      addTearDown(cubit.close);
+      await cubit.fetchDetail('$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=$tid&pid=3954');
+      expect(cubit.state.status, NotificationDetailStatus.success);
+      expect(cubit.state.post?.postID, '3954');
+      expectSolved(forum, tid);
+    });
+
+    test('the poll card', () async {
+      const tid = '1253566';
+      final page = _threadPage(
+        '<div id="postlist"><div id="post_78025860"><table><tr><td class="plc">'
+        '${_read('poll_voted_x5.html')}</td></tr></table></div></div>',
+        tid: int.parse(tid),
+      );
+      final forum = guarded(tid, page.replaceAll('1266029', tid));
+      _use(forum);
+      final poll = await PollRepository.network(
+        getIt.get<NetClientProvider>(),
+      ).fetch('$baseUrl/forum.php?mod=redirect&goto=findpost&pid=78025860', 1000);
+      expect(poll.availability, PollAvailability.voted);
+      expect(poll.options, hasLength(5));
+      expectSolved(forum, tid);
+    });
+
+    test('opening a draft', () async {
+      const tid = '1207901';
+      final draft = (await DraftRepository((_) async => draftList(tid: tid)).load(1000)).entries.single;
+      final thread = _threadPage(_bodyOf(draftThread()).replaceAll('tid=123', 'tid=$tid'), tid: int.parse(tid));
+      final forum = guarded(tid, thread);
+      _use(forum);
+      final target = await DraftRepository.network(getIt.get<NetClientProvider>()).resolve(draft, 1000);
+      expect(target, (fid: '4', tid: tid, pid: '456'));
+      expectSolved(forum, tid);
+    });
+
+    test('the thread page itself; later JSON mode requests carry the sign and get the thread', () async {
+      const tid = '1183160';
+      final forum = guarded(tid, _read('tsdmapp/thread_plain.html').replaceAll('9199345', tid));
+      _use(forum);
+      final first = _right(await ThreadRepository().fetchThread(tid: tid).run());
+      expect(first.querySelector('#post_3954'), isNotNull);
+      expectSolved(forum, tid);
+
+      final again = _right(await ThreadRepository().fetchThread(tid: tid).run());
+      expect(again.querySelector('#post_3954'), isNotNull);
+      expect(forum.requests, hasLength(4));
+      expect(_asksJson(forum.requests.last), isTrue);
+      expect(
+        forum.requests.last.uri.queryParameters[AntitheftDecoder.dsignKey],
+        forum.requests[2].uri.queryParameters[AntitheftDecoder.dsignKey],
+      );
+    });
+
+    test('a thread answer the plugin failed to build: the web page instead', () async {
+      final html = _read('tsdmapp/thread_plain.html');
+      final forum = _Forum((o) => _asksJson(o) ? _json({'ok': 0, 'error': 'internal'}) : _html(html));
+      _use(forum);
+      final doc = _right(await ThreadRepository().fetchThread(tid: '9199345').run());
+      expect(doc.querySelector('#post_3954'), isNotNull);
+      expect(forum.requests.map(_asksJson), [true, false]);
+    });
+
+    test('a forum message, the thread or another page is the answer: not asked again', () async {
+      final denied = _threadPage('<div id="messagetext" class="alert_error"><p>Synthetic notice</p></div>');
+      for (final (url, answer) in [
+        ('$baseUrl/forum.php?mod=viewthread&tid=1', _json(pageAnswerOf(denied, 'viewthread'))),
+        (
+          '$baseUrl/forum.php?mod=viewthread&tid=1',
+          _json(pageAnswerOf(_read('tsdmapp/thread_plain.html'), 'viewthread')),
+        ),
+        ('$baseUrl/home.php?mod=space&do=notice', _json({'ok': 0, 'error': 'unknown', 'document': ''})),
+      ]) {
+        final forum = _Forum((_) => answer);
+        await _client(forum).get(withTsdmAppJson(url)).run();
+        expect(forum.requests, hasLength(1), reason: url);
+      }
+
+      RequestOptions get(String url) => RequestOptions(path: withTsdmAppJson(url));
+      const thread = '$baseUrl/forum.php?mod=viewthread&tid=1';
+      expect(AntitheftInterceptor.hidesChallenge(get(thread), _challengedAnswer), isTrue);
+      expect(AntitheftInterceptor.hidesChallenge(get(thread), jsonEncode(_challengedAnswer)), isTrue);
+      expect(
+        AntitheftInterceptor.hidesChallenge(
+          get('$baseUrl/forum.php?mod=redirect&goto=findpost&pid=2'),
+          _challengedAnswer,
+        ),
+        isTrue,
+      );
+      expect(AntitheftInterceptor.hidesChallenge(RequestOptions(path: thread), _challengedAnswer), isFalse);
+      expect(
+        AntitheftInterceptor.hidesChallenge(
+          RequestOptions(path: withTsdmAppJson(thread), method: 'POST'),
+          _challengedAnswer,
+        ),
+        isFalse,
+      );
+      expect(
+        AntitheftInterceptor.hidesChallenge(
+          get('https://example.com/forum.php?mod=viewthread&tid=1'),
+          _challengedAnswer,
+        ),
+        isFalse,
+      );
+      expect(AntitheftInterceptor.hidesChallenge(get(thread), _read('antitheft/1253561.html')), isFalse);
     });
   });
 
