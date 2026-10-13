@@ -14,21 +14,49 @@ class NewcomerReportInfo {
   final String title;
 
   /// Info data, may be empty string.
+  ///
+  /// Lines are separated by `\n`.
   final String data;
 }
 
 /// Card for newcomer report table in thread.
 ///
 /// Only used in newcomer subreddit.
+///
+/// Field names are in a column on the left, as wide as the longest name but not wider than the website's `7em` or 40%
+/// of the card. Values take the rest of the row and wrap, the card never scrolls horizontally. An empty value shows
+/// "-" like the website does.
 class NewcomerReportCard extends StatelessWidget {
   /// Constructor.
-  const NewcomerReportCard(this.data, {super.key});
+  const NewcomerReportCard(this.data, {this.title, super.key});
 
   /// Data in table.
   final List<NewcomerReportInfo> data;
 
+  /// Title of the card, the one the forum renders above the table.
+  ///
+  /// Use the default title when null or empty.
+  final String? title;
+
+  /// Max width of the field name column in `em` of the text, the website uses `th{width:7em}`.
+  static const _titleColumnMaxEm = 7.0;
+
+  /// Max fraction of the card width taken by the field name column, leaves room for values on narrow screens.
+  static const _titleColumnMaxFraction = 0.4;
+
+  static const _cellPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 6);
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final valueStyle = theme.textTheme.bodyMedium;
+    final titleStyle = valueStyle?.copyWith(color: theme.colorScheme.secondary);
+    final emptyStyle = valueStyle?.copyWith(color: theme.colorScheme.outline);
+    final titleColumnMaxWidth =
+        MediaQuery.textScalerOf(context).scale(valueStyle?.fontSize ?? 14) * _titleColumnMaxEm +
+        _cellPadding.horizontal;
+    final cardTitle = title?.trim() ?? '';
+
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -39,42 +67,45 @@ class NewcomerReportCard extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.article_outlined, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.article_outlined, color: theme.colorScheme.primary),
                 sizedBoxW4H4,
-                Text(
-                  context.t.html.newcomerReportCard.title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary),
+                Flexible(
+                  child: Text(
+                    cardTitle.isNotEmpty ? cardTitle : context.t.html.newcomerReportCard.title,
+                    style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary),
+                  ),
                 ),
               ],
             ),
             sizedBoxW8H8,
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Table(
-                defaultColumnWidth: const IntrinsicColumnWidth(),
-                columnWidths: const <int, TableColumnWidth>{0: FixedColumnWidth(100)},
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                children: data
-                    .mapIndexed(
-                      (idx, e) => TableRow(
-                        decoration: BoxDecoration(
-                          color: idx.isOdd ? Theme.of(context).colorScheme.surfaceContainerHigh : null,
+            Table(
+              columnWidths: <int, TableColumnWidth>{
+                0: MinColumnWidth(
+                  const IntrinsicColumnWidth(),
+                  MinColumnWidth(
+                    FixedColumnWidth(titleColumnMaxWidth),
+                    const FractionColumnWidth(_titleColumnMaxFraction),
+                  ),
+                ),
+                1: const FlexColumnWidth(),
+              },
+              children: data
+                  .mapIndexed(
+                    (idx, e) => TableRow(
+                      decoration: BoxDecoration(color: idx.isOdd ? theme.colorScheme.surfaceContainerHigh : null),
+                      children: [
+                        Padding(
+                          padding: _cellPadding,
+                          child: Text(e.title, style: titleStyle),
                         ),
-                        children: [
-                          TableCell(
-                            child: Text(
-                              e.title,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.secondary),
-                            ),
-                          ),
-                          TableCell(child: Text(e.data, style: Theme.of(context).textTheme.bodyMedium)),
-                        ],
-                      ),
-                    )
-                    .toList(),
-              ),
+                        Padding(
+                          padding: _cellPadding,
+                          child: e.data.isEmpty ? Text('-', style: emptyStyle) : Text(e.data, style: valueStyle),
+                        ),
+                      ],
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
