@@ -642,6 +642,8 @@ final class _Muncher with LoggerMixin {
       'rwdbst': _buildBountyBestAnswer,
       'hb-entry': _buildRedPacketEntry,
       'modact': _buildModerationNotice,
+      'rcd-card': _buildNewcomerReportDiv,
+      'bd-card': _buildNewcomerReportDiv,
     };
 
     // The popup markup of the forum's red packet plugin (envelope animation, password box, buttons) only works with
@@ -1096,6 +1098,15 @@ final class _Muncher with LoggerMixin {
     return ret;
   }
 
+  /// A header cell in a table: a cell in bold.
+  List<InlineSpan>? _buildTh(uh.Element element) {
+    final origBold = state.bold;
+    state.bold = true;
+    final ret = _buildTd(element);
+    state.bold = origBold;
+    return ret;
+  }
+
   List<InlineSpan>? _buildH1(uh.Element element) {
     state.fontSizeStack.add(FontSize.size6.value());
     final ret = _munch(element);
@@ -1117,6 +1128,15 @@ final class _Muncher with LoggerMixin {
   }
 
   List<InlineSpan>? _buildH3(uh.Element element) {
+    // The heading of the rate log at the end of a rated post, skipped with the rate log in `_buildDl`: the post card
+    // shows the rates on its own.
+    //
+    // <h3 class="psth xs1"><span class="icon_ring vm"></span>评分</h3>
+    // <dl id="ratelog_POST_ID" class="rate">...</dl>
+    final next = element.nextElementSibling;
+    if (element.classes.contains('psth') && next?.localName == 'dl' && (next?.id.startsWith('ratelog_') ?? false)) {
+      return null;
+    }
     state.fontSizeStack.add(FontSize.size4.value());
     final ret = _munch(element);
     state.fontSizeStack.removeLast();
@@ -1319,37 +1339,115 @@ final class _Muncher with LoggerMixin {
     //
     // </tbody>
     // </table>
-    final data = element
-        .querySelectorRootAll('tbody > tr')
-        .map((e) => (e.querySelector('th')?.innerText.trim(), e.querySelector('td')?.innerText.trim()))
-        .whereType<(String, String)>()
-        .map((e) => NewcomerReportInfo(title: e.$1, data: e.$2))
-        .toList();
+    return _newcomerReportSpan(_parseNewcomerReportRows(element));
+  }
 
-    return [WidgetSpan(child: NewcomerReportCard(data))];
+  /// The card of the forum's newcomer report plugin at the top of the first post of a report thread.
+  ///
+  /// ```html
+  /// <div class="rcd-card">
+  ///   <div class="rcd-h">报到详细信息</div>
+  ///   <table>
+  ///     <tr><th>昵称</th><td class="rcd-v">USER_NICKNAME</td></tr>
+  ///     <tr><th>兴趣爱好</th><td class="rcd-v">LINE_1<br />
+  ///     LINE_2</td></tr>
+  ///     <tr><th>QQ</th><td class="rcd-v"></td></tr>
+  ///     ...
+  ///   </table>
+  /// </div>
+  /// ```
+  ///
+  /// The threadsort template before the plugin rendered the same markup with `bd-card`, `bd-h` and `bd-v`.
+  List<InlineSpan>? _buildNewcomerReportDiv(uh.Element element) {
+    final table = element.children.firstWhereOrNull((e) => e.localName == 'table');
+    final data = table == null ? const <NewcomerReportInfo>[] : _parseNewcomerReportRows(table);
+    if (data.isEmpty) {
+      return _munch(element);
+    }
+    final title = element.children
+        .firstWhereOrNull((e) => e.classes.contains('rcd-h') || e.classes.contains('bd-h'))
+        ?.innerText
+        .trim();
+    state.headingBrNodePassed = true;
+    return _newcomerReportSpan(data, title: title);
+  }
+
+  /// The [NewcomerReportCard] of [data] in the post.
+  ///
+  /// The [WidgetSpan] already scales the card by the text scale of the post, the text in the card is not scaled a
+  /// second time: at 1.3 it would be 1.69 and the field names would break on a phone screen.
+  static List<InlineSpan> _newcomerReportSpan(List<NewcomerReportInfo> data, {String? title}) => [
+    WidgetSpan(
+      child: MediaQuery.withNoTextScaling(child: NewcomerReportCard(data, title: title)),
+    ),
+  ];
+
+  /// Field names (`th`) and values (`td`) in the rows of a newcomer report [table], rows without either are skipped.
+  ///
+  /// A value with images (an image field of a threadsort, `<img onload="thumbImg(this)">`) keeps its spans: the
+  /// images have no text and the value is not empty.
+  List<NewcomerReportInfo> _parseNewcomerReportRows(uh.Element table) => [
+    for (final tr in table.querySelectorRootAll('tbody > tr'))
+      if ((tr.querySelector('th'), tr.querySelector('td')) case (final th?, final td?))
+        NewcomerReportInfo(
+          title: _plainCellText(th),
+          data: _plainCellText(td),
+          richData: td.querySelector('img') == null ? null : _buildTd(td),
+        ),
+  ];
+
+  /// White space that HTML collapses, which is not `\s`: no-break spaces inside a line are kept.
+  static final _htmlWhiteSpaceRe = RegExp('[ \t\n\r\f]+');
+
+  /// Text in a table [cell] as the website shows it: runs of white space are one space, `<br>` breaks the line, and
+  /// the white space around each line is trimmed.
+  static String _plainCellText(uh.Element cell) {
+    final buffer = StringBuffer();
+    void visit(uh.Node node) {
+      for (final child in node.nodes) {
+        if (child is uh.Element) {
+          if (child.localName == 'br') {
+            buffer.write('\n');
+          } else {
+            visit(child);
+          }
+        } else if (child.nodeType == uh.Node.TEXT_NODE) {
+          buffer.write((child.text ?? '').replaceAll(_htmlWhiteSpaceRe, ' '));
+        }
+      }
+    }
+
+    visit(cell);
+    return buffer.toString().split('\n').map((e) => e.trim()).join('\n').trim();
   }
 
   List<InlineSpan>? _buildTable(uh.Element element) {
-    final allTr = element.querySelectorRootAll('tbody > tr');
+    // Rows in `<thead>`, `<tbody>` and `<tfoot>` in document order. The parser moves rows written directly in
+    // `<table>` into a `<tbody>`.
+    final allTr = element.children
+        .where((e) => const {'thead', 'tbody', 'tfoot'}.contains(e.localName))
+        .expand((e) => e.children.where((tr) => tr.localName == 'tr'))
+        .toList();
     if (allTr.isEmpty) {
       // Impossible
       return null;
     }
     if (allTr.length == 1) {
       // Not a regular table, only something wrapped.
-      return _munch(element.querySelectorRootAll('tbody').first);
+      return _munch(allTr.single.parent!);
     }
     final tableRows = <TableRow>[];
     final allTableRowContent = <List<Widget>>[];
     var columnMaxCount = 0;
     for (final tr in allTr) {
       final tableRowContent = <Widget>[];
-      final tds = tr.querySelectorRootAll('td');
-      for (final td in tds) {
-        tableRowContent.add(Text.rich(TextSpan(children: _buildTd(td))));
+      // Header cells (`th`) are cells too, in bold, in their place in the row.
+      final cells = tr.children.where((e) => e.localName == 'td' || e.localName == 'th').toList();
+      for (final cell in cells) {
+        tableRowContent.add(Text.rich(TextSpan(children: cell.localName == 'th' ? _buildTh(cell) : _buildTd(cell))));
       }
-      if (tds.length > columnMaxCount) {
-        columnMaxCount = tds.length;
+      if (cells.length > columnMaxCount) {
+        columnMaxCount = cells.length;
       }
       allTableRowContent.add(tableRowContent);
     }
