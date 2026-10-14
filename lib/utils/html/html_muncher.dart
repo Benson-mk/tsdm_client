@@ -1330,7 +1330,7 @@ final class _Muncher with LoggerMixin {
     //
     // </tbody>
     // </table>
-    return [WidgetSpan(child: NewcomerReportCard(_parseNewcomerReportRows(element)))];
+    return _newcomerReportSpan(_parseNewcomerReportRows(element));
   }
 
   /// The card of the forum's newcomer report plugin at the top of the first post of a report thread.
@@ -1360,16 +1360,32 @@ final class _Muncher with LoggerMixin {
         ?.innerText
         .trim();
     state.headingBrNodePassed = true;
-    return [WidgetSpan(child: NewcomerReportCard(data, title: title))];
+    return _newcomerReportSpan(data, title: title);
   }
 
+  /// The [NewcomerReportCard] of [data] in the post.
+  ///
+  /// The [WidgetSpan] already scales the card by the text scale of the post, the text in the card is not scaled a
+  /// second time: at 1.3 it would be 1.69 and the field names would break on a phone screen.
+  static List<InlineSpan> _newcomerReportSpan(List<NewcomerReportInfo> data, {String? title}) => [
+    WidgetSpan(
+      child: MediaQuery.withNoTextScaling(child: NewcomerReportCard(data, title: title)),
+    ),
+  ];
+
   /// Field names (`th`) and values (`td`) in the rows of a newcomer report [table], rows without either are skipped.
-  static List<NewcomerReportInfo> _parseNewcomerReportRows(uh.Element table) => table
-      .querySelectorRootAll('tbody > tr')
-      .map((e) => (e.querySelector('th'), e.querySelector('td')))
-      .whereType<(uh.Element, uh.Element)>()
-      .map((e) => NewcomerReportInfo(title: _plainCellText(e.$1), data: _plainCellText(e.$2)))
-      .toList();
+  ///
+  /// A value with images (an image field of a threadsort, `<img onload="thumbImg(this)">`) keeps its spans: the
+  /// images have no text and the value is not empty.
+  List<NewcomerReportInfo> _parseNewcomerReportRows(uh.Element table) => [
+    for (final tr in table.querySelectorRootAll('tbody > tr'))
+      if ((tr.querySelector('th'), tr.querySelector('td')) case (final th?, final td?))
+        NewcomerReportInfo(
+          title: _plainCellText(th),
+          data: _plainCellText(td),
+          richData: td.querySelector('img') == null ? null : _buildTd(td),
+        ),
+  ];
 
   /// White space that HTML collapses, which is not `\s`: no-break spaces inside a line are kept.
   static final _htmlWhiteSpaceRe = RegExp('[ \t\n\r\f]+');

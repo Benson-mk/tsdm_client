@@ -12,14 +12,22 @@ library;
 // HTML fixtures are split into lines at tag boundaries.
 // ignore_for_file: missing_whitespace_between_adjacent_strings
 
+import 'dart:ui' as ui;
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/html/newcomer_report_card.dart';
+import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
+import 'package:tsdm_client/widgets/network_indicator_image.dart';
 import 'package:universal_html/parsing.dart';
 
 const _longHobby =
@@ -74,6 +82,19 @@ const _cgtlPost =
     '<tr><th valign="top">来自:</th><td>上海</td></tr>'
     '</tbody></table>'
     '<table cellspacing="0" cellpadding="0"><tr><td class="t_f" id="postmessage_3">帖子正文</td></tr></table>';
+
+const _photoUrl = 'https://example.com/data/attachment/forum/threadsort/photo.jpg';
+const _protectedUrl = 'https://example.com/misc.php?mod=stringtopic&string=abc';
+
+/// A threadsort table with an image field (`<img onload="thumbImg(this)">`), a protected field shown as an image
+/// (`<image>`, which the parser turns into `<img>`) and an empty field.
+const _cgtlImagePost =
+    '<table cellspacing="0" cellpadding="0" class="cgtl mbm"><caption>资料</caption><tbody>'
+    '<tr><th>照片:</th><td><img src="$_photoUrl" onload="thumbImg(this)" width="120" border="0"> </td></tr>'
+    '<tr><th>电话:</th><td>号码 <image src="$_protectedUrl"> </td></tr>'
+    '<tr><th>备注:</th><td>-</td></tr>'
+    '</tbody></table>'
+    '<table cellspacing="0" cellpadding="0"><tr><td class="t_f" id="postmessage_4">帖子正文</td></tr></table>';
 
 void main() {
   setUpAll(() => talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false)));
@@ -183,6 +204,123 @@ void main() {
     expect(pairsOf(tester), [('昵称:', 'Alice'), ('年龄:', '20'), ('来自:', '上海')]);
     expect(postText(tester), contains('帖子正文'));
     expect(tester.takeException(), isNull);
+  });
+
+  /// Whether the text of [finder] is laid out on one line: as wide as it is unwrapped.
+  bool oneLine(WidgetTester tester, Finder finder) {
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(of: finder, matching: find.byType(RichText)),
+    );
+    return paragraph.getMaxIntrinsicWidth(double.infinity) <= paragraph.size.width + 0.01;
+  }
+
+  testWidgets('the card is scaled once by the text scale, like the text of the post', (tester) async {
+    await pump(tester, _rcdPost);
+    final nameWidth = tester.getRect(inCard(find.text('昵称'))).width;
+    final titleWidth = tester.getRect(inCard(find.text('报到详细信息'))).width;
+    await pump(tester, _rcdPost, textScale: 1.3);
+    // The inline card is already scaled by the post's paragraph; its own text scaled again made it 1.69 times.
+    expect(tester.getRect(inCard(find.text('昵称'))).width / nameWidth, closeTo(1.3, 0.01));
+    expect(tester.getRect(inCard(find.text('报到详细信息'))).width / titleWidth, closeTo(1.3, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  // The website never wraps a field name. The app's text scale goes up to 1.5, a 360 px screen is the common narrow one.
+  for (final (width, scale) in const [
+    (320.0, 1.3),
+    (360.0, 1.15),
+    (360.0, 1.5),
+    (393.0, 1.3),
+    (411.0, 1.3),
+  ]) {
+    testWidgets('field names are not broken on a $width px screen at text scale $scale', (tester) async {
+      await pump(tester, _rcdPost, width: width, textScale: scale);
+      expect(tester.takeException(), isNull);
+      for (final (title, _) in _rcdPairs) {
+        expect(oneLine(tester, inCard(find.text(title))), isTrue, reason: title);
+      }
+      expect(oneLine(tester, inCard(find.text('报到详细信息'))), isTrue, reason: 'card title');
+      final card = tester.getRect(find.byType(NewcomerReportCard));
+      expect(card.right, lessThan(width - 15));
+      // The values keep a usable column.
+      final value = tester.getRect(inCard(find.text(_longHobby)));
+      expect(value.width, greaterThan(card.width / 3));
+    });
+  }
+
+  // A 320 px screen at the largest text scales (the thread content scale goes above the app's 1.5) has no room for
+  // the longest name next to the values: it wraps, but it does not fall apart one character a line.
+  for (final scale in const [1.5, 2.0]) {
+    testWidgets('at text scale $scale on a 320 px screen a long field name takes two lines at most', (tester) async {
+      await pump(tester, _rcdPost, width: 320, textScale: scale);
+      expect(tester.takeException(), isNull);
+      for (final (title, _) in _rcdPairs) {
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(of: inCard(find.text(title)), matching: find.byType(RichText)),
+        );
+        final lineHeight = paragraph.getFullHeightForCaret(const TextPosition(offset: 0));
+        expect(paragraph.size.height, lessThan(lineHeight * 2.5), reason: title);
+      }
+      expect(tester.getRect(find.byType(NewcomerReportCard)).right, lessThan(320 - 15));
+    });
+  }
+
+  group('a threadsort value with images', () {
+    late ImageCacheProvider cache;
+    setUp(() {
+      cache = ImageCacheProvider(NetClientProvider.buildNoCookie(dio: Dio(), cookie: CookieProvider.buildEmpty()));
+      getIt.registerSingleton<ImageCacheProvider>(cache);
+    });
+    tearDown(() async {
+      await cache.dispose();
+      await getIt.reset();
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    });
+
+    /// Puts the images in the image cache, the test does not load them from the network.
+    Future<void> seedImages(WidgetTester tester) async {
+      for (final url in [_photoUrl, _protectedUrl]) {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder).drawRect(const Rect.fromLTWH(0, 0, 120, 90), Paint()..color = Colors.blue);
+        final picture = recorder.endRecording();
+        final image = await tester.runAsync(() => picture.toImage(120, 90));
+        picture.dispose();
+        // Images in the post are decoded at the width of the 400 px test screen.
+        final provider = ResizeImage.resizeIfNeeded(400, null, CachedImageProvider(url));
+        final key = await provider.obtainKey(ImageConfiguration.empty);
+        PaintingBinding.instance.imageCache.putIfAbsent(
+          key,
+          () => OneFrameImageStreamCompleter(Future.value(ImageInfo(image: image!))),
+        );
+      }
+    }
+
+    testWidgets('shows the images in the card instead of "-"', (tester) async {
+      await seedImages(tester);
+      await pump(tester, _cgtlImagePost);
+      expect(tester.takeException(), isNull);
+      final card = find.byType(NewcomerReportCard);
+      expect(card, findsOneWidget);
+      // The image field and the protected field (text drawn as an image) keep their images.
+      for (final url in [_photoUrl, _protectedUrl]) {
+        expect(
+          inCard(find.byWidgetPredicate((w) => w is NetworkIndicatorImage && w.src == url)),
+          findsOneWidget,
+          reason: url,
+        );
+      }
+      // Text next to an image is kept too.
+      expect(inCard(find.textContaining('号码', findRichText: true)), findsOneWidget);
+      // Only the field the forum left empty shows "-", the image fields do not.
+      expect(inCard(find.text('-')), findsOneWidget);
+      final photo = tester.getRect(
+        inCard(find.byWidgetPredicate((w) => w is NetworkIndicatorImage && w.src == _photoUrl)),
+      );
+      expect(photo.width, greaterThan(0));
+      expect(photo.right, lessThanOrEqualTo(tester.getRect(card).right));
+      expect(postText(tester), contains('帖子正文'));
+    });
   });
 
   group('generic tables', () {
