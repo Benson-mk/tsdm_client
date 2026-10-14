@@ -1128,6 +1128,15 @@ final class _Muncher with LoggerMixin {
   }
 
   List<InlineSpan>? _buildH3(uh.Element element) {
+    // The heading of the rate log at the end of a rated post, skipped with the rate log in `_buildDl`: the post card
+    // shows the rates on its own.
+    //
+    // <h3 class="psth xs1"><span class="icon_ring vm"></span>评分</h3>
+    // <dl id="ratelog_POST_ID" class="rate">...</dl>
+    final next = element.nextElementSibling;
+    if (element.classes.contains('psth') && next?.localName == 'dl' && (next?.id.startsWith('ratelog_') ?? false)) {
+      return null;
+    }
     state.fontSizeStack.add(FontSize.size4.value());
     final ret = _munch(element);
     state.fontSizeStack.removeLast();

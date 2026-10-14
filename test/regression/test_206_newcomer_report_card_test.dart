@@ -323,6 +323,32 @@ void main() {
     });
   });
 
+  group('rate log', () {
+    /// A rated post: Discuz renders the rate log at the end of `div.pcb`, after the post and its comments.
+    const ratedPost =
+        '$_rcdPost\n<div id="comment_1" class="cm">\n</div>\n'
+        '<h3 class="psth xs1"><span class="icon_ring vm"></span>评分</h3>\n'
+        '<dl id="ratelog_1" class="rate"><dd style="margin:0"><table class="ratl">'
+        '<tr><th class="xw1">参与人数 <span class="xi1">1</span></th><th class="xw1">天然</th></tr>'
+        '</table></dd></dl>';
+
+    testWidgets('the heading of the rate log does not end the post text', (tester) async {
+      await pump(tester, ratedPost);
+      expect(postText(tester), contains('帖子正文'));
+      expect(postText(tester), isNot(contains('评分')));
+      expect(postText(tester), isNot(contains('参与人数')));
+      expect(postText(tester).trimRight(), endsWith('帖子正文'));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('other headings in the post are kept', (tester) async {
+      await pump(tester, '<h3>标题</h3><div>正文</div><h3 class="psth xs1">评分</h3><div>不是评分记录</div>');
+      expect(postText(tester), contains('标题'));
+      expect(postText(tester), contains('评分'));
+      expect(postText(tester), contains('不是评分记录'));
+    });
+  });
+
   group('generic tables', () {
     List<TextSpan> cellSpans(WidgetTester tester) {
       final out = <TextSpan>[];
