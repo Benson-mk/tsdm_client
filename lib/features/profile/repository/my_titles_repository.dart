@@ -65,11 +65,8 @@ final class MyTitlesRepository with LoggerMixin {
     return _fetchWebTitles().run();
   });
 
-  AsyncEither<List<SecondaryTitle>> _fetchWebTitles() => getIt
-      .get<NetClientProvider>()
-      .get(withTsdmAppJson(_pageUrl))
-      .mapHttp((v) => tsdmAppPageDocument(v.data))
-      .map((doc) {
+  AsyncEither<List<SecondaryTitle>> _fetchWebTitles() =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(_pageUrl)).mapHttpPage((doc) => doc).map((doc) {
         _formHash = doc.querySelector('input[name="formhash"]')?.attributes['value'] ?? _formHash;
         return SecondaryTitle.parseTitlesPage(doc);
       });

@@ -90,6 +90,9 @@ final class ProfileRepository with LoggerMixin {
     switch (await getIt.get<NetClientProvider>().get(withTsdmAppJson(targetUrl)).run()) {
       case Left(:final value):
         return left(value);
+      case Right(:final value) when tsdmAppAnswerWithoutPage(value.data):
+        // A failed request, not a profile page of a guest (which would read as an expired session).
+        return left(HttpRequestFailedException(value.statusCode));
       case Right(:final value):
         final document = tsdmAppPageDocument(value.data);
         // Not when the account changed while the page was on its way: it belongs to the previous one.

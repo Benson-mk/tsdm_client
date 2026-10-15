@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io' if (dart.library.js) 'package:web/web.dart';
 
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -246,7 +248,8 @@ uh.Document tsdmAppPageDocument(Object? data) {
 /// (`{"ok":0,"error":"internal"}`, without the page's blocks), or an empty JSON body (the request died before the plugin
 /// printed its answer; dio reads an empty `application/json` body as null). A caller that would take an empty page for
 /// "nothing there" (the notification poll, which then moves its window on; the draft box, which then finds no account
-/// on it) treats it as a failed request.
+/// on it; a list page, which then shows an empty list) treats it as a failed request: every page asked in the JSON
+/// mode does, through [TsdmAppPageHttpExt.mapHttpPage] or [fetchTsdmAppPageHtml] where it does not check by itself.
 bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
   null => true,
   _ => switch (_tsdmAppAnswerJson(data)) {
@@ -305,3 +308,38 @@ String tsdmAppPageHtml(Object? data) {
   }
   return tsdmAppPageDocument(data).documentElement?.outerHtml ?? '';
 }
+
+/// [FPHttpExt.mapHttp] for a forum page asked in the JSON mode ([withTsdmAppJson]), given the document of the answer
+/// ([tsdmAppPageDocument]).
+///
+/// An answer without a page ([tsdmAppAnswerWithoutPage]) is a failed request like a bad status code is. Taken as the
+/// empty document it would be, the page would show an empty list (or ask the user to log in) for a forum that merely
+/// failed to answer. A JSON answer that carries a page is parsed as ever, whether its list is empty or its `ok` is 0
+/// (a forum message such as "no permission" is a page too).
+extension TsdmAppPageHttpExt on AsyncEither<Response<dynamic>> {
+  /// * Return error if any.
+  /// * Return `HttpRequestFailedException` when status code is not 200, or the answer has no page.
+  /// * Return result called on [onPage] when ok.
+  AsyncEither<T> mapHttpPage<T>(T Function(uh.Document document) onPage) => AsyncEither(
+    () async => switch (await run()) {
+      Left(:final value) => left(value),
+      Right(:final value) when value.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(value.data) => left(
+        HttpRequestFailedException(value.statusCode),
+      ),
+      Right(:final value) => right(onPage(tsdmAppPageDocument(value.data))),
+    },
+  );
+}
+
+/// The html of the forum page [url] asked of [client] in the JSON mode ([withTsdmAppJson]), for the pages that hand a
+/// page around as a string ([tsdmAppPageHtml]). Throws the failure of the request, and [HttpRequestFailedException]
+/// for an answer without a page ([tsdmAppAnswerWithoutPage]): an empty string would be read as a page without the
+/// account, a list or a form, and not as the failure it is.
+Future<String> fetchTsdmAppPageHtml(NetClientProvider client, String url) async =>
+    switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
+        value.statusCode,
+      ),
+      Right(:final value) => tsdmAppPageHtml(value.data),
+      Left(:final value) => throw value,
+    };

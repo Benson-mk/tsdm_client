@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fpdart/fpdart.dart' show Left, Right;
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
@@ -43,13 +42,7 @@ class _AchievementsPageState extends State<AchievementsPage> {
       final auth = context.read<AuthenticationRepository>();
       _cubit = AchievementsCubit(
         currentUid: () => auth.effectiveCurrentUid,
-        fetchPage: () async {
-          final result = await getIt.get<NetClientProvider>().get(withTsdmAppJson(achievementsUrl)).run();
-          return switch (result) {
-            Right(:final value) => tsdmAppPageHtml(value.data),
-            Left(:final value) => throw value,
-          };
-        },
+        fetchPage: () => fetchTsdmAppPageHtml(getIt.get<NetClientProvider>(), achievementsUrl),
       );
       _authSubscription = auth.status.listen((status) {
         _cubit.invalidate();

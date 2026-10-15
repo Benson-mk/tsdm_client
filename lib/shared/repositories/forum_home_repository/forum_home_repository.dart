@@ -86,7 +86,7 @@ final class ForumHomeRepository with LoggerMixin {
     final cookie = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>() : null;
     final uid = cookie?.userLoginInfo.uid;
     // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
-    final first = await client.get(withTsdmAppJson(homePage)).mapHttp((v) => tsdmAppPageDocument(v.data)).run();
+    final first = await client.get(withTsdmAppJson(homePage)).mapHttpPage((document) => document).run();
     if (first.isLeft()) return first;
     final document = first.unwrap();
     bool isCurrent() => cookie?.userLoginInfo.uid == uid;
@@ -114,7 +114,7 @@ final class ForumHomeRepository with LoggerMixin {
     if (refresh && isCurrent()) {
       // Not recursive: one best-effort reload updates the balance and removes the claimed packet entry.
       try {
-        final updated = await client.get(withTsdmAppJson(homePage)).mapHttp((v) => tsdmAppPageDocument(v.data)).run();
+        final updated = await client.get(withTsdmAppJson(homePage)).mapHttpPage((document) => document).run();
         if (updated.isRight() && isCurrent() && parseLoggedUidFromDocument(updated.unwrap()) == uid) return updated;
       } on Object {
         warning('daily rewards homepage reload failed; keep the original page');

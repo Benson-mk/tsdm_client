@@ -11,5 +11,5 @@ class MyThreadRepository {
   /// Asked in the JSON mode of the forum's app API, which answers the "my threads" pages (`do=thread`) since plugin
   /// 1.6.0 (roadmap item 3); an older plugin answers the web page, which parses the same.
   AsyncEither<uh.Document> fetchDocument(String url) =>
-      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttp((v) => tsdmAppPageDocument(v.data));
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage((document) => document);
 }

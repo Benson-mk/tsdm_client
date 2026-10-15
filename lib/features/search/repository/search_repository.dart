@@ -96,7 +96,8 @@ class SearchRepository with LoggerMixin {
       return left(respEither.unwrapErr());
     }
     final resp = respEither.unwrap();
-    if (resp.statusCode != HttpStatus.ok) {
+    // An answer without a page is a failed request, not a search without results (see tsdmAppAnswerWithoutPage).
+    if (resp.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(resp.data)) {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 

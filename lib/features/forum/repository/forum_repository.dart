@@ -28,7 +28,8 @@ class ForumRepository {
           return left(respEither.unwrapErr());
         }
         final resp = respEither.unwrap();
-        if (resp.statusCode != HttpStatus.ok) {
+        // An answer without a page is a failed request, not a forum without threads (see tsdmAppAnswerWithoutPage).
+        if (resp.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(resp.data)) {
           return left(HttpRequestFailedException(resp.statusCode));
         }
         return right(tsdmAppPageDocument(resp.data));
@@ -88,7 +89,6 @@ class ForumRepository {
   AsyncEither<ForumGroup?> fetchForumGroup(String gid) => getIt
       .get<NetClientProvider>()
       .get(withTsdmAppJson('$baseUrl/forum.php?gid=$gid'))
-      .mapHttp((v) => tsdmAppPageDocument(v.data))
-      .map(buildGroupListFromDocument)
+      .mapHttpPage(buildGroupListFromDocument)
       .map((v) => v.firstOrNull);
 }
