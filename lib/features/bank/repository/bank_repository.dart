@@ -1,6 +1,8 @@
 import 'package:fpdart/fpdart.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/bank/models/bank_data.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
@@ -11,9 +13,17 @@ class BankRepository {
   BankRepository({required this.getPage, required this.postForm});
 
   /// Uses the existing account-bound client and string-only Android form encoding.
+  ///
+  /// Pages are asked in the JSON mode of the forum's app API (plugin 1.7.0): the blocks the parsers read, the
+  /// `discuz_uid` the identity check reads included, without header, footer and sidebar. With an older plugin the
+  /// parameter is ignored and the web page comes back. A JSON answer without a page ([tsdmAppAnswerWithoutPage]) is a
+  /// failed request, not a page without the account. Forms are posted as before.
   factory BankRepository.network(NetClientProvider client) => BankRepository(
-    getPage: (url) async => switch (await client.get(url).run()) {
-      Right(:final value) => value.data as String,
+    getPage: (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
+        value.statusCode,
+      ),
+      Right(:final value) => tsdmAppPageHtml(value.data),
       Left(:final value) => throw value,
     },
     postForm: (url, body) async => switch (await client.postForm(url, data: body, singleAttempt: true).run()) {

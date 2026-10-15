@@ -7,7 +7,9 @@
 ///   The card now shows the form of the page; it asks the forum only when the page does not hold it, or holds it for
 ///   another account. Voting still asks once for the results.
 /// * Points and bank pages are asked in the JSON mode of the forum's app API (`tsdmapp=json`, plugin 1.7.0); an older
-///   plugin ignores the parameter and the web page comes back. Both give the same, the forms are posted as before.
+///   plugin ignores the parameter and the web page comes back. Both give the same, the forms are posted as before. An
+///   answer without a page is a failed load. A forum whose plugin does not handle the bank leaves the parameter in the
+///   request, and a link the bank builds from the current url may carry it: it is not part of the link.
 ///
 /// The forum pages are synthetic (grounded in the Discuz templates), no real account or network.
 library;
@@ -22,10 +24,15 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart' hide State;
 import 'package:go_router/go_router.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/bank/models/bank_data.dart';
+import 'package:tsdm_client/features/bank/repository/bank_repository.dart';
 import 'package:tsdm_client/features/blocking/cubit/user_block_cubit.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
 import 'package:tsdm_client/features/blocking/utils/thread_author_cache.dart';
@@ -33,6 +40,10 @@ import 'package:tsdm_client/features/favorite/repository/favorite_repository.dar
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
+import 'package:tsdm_client/features/points/models/models.dart';
+import 'package:tsdm_client/features/points/repository/model/models.dart';
+import 'package:tsdm_client/features/points/repository/points_repository.dart';
+import 'package:tsdm_client/features/points/utils/parse_points.dart';
 import 'package:tsdm_client/features/poll/cubit/poll_cubit.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
@@ -55,6 +66,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/widgets/card/poll_card.dart';
+import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 import 'tsdmapp_page_cut.dart';
@@ -254,6 +266,242 @@ Future<void> _dispose(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 5));
 }
+
+/// The frame of a Discuz X5 page served to [uid] around [main] (`#pt`, `#ct`…): the head declaring `discuz_uid`, the
+/// header user node and the footer, which the JSON answer drops.
+String _framed(String main, {int uid = 1000}) =>
+    '''
+<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>Synthetic - Powered by Discuz!</title>
+<script type="text/javascript">var STYLEID = '2', STATICURL = 'static/', discuz_uid = '$uid', cookiepre = 'x_';</script>
+</head><body>
+<div id="hd"><div class="wp"><div class="hdc cl"><div id="um">
+<p><strong class="vwmy"><a href="home.php?mod=space&amp;uid=$uid" target="_blank" title="访问我的空间">Alice</a></strong></p>
+<p><a href="plugin.php?id=bank_ane:bank">银行</a> <a href="home.php?mod=spacecp&amp;ac=credit&amp;showcredit=1">积分: 31669</a></p>
+</div></div></div></div>
+<div id="wp" class="wp">
+$main
+</div>
+<div id="ft" class="wp cl">Footer<script src="home.php?mod=spacecp&amp;ac=pm&amp;op=checknewpm&amp;rand=1" type="text/javascript"></script></div>
+</body></html>''';
+
+/// The settings column of a `home.php?mod=spacecp` page (the template `spacecp_footer`), beside the main column.
+const _spacecpSide = '''
+<div class="appl"><div class="tbn"><h2 class="mt bbda">设置</h2><ul>
+<li><a href="home.php?mod=spacecp&amp;ac=profile">个人资料</a></li>
+<li class="a"><a href="home.php?mod=spacecp&amp;ac=credit">积分</a></li>
+</ul></div></div>''';
+
+/// A row of the credit log table: [operation], [change] of 天使币, [time].
+String _creditRow(String operation, String change, String time) =>
+    '''
+<tr><td><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=log&amp;optype=RPC">$operation</a></td>
+<td>天使币 <span class="${change.startsWith('-') ? 'xg1' : 'xi1'}">$change</span></td><td>天使币 105</td>
+<td><a href="forum.php?mod=redirect&amp;goto=findpost&amp;pid=1&amp;ptid=$_tid" target="_blank">Synthetic thread</a></td>
+<td>$time</td></tr>''';
+
+/// The credit page `op=base` (templates `spacecp_header`, `spacecp_credit_header`, `spacecp_credit_base`).
+final String _creditBase = _framed('''
+<div id="pt" class="bm cl"><div class="z"><a href="./" class="nvhm" title="首页">Synthetic</a> <em>&rsaquo;</em>
+<a href="home.php?mod=spacecp">设置</a> <em>&rsaquo;</em> 积分</div></div>
+<div id="ct" class="ct2_a wp cl">
+<div class="mn"><div class="bm bw0">
+<h1 class="mt">积分</h1>
+<ul class="tb cl"><li class="a"><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=base">我的积分</a></li>
+<li><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=log">积分记录</a></li></ul>
+<ul class="creditl mtm bbda cl">
+<li class="xi1 cl"><em> 天使币: </em>10532  &nbsp; </li>
+<li><em> 威望: </em>3 </li>
+<li class="cl"><em>积分: </em>31669 <span class="xg1">( <u>总积分</u>=<u>威望</u> )</span></li>
+</ul>
+<table summary="积分记录" cellspacing="0" cellpadding="0" class="dt mtm">
+<caption><h2 class="mbm xs2"><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=log" class="xi2 xs1 xw0 y">查看更多&raquo;</a>积分记录</h2></caption>
+<tr><th width="80">操作</th><th width="80">积分变更</th><th width="80">变更后积分</th><th>详情</th><th width="110">变更时间</th></tr>
+${_creditRow('评分', '+5', '2026-10-14 08:00')}
+${_creditRow('评分', '-2', '2026-10-13 21:30')}
+</table>
+</div></div>
+$_spacecpSide
+</div>''');
+
+/// The credit page `op=log` (template `spacecp_credit_log`), page [page] of 3.
+String _creditLog({int page = 1}) => _framed('''
+<div id="pt" class="bm cl"><div class="z"><a href="./" class="nvhm" title="首页">Synthetic</a> <em>&rsaquo;</em>
+<a href="home.php?mod=spacecp">设置</a> <em>&rsaquo;</em> 积分</div></div>
+<div id="ct" class="ct2_a wp cl">
+<div class="mn"><div class="bm bw0">
+<h1 class="mt">积分</h1>
+<ul class="tb cl"><li><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=base">我的积分</a></li>
+<li class="a"><a href="home.php?mod=spacecp&amp;ac=credit&amp;op=log">积分记录</a></li></ul>
+<form method="post" action="home.php?mod=spacecp&amp;ac=credit&amp;op=log">
+<div class="exfm" style="margin-top: 0;"><table cellspacing="0" cellpadding="0">
+<tr><th>积分:</th><td><span class="ftid"><select id="exttype" name="exttype" class="ps" width="168">
+<option value="0">不限</option><option value="1">威望</option><option value="2">天使币</option></select></span></td></tr>
+<tr><th>收支:</th><td><span class="ftid"><select id="income" name="income" class="ps" width="168">
+<option value="0">不限</option><option value="-1">支出</option><option value="1">收入</option></select></span></td>
+<th>操作:</th><td><span class="ftid"><select id="optype" name="optype" class="ps" width="168">
+<option value="">不限</option><option value="RPC">评分</option><option value="TRC">任务奖励</option></select></span></td></tr>
+</table></div>
+<table summary="积分收支" cellspacing="0" cellpadding="0" class="dt">
+<tr><th width="80">操作</th><th width="80">积分变更</th><th width="80">变更后积分</th><th>详情</th><th width="110">变更时间</th></tr>
+${_creditRow('评分', '+$page', '2026-10-14 08:00')}
+${_creditRow('任务奖励', '+10', '2026-10-12 09:15')}
+</table>
+<input type="hidden" name="op" value="log" /><input type="hidden" name="ac" value="credit" />
+<input type="hidden" name="mod" value="spacecp" />
+</form>
+<div class="pgs cl mtm"><div class="pg">${page == 1 ? '' : '<a href="home.php?mod=spacecp&amp;op=log&amp;ac=credit&amp;page=${page - 1}" class="prev">&nbsp;&nbsp;</a>'}
+<strong>$page</strong><a href="home.php?mod=spacecp&amp;op=log&amp;ac=credit&amp;page=${page + 1}">${page + 1}</a>
+<label><input type="text" name="custompage" class="px" size="2" title="输入页码，按回车快速跳转" value="$page" /><span title="共 3 页"> / 3 页</span></label>
+<a href="home.php?mod=spacecp&amp;op=log&amp;ac=credit&amp;page=${page + 1}" class="nxt">下一页</a></div></div>
+</div></div>
+$_spacecpSide
+</div>''');
+
+/// A bank page (`plugin.php?id=bank_ane:bank…`) of the bank plugin around [content] (its tables and forms, as in tests
+/// 120 to 125), with its account column (`div.tbn`: the wallet in the bank's currency) in the page's main block.
+String _bankPage(String content, {int uid = 1000}) => _framed('''
+<div id="pt" class="bm cl"><div class="z"><a href="./" class="nvhm" title="首页">Synthetic</a> <em>&rsaquo;</em>
+<a href="plugin.php?id=bank_ane:bank">银行</a></div></div>
+<div id="ct" class="wp cl">
+<div class="tbn"><h2>账户信息</h2><ul><li><span><b>4321</b> (银行货币)</span><font color="red">示例币:</font></li></ul></div>
+$content
+</div>''', uid: uid);
+
+const _bankForm = '''
+<form method="post" action="plugin.php?id=bank_ane:bank">
+<input type="hidden" name="bankid" value="1">
+<input type="hidden" name="action" value="cur">
+<input type="hidden" name="formhash" value="hashOf1000">
+<input type="text" name="banknum">
+<input type="radio" name="op" value="in"><input type="radio" name="op" value="out">
+<input type="password" name="bankpass">
+<button type="submit" name="banksubmit" value="true">提交</button>
+</form>''';
+
+final String _bankDirectory = _bankPage('''
+<table id="ttt"><thead class="colplural"><tr><td colspan="3"><h2>银行列表</h2></td></tr></thead>
+<tbody>
+<tr><td>logo</td><td><span>银行名称</span>: <span>Example Bank</span><br>
+<span>银行行长</span>: <span>Example Manager</span>,<br><span>银行简介</span>: Example description</td>
+<td><a href="plugin.php?id=bank_ane:bank&amp;bankid=1"><em>进入银行</em></a><br><span>(已开户)</span></td></tr>
+<tr><td>logo</td><td>银行名称: Another Bank<br>银行行长: Example<br>银行简介: Second description</td>
+<td><a href="plugin.php?id=bank_ane:bank&amp;bankid=2">进入银行</a></td></tr>
+</tbody></table>''');
+
+final String _bankSavings = _bankPage('''
+<table id="ttt"><thead class="colplural"><tr><td><h2>活期储蓄</h2></td></tr></thead><tbody>
+<tr><td class="footoperation">您当前的存款金额为 200 ，活期利率为0.1‰，计息时间从2026-01-01开始。</td></tr>
+<tr><td>$_bankForm</td></tr>
+<tr><td><form><p>您当前可得利息 3 <a href="plugin.php?id=bank_ane:bank&amp;action=unknown">手动结息</a></p></form></td></tr>
+<tr><td class="footoperation">注意事项</td></tr><tr><td><p>利率可能变化。</p><p>存取款时自动结息。</p></td></tr>
+</tbody></table>''');
+
+/// The own records of bank 1, page 1, with the link to page 2 as [next] gives it.
+String _bankLogs({String next = 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;page=2'}) =>
+    _bankPage('''
+<table id="ttt"><thead class="colplural"><tr><td><h2>理财日志</h2></td></tr></thead><tbody>
+<tr><td>My and received tabs</td></tr><tr><td>Filters</td></tr><tr><td>
+<table id="ttt"><tbody>
+<tr><td>Info: 示例存款 10 示例币</td><td>Time: 2026-01-01 12:34:56</td><td>Ip: 192.0.2.123</td></tr>
+<tr><td>Info: 示例取款 2 示例币</td><td>Time: 2026-01-02 12:34:56</td><td>Ip: 2001:db8::1</td></tr>
+</tbody></table>
+</td></tr><tr><td><div class="pg"><a class="nxt" href="$next">下一页</a></div></td></tr>
+</tbody></table>''');
+
+/// A service page of bank 1 (the remittance), with its form.
+final String _bankRemittance = _bankPage('''
+<table id="ttt"><thead><tr><td><h2>账户汇款</h2></td></tr></thead><tbody>
+<tr><td class="footoperation">当前汇款手续费率为2‰，欢迎使用本行汇款业务。</td></tr>
+<tr><td><form method="post" action="plugin.php?id=bank_ane:bank">
+<input type="hidden" name="bankid" value="1"><input type="hidden" name="action" value="chg">
+<input type="hidden" name="op" value="ok"><input type="hidden" name="formhash" value="hashOf1000">
+<input type="text" name="banknum"><input type="text" name="touser"><input type="password" name="bankpass">
+<button type="button" name="taxcheck" value="true">费用计算</button>
+<button type="submit" name="banksubmit" value="true">提 交</button></form></td></tr>
+<tr><td class="footoperation">账户记录</td></tr>
+<tr><td><table id="ttt"><tr><td><br><center>还没有相关数据。</center><br></td></tr></table></td></tr>
+<tr><td class="footoperation">注意事项</td></tr><tr><td>请核对操作，提交后查看记录。</td></tr>
+</tbody></table>''');
+
+/// The forum of the points and bank pages: answers every GET with [page] for the url asked, as the web page, or as
+/// the app API plugin 1.7.0 answers it in JSON mode ([json], page type [type]); a form post with "accepted".
+final class _PageForum implements HttpClientAdapter {
+  _PageForum(this.page, {required this.json, required this.type});
+
+  final String Function(Uri uri) page;
+  final bool json;
+  final String type;
+
+  /// Answer every GET with this body instead, as JSON.
+  String? jsonAnswer;
+
+  final requests = <RequestOptions>[];
+
+  List<RequestOptions> get gets => requests.where((r) => r.method == 'GET').toList();
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    final String body;
+    final bool asJson;
+    if (options.method == 'POST') {
+      (body, asJson) = ('<html><body>Accepted</body></html>', false);
+    } else if (jsonAnswer != null) {
+      (body, asJson) = (jsonAnswer!, true);
+    } else {
+      final html = page(options.uri);
+      asJson = json && options.uri.queryParameters['tsdmapp'] == 'json';
+      body = asJson ? pageAnswerOf(html, type) : html;
+    }
+    return ResponseBody.fromString(
+      body,
+      200,
+      headers: {
+        Headers.contentTypeHeader: [if (asJson) 'application/json; charset=utf-8' else 'text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+NetClientProvider _pageClient(_PageForum forum) =>
+    NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum);
+
+/// Run [fetch] against the web page and the JSON answer of plugin 1.7.0 of [page]: both give the same [view], every
+/// GET asks the JSON mode. Returns the view.
+Future<Object?> _sameFromBoth<T>(
+  String Function(Uri uri) page,
+  String type,
+  Future<T> Function(NetClientProvider client) fetch,
+  Object? Function(T value) view,
+) async {
+  final views = <Object?>[];
+  for (final json in [false, true]) {
+    final forum = _PageForum(page, json: json, type: type);
+    views.add(view(await fetch(_pageClient(forum))));
+    expect(forum.gets, isNotEmpty);
+    for (final r in forum.gets) {
+      expect(r.uri.queryParameters['tsdmapp'], 'json', reason: '${r.uri}');
+    }
+  }
+  expect(views.last, views.first, reason: 'the JSON answer gives what the web page gives');
+  return views.first;
+}
+
+/// What a points page shows of [change].
+String _change(PointsChange change) =>
+    '${change.operation}|${change.operationFilterUrl}|${change.pointsChangeType.name}|${change.changeMap}|'
+    '${change.detail}|${change.redirectUrl}|${change.time}';
+
+/// What the plugin answers when it failed to build the page.
+const _withoutPage = '{"ok":0,"error":"internal"}';
 
 /// Choose the first option of the card and send the vote.
 Future<void> _vote(WidgetTester tester) async {
@@ -623,5 +871,186 @@ void main() {
         await _dispose(tester);
       });
     }
+  });
+
+  group('points pages in JSON mode', () {
+    Future<T> withClient<T>(NetClientProvider client, Future<T> Function() run) async {
+      getIt.registerFactory<NetClientProvider>(() => client);
+      try {
+        return await run();
+      } finally {
+        getIt.unregister<NetClientProvider>();
+      }
+    }
+
+    Object? statistics(Either<AppException, uh.Document> page) {
+      final (points, changes) = parseStatisticsDocument(page.getOrElse((e) => fail('$e')))!;
+      return [points, changes.map(_change).toList()];
+    }
+
+    test('statistics: the same points and recent changes', () async {
+      final view = await _sameFromBoth(
+        (_) => _creditBase,
+        'credit',
+        (client) => withClient(client, () => PointsRepository().fetchStatisticsPage().run()),
+        statistics,
+      );
+      final [points, changes] = view! as List<Object?>;
+      expect(points, {'天使币': '10532', '威望': '3', '积分': '31669'});
+      expect(changes, hasLength(2));
+    });
+
+    test('changelog: the same changes, filters and pages, the filter and page in the url as before', () async {
+      const parameter = ChangelogParameter(
+        extType: '2',
+        operation: 'RPC',
+        changeType: '1',
+        startTime: '',
+        endTime: '',
+        pageNumber: 2,
+      );
+      final asked = <Uri>[];
+      final view = await _sameFromBoth(
+        (uri) {
+          asked.add(uri);
+          return _creditLog(page: int.parse(uri.queryParameters['page']!));
+        },
+        'credit',
+        (client) => withClient(client, () => PointsRepository().fetchChangelogPage(parameter).run()),
+        (page) {
+          final document = page.getOrElse((e) => fail('$e'));
+          return [
+            buildChangeListFromTable(document.querySelector('table.dt')!).map(_change).toList(),
+            document.currentPage(),
+            document.totalPages(),
+            parseAllParameters(document),
+          ];
+        },
+      );
+      final [changes, current, total, filters] = view! as List<Object?>;
+      expect(changes, hasLength(2));
+      expect((current, total), (2, 3));
+      expect((filters! as ChangelogAllParameters).operationTypeList, hasLength(3));
+      for (final uri in asked) {
+        expect(uri.queryParameters, containsPair('mod', 'spacecp'));
+        expect(uri.queryParameters, containsPair('op', 'log'));
+        expect(uri.queryParameters, containsPair('exttype', '2'));
+        expect(uri.queryParameters, containsPair('optype', 'RPC'));
+        expect(uri.queryParameters, containsPair('income', '1'));
+        expect(uri.queryParameters, containsPair('page', '2'));
+      }
+    });
+
+    test('an answer without a page is a failed load, not a page without points', () async {
+      final forum = _PageForum((_) => _creditBase, json: true, type: 'credit')..jsonAnswer = _withoutPage;
+      final result = await withClient(_pageClient(forum), () => PointsRepository().fetchStatisticsPage().run());
+      expect(result.isLeft(), isTrue);
+      final log = await withClient(
+        _pageClient(forum),
+        () => PointsRepository().fetchChangelogPage(const ChangelogParameter.empty()).run(),
+      );
+      expect(log.isLeft(), isTrue);
+    });
+  });
+
+  group('bank pages in JSON mode', () {
+    String bankPageOf(Uri uri) => switch ((uri.queryParameters['bankid'], uri.queryParameters['action'])) {
+      (null, _) => _bankDirectory,
+      (_, 'cur') => _bankSavings,
+      (_, 'log') => _bankLogs(),
+      (_, 'chg') => _bankRemittance,
+      final other => fail('unexpected bank page $other'),
+    };
+
+    test('directory, savings, records and a service: the same from the web page and the JSON answer', () async {
+      final directory = await _sameFromBoth(
+        bankPageOf,
+        'plugin',
+        (client) => BankRepository.network(client).fetchDirectory(1000),
+        (d) => [for (final b in d.banks) '${b.id}|${b.name}|${b.description}|${b.hasAccount}'],
+      );
+      expect(directory, hasLength(2));
+      final savings = await _sameFromBoth(
+        bankPageOf,
+        'plugin',
+        (client) => BankRepository.network(client).fetchSavings(1, 1000),
+        (s) => [s.summary, s.interest, s.notices, s.currency, s.walletBalance, s.form?.action, s.form?.fields],
+      );
+      expect((savings! as List).sublist(3), [
+        '示例币',
+        '4321',
+        '$baseUrl/plugin.php?id=bank_ane:bank',
+        {'bankid': '1', 'action': 'cur', 'formhash': 'hashOf1000', 'banksubmit': 'true'},
+      ], reason: 'the currency of the account column: the form is usable');
+      final logs = await _sameFromBoth(
+        bankPageOf,
+        'plugin',
+        (client) => BankRepository.network(client).fetchLogs(1, 1000),
+        (l) => [for (final e in l.entries) '${e.message}|${e.time}', l.hasNext],
+      );
+      expect(logs, ['示例存款 10 示例币|2026-01-01 12:34:56', '示例取款 2 示例币|2026-01-02 12:34:56', true]);
+      final service = await _sameFromBoth(
+        bankPageOf,
+        'plugin',
+        (client) => BankRepository.network(client).fetchService(BankService.remittance, 1000, bankId: 1),
+        (d) => [
+          for (final b in d.blocks) b.text,
+          for (final f in d.forms) '${f.action}|${f.hidden}|${f.inputs}',
+          d.currency,
+          d.feeRate,
+          d.unsupportedForms,
+        ],
+      );
+      expect((service! as List).sublist((service as List).length - 3), ['示例币', '2', false]);
+    });
+
+    test('a transaction is posted as before, not in JSON mode', () async {
+      final forum = _PageForum(bankPageOf, json: true, type: 'plugin');
+      final repo = BankRepository.network(_pageClient(forum));
+      final savings = await repo.fetchSavings(1, 1000);
+      await repo.submit(savings.form!, BankOperation.deposit, '10', 'synthetic-password');
+      expect(forum.requests.last.method, 'POST');
+      expect(forum.requests.last.uri.queryParameters['id'], 'bank_ane:bank');
+      expect(forum.requests.last.uri.queryParameters['tsdmapp'], isNull);
+    });
+
+    test('a page of another account, or an answer without a page, is refused', () async {
+      final other = _PageForum((_) => _bankPage('', uid: 1001), json: true, type: 'plugin');
+      await expectLater(
+        BankRepository.network(_pageClient(other)).fetchDirectory(1000),
+        throwsA(isA<FormatException>()),
+      );
+      final broken = _PageForum(bankPageOf, json: true, type: 'plugin')..jsonAnswer = _withoutPage;
+      await expectLater(
+        BankRepository.network(_pageClient(broken)).fetchDirectory(1000),
+        throwsA(isA<HttpRequestFailedException>()),
+        reason: 'a failed request, not a page without the account',
+      );
+    });
+
+    test('a forum whose app API does not handle the bank leaves the parameter in the links it builds', () async {
+      // Before plugin 1.7.0 the forum renders the page with `tsdmapp=json` still in the request.
+      final forum = _PageForum(
+        (_) => _bankLogs(
+          next: 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;tsdmapp=json&amp;page=2',
+        ),
+        json: false,
+        type: 'plugin',
+      );
+      final logs = await BankRepository.network(_pageClient(forum)).fetchLogs(1, 1000);
+      expect(logs.hasNext, isTrue, reason: 'still the next page of the same records');
+      expect(
+        parseBankLogs(
+          parseHtmlDocument(
+            _bankLogs(next: 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;x=1&amp;page=2'),
+          ),
+          bankId: 1,
+          received: false,
+          page: 1,
+        ).hasNext,
+        isFalse,
+        reason: 'any other parameter still makes it a link of something else',
+      );
+    });
   });
 }
