@@ -30,6 +30,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/html/review_parser.dart';
 import 'package:tsdm_client/widgets/card/review_card.dart';
+import 'package:tsdm_client/widgets/text_widget_span.dart';
 import 'package:universal_html/parsing.dart';
 
 class _LoginRepository extends AuthenticationRepository {
@@ -94,7 +95,8 @@ void main() {
     Future<List<ReviewCard>> render(String inner) async {
       final cards = <ReviewCard>[];
       void collect(InlineSpan span) {
-        if (span is WidgetSpan && span.child is ReviewCard) cards.add(span.child as ReviewCard);
+        // Cards are built without a text scale of their own, the span scales them.
+        if (span case WidgetSpan(child: TextWidgetSpanChild(child: final ReviewCard card))) cards.add(card);
         if (span is TextSpan) {
           span.children?.forEach(collect);
         }

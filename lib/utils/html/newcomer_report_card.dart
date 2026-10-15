@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/widgets/text_widget_span.dart';
 
 /// Table info in newcomer report table.
 ///
@@ -32,8 +33,8 @@ class NewcomerReportInfo {
 /// of the card. Values take the rest of the row and wrap, the card never scrolls horizontally. An empty value shows
 /// "-" like the website does.
 ///
-/// In a post the card sits in a [WidgetSpan], which already scales it by the text scale of the post: build it with
-/// [MediaQuery.withNoTextScaling] there, or its text is scaled twice.
+/// In a post the card sits in a [WidgetSpan], which already scales it by the text scale of the post: put it in the post
+/// with [textWidgetSpan], or its text is scaled twice.
 class NewcomerReportCard extends StatelessWidget {
   /// Constructor.
   const NewcomerReportCard(this.data, {this.title, super.key});
