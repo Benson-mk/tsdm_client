@@ -245,13 +245,17 @@ uh.Document tsdmAppPageDocument(Object? data) {
 }
 
 /// Whether a forum page answer [data] has no page at all: a JSON answer the plugin failed to build
-/// (`{"ok":0,"error":"internal"}`, without the page's blocks), or an empty JSON body (the request died before the plugin
-/// printed its answer; dio reads an empty `application/json` body as null). A caller that would take an empty page for
-/// "nothing there" (the notification poll, which then moves its window on; the draft box, which then finds no account
-/// on it; a list page, which then shows an empty list) treats it as a failed request: every page asked in the JSON
-/// mode does, through [TsdmAppPageHttpExt.mapHttpPage] or [fetchTsdmAppPageHtml] where it does not check by itself.
+/// (`{"ok":0,"error":"internal"}`, without the page's blocks), an empty JSON body (the request died before the plugin
+/// printed its answer; dio reads an empty `application/json` body as null), or a blank one served as a web page (a PHP
+/// fatal error with the errors hidden, a proxy that cut the answer: dio reads it as an empty string). No forum page is
+/// blank, and a blank JSON body is not read at all: dio throws on it, which is a failed request already. A caller that
+/// would take an empty page for "nothing there" (the notification poll, which then moves its window on; the draft box,
+/// which then finds no account on it; a list page, which then shows an empty list) treats it as a failed request: every
+/// page asked in the JSON mode does, through [TsdmAppPageHttpExt.mapHttpPage] or [fetchTsdmAppPageHtml] where it does
+/// not check by itself.
 bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
   null => true,
+  final String text when text.trim().isEmpty => true,
   _ => switch (_tsdmAppAnswerJson(data)) {
     final Map<dynamic, dynamic> json => json['document'] is! String,
     _ => false,

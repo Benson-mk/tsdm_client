@@ -9,8 +9,9 @@
 /// For each caller, four things hold:
 ///
 /// * a network error is a failure (the state every other failure is shown as);
-/// * an answer without a page is that same failure: an empty body, a blank one, and `{"ok":0,"error":"internal"}`
-///   (the plugin failed to build the page);
+/// * an answer without a page is that same failure: an empty body (served as JSON, read as null; a JSON `null`; served
+///   as a web page, read as an empty string), a blank web page, and `{"ok":0,"error":"internal"}` (the plugin failed to
+///   build the page);
 /// * an ordinary answer with an empty list is not a failure, and is the same as the web page served for it;
 /// * a forum message (`{"ok":0,"error":"message","document":…}`: no permission, please log in) is a page too: it gives
 ///   the same as the web page of that message, as it always did.
@@ -22,6 +23,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,6 +52,7 @@ import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/profile/repository/my_titles_repository.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/search/repository/search_repository.dart';
+import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/title_shop/models/title_shop.dart';
 import 'package:tsdm_client/features/title_shop/repository/title_shop_repository.dart';
@@ -61,6 +64,8 @@ import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dar
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:universal_html/html.dart' as uh;
 
@@ -419,13 +424,19 @@ void main() {
       test(caller.name, () async {
         expect(await _stateOf(caller, const _NetworkError()), 'failure', reason: 'a network error');
         for (final (label, reply) in [
-          // dio reads an empty `application/json` body as null.
+          // dio reads an empty `application/json` body, and a JSON `null`, as null.
           ('an empty body', const _Json('')),
-          ('a blank body', const _Json(' \n')),
+          ('a null body', const _Json('null')),
+          // An empty body served as a web page is an empty string to dio (a PHP fatal error with the errors hidden).
+          ('an empty web page', const _Html('')),
+          ('a blank web page', const _Html(' \n')),
           ('a failed build', _jsonOf({'ok': 0, 'error': 'internal'})),
         ]) {
           expect(await _stateOf(caller, reply), 'failure', reason: label);
         }
+        // A control, not a guard of the fix: a blank body served as JSON is not JSON, dio throws on it and that is a
+        // failed request (a transport failure) whatever the app does with an answer.
+        expect(await _stateOf(caller, const _Json(' \n')), 'failure', reason: 'a blank JSON body (dio throws)');
       });
     }
   });
@@ -441,6 +452,72 @@ void main() {
         }
       });
     }
+  });
+
+  group('the profile of the logged user', () {
+    late AppDatabase db;
+    late StorageProvider storage;
+    late SettingsRepository settings;
+
+    setUp(() async {
+      db = AppDatabase(NativeDatabase.memory());
+      storage = StorageProvider(db, {}, {});
+      settings = SettingsRepository(storage);
+      getIt
+        ..registerSingleton<StorageProvider>(storage)
+        ..registerSingleton<SettingsRepository>(settings);
+      await settings.init();
+      await settings.setValue<int>(SettingsKeys.loginUid, _uid);
+      await settings.setValue<String>(SettingsKeys.loginUsername, 'Alice');
+      TsdmAppApi.reset();
+    });
+
+    tearDown(() async {
+      await getIt.unregister<SettingsRepository>();
+      await getIt.unregister<StorageProvider>();
+      await settings.dispose();
+      await db.close();
+    });
+
+    const profileBlocks =
+        '<div id="uhd"><div class="icn avt"><img data-src="data/avatar/000/00/10/00_avatar_middle.jpg" /></div></div>';
+
+    test('an answer without a page is not remembered as the profile, nor read as a logged out page', () async {
+      for (final (label, reply) in [
+        ('an empty body', const _Json('')),
+        ('an empty web page', const _Html('')),
+        ('a failed build', _jsonOf({'ok': 0, 'error': 'internal'})),
+      ]) {
+        _serve(_Forum(reply));
+        final repo = ProfileRepository();
+        expect(
+          (await repo.fetchProfile().run()).getLeft().toNullable(),
+          isA<HttpRequestFailedException>(),
+          reason: label,
+        );
+        expect(repo.hasCache(), isFalse, reason: '$label: an empty document is not the profile of the account');
+        // The avatar of the homepage asks for the page: a guest page there means the session expired.
+        expect(
+          (await repo.fetchAvatarUrl(force: true).run()).getLeft().toNullable(),
+          isA<HttpRequestFailedException>(),
+          reason: '$label: a failed request, not ProfileNeedLoginException',
+        );
+      }
+    });
+
+    test('the page of the forum is remembered, and a guest page is still a logged out page', () async {
+      _serve(_Forum(_Html(_page(profileBlocks))));
+      final repo = ProfileRepository();
+      expect((await repo.fetchProfile().run()).isRight(), isTrue);
+      expect(repo.hasCache(), isTrue);
+      expect((await repo.fetchAvatarUrl(force: true).run()).getRight().toNullable(), endsWith('00_avatar_middle.jpg'));
+
+      _serve(_Forum(const _Html('<html><body><form id="lsform"></form></body></html>')));
+      expect(
+        (await repo.fetchAvatarUrl(force: true).run()).getLeft().toNullable(),
+        isA<ProfileNeedLoginException>(),
+      );
+    });
   });
 
   group('the achievements page and the medal centre', () {
@@ -471,10 +548,13 @@ void main() {
     ];
 
     for (final (name, page) in pages) {
-      testWidgets('$name: a network error and an empty body give the failure with its retry', (tester) async {
+      testWidgets('$name: a network error and an answer without a page give the failure with its retry', (
+        tester,
+      ) async {
         for (final (label, reply) in [
           ('a network error', const _NetworkError()),
           ('an empty body', const _Json('')),
+          ('an empty web page', const _Html('')),
           ('a failed build', _jsonOf({'ok': 0, 'error': 'internal'})),
         ]) {
           await open(tester, page, reply);
