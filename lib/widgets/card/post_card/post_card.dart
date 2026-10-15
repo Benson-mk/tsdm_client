@@ -520,7 +520,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         _buildPostBody(context),
         // 红包 if any.
         if (widget.post.locked.isNotEmpty) ...widget.post.locked.where((e) => e.isValid()).map(LockedCard.new),
-        if (widget.post.hasPoll) PollCard(widget.post.postID),
+        if (widget.post.poll case final poll?) PollCard(widget.post.postID, fromPage: poll),
         if (widget.post.packetUrl != null) ...[
           sizedBoxW12H12,
           PacketCard(widget.post.packetUrl!, allTaken: widget.post.packetAllTaken),

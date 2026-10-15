@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
+import 'package:universal_html/parsing.dart';
 
 /// Ephemeral poll UI state; never saved to disk.
 final class PollState {
@@ -57,6 +58,26 @@ class PollCubit extends Cubit<PollState> {
   }
 
   bool _current(int generation, int? uid) => !isClosed && generation == _generation && uid == currentUid();
+
+  /// Show the poll [form] of the page the post was read from, a page served to [servedUid], without asking the forum:
+  /// the thread page already loaded it for the account in use.
+  ///
+  /// False when it cannot be shown: the page belongs to another account than the current one (the account changed
+  /// since), the caller then loads instead. The form is checked the way [PollRepository.fetch] checks a page.
+  bool adopt(String form, {required int? servedUid}) {
+    final uid = currentUid();
+    final ForumPoll poll;
+    try {
+      poll = PollRepository.pollOfPage(parseHtmlDocument(form), servedUid: servedUid, uid: uid);
+    } on FormatException {
+      return false;
+    }
+    _generation++;
+    // Votes go out through a client bound to the account the form belongs to, as after a load.
+    _loadedRepository = repository();
+    emit(PollState(poll: poll, uid: uid));
+    return true;
+  }
 
   /// Reload by GET only. Never repeat a failed/ambiguous submission here.
   Future<void> load() async {

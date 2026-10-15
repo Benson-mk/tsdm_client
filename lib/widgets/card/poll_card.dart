@@ -8,23 +8,36 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
+import 'package:tsdm_client/features/authentication/utils/account_changes.dart';
 import 'package:tsdm_client/features/poll/cubit/poll_cubit.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
+import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Ordinary poll embedded in the first post, shared by both thread readers.
+///
+/// The page holding the post already holds the poll form ([fromPage]): the card shows it and asks the forum for the
+/// post's page only when it has to, which is when the form is not there, or is there for another account than the
+/// current one, on refresh, and once after a vote for the results. In the thread page the card does not follow the
+/// account: the page reloads for a new one and builds its floors, this card included, afresh (every card asked for
+/// the whole thread page again on each account status, twice when created). Elsewhere (the post of a notice) nothing
+/// reloads the post, the card loads again itself when the account changed.
 class PollCard extends StatefulWidget {
   /// [controller] permits deterministic UI tests; production creates its own.
-  const PollCard(this.pid, {super.key, this.controller});
+  const PollCard(this.pid, {super.key, this.fromPage, this.controller});
 
   /// First post identifier used by the forum redirect route.
   final String pid;
+
+  /// The poll form of the page the post was read from, null when not known.
+  final PostPoll? fromPage;
 
   /// Optional test controller, owned by its caller.
   final PollCubit? controller;
@@ -45,26 +58,37 @@ class _PollCardState extends State<PollCard> {
   void _start() {
     if (widget.controller case final controller?) {
       _cubit = controller;
-    } else {
-      final auth = context.read<AuthenticationRepository>();
-      _cubit = PollCubit(
-        url: '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=${Uri.encodeQueryComponent(widget.pid)}',
-        currentUid: () => auth.effectiveCurrentUid,
-        repository: () => PollRepository.network(getIt.get<NetClientProvider>()),
-      );
-      _authSubscription = auth.status.listen((status) {
-        _cubit.invalidate();
-        if (status is! AuthStatusLoading) unawaited(_cubit.load());
-      });
+      unawaited(_cubit.load());
+      return;
     }
-    unawaited(_cubit.load());
+    final auth = context.read<AuthenticationRepository>();
+    _cubit = PollCubit(
+      url: '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=${Uri.encodeQueryComponent(widget.pid)}',
+      currentUid: () => auth.effectiveCurrentUid,
+      repository: () => PollRepository.network(getIt.get<NetClientProvider>()),
+    );
+    final page = widget.fromPage;
+    if (page == null || !_cubit.adopt(page.form, servedUid: page.viewerUid)) {
+      unawaited(_cubit.load());
+    }
+    // No thread above: the notice page, which does not reload for another account.
+    if (context.readOrNull<ThreadBloc>() == null) {
+      _authSubscription = listenAccountChanges(
+        auth,
+        onLoggingIn: _cubit.invalidate,
+        onChanged: () => unawaited(_cubit.load()),
+      );
+    }
   }
 
   @override
   void didUpdateWidget(PollCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.pid != widget.pid || oldWidget.controller != widget.controller) {
+    if (oldWidget.pid != widget.pid ||
+        oldWidget.controller != widget.controller ||
+        oldWidget.fromPage != widget.fromPage) {
       unawaited(_authSubscription?.cancel());
+      _authSubscription = null;
       if (oldWidget.controller == null) unawaited(_cubit.close());
       _start();
     }
@@ -196,11 +220,10 @@ class _PollCardState extends State<PollCard> {
                     child: Text(tr.submit),
                   ),
                 if (poll?.availability == PollAvailability.loginRequired)
+                  // A login changes the account: the thread page reloads once it shows again, a card elsewhere
+                  // loads by itself (see PollCard). Loading here as well asked for the same page once more.
                   TextButton(
-                    onPressed: () async {
-                      await context.pushNamed(ScreenPaths.login);
-                      if (mounted) await _cubit.load();
-                    },
+                    onPressed: () async => context.pushNamed(ScreenPaths.login),
                     child: Text(tr.loginRequired),
                   ),
                 TextButton.icon(
