@@ -1,60 +1,24 @@
-import 'dart:convert';
-
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fpdart/fpdart.dart' show Left, Right;
 import 'package:tsdm_client/constants/layout.dart';
-import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
-import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
-import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/packet_card.dart';
 import 'package:tsdm_client/widgets/card/rate_card.dart';
-import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:universal_html/parsing.dart';
 
 /// Showcase page for debugging.
-class DebugShowcasePage extends StatefulWidget {
+class DebugShowcasePage extends StatelessWidget {
   /// Constructor.
   const DebugShowcasePage({super.key});
-
-  @override
-  State<DebugShowcasePage> createState() => _DebugShowcasePageState();
-}
-
-class _DebugShowcasePageState extends State<DebugShowcasePage> with SingleTickerProviderStateMixin {
-  late TabController tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    tabController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SHOWCASE'),
-        bottom: TabBar(
-          tabAlignment: TabAlignment.start,
-          isScrollable: true,
-          controller: tabController,
-          tabs: const [
-            Tab(text: 'HTML'),
-            Tab(text: 'Thread'),
-          ],
-        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.dark_mode_outlined),
@@ -71,21 +35,15 @@ class _DebugShowcasePageState extends State<DebugShowcasePage> with SingleTicker
           ),
         ],
       ),
-      body: SafeArea(
+      body: const SafeArea(
         top: false,
-        child: TabBarView(
-          controller: tabController,
-          children: const [
-            // The rendered blocks inside a reading width surface, like a floor of a thread.
-            SingleChildScrollView(
-              padding: edgeInsetsL12T12R12B12,
-              child: AppContentWidth(
-                maxWidth: appReadingMaxWidth,
-                child: AppSurface(child: _HtmlFragment()),
-              ),
-            ),
-            _SampleThreadV2Page(),
-          ],
+        // The rendered blocks inside a reading width surface, like a floor of a thread.
+        child: SingleChildScrollView(
+          padding: edgeInsetsL12T12R12B12,
+          child: AppContentWidth(
+            maxWidth: appReadingMaxWidth,
+            child: AppSurface(child: _HtmlFragment()),
+          ),
         ),
       ),
     );
@@ -227,133 +185,6 @@ class _HtmlFragment extends StatelessWidget {
         const PacketCard('', allTaken: false),
         const PacketCard('', allTaken: true),
       ],
-    );
-  }
-}
-
-/// Thread page v2 uses official API instead of web urls, it's simple and fast, but content is much less then V1.
-class _SampleThreadV2Page extends StatefulWidget {
-  const _SampleThreadV2Page();
-
-  @override
-  State<_SampleThreadV2Page> createState() => _SampleThreadV2PageState();
-}
-
-class _SampleThreadV2PageState extends State<_SampleThreadV2Page> {
-  late final TextEditingController tidController;
-  late final TextEditingController pageController;
-  final formKey = GlobalKey<FormState>();
-
-  /// Current visiting thread id.
-  int? tid;
-
-  /// Current page number.
-  int? page;
-
-  Future<Response<dynamic>> _fetchThreadPage() async {
-    if (tid == null || page == null) {
-      return Future<Response<dynamic>>.error('waiting for input');
-    }
-
-    return switch (await getIt
-        .get<NetClientProvider>()
-        .get('$baseUrl/forum.php?mobile=yes&tsdmapp=1&mod=viewthread&tid=$tid&page=$page')
-        .run()) {
-      Right(:final value) => value,
-      Left(:final value) => Future<Response<dynamic>>.error(value),
-    };
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    tidController = TextEditingController();
-    pageController = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    tidController.dispose();
-    pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: edgeInsetsL12T12R12B12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Form(
-            key: formKey,
-            child: AppFormSection(
-              children: [
-                TextFormField(
-                  controller: tidController,
-                  keyboardType: TextInputType.number,
-                  decoration: appFieldDecoration(label: 'Thread id', icon: Icons.tag),
-                  validator: (v) => v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0
-                      ? 'invalid thread id'
-                      : null,
-                ),
-                TextFormField(
-                  controller: pageController,
-                  keyboardType: TextInputType.number,
-                  decoration: appFieldDecoration(label: 'Page number', icon: Icons.menu_book_outlined),
-                  validator: (v) => v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0
-                      ? 'invalid page number'
-                      : null,
-                ),
-                FilledButton(
-                  child: const Text('Fetch page'),
-                  onPressed: () {
-                    if (!formKey.currentState!.validate()) {
-                      return;
-                    }
-
-                    setState(() {
-                      tid = int.parse(tidController.text);
-                      page = int.parse(pageController.text);
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          sizedBoxW8H8,
-          Expanded(
-            child: FutureBuilder(
-              key: ValueKey('ThreadContent_$tid'),
-              future: _fetchThreadPage(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const CenteredCircularIndicator();
-                }
-
-                if (snapshot.hasError) {
-                  return Center(child: Text('Failed (tid=$tid, page=$page): ${snapshot.error!}'));
-                }
-
-                if (!snapshot.hasData) {
-                  return const CenteredCircularIndicator();
-                }
-
-                // Remove CR and LF
-                // The CR is useless and remove it is safe.
-                // The LF only follows "<br />" which is useless and can be safely removed, too.
-                final content = (snapshot.data!.data as String).replaceAll(RegExp('\u000a|\u000d'), '');
-
-                final x = jsonDecode(content) as Map<String, dynamic>;
-
-                return SingleChildScrollView(
-                  child: AppInsetBlock(outlined: true, child: SelectableText(x.toString())),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

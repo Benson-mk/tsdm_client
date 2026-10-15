@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
-import 'package:tsdm_client/features/profile/models/models.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
@@ -18,7 +15,6 @@ export 'package:tsdm_client/features/profile/utils/parse_profile.dart' show pars
 
 /// Repository to get profile page.
 final class ProfileRepository with LoggerMixin {
-  static const _profileV2Target = '$baseUrl/home.php?mobile=yes&tsdmapp=1&mod=space';
   static const _editAvatarPage = '$baseUrl/home.php?mod=spacecp&ac=avatar';
 
   /// Profile page of the logged user, fetched for the account [_loggedUserUid].
@@ -30,9 +26,6 @@ final class ProfileRepository with LoggerMixin {
   /// in use: after a quick account switch the profile page and its unread counts showed the previous account until
   /// the homepage happened to reload it (GitHub #184 follow-up).
   int? _loggedUserUid;
-
-  /// Cached profile v2 for current logged user.
-  UserProfileV2? _loggedProfileV2;
 
   /// [_loggedUserDocument] when it belongs to the account in use, null otherwise.
   uh.Document? get _currentCache {
@@ -110,7 +103,7 @@ final class ProfileRepository with LoggerMixin {
 
   /// Fetch user avatar for current user.
   ///
-  /// Parsed from the html profile page of current logged user because the v2 API is gone.
+  /// Parsed from the profile page of current logged user.
   AsyncEither<String> fetchAvatarUrl({bool force = false}) => fetchProfile(force: force).flatMap((doc) {
     if (!isLoggedInDocument(doc)) {
       // Session expired, the server rendered a guest page.
@@ -125,103 +118,6 @@ final class ProfileRepository with LoggerMixin {
       }(),
     };
   });
-
-  /// Fetch user profile through API.
-  ///
-  /// ## CAUTION
-  ///
-  /// The API is GONE since the server upgraded to Discuz X5: the server responds a normal html page instead of json.
-  /// This function detects the non-json response and returns [ProfileStatusNotFoundException] gracefully, prefer
-  /// [fetchProfile] with html parsing.
-  ///
-  /// ## Return value
-  ///
-  /// ### Success
-  ///
-  /// ```json
-  /// {
-  ///   "status": 0,
-  ///   ... // Other fields can be converted into UserProfileV2.
-  /// }
-  /// ```
-  ///
-  /// ### Failure
-  ///
-  /// ```json
-  /// {
-  ///   "status": -1,
-  ///   "message": "login_before_enter_home",
-  ///   "url": null,
-  ///   "extra": {
-  ///     "showmsg": "1",
-  ///     "login": "1"
-  ///   },
-  ///   "values": []
-  /// }
-  /// ```
-  AsyncEither<UserProfileV2> fetchProfileV2({String? username, String? uid, bool force = false}) {
-    return AsyncEither(() async {
-      debug('fetch profile page v2');
-      late final String targetUrl;
-      late final bool isLoggedUserProfile;
-      if (uid != null) {
-        targetUrl = '$_profileV2Target&username=$uid';
-        isLoggedUserProfile = false;
-      } else if (username != null) {
-        targetUrl = '$_profileV2Target&uid=$username';
-        isLoggedUserProfile = false;
-      } else {
-        targetUrl = _profileV2Target;
-        isLoggedUserProfile = true;
-      }
-
-      if (!force && _loggedProfileV2 != null) {
-        return right(_loggedProfileV2!);
-      }
-
-      switch (await NetClientProvider.build(forceDesktop: false).get(targetUrl).run()) {
-        case Left(:final value):
-          return left(value);
-        case Right(:final value):
-          final Map<String, dynamic> jsonMap;
-          try {
-            final decoded = jsonDecode(value.data as String);
-            if (decoded is! Map<String, dynamic>) {
-              error('failed to fetch profile v2: response is not a json object');
-              return left(ProfileStatusNotFoundException());
-            }
-            jsonMap = decoded;
-          } on FormatException catch (e) {
-            error('failed to fetch profile v2: response is not json (API gone?): $e');
-            return left(ProfileStatusNotFoundException());
-          }
-          if (!jsonMap.containsKey('status')) {
-            error('failed to fetch profile v2: status not found');
-            return left(ProfileStatusNotFoundException());
-          }
-          final status = jsonMap['status'] as int?;
-          if (status == -1) {
-            error(
-              'failed to fetch profile v2: '
-              'message=${jsonMap.lookup("message")}',
-            );
-            return left(ProfileNeedLoginException());
-          }
-          if (status != 0) {
-            error('failed to fetch profile v2: unknown status $status');
-            return left(ProfileStatusUnknownException(jsonMap['status'].toString()));
-          }
-          // status is zero
-          final userProfile = UserProfileV2Mapper.fromMap(jsonMap);
-
-          if (isLoggedUserProfile) {
-            _loggedProfileV2 = userProfile;
-          }
-
-          return right(userProfile);
-      }
-    });
-  }
 
   /// Load the current using avatar url from server.
   AsyncEither<(String, String)> loadAvatarUrl() => getIt

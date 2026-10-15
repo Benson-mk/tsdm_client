@@ -16,7 +16,6 @@ const quietlyClosablePages = <String>{
   ScreenPaths.chat,
   ScreenPaths.chatHistory,
   ScreenPaths.threadV1,
-  ScreenPaths.threadV2,
   ScreenPaths.forum,
   ScreenPaths.forumGroup,
   ScreenPaths.profile,

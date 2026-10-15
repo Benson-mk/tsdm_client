@@ -69,7 +69,6 @@ import 'package:tsdm_client/features/settings/view/settings_page.dart';
 import 'package:tsdm_client/features/settings/view/thread_card_appearance.dart';
 import 'package:tsdm_client/features/settings/widgets/app_license_page.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
-import 'package:tsdm_client/features/thread/v2/view/thread_page_v2.dart';
 import 'package:tsdm_client/features/thread_visit_history/view/thread_visit_history_page.dart';
 import 'package:tsdm_client/features/title_shop/view/title_shop_page.dart';
 import 'package:tsdm_client/features/topics/view/topics_page.dart';
@@ -197,31 +196,6 @@ final List<RouteBase> _appRoutes = [
         overrideReverseOrder: overrideReverseOrder,
         overrideWithExactOrder: overrideWithExactOrder,
         onlyVisibleUid: onlyVisibleUid,
-      );
-    },
-  ),
-  AppRoute(
-    path: ScreenPaths.threadV2,
-    builder: (state) {
-      final id = state.pathParameters['id']!;
-      final bool overrideReverseOrder;
-      final onlyVisibleUid = state.uri.queryParameters['onlyVisibleUid'];
-      if (state.uri.queryParameters['overrideReverseOrder'] == 'false') {
-        overrideReverseOrder = false;
-      } else {
-        overrideReverseOrder = true;
-      }
-      final overrideWithExactOrder = state.uri.queryParameters['overrideWithExactOrder']?.parseToInt();
-      final pageNumber = state.uri.queryParameters['pageNumber'];
-      final pid = state.uri.queryParameters['pid'];
-
-      return ThreadPageV2(
-        id: id,
-        pageNumber: pageNumber ?? '1',
-        overrideReverseOrder: overrideReverseOrder,
-        overrideWithExactOrder: overrideWithExactOrder,
-        onlyVisibleUid: onlyVisibleUid,
-        pid: pid?.parseToInt(),
       );
     },
   ),
