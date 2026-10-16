@@ -4,12 +4,13 @@
 ///   account the page was served to included. Every poll card asked the forum for the whole thread page again when it
 ///   was created (twice: the account status replayed to its new listener loaded it once more), and again on every
 ///   account status, although the thread page reloads for a new account since 1.37.0 and builds its floors afresh.
-///   The card now shows the form of the page; it asks the forum only when the page does not hold it, or holds it for
-///   another account. Voting still asks once for the results.
-/// * Points and bank pages are asked in the JSON mode of the forum's app API (`tsdmapp=json`, plugin 1.7.0); an older
-///   plugin ignores the parameter and the web page comes back. Both give the same, the forms are posted as before. An
-///   answer without a page is a failed load. A forum whose plugin does not handle the bank leaves the parameter in the
-///   request, and a link the bank builds from the current url may carry it: it is not part of the link.
+///   The card now shows the form of the page; it asks the forum only when the page does not hold it, holds it for
+///   another account, or was read before a vote of the account (the floors a failed reload puts back). Voting still
+///   asks once for the results, and so does a login of the account in use from the card (its session had expired).
+/// * The points pages are asked in the JSON mode of the forum's app API (`tsdmapp=json`, plugin 1.7.0); an older
+///   plugin ignores the parameter and the web page comes back. Both give the same. An answer without a page is a failed
+///   load. The bank pages stay web pages: plugin 1.7.0 does not handle the bank (`bank_ane`), the parameter would only
+///   stay in the request the bank plugin reads.
 ///
 /// The forum pages are synthetic (grounded in the Discuz templates), no real account or network.
 library;
@@ -49,6 +50,7 @@ import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 import 'package:tsdm_client/features/thread_visit_history/bloc/thread_visit_history_bloc.dart';
@@ -56,6 +58,7 @@ import 'package:tsdm_client/features/thread_visit_history/repository/thread_visi
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
@@ -149,6 +152,12 @@ final class _PollForum implements HttpClientAdapter {
   /// Holds the answers back while set.
   Completer<void>? gate;
 
+  /// Accounts whose session the forum dropped: their cookie gets the pages of a guest (issue #25).
+  final guests = <int>{};
+
+  /// Loads of the thread page itself fail (no connection) while set; the post of a poll card still answers.
+  bool failThreadLoads = false;
+
   /// Thread page loads of the thread page itself.
   int get threadLoads =>
       requests.where((r) => r.method == 'GET' && r.uri.queryParameters['mod'] == 'viewthread').length;
@@ -178,7 +187,10 @@ final class _PollForum implements HttpClientAdapter {
     if (gate != null) {
       await gate!.future;
     }
-    final uid = _uidOf(options);
+    if (failThreadLoads && options.method == 'GET' && options.uri.queryParameters['mod'] == 'viewthread') {
+      throw DioException.connectionError(requestOptions: options, reason: 'offline');
+    }
+    final uid = guests.contains(_uidOf(options)) ? 0 : _uidOf(options);
     if (options.method == 'POST') {
       expect(options.uri.queryParameters['action'], 'votepoll', reason: 'the only form posted here is the vote');
       expect(options.uri.queryParameters['tsdmapp'], isNull, reason: 'a form is posted as before');
@@ -191,7 +203,8 @@ final class _PollForum implements HttpClientAdapter {
         },
       );
     }
-    final html = _threadHtml(uid, _pollForm(voted.contains(uid) ? 'voted' : 'multiple', 'hashOf$uid'));
+    final poll = uid == 0 ? 'guest' : (voted.contains(uid) ? 'voted' : 'multiple');
+    final html = _threadHtml(uid, _pollForm(poll, 'hashOf$uid'));
     final asJson = json && options.uri.queryParameters['tsdmapp'] == 'json';
     return ResponseBody.fromString(
       asJson ? pageAnswerOf(html, 'viewthread') : html,
@@ -359,7 +372,7 @@ $_spacecpSide
 </div>''');
 
 /// A bank page (`plugin.php?id=bank_ane:bank…`) of the bank plugin around [content] (its tables and forms, as in tests
-/// 120 to 125), with its account column (`div.tbn`: the wallet in the bank's currency) in the page's main block.
+/// 120 to 125), with its account column (`div.tbn`: the wallet in the bank's currency).
 String _bankPage(String content, {int uid = 1000}) => _framed('''
 <div id="pt" class="bm cl"><div class="z"><a href="./" class="nvhm" title="首页">Synthetic</a> <em>&rsaquo;</em>
 <a href="plugin.php?id=bank_ane:bank">银行</a></div></div>
@@ -397,16 +410,16 @@ final String _bankSavings = _bankPage('''
 <tr><td class="footoperation">注意事项</td></tr><tr><td><p>利率可能变化。</p><p>存取款时自动结息。</p></td></tr>
 </tbody></table>''');
 
-/// The own records of bank 1, page 1, with the link to page 2 as [next] gives it.
-String _bankLogs({String next = 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;page=2'}) =>
-    _bankPage('''
+/// The own records of bank 1, page 1, with the link to page 2.
+final String _bankLogs = _bankPage('''
 <table id="ttt"><thead class="colplural"><tr><td><h2>理财日志</h2></td></tr></thead><tbody>
 <tr><td>My and received tabs</td></tr><tr><td>Filters</td></tr><tr><td>
 <table id="ttt"><tbody>
 <tr><td>Info: 示例存款 10 示例币</td><td>Time: 2026-01-01 12:34:56</td><td>Ip: 192.0.2.123</td></tr>
 <tr><td>Info: 示例取款 2 示例币</td><td>Time: 2026-01-02 12:34:56</td><td>Ip: 2001:db8::1</td></tr>
 </tbody></table>
-</td></tr><tr><td><div class="pg"><a class="nxt" href="$next">下一页</a></div></td></tr>
+</td></tr><tr><td><div class="pg">
+<a class="nxt" href="plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;page=2">下一页</a></div></td></tr>
 </tbody></table>''');
 
 /// A service page of bank 1 (the remittance), with its form.
@@ -424,14 +437,15 @@ final String _bankRemittance = _bankPage('''
 <tr><td class="footoperation">注意事项</td></tr><tr><td>请核对操作，提交后查看记录。</td></tr>
 </tbody></table>''');
 
-/// The forum of the points and bank pages: answers every GET with [page] for the url asked, as the web page, or as
-/// the app API plugin 1.7.0 answers it in JSON mode ([json], page type [type]); a form post with "accepted".
+/// The forum of the points and bank pages: answers every GET with [page] for the url asked, as the web page, or, when
+/// the app API plugin 1.7.0 handles the page ([json]), as it answers it in JSON mode (page type [type]); a form post
+/// with "accepted".
 final class _PageForum implements HttpClientAdapter {
-  _PageForum(this.page, {required this.json, required this.type});
+  _PageForum(this.page, {this.json = false, this.type});
 
   final String Function(Uri uri) page;
   final bool json;
-  final String type;
+  final String? type;
 
   /// Answer every GET with this body instead, as JSON.
   String? jsonAnswer;
@@ -456,7 +470,7 @@ final class _PageForum implements HttpClientAdapter {
     } else {
       final html = page(options.uri);
       asJson = json && options.uri.queryParameters['tsdmapp'] == 'json';
-      body = asJson ? pageAnswerOf(html, type) : html;
+      body = asJson ? pageAnswerOf(html, type!) : html;
     }
     return ResponseBody.fromString(
       body,
@@ -574,6 +588,8 @@ void main() {
   });
 
   tearDown(() async {
+    // The tests vote as the same accounts in the same posts: the vote of one test is not one of the next.
+    PollCubit.forgetVotesSent();
     await auth.dispose();
     await getIt.get<ImageCacheProvider>().dispose();
     await getIt.reset();
@@ -626,6 +642,11 @@ void main() {
           GoRoute(
             path: '/other',
             builder: (_, _) => const Scaffold(body: Center(child: Text('other page'))),
+          ),
+          GoRoute(
+            path: ScreenPaths.login,
+            name: ScreenPaths.login,
+            builder: (_, _) => const Scaffold(body: Center(child: Text('login page'))),
           ),
         ],
       );
@@ -730,6 +751,74 @@ void main() {
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
       await _dispose(tester);
     });
+
+    testWidgets('floors put back after a failed reload: the poll stays voted, not open for a second vote', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true);
+      await pumpThread(tester, forum);
+      await _vote(tester);
+      expect(_inCard(find.text(t.pollVoting.voted)), findsOneWidget);
+      expect(forum.pollLoads, 1);
+
+      // The reload fails after a while: the floors read before the vote go back on screen, their poll form still open.
+      final bloc = tester.element(_card).read<ThreadBloc>();
+      forum
+        ..failThreadLoads = true
+        ..gate = Completer<void>();
+      bloc.add(ThreadRefreshRequested());
+      await _settle(tester);
+      expect(_card, findsNothing, reason: 'no floors while the page reloads');
+      forum.gate!.complete();
+      forum.gate = null;
+      await _settle(tester);
+      expect(forum.threadLoads, 2);
+      expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1), reason: 'the floor is back');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNothing, reason: 'the form read before the vote');
+      expect(_inCard(find.byType(FilledButton)), findsNothing);
+      expect(_inCard(find.text(t.pollVoting.voted)), findsOneWidget);
+      expect(forum.pollLoads, 2, reason: 'the card asks for the poll once instead');
+      expect(forum.votes, hasLength(1));
+      await _dispose(tester);
+    });
+
+    testWidgets('a session the forum dropped: signed in again as the same account, the card asks once', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true)..guests.add(_alice.uid!);
+      final router = await pumpThread(tester, forum);
+      expect(_inCard(find.byType(CheckboxListTile)), findsNothing, reason: 'the page of a guest');
+      await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
+      await _settle(tester);
+      expect(find.text('login page'), findsOneWidget);
+
+      // Alice signs in again: the forum knows her cookie again, the account in use is the same.
+      forum.guests.clear();
+      final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      expect(login!.isRight(), isTrue, reason: '$login');
+      router.pop();
+      await _settle(tester);
+      expect(forum.threadLoads, 1, reason: 'the same account: the thread page does not reload');
+      expect(forum.pollLoads, 1, reason: 'the card asks once');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Alice');
+      await _dispose(tester);
+    });
+
+    testWidgets('signed in as another account from the card: the thread page reloads, the card asks nothing', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true)..guests.add(_alice.uid!);
+      final router = await pumpThread(tester, forum);
+      await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
+      await _settle(tester);
+      await switchToBob(tester);
+      router.pop();
+      await _settle(tester);
+      expect(forum.threadLoads, 2, reason: 'the thread page reloads for Bob once shown again');
+      expect(forum.pollLoads, 0, reason: 'the floors of the new page hold the form of Bob');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _dispose(tester);
+    });
   });
 
   group('poll form of the page', () {
@@ -801,27 +890,72 @@ void main() {
       expect(cubit.state.poll!.availability, PollAvailability.voted);
       expect(cubit.state.submissionUnconfirmed, isFalse);
     });
+
+    test('a form still open for a poll the account voted in since was read before the vote: not shown', () async {
+      PollCubit cubitOf(int uid) {
+        final cubit = PollCubit(
+          url: 'poll',
+          currentUid: () => uid,
+          repository: () => PollRepository(
+            getPage: (_) async => File('test/data/poll_voted_x5.html').readAsStringSync(),
+            postForm: (_, _) async => '',
+          ),
+        );
+        addTearDown(cubit.close);
+        return cubit;
+      }
+
+      final page = _pagePoll(_alice.uid!);
+      final voter = cubitOf(_alice.uid!);
+      expect(voter.adopt(page.form, servedUid: page.viewerUid), isTrue);
+      voter.select('40029', selected: true);
+      await voter.submit();
+      expect(voter.state.poll!.availability, PollAvailability.voted);
+
+      // Another card of the post, built from the page read before the vote (a floor put back on screen).
+      final again = cubitOf(_alice.uid!);
+      expect(again.adopt(page.form, servedUid: page.viewerUid), isFalse, reason: 'the caller loads instead');
+      expect(again.state.poll, isNull);
+      final after = _pagePoll(_alice.uid!, name: 'voted');
+      expect(again.adopt(after.form, servedUid: after.viewerUid), isTrue, reason: 'a page read after the vote');
+      final bob = _pagePoll(_bob.uid!);
+      expect(cubitOf(_bob.uid!).adopt(bob.form, servedUid: bob.viewerUid), isTrue, reason: 'Bob did not vote');
+    });
   });
 
   group('poll card outside the thread page (the post of a notice)', () {
-    Future<void> pumpCard(WidgetTester tester, PostPoll? fromPage) async {
+    /// The card; returns the router, whose login page is a plain page.
+    Future<GoRouter> pumpCard(WidgetTester tester, PostPoll? fromPage) async {
       tester.view
         ..physicalSize = const Size(1000, 3000)
         ..devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
+              body: SingleChildScrollView(child: PollCard('1', fromPage: fromPage)),
+            ),
+          ),
+          GoRoute(
+            path: ScreenPaths.login,
+            name: ScreenPaths.login,
+            builder: (_, _) => const Scaffold(body: Center(child: Text('login page'))),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
       await tester.pumpWidget(
         TranslationProvider(
           child: RepositoryProvider<AuthenticationRepository>.value(
             value: auth,
-            child: MaterialApp(
-              home: Scaffold(
-                body: SingleChildScrollView(child: PollCard('1', fromPage: fromPage)),
-              ),
-            ),
+            child: MaterialApp.router(routerConfig: router),
           ),
         ),
       );
       await _settle(tester);
+      return router;
     }
 
     testWidgets('the form of the page: no request, also not for the account status a new listener gets', (
@@ -871,6 +1005,38 @@ void main() {
         await _dispose(tester);
       });
     }
+
+    testWidgets('a session the forum dropped: signed in again as the same account, the card asks once', (
+      tester,
+    ) async {
+      final forum = _useForum()..guests.add(_alice.uid!);
+      final router = await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
+      await _settle(tester);
+      expect(find.text('login page'), findsOneWidget);
+      forum.guests.clear();
+      final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      expect(login!.isRight(), isTrue, reason: '$login');
+      router.pop();
+      await _settle(tester);
+      expect(forum.pollLoads, 1, reason: 'once: the account in use did not change, nothing else loads it');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _dispose(tester);
+    });
+
+    testWidgets('signed in as another account from the card: it loads once, for the new account', (tester) async {
+      final forum = _useForum()..guests.add(_alice.uid!);
+      final router = await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
+      await _settle(tester);
+      final result = await tester.runAsync(() => auth.switchUser(_bob).run());
+      expect(result!.isRight(), isTrue, reason: '$result');
+      router.pop();
+      await _settle(tester);
+      expect(forum.pollLoads, 1, reason: 'the load for the new account, not a second one after the login page');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _dispose(tester);
+    });
   });
 
   group('points pages in JSON mode', () {
@@ -953,104 +1119,30 @@ void main() {
     });
   });
 
-  group('bank pages in JSON mode', () {
+  group('bank pages', () {
     String bankPageOf(Uri uri) => switch ((uri.queryParameters['bankid'], uri.queryParameters['action'])) {
       (null, _) => _bankDirectory,
       (_, 'cur') => _bankSavings,
-      (_, 'log') => _bankLogs(),
+      (_, 'log') => _bankLogs,
       (_, 'chg') => _bankRemittance,
       final other => fail('unexpected bank page $other'),
     };
 
-    test('directory, savings, records and a service: the same from the web page and the JSON answer', () async {
-      final directory = await _sameFromBoth(
-        bankPageOf,
-        'plugin',
-        (client) => BankRepository.network(client).fetchDirectory(1000),
-        (d) => [for (final b in d.banks) '${b.id}|${b.name}|${b.description}|${b.hasAccount}'],
-      );
-      expect(directory, hasLength(2));
-      final savings = await _sameFromBoth(
-        bankPageOf,
-        'plugin',
-        (client) => BankRepository.network(client).fetchSavings(1, 1000),
-        (s) => [s.summary, s.interest, s.notices, s.currency, s.walletBalance, s.form?.action, s.form?.fields],
-      );
-      expect((savings! as List).sublist(3), [
-        '示例币',
-        '4321',
-        '$baseUrl/plugin.php?id=bank_ane:bank',
-        {'bankid': '1', 'action': 'cur', 'formhash': 'hashOf1000', 'banksubmit': 'true'},
-      ], reason: 'the currency of the account column: the form is usable');
-      final logs = await _sameFromBoth(
-        bankPageOf,
-        'plugin',
-        (client) => BankRepository.network(client).fetchLogs(1, 1000),
-        (l) => [for (final e in l.entries) '${e.message}|${e.time}', l.hasNext],
-      );
-      expect(logs, ['示例存款 10 示例币|2026-01-01 12:34:56', '示例取款 2 示例币|2026-01-02 12:34:56', true]);
-      final service = await _sameFromBoth(
-        bankPageOf,
-        'plugin',
-        (client) => BankRepository.network(client).fetchService(BankService.remittance, 1000, bankId: 1),
-        (d) => [
-          for (final b in d.blocks) b.text,
-          for (final f in d.forms) '${f.action}|${f.hidden}|${f.inputs}',
-          d.currency,
-          d.feeRate,
-          d.unsupportedForms,
-        ],
-      );
-      expect((service! as List).sublist((service as List).length - 3), ['示例币', '2', false]);
-    });
-
-    test('a transaction is posted as before, not in JSON mode', () async {
-      final forum = _PageForum(bankPageOf, json: true, type: 'plugin');
+    test('stay web pages, forms are posted as before: plugin 1.7.0 does not handle the bank', () async {
+      // The parameter would stay in the request the bank plugin reads, for nothing (the plugin skips the page).
+      final forum = _PageForum(bankPageOf);
       final repo = BankRepository.network(_pageClient(forum));
+      expect((await repo.fetchDirectory(1000)).banks, hasLength(2));
       final savings = await repo.fetchSavings(1, 1000);
+      expect((savings.currency, savings.walletBalance), ('示例币', '4321'));
+      final logs = await repo.fetchLogs(1, 1000);
+      expect((logs.entries.length, logs.hasNext), (2, true));
+      expect((await repo.fetchService(BankService.remittance, 1000, bankId: 1)).forms, hasLength(1));
       await repo.submit(savings.form!, BankOperation.deposit, '10', 'synthetic-password');
-      expect(forum.requests.last.method, 'POST');
-      expect(forum.requests.last.uri.queryParameters['id'], 'bank_ane:bank');
-      expect(forum.requests.last.uri.queryParameters['tsdmapp'], isNull);
-    });
-
-    test('a page of another account, or an answer without a page, is refused', () async {
-      final other = _PageForum((_) => _bankPage('', uid: 1001), json: true, type: 'plugin');
-      await expectLater(
-        BankRepository.network(_pageClient(other)).fetchDirectory(1000),
-        throwsA(isA<FormatException>()),
-      );
-      final broken = _PageForum(bankPageOf, json: true, type: 'plugin')..jsonAnswer = _withoutPage;
-      await expectLater(
-        BankRepository.network(_pageClient(broken)).fetchDirectory(1000),
-        throwsA(isA<HttpRequestFailedException>()),
-        reason: 'a failed request, not a page without the account',
-      );
-    });
-
-    test('a forum whose app API does not handle the bank leaves the parameter in the links it builds', () async {
-      // Before plugin 1.7.0 the forum renders the page with `tsdmapp=json` still in the request.
-      final forum = _PageForum(
-        (_) => _bankLogs(
-          next: 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;tsdmapp=json&amp;page=2',
-        ),
-        json: false,
-        type: 'plugin',
-      );
-      final logs = await BankRepository.network(_pageClient(forum)).fetchLogs(1, 1000);
-      expect(logs.hasNext, isTrue, reason: 'still the next page of the same records');
-      expect(
-        parseBankLogs(
-          parseHtmlDocument(
-            _bankLogs(next: 'plugin.php?id=bank_ane:bank&amp;bankid=1&amp;action=log&amp;show=0&amp;x=1&amp;page=2'),
-          ),
-          bankId: 1,
-          received: false,
-          page: 1,
-        ).hasNext,
-        isFalse,
-        reason: 'any other parameter still makes it a link of something else',
-      );
+      expect([for (final r in forum.requests) r.method], ['GET', 'GET', 'GET', 'GET', 'POST']);
+      for (final r in forum.requests) {
+        expect(r.uri.queryParameters['tsdmapp'], isNull, reason: '${r.method} ${r.uri}');
+      }
     });
   });
 }

@@ -24,11 +24,12 @@ import 'package:tsdm_client/widgets/indicator.dart';
 /// Ordinary poll embedded in the first post, shared by both thread readers.
 ///
 /// The page holding the post already holds the poll form ([fromPage]): the card shows it and asks the forum for the
-/// post's page only when it has to, which is when the form is not there, or is there for another account than the
-/// current one, on refresh, and once after a vote for the results. In the thread page the card does not follow the
-/// account: the page reloads for a new one and builds its floors, this card included, afresh (every card asked for
-/// the whole thread page again on each account status, twice when created). Elsewhere (the post of a notice) nothing
-/// reloads the post, the card loads again itself when the account changed.
+/// post's page only when it has to, which is when the form is not there, is there for another account than the
+/// current one, or was read before a vote of the account (see [PollCubit.adopt]), on refresh, once after a vote for
+/// the results, and after a login of the account in use. In the thread page the card does not follow the account: the
+/// page reloads for a new one and builds its floors, this card included, afresh (every card asked for the whole thread
+/// page again on each account status, twice when created). Elsewhere (the post of a notice) nothing reloads the post,
+/// the card loads again itself when the account changed.
 class PollCard extends StatefulWidget {
   /// [controller] permits deterministic UI tests; production creates its own.
   const PollCard(this.pid, {super.key, this.fromPage, this.controller});
@@ -99,6 +100,20 @@ class _PollCardState extends State<PollCard> {
     unawaited(_authSubscription?.cancel());
     if (widget.controller == null) unawaited(_cubit.close());
     super.dispose();
+  }
+
+  /// Open the login page, then load the poll when the account in use is still the same one.
+  ///
+  /// A login of another account changes the account: the thread page reloads with its floors once it shows again, a
+  /// card elsewhere loads by itself (see [PollCard]), loading here as well asked for the same page twice. A login of
+  /// the same account is no change for them, yet the card asked to log in because the forum served the page as to a
+  /// guest: the session of that account had expired (issue #25), after the login it can vote. Back without a login,
+  /// the card asks once as well, as it always did.
+  Future<void> _login() async {
+    final auth = context.read<AuthenticationRepository>();
+    final uid = auth.effectiveCurrentUid;
+    await context.pushNamed(ScreenPaths.login);
+    if (mounted && auth.effectiveCurrentUid == uid) await _cubit.load();
   }
 
   @override
@@ -220,12 +235,7 @@ class _PollCardState extends State<PollCard> {
                     child: Text(tr.submit),
                   ),
                 if (poll?.availability == PollAvailability.loginRequired)
-                  // A login changes the account: the thread page reloads once it shows again, a card elsewhere
-                  // loads by itself (see PollCard). Loading here as well asked for the same page once more.
-                  TextButton(
-                    onPressed: () async => context.pushNamed(ScreenPaths.login),
-                    child: Text(tr.loginRequired),
-                  ),
+                  TextButton(onPressed: _login, child: Text(tr.loginRequired)),
                 TextButton.icon(
                   onPressed: state.busy ? null : _cubit.load,
                   icon: const Icon(Icons.refresh),

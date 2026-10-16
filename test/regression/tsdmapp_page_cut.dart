@@ -30,8 +30,8 @@ final _Rule _ct = _r(r'<div\b[^>]*\bid="ct"', end: r'<div\b[^>]*\bid="ft"');
 /// private message pages (`#pt`, `#ct` up to the footer). Only 1.6.0 and later answer them.
 const pagesSince160 = {'notice', 'mythread', 'friend', 'guide'};
 
-/// The page types plugin 1.7.0 adds besides the bank (a `plugin` page): the credit pages (`home.php?mod=spacecp&ac=credit`,
-/// base and log), cut like the private message pages. The type name is the one of this cut, the answer's own may differ.
+/// The page type plugin 1.7.0 adds: the credit pages (`home.php?mod=spacecp&ac=credit`, base and log, type `credit` as
+/// in the answer), cut like the private message pages. 1.7.0 leaves the bank (`bank_ane`) out, its pages stay web pages.
 const pagesSince170 = {'credit'};
 
 /// `$keep` of the plugin, by page type.
@@ -46,8 +46,6 @@ final Map<String, List<_Rule>> _keep = {
     _r(r'<div\b[^>]*\bclass="pg"', first: true),
   ],
   'index': [_r(r'<div\b[^>]*\bid="hd"'), _pt, _ct],
-  // Other plugins' pages (`plugin.php?id=…`): the medal center and titles since 1.3.0, the bank (`bank_ane`) since 1.7.0.
-  'plugin': [_pt, _ct, _r(r'<div\b[^>]*\bid="mc_medal\d+_menu"')],
   for (final page in ['pm', 'favorite', 'search', ...pagesSince160, ...pagesSince170]) page: [_pt, _ct],
 };
 

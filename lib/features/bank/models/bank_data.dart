@@ -1,5 +1,4 @@
 import 'package:tsdm_client/constants/url.dart';
-import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:universal_html/html.dart' as uh;
 
 part 'bank_service_data.dart';
@@ -191,7 +190,7 @@ Uri? _pluginUri(String? href) {
   if (href == null || href.trim().isEmpty) return null;
   final relative = Uri.tryParse(href.trim());
   if (relative == null) return null;
-  final uri = _withoutAppJson(Uri.parse(_endpoint).resolveUri(relative));
+  final uri = Uri.parse(_endpoint).resolveUri(relative);
   if (uri.scheme != 'https' ||
       uri.host.isEmpty ||
       uri.origin != Uri.parse(baseUrl).origin ||
@@ -203,15 +202,6 @@ Uri? _pluginUri(String? href) {
     return null;
   }
   return uri;
-}
-
-/// [uri] without the JSON mode parameter of the forum's app API (`tsdmapp=json`) the app adds to the bank pages it reads.
-///
-/// A forum whose app API does not handle the bank (before plugin 1.7.0) renders the page with the parameter still in the
-/// request, and a link built from the current url carries it. It is not part of the link: the app asks its own urls.
-Uri _withoutAppJson(Uri uri) {
-  if (!uri.query.split('&').contains(tsdmAppJsonQuery)) return uri;
-  return uri.replace(query: uri.query.split('&').where((part) => part != tsdmAppJsonQuery).join('&'));
 }
 
 int? _positiveId(String? value) {

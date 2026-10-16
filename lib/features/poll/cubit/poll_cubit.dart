@@ -1,4 +1,5 @@
 import 'package:bloc/bloc.dart';
+import 'package:flutter/foundation.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:universal_html/parsing.dart';
@@ -50,6 +51,18 @@ class PollCubit extends Cubit<PollState> {
   int _generation = 0;
   PollRepository? _loadedRepository;
 
+  /// The polls a vote was sent for since the app started, as (account, [url]); in memory only.
+  ///
+  /// A vote is final, and a page read before it still shows the poll open: the floors a failed reload of the thread
+  /// page puts back on screen (see ThreadBloc) build their cards again from that page, which showed the poll open for
+  /// a second vote the forum refuses. Recorded when the vote is sent: the forum may count it although its answer never
+  /// arrives (a failed request, or the card closed meanwhile).
+  static final _votesSent = <(int, String)>{};
+
+  /// Forget the votes sent, for tests.
+  @visibleForTesting
+  static void forgetVotesSent() => _votesSent.clear();
+
   /// Hide old-account data immediately, including during a login transition.
   void invalidate() {
     _generation++;
@@ -62,14 +75,19 @@ class PollCubit extends Cubit<PollState> {
   /// Show the poll [form] of the page the post was read from, a page served to [servedUid], without asking the forum:
   /// the thread page already loaded it for the account in use.
   ///
-  /// False when it cannot be shown: the page belongs to another account than the current one (the account changed
-  /// since), the caller then loads instead. The form is checked the way [PollRepository.fetch] checks a page.
+  /// False when it cannot be shown, the caller then loads instead: the page belongs to another account than the
+  /// current one (the account changed since), or it shows the poll open although this account sent a vote for it
+  /// since (the page was read before the vote, see [_votesSent]). The form is checked the way [PollRepository.fetch]
+  /// checks a page.
   bool adopt(String form, {required int? servedUid}) {
     final uid = currentUid();
     final ForumPoll poll;
     try {
       poll = PollRepository.pollOfPage(parseHtmlDocument(form), servedUid: servedUid, uid: uid);
     } on FormatException {
+      return false;
+    }
+    if (poll.availability == PollAvailability.available && uid != null && _votesSent.contains((uid, url))) {
       return false;
     }
     _generation++;
@@ -129,6 +147,7 @@ class PollCubit extends Cubit<PollState> {
     }
     final generation = ++_generation;
     emit(PollState(poll: poll, uid: snapshot.uid, busy: true, choices: snapshot.choices));
+    _votesSent.add((snapshot.uid!, url));
     try {
       await repo.vote(poll, snapshot.choices);
     } on Exception {
