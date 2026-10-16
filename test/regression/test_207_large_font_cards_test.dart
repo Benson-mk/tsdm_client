@@ -230,6 +230,37 @@ List<ScrollPosition> _horizontalScrolls(WidgetTester tester) => tester
 bool _oneLine(RenderParagraph paragraph) =>
     paragraph.getMaxIntrinsicWidth(double.infinity) <= paragraph.size.width + 0.01;
 
+/// Checks that nothing overflows and that [card] and every piece of text lie inside the post on a screen of [width].
+void _expectFits(WidgetTester tester, Finder card, double width) {
+  expect(tester.takeException(), isNull, reason: 'nothing overflows');
+  final rect = tester.getRect(card.first);
+  // The post is laid out in width - 2 * 16; inline widgets may sit a fraction of a pixel off its edges.
+  expect(rect.left, greaterThan(15));
+  expect(rect.right, lessThan(width - 15));
+  for (final paragraph in _paragraphs(tester)) {
+    final text = _globalRect(paragraph);
+    expect(text.left, greaterThan(15), reason: paragraph.text.toPlainText());
+    expect(text.right, lessThan(width - 15), reason: paragraph.text.toPlainText());
+  }
+}
+
+/// Long-presses [button] and checks the text of its tooltip is [scale] times as large as its font.
+///
+/// The tooltip is painted in the overlay, outside the card the button is in, it is not scaled with the card.
+Future<void> _expectTooltipScale(WidgetTester tester, Finder button, double scale) async {
+  final message = tester.widget<Tooltip>(find.ancestor(of: button, matching: find.byType(Tooltip)).first).message!;
+  await tester.longPress(button);
+  await tester.pump(const Duration(milliseconds: 300));
+  final text = tester.renderObject<RenderParagraph>(
+    find.descendant(of: find.text(message), matching: find.byType(RichText)),
+  );
+  expect(_effectiveScale(text), closeTo(scale, 0.01), reason: message);
+  // The tooltip hides again by itself.
+  await tester.pump(const Duration(seconds: 2));
+  await tester.pumpAndSettle();
+  expect(find.text(message), findsNothing);
+}
+
 void main() {
   setUpAll(() => talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false)));
 
@@ -303,16 +334,7 @@ void main() {
           await _seedAvatars(tester);
           await pump(tester, card.html, width: 320, textScale: scale);
           await card.open?.call(tester);
-          expect(tester.takeException(), isNull, reason: 'nothing overflows');
-          final rect = tester.getRect(card.finder().first);
-          // The post is laid out in 320 - 2 * 16; inline widgets may sit a fraction of a pixel off its edges.
-          expect(rect.left, greaterThan(15));
-          expect(rect.right, lessThan(320 - 15));
-          for (final paragraph in _paragraphs(tester)) {
-            final text = _globalRect(paragraph);
-            expect(text.left, greaterThan(15), reason: paragraph.text.toPlainText());
-            expect(text.right, lessThan(320 - 15), reason: paragraph.text.toPlainText());
-          }
+          _expectFits(tester, card.finder(), 320);
         });
       }
     });
@@ -344,36 +366,103 @@ void main() {
       await tester.pumpAndSettle();
       expect(copied, 'print("hello");\nreturn 0;');
     });
+
+    // A tooltip is painted in the overlay, outside the scaled card, but reads the text scale where its button is: in a
+    // card it must get the text scale of the post back instead of staying at 1.0.
+    testWidgets('the copy button of a code block shows its tooltip at the text scale, in a quote too', (tester) async {
+      final code = _cards.firstWhere((e) => e.name == 'code block').html;
+      // The code block in the quote is a card in a card, two spans deep.
+      await pump(tester, '$code<blockquote>引用里的代码$code</blockquote>', textScale: 1.3);
+      final icons = find.byIcon(Icons.copy_outlined);
+      expect(icons, findsNWidgets(2));
+      final inQuote = find.descendant(of: find.byType(QuotedText), matching: icons);
+      expect(inQuote, findsOneWidget);
+      expect(find.descendant(of: find.byType(QuotedText), matching: icons.first), findsNothing);
+      for (final icon in [icons.first, inQuote]) {
+        // The button itself is scaled once, with the card.
+        expect(_globalRect(tester.renderObject<RenderBox>(icon)).width, closeTo(24 * 1.3, 0.01));
+        await _expectTooltipScale(tester, icon, 1.3);
+      }
+    });
+
+    testWidgets('the button to the quoted post shows its tooltip at the text scale', (tester) async {
+      // Discuz links a quote to the quoted post with this image, the App shows a button instead (see
+      // tmpImpellerWorkaroundUrls).
+      const back =
+          '<a href="forum.php?mod=redirect&amp;goto=findpost&amp;pid=1&amp;ptid=1">'
+          '<img src="static/image/common/back.gif"></a>';
+      await pump(tester, '<blockquote>某人 发表于 2020-1-1 12:00 $back<br>引用的内容</blockquote>$back', textScale: 1.3);
+      final buttons = find.byIcon(Icons.navigate_before_outlined);
+      expect(buttons, findsNWidgets(2));
+      final inQuote = find.descendant(of: find.byType(QuotedText), matching: buttons);
+      expect(inQuote, findsOneWidget);
+      await _expectTooltipScale(tester, inQuote, 1.3);
+      // The same button in the text of the post, not in a card.
+      expect(find.descendant(of: find.byType(QuotedText), matching: buttons.last), findsNothing);
+      await _expectTooltipScale(tester, buttons.last, 1.3);
+    });
   });
 
-  testWidgets('the hidden content card under a floor is scaled once too', (tester) async {
-    // A floor shows the hidden content of the forum's own markup (not in the post text) with the same card; the word to
-    // reply is a widget inside its text.
-    final locked = Locked.fromLockDivNode(
-      parseHtmlDocument(_cards.firstWhere((e) => e.name == 'hidden content').html).querySelector('div.locked')!,
-    );
-    await pumpWidget(tester, LockedCard(locked), width: 360, textScale: 1.3);
-    final paragraphs = _paragraphs(tester);
-    expect(paragraphs.map((e) => e.text.toPlainText()), contains('Reply'));
-    for (final paragraph in paragraphs) {
-      expect(_effectiveScale(paragraph), closeTo(1.3, 0.01), reason: paragraph.text.toPlainText());
+  group('the purchase card under a floor', () {
+    // Of the hidden content, a floor only shows the purchase card under the post (see Post.locked), not in the post
+    // text; its underlined count of buyers is a widget inside its text.
+    LockedCard purchaseCard() {
+      final doc = parseHtmlDocument(File('test/data/locked_purchase_x5.html').readAsStringSync());
+      final locked = Post.buildListFromThreadDataNode(doc.querySelector('div#postlist'), 1).single.locked.single;
+      expect(locked.lockedWithPurchase, isTrue);
+      return LockedCard(locked);
+    }
+
+    testWidgets('is scaled once at text scale 1.3, the underlined count too', (tester) async {
+      await pumpWidget(tester, purchaseCard(), width: 360, textScale: 1.3);
+      final paragraphs = _paragraphs(tester);
+      expect(paragraphs.map((e) => e.text.toPlainText()), contains('10'));
+      for (final paragraph in paragraphs) {
+        expect(_effectiveScale(paragraph), closeTo(1.3, 0.01), reason: paragraph.text.toPlainText());
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final scale in const [1.3, 2.0]) {
+      testWidgets('fits a 320 px screen at text scale $scale', (tester) async {
+        await pumpWidget(tester, purchaseCard(), width: 320, textScale: scale);
+        _expectFits(tester, find.byType(LockedCard), 320);
+      });
     }
   });
 
-  testWidgets('the poll card under the first floor is scaled once', (tester) async {
+  group('the poll card under the first floor', () {
     // Not inside the post text: it is laid out in the floor like the text of the post and needs nothing.
-    await LocaleSettings.setLocale(AppLocale.en);
-    final html = File('test/data/poll_multiple_x5.html').readAsStringSync();
-    final repo = PollRepository(getPage: (_) async => html, postForm: (_, _) async => '');
-    final cubit = PollCubit(url: 'poll', currentUid: () => 1000, repository: () => repo);
-    addTearDown(cubit.close);
-    await pumpWidget(tester, PollCard('1', controller: cubit), width: 360, textScale: 1.3);
-    final paragraphs = _paragraphs(tester);
-    expect(paragraphs.length, greaterThan(3));
-    for (final paragraph in paragraphs) {
-      expect(_effectiveScale(paragraph), closeTo(1.3, 0.01), reason: paragraph.text.toPlainText());
+    Future<void> pumpPoll(WidgetTester tester, {required double width, required double textScale}) async {
+      await LocaleSettings.setLocale(AppLocale.en);
+      final html = File('test/data/poll_multiple_x5.html').readAsStringSync();
+      final repo = PollRepository(getPage: (_) async => html, postForm: (_, _) async => '');
+      final cubit = PollCubit(url: 'poll', currentUid: () => 1000, repository: () => repo);
+      addTearDown(cubit.close);
+      await pumpWidget(
+        tester,
+        PollCard('1', controller: cubit),
+        width: width,
+        textScale: textScale,
+      );
+      expect(_paragraphs(tester).length, greaterThan(3), reason: 'the poll is shown');
     }
-    await tester.pumpWidget(const SizedBox());
+
+    testWidgets('is scaled once', (tester) async {
+      await pumpPoll(tester, width: 360, textScale: 1.3);
+      for (final paragraph in _paragraphs(tester)) {
+        expect(_effectiveScale(paragraph), closeTo(1.3, 0.01), reason: paragraph.text.toPlainText());
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    for (final scale in const [1.3, 2.0]) {
+      testWidgets('fits a 320 px screen at text scale $scale', (tester) async {
+        await pumpPoll(tester, width: 320, textScale: scale);
+        _expectFits(tester, find.byType(PollCard), 320);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
   });
 
   group('tables', () {
