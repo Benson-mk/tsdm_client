@@ -22,10 +22,8 @@ class TitleShopRepository {
   /// Uses the account-bound client; the purchase is a single attempt that follows no redirect.
   factory TitleShopRepository.network(NetClientProvider client) => TitleShopRepository(
     // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
-    getPage: (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
-      Right(:final value) => tsdmAppPageHtml(value.data),
-      Left(:final value) => throw value,
-    },
+    // An answer without a page (an empty body) fails the read, it is not a shop page served to a guest.
+    getPage: (url) => fetchTsdmAppPageHtml(client, url),
     postForm: (url, body) async => switch (await client.postForm(url, data: body, singleAttempt: true).run()) {
       Right(:final value) => value.data as String,
       Left(:final value) => throw value,

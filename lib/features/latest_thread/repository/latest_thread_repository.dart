@@ -22,6 +22,6 @@ class LatestThreadRepository {
     return getIt
         .get<NetClientProvider>()
         .get(withTsdmAppJson(url.canonicalForumUrl()))
-        .mapHttp((v) => tsdmAppPageDocument(v.data));
+        .mapHttpPage((document) => document);
   }
 }
