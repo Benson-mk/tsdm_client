@@ -837,4 +837,43 @@ void main() {
       expect(find.textContaining('只是包着的文字', findRichText: true), findsOneWidget);
     });
   });
+  // An empty column (natural and minimum width 0) next to columns at a width equal to the sum of the minimum widths:
+  // rounding made the room look a hair larger than the deficit and left only the empty column to share it, a division
+  // by zero that gave a NaN width (found by fuzzing the narrowing with arbitrary doubles).
+  group('column narrowing never gives an invalid width', () {
+    test('an empty column at exactly the minimum widths', () {
+      final widths = debugNarrowedColumnWidths(const [
+        (natural: 0, min: 0, long: false),
+        (natural: 68.69369669260027, min: 64, long: false),
+        (natural: 68.3283919057836, min: 64, long: false),
+        (natural: 100.79388212963129, min: 64, long: false),
+      ], 192);
+      expect(widths.any((e) => e.isNaN || e.isInfinite), isFalse, reason: '$widths');
+      expect(widths, [0, 64, 64, 64]);
+    });
+
+    test('arbitrary columns at or just above their minimum widths', () {
+      final random = math.Random(207);
+      for (var i = 0; i < 20000; i++) {
+        final columns = [
+          for (var c = 0; c < 2 + random.nextInt(6); c++)
+            if (random.nextInt(5) == 0)
+              (natural: 0.0, min: 0.0, long: false)
+            else
+              () {
+                final natural = 64 + random.nextDouble() * 700;
+                return (natural: natural, min: 64.0, long: natural > 128);
+              }(),
+        ];
+        final minimum = columns.fold<double>(0, (sum, e) => sum + e.min);
+        final natural = columns.fold<double>(0, (sum, e) => sum + e.natural);
+        final width = random.nextBool() ? minimum : minimum + random.nextDouble() * (natural - minimum);
+        final widths = debugNarrowedColumnWidths(columns, width);
+        expect(widths.any((e) => e.isNaN || e.isInfinite), isFalse, reason: '$columns @ $width -> $widths');
+        for (var x = 0; x < columns.length; x++) {
+          expect(widths[x], greaterThanOrEqualTo(columns[x].min - 1e-6), reason: '$columns @ $width -> $widths');
+        }
+      }
+    });
+  });
 }

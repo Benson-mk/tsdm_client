@@ -67,6 +67,11 @@ double _sum(Iterable<double> values) => values.fold(0, (sum, value) => sum + val
 /// Long columns give up room first, short ones only what the long ones cannot give. The columns that give up room keep
 /// the same share of their natural width: each shrinks in proportion to its natural width, wherever it is in the
 /// table. One that reaches its minimum width stays there, the others give up the rest.
+/// [_narrowed] for tests: the widths of columns given as (natural, min, long) narrowed to [width].
+@visibleForTesting
+List<double> debugNarrowedColumnWidths(List<({double natural, double min, bool long})> columns, double width) =>
+    _narrowed(columns, width);
+
 List<double> _narrowed(List<_Column> columns, double width) {
   final widths = [for (final column in columns) column.natural];
   var deficit = _sum(widths) - width;
@@ -86,7 +91,9 @@ List<double> _narrowed(List<_Column> columns, double width) {
 /// they could not give of [deficit].
 double _shrink(List<_Column> columns, List<double> widths, List<int> group, double deficit) {
   final room = _sum(group.map((x) => columns[x].natural - columns[x].min));
-  if (room <= deficit) {
+  // Within the rounding error the group gives up all it can: without the tolerance a width equal to the sum of the
+  // minimum widths could leave only empty columns (natural width 0) to share the rest, a division by zero.
+  if (room <= deficit + precisionErrorTolerance) {
     for (final x in group) {
       widths[x] = columns[x].min;
     }
@@ -99,7 +106,12 @@ double _shrink(List<_Column> columns, List<double> widths, List<int> group, doub
   var share = 1.0;
   while (true) {
     final others = group.where((x) => !atMinimum.contains(x));
-    share = (target - _sum(atMinimum.map((x) => columns[x].min))) / _sum(others.map((x) => columns[x].natural));
+    final natural = _sum(others.map((x) => columns[x].natural));
+    if (natural <= precisionErrorTolerance) {
+      // Only empty columns are left, they have nothing to give.
+      break;
+    }
+    share = (target - _sum(atMinimum.map((x) => columns[x].min))) / natural;
     final reached = others.where((x) => columns[x].natural * share < columns[x].min).toList();
     if (reached.isEmpty) {
       break;
