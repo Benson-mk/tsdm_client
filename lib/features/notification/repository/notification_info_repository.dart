@@ -29,6 +29,15 @@ bool noticeHintAllowed(UserBlockList blockList, {required int? currentUid}) =>
 /// former one calculates the latest notification status info, and the latter
 /// one stores the info calculated and provide to presentation layer.
 final class NotificationInfoRepository with LoggerMixin {
+  /// Constructor.
+  ///
+  /// [localNotifications] tells whether this platform shows the local notifications of the auto sync, see
+  /// [updateAutoSyncInfo]; the platform decides by default, tests set it.
+  NotificationInfoRepository({bool? localNotifications})
+    : _localNotifications = localNotifications ?? (isAndroid || isWindows);
+
+  final bool _localNotifications;
+
   final _controller = BehaviorSubject<NotificationStateInfo>();
   final _autoSyncController = BehaviorSubject<NotificationAutoSyncInfo>();
 
@@ -88,7 +97,7 @@ final class NotificationInfoRepository with LoggerMixin {
   /// notices arrive from the auto sync. Other desktop platforms (Linux / macOS)
   /// currently do not push local notifications, so they are skipped.
   void updateAutoSyncInfo(NotificationAutoSyncInfo info) {
-    if (!isAndroid && !isWindows) {
+    if (!_localNotifications) {
       return;
     }
     // Counts only: the info carries the notice / message text shown in the push notification.

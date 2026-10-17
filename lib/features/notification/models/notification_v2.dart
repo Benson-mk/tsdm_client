@@ -56,7 +56,9 @@ final class NotificationV2 with NotificationV2Mappable {
   /// * [personalMessageDoc]: `home.php?mod=space&do=pm&filter=privatepm`.
   /// * [broadcastMessageDoc]: `home.php?mod=space&do=pm&filter=announcepm`.
   ///
-  /// Only notifications not earlier than [since] (timestamp in seconds) are kept, if provided.
+  /// Only notifications not earlier than [since] (timestamp in seconds) are kept, if provided. With
+  /// [allPersonalMessages] every conversation on the private message page is kept whatever its time: a refresh the
+  /// user asked for brings back a conversation an earlier poll skipped (GitHub #193).
   ///
   /// Unread broadcast messages are kept whatever their time (GitHub #154): the forum stamps a public message with the
   /// time it was written, but delivers it to the members in batches, so it can reach an account hours later with that
@@ -69,6 +71,7 @@ final class NotificationV2 with NotificationV2Mappable {
     required uh.Document personalMessageDoc,
     required uh.Document broadcastMessageDoc,
     int? since,
+    bool allPersonalMessages = false,
   }) {
     final noticeList = noticeNodes(noticeDoc).map(Notice.toV2).whereType<NoticeV2>().toList();
     final pmList = personalMessageNodes(
@@ -81,7 +84,9 @@ final class NotificationV2 with NotificationV2Mappable {
     return NotificationV2(
       status: 0,
       noticeList: since == null ? noticeList : noticeList.where((e) => e.timestamp >= since).toList(),
-      personalMessageList: since == null ? pmList : pmList.where((e) => e.timestamp >= since).toList(),
+      personalMessageList: since == null || allPersonalMessages
+          ? pmList
+          : pmList.where((e) => e.timestamp >= since).toList(),
       broadcastMessageList: since == null
           ? bmList
           : bmList.where((e) => !e.alreadyRead || e.timestamp >= since).toList(),

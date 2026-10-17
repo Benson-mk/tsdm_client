@@ -149,6 +149,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
             uid: uid,
             fetched: value.info,
             since: timestamp,
+            window: value.window,
           );
           // Same rule as AutoNotificationCubit: the forum's clock when it answered, the device clock otherwise.
           await _storageProvider

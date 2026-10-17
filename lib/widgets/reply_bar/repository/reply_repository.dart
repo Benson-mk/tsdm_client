@@ -6,8 +6,10 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/editor/utils/mention.dart';
+import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/parsing.dart';
@@ -226,7 +228,7 @@ final class ReplyRepository with LoggerMixin {
     required String targetUrl,
     required String formHash,
     required String message,
-  }) => AsyncVoidEither(() async {
+  }) => _reportSent(() async {
     final formData = <String, String>{'message': toOfficialMentions(message), 'formhash': formHash};
 
     final e = await getIt.get<NetClientProvider>().postForm(targetUrl, data: formData).run();
@@ -264,7 +266,7 @@ final class ReplyRepository with LoggerMixin {
   ///
   /// Return the pmid if send message succeed which is used to show the new
   /// generated message.
-  AsyncVoidEither replyPersonalMessage(String touid, Map<String, String> formData) => AsyncVoidEither(() async {
+  AsyncVoidEither replyPersonalMessage(String touid, Map<String, String> formData) => _reportSent(() async {
     final e = await getIt.get<NetClientProvider>().postForm(formatSendMessageUrl(touid), data: formData).run();
     if (e.isLeft()) {
       return left(e.unwrapErr());
@@ -289,5 +291,19 @@ final class ReplyRepository with LoggerMixin {
     }
 
     return rightVoid();
+  });
+
+  /// Run the private message [send] and tell [PersonalMessageSent] when the forum accepted it: the conversation list
+  /// of the account that sent is refreshed for it (GitHub #193).
+  ///
+  /// The account is the one of the global cookie the request carries, read before sending: the refresh must not run
+  /// for an account switched to meanwhile.
+  static AsyncVoidEither _reportSent(Future<Either<AppException, void>> Function() send) => AsyncVoidEither(() async {
+    final sender = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null;
+    final result = await send();
+    if (result.isRight()) {
+      PersonalMessageSent.notify(sender);
+    }
+    return result;
   });
 }

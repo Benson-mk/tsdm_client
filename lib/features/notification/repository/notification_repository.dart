@@ -14,8 +14,9 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
-/// One fetch of every notification kind, with the forum's clock when it was answered.
-typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime});
+/// One fetch of every notification kind, with the forum's clock when it was answered and the lower bound (seconds)
+/// the fetch used, after the clamp to the last three days: `window`.
+typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int window});
 
 /// Repository of notification.
 ///
@@ -173,6 +174,11 @@ final class NotificationRepository with LoggerMixin {
   /// pages stay the source of every notification shown: fetching the notice page is also what marks the notices read
   /// on the forum, as it always did.
   ///
+  /// With [bypassGate] the app API is not asked and the three pages are always fetched, keeping every conversation
+  /// of the private message page whatever its time: for a refresh the user asked for (the notification page) and the
+  /// one after sending a private message (GitHub #193). The API lists the unread received conversations only, so a
+  /// conversation last sent to, or read on the web, never made a poll fetch the pages and never reached the list.
+  ///
   /// With [retry], a polling fetch that could not reach the forum at all (no answer: name resolution, connection or
   /// timeout) is tried once more after a few seconds: the network often comes back a moment after the device wakes
   /// up (GitHub #173). An answer with an error status is not retried. The in-app auto sync does not ask for it: the
@@ -181,65 +187,70 @@ final class NotificationRepository with LoggerMixin {
     NetClientProvider client, {
     int? timestamp,
     bool retry = false,
+    bool bypassGate = false,
   }) => AsyncEither(() async {
-    final first = await _fetchNotificationOnce(client, timestamp: timestamp).run();
+    final first = await _fetchNotificationOnce(client, timestamp: timestamp, bypassGate: bypassGate).run();
     if (first case Left(
       value: HttpHandshakeFailedException(statusCode: null) && final e,
     ) when retry && timestamp != null) {
       debug('forum not reached, trying again in ${_retryDelay.inSeconds}s: ${e.message}');
       await Future<void>.delayed(_retryDelay);
-      return _fetchNotificationOnce(client, timestamp: timestamp).run();
+      return _fetchNotificationOnce(client, timestamp: timestamp, bypassGate: bypassGate).run();
     }
     return first;
   });
 
-  AsyncEither<FetchedNotification> _fetchNotificationOnce(NetClientProvider client, {int? timestamp}) =>
-      AsyncEither(() async {
-        final since = _buildSinceTimestamp(timestamp);
-        if (timestamp != null) {
-          switch (notifyGateOf(await TsdmAppApi.ask(client, 'notify', {'since': '$since'}), since: since)) {
-            case TsdmAppNothingNew(:final serverTime):
-              debug('nothing new since $since by the app api, pages skipped');
-              return right((info: NotificationV2.empty, serverTime: serverTime));
-            case TsdmAppNotLoggedIn():
-              error('failed to fetch notification: not logged in (app api)');
-              return left(NotificationUserNotFound());
-            case TsdmAppFetchPages():
-              break;
-          }
-        }
-        final results = await Future.wait([
-          _fetchPageWithTime(client, noticeUrl).run(),
-          _fetchPageWithTime(client, personalMessageUrl).run(),
-          _fetchPageWithTime(client, broadcastMessageUrl).run(),
-        ]);
-        for (final r in results) {
-          if (r case Left(:final value)) {
-            error('failed to fetch notification: $value');
-            return left(value);
-          }
-        }
-        final pages = results.map((r) => r.getOrElse((_) => throw StateError('unreachable'))).toList();
-        final serverTime = earliestOf(pages.map((page) => page.$2));
-        final noticeDoc = pages[0].$1;
-        // Session expired: the server renders a guest page with the login form, not an empty notice list.
-        if (noticeDoc.querySelector('form#lsform') != null && noticeDoc.querySelector('div#um') == null) {
-          error('failed to fetch notification: not logged in');
+  AsyncEither<FetchedNotification> _fetchNotificationOnce(
+    NetClientProvider client, {
+    int? timestamp,
+    bool bypassGate = false,
+  }) => AsyncEither(() async {
+    final since = _buildSinceTimestamp(timestamp);
+    if (timestamp != null && !bypassGate) {
+      switch (notifyGateOf(await TsdmAppApi.ask(client, 'notify', {'since': '$since'}), since: since)) {
+        case TsdmAppNothingNew(:final serverTime):
+          debug('nothing new since $since by the app api, pages skipped');
+          return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
+        case TsdmAppNotLoggedIn():
+          error('failed to fetch notification: not logged in (app api)');
           return left(NotificationUserNotFound());
-        }
-        final info = NotificationV2.fromDocuments(
-          noticeDoc: noticeDoc,
-          personalMessageDoc: pages[1].$1,
-          broadcastMessageDoc: pages[2].$1,
-          since: since,
-        );
-        debug(
-          'fetched notification since $since: notice=${info.noticeList.length} '
-          'pm=${info.personalMessageList.length} bm=${info.broadcastMessageList.length} '
-          'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
-        );
-        return right((info: info, serverTime: serverTime));
-      });
+        case TsdmAppFetchPages():
+          break;
+      }
+    }
+    final results = await Future.wait([
+      _fetchPageWithTime(client, noticeUrl).run(),
+      _fetchPageWithTime(client, personalMessageUrl).run(),
+      _fetchPageWithTime(client, broadcastMessageUrl).run(),
+    ]);
+    for (final r in results) {
+      if (r case Left(:final value)) {
+        error('failed to fetch notification: $value');
+        return left(value);
+      }
+    }
+    final pages = results.map((r) => r.getOrElse((_) => throw StateError('unreachable'))).toList();
+    final serverTime = earliestOf(pages.map((page) => page.$2));
+    final noticeDoc = pages[0].$1;
+    // Session expired: the server renders a guest page with the login form, not an empty notice list.
+    if (noticeDoc.querySelector('form#lsform') != null && noticeDoc.querySelector('div#um') == null) {
+      error('failed to fetch notification: not logged in');
+      return left(NotificationUserNotFound());
+    }
+    final info = NotificationV2.fromDocuments(
+      noticeDoc: noticeDoc,
+      personalMessageDoc: pages[1].$1,
+      broadcastMessageDoc: pages[2].$1,
+      since: since,
+      allPersonalMessages: bypassGate,
+    );
+    debug(
+      'fetched notification since $since${bypassGate ? ' (gate bypassed, every conversation)' : ''}: notice=${info.noticeList.length} '
+      'pm=${info.personalMessageList.length} bm=${info.broadcastMessageList.length} '
+      'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
+    );
+    return right((info: info, serverTime: serverTime, window: since));
+  });
 
   /// Fetch all kinds of notification of the current user.
   ///
@@ -253,10 +264,16 @@ final class NotificationRepository with LoggerMixin {
   /// The name is kept for compatibility, see the class document for details.
   ///
   /// Resolves to the forum's clock of the fetch (see [fetchNotificationWith]), null when the server did not say.
-  AsyncEither<DateTime?> fetchNotificationV2({required int uid, int? timestamp}) {
+  ///
+  /// [bypassGate] is passed on to [fetchNotificationWith]: the refresh the user asked for.
+  AsyncEither<DateTime?> fetchNotificationV2({required int uid, int? timestamp, bool bypassGate = false}) {
     _controller.add(const NotificationInfoStateLoading());
     return AsyncEither(() async {
-      final result = await fetchNotificationWith(getIt.get<NetClientProvider>(), timestamp: timestamp).run();
+      final result = await fetchNotificationWith(
+        getIt.get<NetClientProvider>(),
+        timestamp: timestamp,
+        bypassGate: bypassGate,
+      ).run();
       switch (result) {
         case Left(:final value):
           if (value is NotificationUserNotFound) {
@@ -266,7 +283,7 @@ final class NotificationRepository with LoggerMixin {
           _controller.add(const NotificationInfoStateFailure());
           return left(value);
         case Right(:final value):
-          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp));
+          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp, window: value.window));
           return right(value.serverTime);
       }
     });

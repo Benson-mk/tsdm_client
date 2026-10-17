@@ -57,7 +57,7 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
     return EasyRefresh.builder(
       controller: controller,
       header: const MaterialHeader(),
-      onRefresh: () => context.read<NotificationBloc>().add(NotificationUpdateAllRequested()),
+      onRefresh: () => context.read<NotificationBloc>().add(const NotificationUpdateAllRequested(bypassGate: true)),
       childBuilder: (context, physics) => count == 0
           ? AppScrollableStateView(
               physics: physics,
@@ -213,7 +213,7 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
             ),
             NotificationStatus.failure => buildRetryButton(
               context,
-              () => context.read<NotificationBloc>().add(NotificationUpdateAllRequested()),
+              () => context.read<NotificationBloc>().add(const NotificationUpdateAllRequested(bypassGate: true)),
             ),
           };
           return Scaffold(

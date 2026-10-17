@@ -102,7 +102,7 @@ Future<void> showApproveFriendDialog(
     case Right(value: AddFriendResult(success: true, :final message)):
       showSnackBar(context: messengerContext, message: message.isEmpty ? tr.approved : message);
       if (notifications != null && !notifications.isClosed) {
-        notifications.add(NotificationUpdateAllRequested());
+        notifications.add(const NotificationUpdateAllRequested());
       }
     case Right(value: AddFriendResult(:final message)):
       showSnackBar(context: messengerContext, message: message.isEmpty ? tr.refused : message);
