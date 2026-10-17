@@ -84,7 +84,9 @@ class ThreadRepository {
     }
 
     final resp = respEither.unwrap();
-    if (resp.statusCode != HttpStatus.ok) {
+    // The antitheft interceptor asked the web page again for an answer without a page; what is still one here is a
+    // failed request, not a thread without posts (see tsdmAppAnswerWithoutPage).
+    if (resp.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(resp.data)) {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 

@@ -115,22 +115,20 @@ final class FavoriteRepository with LoggerMixin {
   void forgetItem({required int uid, required FavoriteItem item}) => _known[item.type]?[uid]?.remove(item.targetId);
 
   /// Fetch and parse one page of the thread favorites list.
-  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) => getIt
-      .get<NetClientProvider>()
-      .get(withTsdmAppJson(url))
-      .mapHttp((v) => parseFavoriteListPage(tsdmAppPageDocument(v.data)));
+  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage(parseFavoriteListPage);
 
   /// Fetch and parse one page of the forum favorites list.
   AsyncEither<FavoriteListPage<FavoriteForum>> fetchForumListPage([String? url]) => getIt
       .get<NetClientProvider>()
       .get(withTsdmAppJson(url ?? listUrlOf(FavoriteType.forum)))
-      .mapHttp((v) => parseFavoriteForumListPage(tsdmAppPageDocument(v.data)));
+      .mapHttpPage(parseFavoriteForumListPage);
 
   /// Fetch and parse one page of the favorites list of [type]; the first page when [url] is null.
   AsyncEither<FavoriteListPage<FavoriteItem>> fetchListPageOf(FavoriteType type, [String? url]) => getIt
       .get<NetClientProvider>()
       .get(withTsdmAppJson(url ?? listUrlOf(type)))
-      .mapHttp((v) => parseFavoriteListPageOfType(tsdmAppPageDocument(v.data), type));
+      .mapHttpPage((document) => parseFavoriteListPageOfType(document, type));
 
   /// Fetch a favorite dialog (add or delete); the html wrapped in the ajax xml answer.
   AsyncEither<String> _fetchDialog(String url) => getIt.get<NetClientProvider>().get(url).mapHttp((v) => '${v.data}');

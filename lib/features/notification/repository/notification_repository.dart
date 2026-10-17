@@ -69,7 +69,9 @@ final class NotificationRepository with LoggerMixin {
   AsyncEither<(uh.Document, String? page)> fetchDocument(String url) => AsyncEither(
     () async => switch (await getIt.get<NetClientProvider>().get(jsonModeDetailUrl(url)).run()) {
       Left(:final value) => left(value),
-      Right(:final value) when value.statusCode != HttpStatus.ok => left(HttpRequestFailedException(value.statusCode)),
+      Right(:final value) when value.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(value.data) => left(
+        HttpRequestFailedException(value.statusCode),
+      ),
       Right(:final value) => right((
         tsdmAppPageDocument(value.data),
         value.realUri.tryGetQueryParameters()?['page'],

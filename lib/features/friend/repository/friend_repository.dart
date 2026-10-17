@@ -23,10 +23,8 @@ final class FriendRepository {
   /// Asked in the JSON mode of the forum's app API, which answers the friends pages (`do=friend`) since plugin 1.6.0
   /// (roadmap item 3); an older plugin answers the web page, which parses the same. The `@` candidates read the own
   /// list through here too when the `atplus` plugin is not there.
-  AsyncEither<FriendListPage> fetchPage(String url) => getIt
-      .get<NetClientProvider>()
-      .get(withTsdmAppJson(url))
-      .mapHttp((v) => parseFriendListPage(tsdmAppPageDocument(v.data)));
+  AsyncEither<FriendListPage> fetchPage(String url) =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage(parseFriendListPage);
 
   /// The add-friend form for [uid], as the forum's popup loads it.
   static String addFriendFormUrl(String uid) =>
