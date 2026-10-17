@@ -65,7 +65,8 @@ class _NeteaseCardState extends State<NeteaseCard> with LoggerMixin {
               children: [
                 Icon(Icons.music_note_outlined, color: primaryColor),
                 sizedBoxW8H8,
-                Text(tr.title, style: primaryStyle),
+                // Wraps on a narrow screen with large text instead of overflowing.
+                Flexible(child: Text(tr.title, style: primaryStyle)),
               ],
             ),
             sizedBoxW12H12,

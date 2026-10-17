@@ -3,6 +3,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/clipboard.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
+import 'package:tsdm_client/widgets/text_widget_span.dart';
 
 /// Card to display code block, from html node type <div class="blockcode">.
 class CodeCard extends StatelessWidget {
@@ -23,11 +24,14 @@ class CodeCard extends StatelessWidget {
       icon: Icons.code_outlined,
       title: context.t.codeCard.title,
       color: appEmbedColor(context, elevation),
-      // An icon button: keeps the header from overflowing with large text or long translations.
-      trailing: IconButton(
-        icon: const Icon(Icons.copy_outlined),
-        tooltip: context.t.codeCard.copy,
-        onPressed: () async => copyToClipboard(context, code),
+      // An icon button: keeps the header from overflowing with large text or long translations. In a post its tooltip
+      // follows the text scale too.
+      trailing: OverlayTextScale(
+        child: IconButton(
+          icon: const Icon(Icons.copy_outlined),
+          tooltip: context.t.codeCard.copy,
+          onPressed: () async => copyToClipboard(context, code),
+        ),
       ),
       child: SizedBox(
         width: double.infinity,
