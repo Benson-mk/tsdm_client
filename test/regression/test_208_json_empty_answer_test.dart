@@ -48,6 +48,8 @@ import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repo
 import 'package:tsdm_client/features/medal_center/view/medal_center_page.dart';
 import 'package:tsdm_client/features/my_thread/repository/my_thread_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
+import 'package:tsdm_client/features/points/repository/model/models.dart';
+import 'package:tsdm_client/features/points/repository/points_repository.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/profile/repository/my_titles_repository.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
@@ -293,6 +295,16 @@ final List<_Caller> _callers = [
       const FriendRepository().fetchPage(FriendRepository.listUrl(uid: '1001')),
       (p) => '${p.items.length}|${p.needLogin}|${p.message}',
     ),
+    pages: true,
+  ),
+  (
+    name: 'points statistics',
+    run: (_) => _state(PointsRepository().fetchStatisticsPage(), _docView),
+    pages: true,
+  ),
+  (
+    name: 'points changelog',
+    run: (_) => _state(PointsRepository().fetchChangelogPage(const ChangelogParameter.empty()), _docView),
     pages: true,
   ),
   (

@@ -1,6 +1,3 @@
-import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
-
-import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/points/repository/model/models.dart';
@@ -27,14 +24,7 @@ final class PointsRepository with LoggerMixin {
       _fetchPage('$_changelogPageUrl$parameter');
 
   /// A JSON answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or an empty body) is a
-  /// failed request, not a page without points or changes.
-  static AsyncEither<uh.Document> _fetchPage(String url) => AsyncEither(
-    () async => switch (await getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).run()) {
-      Left(:final value) => left(value),
-      Right(:final value) when value.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(value.data) => left(
-        HttpRequestFailedException(value.statusCode),
-      ),
-      Right(:final value) => right(tsdmAppPageDocument(value.data)),
-    },
-  );
+  /// failed request, not a page without points or changes ([TsdmAppPageHttpExt.mapHttpPage]).
+  static AsyncEither<uh.Document> _fetchPage(String url) =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage((document) => document);
 }
