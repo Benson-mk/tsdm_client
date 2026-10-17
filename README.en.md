@@ -16,14 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.37.1 (2026-10-14)
+## Latest update: 1.38.0 (2026-10-17)
 
-- Newcomer report card: field names shown, long values wrap, empty fields show "-"; rated posts no longer end with a stray "评分" heading.
-- 1.37.0: Multiple accounts: the avatar menu lists your other accounts, one tap switches; thread and board pages reload for the new account and keep an unsent reply. Fixed the profile showing the previous account after a switch and notification sync stalling when leaving mid-switch.
-- 1.37.0: more pages go through the forum's app API (notifications, polls, board groups, latest threads); check-in no longer loads the whole check-in page. With the API plugin 1.6.0 the notice list, guide, my threads and friends follow.
-- Android build number 139, installs over earlier releases and test builds.
+- With a larger system font, cards in posts (spoilers, quotes, code, red packets, reviews, …) scale once instead of twice and no longer overflow; tables in posts wrap to the screen when they can instead of scrolling sideways.
+- Poll cards use the poll already loaded with the thread page (two fewer requests per thread); the points pages go through the forum's app API (plugin 1.7.0).
+- A blank answer from the API shows "load failed" with retry on every page instead of an empty list or a login prompt.
+- Android build number 140, installs over earlier releases and test builds.
 
-[Download 1.37.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.37.1) · [Full changelog](./CHANGELOG.md)
+[Download 1.38.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.38.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
