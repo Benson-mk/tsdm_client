@@ -131,6 +131,12 @@ class AuthenticationRepository with LoggerMixin {
   /// Authentication status stream.
   Stream<AuthStatus> get status => _controller.asBroadcastStream();
 
+  /// The latest status of [status], the one it replays to a new listener; null before the first.
+  ///
+  /// A listener acting on the statuses that come after it subscribed tells the replayed one by identity: a login of
+  /// the account in use again carries the same account as the replayed status (see listenLoginsOf).
+  AuthStatus? get latestStatus => _controller.valueOrNull;
+
   /// Dispose the resources.
   Future<void> dispose() async {
     await _controller.close();

@@ -5,8 +5,10 @@
 ///   was created (twice: the account status replayed to its new listener loaded it once more), and again on every
 ///   account status, although the thread page reloads for a new account since 1.37.0 and builds its floors afresh.
 ///   The card now shows the form of the page; it asks the forum only when the page does not hold it, holds it for
-///   another account, or was read before a vote of the account (the floors a failed reload puts back). Voting still
-///   asks once for the results, and so does a login of the account in use from the card (its session had expired).
+///   another account, was served as to a guest while an account is in use (its session had expired, or the floors a
+///   failed reload puts back were read before a login), or was read before a vote of the account (such floors too).
+///   Voting still asks once for the results, and so does a login of the account in use while the card asks to log in,
+///   from the card or elsewhere (its session had expired; the account in use stays the same, nothing else reloads).
 /// * The points pages are asked in the JSON mode of the forum's app API (`tsdmapp=json`, plugin 1.7.0); an older
 ///   plugin ignores the parameter and the web page comes back. Both give the same. An answer without a page is a failed
 ///   load. The bank pages stay web pages: plugin 1.7.0 does not handle the bank (`bank_ane`), the parameter would only
@@ -32,6 +34,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/authentication/utils/account_changes.dart';
 import 'package:tsdm_client/features/bank/models/bank_data.dart';
 import 'package:tsdm_client/features/bank/repository/bank_repository.dart';
 import 'package:tsdm_client/features/blocking/cubit/user_block_cubit.dart';
@@ -782,12 +785,54 @@ void main() {
       await _dispose(tester);
     });
 
+    // Integration review of the fewer-requests branch: the card showed the form of a page served to a guest to the
+    // account now in use, "log in to vote" for an account logged in, and asked nothing.
+    for (final (name, dropped) in [
+      ('read as a guest, then Bob logged in', false),
+      ('read with the session of Alice the forum dropped, then switched to Bob', true),
+    ]) {
+      testWidgets('guest floors put back after a failed reload ($name): the card asks for the form of Bob', (
+        tester,
+      ) async {
+        final forum = _useForum(json: true);
+        if (dropped) {
+          forum.guests.add(_alice.uid!);
+        } else {
+          final forgot = await tester.runAsync(() => auth.forgetCurrentUser().run());
+          expect(forgot!.isRight(), isTrue, reason: '$forgot');
+        }
+        await pumpThread(tester, forum);
+        expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
+        final asked = forum.pollLoads;
+
+        // The reload for Bob fails after a while: the floors read as a guest go back on screen.
+        forum
+          ..failThreadLoads = true
+          ..gate = Completer<void>();
+        await switchToBob(tester);
+        expect(_card, findsNothing, reason: 'no floors while the page reloads');
+        forum.gate!.complete();
+        forum.gate = null;
+        await _settle(tester);
+        final bloc = tester.element(_card).read<ThreadBloc>();
+        expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1), reason: 'the floor is back');
+        expect(forum.threadLoads, 2);
+        expect(forum.pollLoads, asked + 1, reason: 'the card asks for the form of Bob once');
+        expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
+        expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsNothing);
+        await _vote(tester);
+        expect(forum.votes.single['formhash'], 'hashOf1001', reason: "Bob's vote goes out with Bob's formhash");
+        await _dispose(tester);
+      });
+    }
+
     testWidgets('a session the forum dropped: signed in again as the same account, the card asks once', (
       tester,
     ) async {
       final forum = _useForum(json: true)..guests.add(_alice.uid!);
       final router = await pumpThread(tester, forum);
       expect(_inCard(find.byType(CheckboxListTile)), findsNothing, reason: 'the page of a guest');
+      expect(forum.pollLoads, 1, reason: 'a guest page for an account in use: the card asks, as the forum says');
       await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
       await _settle(tester);
       expect(find.text('login page'), findsOneWidget);
@@ -796,26 +841,79 @@ void main() {
       forum.guests.clear();
       final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
       expect(login!.isRight(), isTrue, reason: '$login');
+      await _settle(tester);
+      expect(forum.pollLoads, 1, reason: 'not while the login page of the card is open, the card loads once it closes');
       router.pop();
       await _settle(tester);
       expect(forum.threadLoads, 1, reason: 'the same account: the thread page does not reload');
-      expect(forum.pollLoads, 1, reason: 'the card asks once');
+      expect(forum.pollLoads, 2, reason: 'the card asks once after the login, not twice');
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Alice');
       await _dispose(tester);
     });
 
-    testWidgets('signed in as another account from the card: the thread page reloads, the card asks nothing', (
+    testWidgets('a session the forum dropped, signed in again elsewhere (manage accounts): the card asks once', (
       tester,
     ) async {
       final forum = _useForum(json: true)..guests.add(_alice.uid!);
       final router = await pumpThread(tester, forum);
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
+      expect(forum.pollLoads, 1);
+
+      // "Login again" of Alice in the manage accounts page, above the thread page: no change of the account in use.
+      unawaited(router.push('/other'));
+      await _settle(tester);
+      forum.guests.clear();
+      final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      expect(login!.isRight(), isTrue, reason: '$login');
+      await _settle(tester);
+      router.pop();
+      await _settle(tester);
+      expect(forum.threadLoads, 1, reason: 'the same account: the thread page does not reload');
+      expect(forum.pollLoads, 2, reason: 'the card asks once after the login');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Alice');
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsNothing);
+
+      // The card shows the form now: the account reported again asks nothing more.
+      for (var i = 0; i < 2; i++) {
+        await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+        await _settle(tester);
+      }
+      expect(forum.pollLoads, 2);
+      expect(forum.threadLoads, 1);
+      await _dispose(tester);
+    });
+
+    testWidgets('the same account reported again: no request, the card keeps the form of the page', (tester) async {
+      final forum = _useForum(json: true);
+      await pumpThread(tester, forum);
+      for (var i = 0; i < 3; i++) {
+        final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+        expect(login!.isRight(), isTrue, reason: '$login');
+        await _settle(tester);
+      }
+      expect(forum.threadLoads, 1);
+      expect(forum.pollLoads, 0, reason: 'a card showing the form does not ask again on each status');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _dispose(tester);
+    });
+
+    testWidgets('signed in as another account from the card: the thread page reloads, the card asks nothing more', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true)..guests.add(_alice.uid!);
+      final router = await pumpThread(tester, forum);
+      expect(forum.pollLoads, 1, reason: 'a guest page for an account in use');
       await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
       await _settle(tester);
       await switchToBob(tester);
       router.pop();
       await _settle(tester);
       expect(forum.threadLoads, 2, reason: 'the thread page reloads for Bob once shown again');
-      expect(forum.pollLoads, 0, reason: 'the floors of the new page hold the form of Bob');
+      expect(
+        forum.pollLoads,
+        1,
+        reason: 'no other than the first one: the floors of the new page hold the form of Bob',
+      );
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
       await _dispose(tester);
     });
@@ -851,15 +949,29 @@ void main() {
       expect(cubit.state.uid, _bob.uid);
     });
 
-    test('a guest page for an account in use: login required, as the same page asked again would say', () {
-      final cubit = PollCubit(
-        url: 'poll',
-        currentUid: () => _alice.uid,
-        repository: () => PollRepository(getPage: (_) async => fail('no request'), postForm: (_, _) async => ''),
-      );
-      addTearDown(cubit.close);
-      expect(cubit.adopt(_pollForm('multiple', 'none'), servedUid: null), isTrue);
-      expect(cubit.state.poll!.availability, PollAvailability.loginRequired);
+    test('a guest page for an account in use is not shown, the caller asks; a guest gets the page of a guest', () {
+      PollCubit cubitOf(int? uid) {
+        final cubit = PollCubit(
+          url: 'poll',
+          currentUid: () => uid,
+          repository: () => PollRepository(getPage: (_) async => fail('no request'), postForm: (_, _) async => ''),
+        );
+        addTearDown(cubit.close);
+        return cubit;
+      }
+
+      final guestPage = _pagePoll(0, name: 'guest');
+      expect(guestPage.viewerUid, isNull, reason: 'a guest page names no account');
+      // Read before a login of the account, or with its session the forum dropped (issue #25) and renewed since: the
+      // floors a failed reload of the thread page puts back, for example.
+      final alice = cubitOf(_alice.uid);
+      expect(alice.adopt(guestPage.form, servedUid: guestPage.viewerUid), isFalse, reason: 'the caller loads instead');
+      expect(alice.state.poll, isNull);
+      expect(alice.adopt(_pollForm('multiple', 'none'), servedUid: null), isFalse, reason: 'a page that does not say');
+      expect(alice.state.poll, isNull);
+      final guest = cubitOf(null);
+      expect(guest.adopt(guestPage.form, servedUid: guestPage.viewerUid), isTrue, reason: 'no request for a guest');
+      expect(guest.state.poll!.availability, PollAvailability.loginRequired);
     });
 
     test('a vote from the form of the page is posted once, then the results are asked once', () async {
@@ -920,6 +1032,26 @@ void main() {
       expect(again.adopt(after.form, servedUid: after.viewerUid), isTrue, reason: 'a page read after the vote');
       final bob = _pagePoll(_bob.uid!);
       expect(cubitOf(_bob.uid!).adopt(bob.form, servedUid: bob.viewerUid), isTrue, reason: 'Bob did not vote');
+    });
+  });
+
+  group('logins of an account', () {
+    test('each one from now on, also of the account in use again, not the status replayed to the listener', () async {
+      var logins = 0;
+      final subscription = listenLoginsOf(auth, _alice.uid!, onLogin: () => logins++);
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(logins, 0, reason: 'the status a new listener gets is the login of setUp, before');
+      for (var i = 1; i <= 2; i++) {
+        final login = await auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run();
+        expect(login.isRight(), isTrue, reason: '$login');
+        await Future<void>.delayed(Duration.zero);
+        expect(logins, i, reason: 'Alice logged in again, the account in use is the same');
+      }
+      final result = await auth.switchUser(_bob).run();
+      expect(result.isRight(), isTrue, reason: '$result');
+      await Future<void>.delayed(Duration.zero);
+      expect(logins, 2, reason: 'a login of another account');
     });
   });
 
@@ -1011,29 +1143,66 @@ void main() {
     ) async {
       final forum = _useForum()..guests.add(_alice.uid!);
       final router = await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      expect(forum.pollLoads, 1, reason: 'a guest page for an account in use: the card asks, as the forum says');
       await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
       await _settle(tester);
       expect(find.text('login page'), findsOneWidget);
       forum.guests.clear();
       final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
       expect(login!.isRight(), isTrue, reason: '$login');
+      await _settle(tester);
+      expect(forum.pollLoads, 1, reason: 'not while the login page of the card is open, the card loads once it closes');
       router.pop();
       await _settle(tester);
-      expect(forum.pollLoads, 1, reason: 'once: the account in use did not change, nothing else loads it');
+      expect(forum.pollLoads, 2, reason: 'once after the login: the account in use did not change, nothing else loads');
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _dispose(tester);
+    });
+
+    testWidgets('a session the forum dropped, signed in again elsewhere: the card asks once', (tester) async {
+      final forum = _useForum()..guests.add(_alice.uid!);
+      await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      expect(forum.pollLoads, 1);
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
+      forum.guests.clear();
+      final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      expect(login!.isRight(), isTrue, reason: '$login');
+      await _settle(tester);
+      expect(forum.pollLoads, 2, reason: 'once after the login');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      await _settle(tester);
+      expect(forum.pollLoads, 2, reason: 'the card shows the form: the account reported again asks nothing more');
+      await _dispose(tester);
+    });
+
+    testWidgets('a session the forum dropped, another account switched to elsewhere: the card loads once for it', (
+      tester,
+    ) async {
+      final forum = _useForum()..guests.add(_alice.uid!);
+      await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      expect(forum.pollLoads, 1);
+      final result = await tester.runAsync(() => auth.switchUser(_bob).run());
+      expect(result!.isRight(), isTrue, reason: '$result');
+      await _settle(tester);
+      expect(forum.pollLoads, 2, reason: 'the load for the new account only: no login of Alice');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+      await _vote(tester);
+      expect(forum.votes.single['formhash'], 'hashOf1001');
       await _dispose(tester);
     });
 
     testWidgets('signed in as another account from the card: it loads once, for the new account', (tester) async {
       final forum = _useForum()..guests.add(_alice.uid!);
       final router = await pumpCard(tester, _pagePoll(0, name: 'guest'));
+      expect(forum.pollLoads, 1, reason: 'a guest page for an account in use');
       await tester.tap(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)));
       await _settle(tester);
       final result = await tester.runAsync(() => auth.switchUser(_bob).run());
       expect(result!.isRight(), isTrue, reason: '$result');
       router.pop();
       await _settle(tester);
-      expect(forum.pollLoads, 1, reason: 'the load for the new account, not a second one after the login page');
+      expect(forum.pollLoads, 2, reason: 'the load for the new account, not another one after the login page');
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
       await _dispose(tester);
     });

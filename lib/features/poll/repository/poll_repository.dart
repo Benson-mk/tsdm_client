@@ -15,7 +15,8 @@ class PollRepository {
   ///
   /// The poll's post is read in the JSON mode of the forum's app API (roadmap item 3): the `findpost` redirect is
   /// carried to the thread page, whose blocks hold the poll form and the `discuz_uid` the identity check reads. Without
-  /// the plugin the web page comes back. A card in the thread page asks only after a vote (see PollCard).
+  /// the plugin the web page comes back. A card in the thread page shows the form of that page instead; it asks when it
+  /// cannot, after a vote and after a login (see PollCard).
   factory PollRepository.network(NetClientProvider client) => PollRepository(
     getPage: (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
       Right(:final value) => tsdmAppPageHtml(value.data),

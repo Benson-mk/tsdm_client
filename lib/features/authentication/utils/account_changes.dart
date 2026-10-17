@@ -30,3 +30,21 @@ StreamSubscription<AuthStatus> listenAccountChanges(
     onChanged();
   });
 }
+
+/// Call [onLogin] after each login of the account [uid] that ends from now on, whichever page it was done from.
+///
+/// Also a login of the account in use again, which is no change for [listenAccountChanges]: the forum may have dropped
+/// the session of that account (issue #25), and what it served meanwhile as to a guest changes after the login. The
+/// status the stream replays to a new listener ([AuthenticationRepository.latestStatus]) ended before, it is no login.
+StreamSubscription<AuthStatus> listenLoginsOf(
+  AuthenticationRepository auth,
+  int uid, {
+  required void Function() onLogin,
+}) {
+  final replayed = auth.latestStatus;
+  return auth.status.listen((status) {
+    if (!identical(status, replayed) && status is AuthStatusAuthed && status.userInfo.uid == uid) {
+      onLogin();
+    }
+  });
+}

@@ -75,12 +75,24 @@ class PollCubit extends Cubit<PollState> {
   /// Show the poll [form] of the page the post was read from, a page served to [servedUid], without asking the forum:
   /// the thread page already loaded it for the account in use.
   ///
-  /// False when it cannot be shown, the caller then loads instead: the page belongs to another account than the
-  /// current one (the account changed since), or it shows the poll open although this account sent a vote for it
-  /// since (the page was read before the vote, see [_votesSent]). The form is checked the way [PollRepository.fetch]
-  /// checks a page.
+  /// False when it cannot be shown, the caller then loads instead:
+  ///
+  /// * The page belongs to another account than the current one (the account changed since).
+  /// * The page was served as to a guest, or does not say to whom, while an account is in use. The forum does that when
+  ///   the session of the account expired (issue #25), and the account may have logged in again since; or the page was
+  ///   read before a login: the floors a failed reload of the thread page puts back after a login or a switch are
+  ///   those of the page before (see ThreadBloc). Shown, the card asked an account logged in to log in, and asked the
+  ///   forum nothing. Only such a page costs a request, mostly while the session is expired; a guest gets the page of
+  ///   a guest.
+  /// * The page shows the poll open although this account sent a vote for it since (the page was read before the vote,
+  ///   see [_votesSent]).
+  ///
+  /// The form is checked the way [PollRepository.fetch] checks a page.
   bool adopt(String form, {required int? servedUid}) {
     final uid = currentUid();
+    if (servedUid == null && uid != null) {
+      return false;
+    }
     final ForumPoll poll;
     try {
       poll = PollRepository.pollOfPage(parseHtmlDocument(form), servedUid: servedUid, uid: uid);

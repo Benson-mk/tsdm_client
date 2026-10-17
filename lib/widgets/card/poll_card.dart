@@ -25,11 +25,12 @@ import 'package:tsdm_client/widgets/indicator.dart';
 ///
 /// The page holding the post already holds the poll form ([fromPage]): the card shows it and asks the forum for the
 /// post's page only when it has to, which is when the form is not there, is there for another account than the
-/// current one, or was read before a vote of the account (see [PollCubit.adopt]), on refresh, once after a vote for
-/// the results, and after a login of the account in use. In the thread page the card does not follow the account: the
-/// page reloads for a new one and builds its floors, this card included, afresh (every card asked for the whole thread
-/// page again on each account status, twice when created). Elsewhere (the post of a notice) nothing reloads the post,
-/// the card loads again itself when the account changed.
+/// current one or as for a guest while an account is in use, or was read before a vote of the account (see
+/// [PollCubit.adopt]), on refresh, once after a vote for the results, and once after a login of the account in use
+/// while the card asks to log in, from its button or elsewhere. In the thread page the card does not follow the
+/// account: the page reloads for a new one and builds its floors, this card included, afresh (every card asked for
+/// the whole thread page again on each account status, twice when created). Elsewhere (the post of a notice) nothing
+/// reloads the post, the card loads again itself when the account changed.
 class PollCard extends StatefulWidget {
   /// [controller] permits deterministic UI tests; production creates its own.
   const PollCard(this.pid, {super.key, this.fromPage, this.controller});
@@ -50,6 +51,16 @@ class _PollCardState extends State<PollCard> {
   late PollCubit _cubit;
   StreamSubscription<AuthStatus>? _authSubscription;
 
+  /// The states of [_cubit], for [_followLogins].
+  StreamSubscription<PollState>? _stateSubscription;
+
+  /// Logins of the account [_loginUid], while the card asks it to log in (see [_followLogins]).
+  StreamSubscription<AuthStatus>? _loginSubscription;
+  int? _loginUid;
+
+  /// Login pages opened from the card ([_login]) and not closed yet.
+  int _loginPages = 0;
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +79,7 @@ class _PollCardState extends State<PollCard> {
       currentUid: () => auth.effectiveCurrentUid,
       repository: () => PollRepository.network(getIt.get<NetClientProvider>()),
     );
+    _stateSubscription = _cubit.stream.listen((state) => _followLogins(auth, state));
     final page = widget.fromPage;
     if (page == null || !_cubit.adopt(page.form, servedUid: page.viewerUid)) {
       unawaited(_cubit.load());
@@ -82,6 +94,42 @@ class _PollCardState extends State<PollCard> {
     }
   }
 
+  /// Load once after a login of the account in use while the card asks that account to log in ([state]).
+  ///
+  /// The forum served the post as to a guest although an account is in use: the session of that account had expired
+  /// (issue #25). Logging that account in again elsewhere (manage accounts, for example) is no change of the account in
+  /// use, for which neither the thread page nor a card of a notice ([listenAccountChanges]) reload, and the card kept
+  /// asking to log in. Only in that state: a card showing its form asks nothing on a status (every card asked for the
+  /// whole thread page again on each). A login from the button of the card loads once its page closes ([_login]).
+  void _followLogins(AuthenticationRepository auth, PollState state) {
+    final uid = state.uid;
+    if (uid == null || state.poll?.availability != PollAvailability.loginRequired) {
+      _stopFollowingLogins();
+      return;
+    }
+    if (_loginSubscription != null && _loginUid == uid) {
+      return;
+    }
+    _stopFollowingLogins();
+    _loginUid = uid;
+    _loginSubscription = listenLoginsOf(
+      auth,
+      uid,
+      onLogin: () {
+        final current = _cubit.state;
+        if (_loginPages == 0 && current.uid == uid && current.poll?.availability == PollAvailability.loginRequired) {
+          unawaited(_cubit.load());
+        }
+      },
+    );
+  }
+
+  void _stopFollowingLogins() {
+    unawaited(_loginSubscription?.cancel());
+    _loginSubscription = null;
+    _loginUid = null;
+  }
+
   @override
   void didUpdateWidget(PollCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -90,6 +138,9 @@ class _PollCardState extends State<PollCard> {
         oldWidget.fromPage != widget.fromPage) {
       unawaited(_authSubscription?.cancel());
       _authSubscription = null;
+      unawaited(_stateSubscription?.cancel());
+      _stateSubscription = null;
+      _stopFollowingLogins();
       if (oldWidget.controller == null) unawaited(_cubit.close());
       _start();
     }
@@ -98,6 +149,8 @@ class _PollCardState extends State<PollCard> {
   @override
   void dispose() {
     unawaited(_authSubscription?.cancel());
+    unawaited(_stateSubscription?.cancel());
+    _stopFollowingLogins();
     if (widget.controller == null) unawaited(_cubit.close());
     super.dispose();
   }
@@ -107,12 +160,18 @@ class _PollCardState extends State<PollCard> {
   /// A login of another account changes the account: the thread page reloads with its floors once it shows again, a
   /// card elsewhere loads by itself (see [PollCard]), loading here as well asked for the same page twice. A login of
   /// the same account is no change for them, yet the card asked to log in because the forum served the page as to a
-  /// guest: the session of that account had expired (issue #25), after the login it can vote. Back without a login,
-  /// the card asks once as well, as it always did.
+  /// guest: the session of that account had expired (issue #25), after the login it can vote. The card does not load
+  /// for that login before its page closes ([_followLogins]): once is enough. Back without a login, the card asks once
+  /// as well, as it always did.
   Future<void> _login() async {
     final auth = context.read<AuthenticationRepository>();
     final uid = auth.effectiveCurrentUid;
-    await context.pushNamed(ScreenPaths.login);
+    _loginPages++;
+    try {
+      await context.pushNamed(ScreenPaths.login);
+    } finally {
+      _loginPages--;
+    }
     if (mounted && auth.effectiveCurrentUid == uid) await _cubit.load();
   }
 
