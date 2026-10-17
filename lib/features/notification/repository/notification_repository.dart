@@ -14,8 +14,9 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
-/// One fetch of every notification kind, with the forum's clock when it was answered.
-typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime});
+/// One fetch of every notification kind, with the forum's clock when it was answered and the lower bound (seconds)
+/// the fetch used, after the clamp to the last three days: `window`.
+typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int window});
 
 /// Repository of notification.
 ///
@@ -209,7 +210,7 @@ final class NotificationRepository with LoggerMixin {
       switch (notifyGateOf(await TsdmAppApi.ask(client, 'notify', {'since': '$since'}), since: since)) {
         case TsdmAppNothingNew(:final serverTime):
           debug('nothing new since $since by the app api, pages skipped');
-          return right((info: NotificationV2.empty, serverTime: serverTime));
+          return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
         case TsdmAppNotLoggedIn():
           error('failed to fetch notification: not logged in (app api)');
           return left(NotificationUserNotFound());
@@ -248,7 +249,7 @@ final class NotificationRepository with LoggerMixin {
       'pm=${info.personalMessageList.length} bm=${info.broadcastMessageList.length} '
       'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
     );
-    return right((info: info, serverTime: serverTime));
+    return right((info: info, serverTime: serverTime, window: since));
   });
 
   /// Fetch all kinds of notification of the current user.
@@ -282,7 +283,7 @@ final class NotificationRepository with LoggerMixin {
           _controller.add(const NotificationInfoStateFailure());
           return left(value);
         case Right(:final value):
-          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp));
+          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp, window: value.window));
           return right(value.serverTime);
       }
     });

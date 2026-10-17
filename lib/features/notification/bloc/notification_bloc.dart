@@ -8,11 +8,13 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/blocking/utils/notice_block_filter.dart';
+import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/auto_sync_info.dart';
+import 'package:tsdm_client/features/notification/utils/deleted_personal_messages.dart';
 import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/notification_type.dart';
@@ -169,6 +171,15 @@ typedef PersistedNotification = ({NotificationV2 fresh, NotificationV2 reconcile
 /// [since] is the inclusive lower bound (seconds) the fetch was asked for, null when the device had none stored: it
 /// decides whether a notice seen for the first time counts as unread here, see [reconcileNoticeReadState].
 ///
+/// [window] is the lower bound the fetch actually used, after the repository's clamp to the last three days (also
+/// when [since] is null, or ahead of the device clock, GitHub #71). A conversation older than it is stored and listed
+/// (a refresh the user asked for keeps every conversation of the page, GitHub #193) but is no news. The raw [since]
+/// must not decide it: null on the first fetch it made every old conversation news, and a bound days ahead kept every
+/// new message from being announced.
+///
+/// Conversations the user deleted from the app's list and that did not change since are dropped first, see
+/// [dropDeletedConversations].
+///
 /// The read of the stored copies, the decisions and the write happen under [StorageProvider.exclusively]: the
 /// background service syncs from its own isolate, and without the lock both could read the same stored copies and
 /// then write one over the other. Copies older than what is stored are dropped first ([dropStaleCopies]); the DAO
@@ -178,27 +189,34 @@ Future<PersistedNotification> persistFetchedNotification({
   required int uid,
   required NotificationV2 fetched,
   int? since,
-}) =>
-    storage.exclusively(() => _persistFetchedNotification(storage: storage, uid: uid, received: fetched, since: since));
+  int? window,
+}) => storage.exclusively(
+  () => _persistFetchedNotification(storage: storage, uid: uid, received: fetched, since: since, window: window),
+);
 
 Future<PersistedNotification> _persistFetchedNotification({
   required StorageProvider storage,
   required int uid,
   required NotificationV2 received,
   int? since,
+  int? window,
 }) async {
   final stored = await storage.fetchNotificationSince(uid: uid, timestamp: 0).run();
-  final fetched = dropStaleCopies(fetched: received, stored: stored);
+  final fetched = await dropDeletedConversations(
+    storage: storage,
+    uid: uid,
+    fetched: dropStaleCopies(fetched: received, stored: stored),
+  );
   // Notices of users blocked locally by [uid], and personal messages from them, are stored as they are (unblocking
   // shows them again, the conversations stay listed) but never count as news: no system notification, no auto sync
   // hint. For notices only the author from the notice's own ignore link is used, for conversations the peer.
   final blocked = await noticeBlockListOf(storage, uid);
   final news = withoutBlockedNotices(freshNotifications(fetched: fetched, stored: stored), blocked);
-  // A refresh the user asked for keeps every conversation of the page (GitHub #193): one older than the window is
-  // stored and listed, but it is no news.
-  final fresh = since == null
+  // A refresh the user asked for keeps every conversation of the page (GitHub #193): one older than the window the
+  // fetch used is stored and listed, but it is no news.
+  final fresh = window == null
       ? news
-      : news.copyWith(personalMessageList: news.personalMessageList.where((e) => e.timestamp >= since).toList());
+      : news.copyWith(personalMessageList: news.personalMessageList.where((e) => e.timestamp >= window).toList());
   // 诊断日志：区分"服务器没返回"和"fresh 过滤了"。
   // fetched 是本次从服务器拿到的所有副本，fresh 是其中真正算"新消息"的。
   // 当 fetched > 0 但 fresh == 0，说明服务器返回的都被过滤（老副本 / 自己发的）；
@@ -311,22 +329,29 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
   /// Constructor.
   ///
   /// [sentRefreshDelay] is how long after the last private message sent in the app ([PersonalMessageSent]) the list
-  /// is refreshed: a burst of messages refreshes once.
+  /// is refreshed: a burst of messages refreshes once. [switchingAccount] tells whether an account switch is running,
+  /// [isSwitchingAccount] by default.
   NotificationBloc({
     required NotificationRepository notificationRepository,
     required NotificationInfoRepository infoRepository,
     required AuthenticationRepository authRepo,
     required StorageProvider storageProvider,
     Duration sentRefreshDelay = const Duration(seconds: 2),
+    bool Function()? switchingAccount,
   }) : _notificationRepository = notificationRepository,
        _infoRepository = infoRepository,
        _authRepo = authRepo,
        _storageProvider = storageProvider,
        _sentRefreshDelay = sentRefreshDelay,
+       _switchingAccount = switchingAccount ?? (() => isSwitchingAccount),
        super(const NotificationState()) {
     on<NotificationEvent>(
       (e, emit) => switch (e) {
-        NotificationUpdateAllRequested(:final bypassGate) => _onUpdateAllRequested(emit, bypassGate: bypassGate),
+        NotificationUpdateAllRequested(:final bypassGate, :final forUid) => _onUpdateAllRequested(
+          emit,
+          bypassGate: bypassGate,
+          forUid: forUid,
+        ),
         NotificationReloadFromStorageRequested() => _onReloadFromStorageRequested(emit),
         NotificationRecordFetchTimeRequested(:final time) => _onRecordFetchTimeRequested(time),
         NotificationMarkReadRequested(:final recordMark) => _onMarkReadRequested(emit, recordMark),
@@ -351,7 +376,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     );
 
     _notificationRepository.status.listen((info) => add(NotificationInfoFetched(info)));
-    _sentSubscription = PersonalMessageSent.stream.listen((_) => _scheduleSentRefresh());
+    _sentSubscription = PersonalMessageSent.stream.listen(_scheduleSentRefresh);
   }
 
   final NotificationRepository _notificationRepository;
@@ -359,24 +384,37 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
   final AuthenticationRepository _authRepo;
   final StorageProvider _storageProvider;
   final Duration _sentRefreshDelay;
+  final bool Function() _switchingAccount;
 
-  late final StreamSubscription<void> _sentSubscription;
+  late final StreamSubscription<int?> _sentSubscription;
 
   /// The pending refresh after a private message was sent.
   Timer? _sentRefreshTimer;
 
-  /// Refresh the conversation list once, [_sentRefreshDelay] after the last private message sent (GitHub #193).
-  void _scheduleSentRefresh() {
+  /// Whether the refresh for a private message account [senderUid] sent must be skipped: the account changed since,
+  /// or a switch is running and is about to change it (GitHub #193 review). It would fetch and store the pages of the
+  /// other account, which sent nothing.
+  bool _sentRefreshStale(int? senderUid) =>
+      senderUid == null || _switchingAccount() || _authRepo.currentUser?.uid != senderUid;
+
+  /// Refresh the conversation list of [senderUid] once, [_sentRefreshDelay] after the last private message sent
+  /// (GitHub #193).
+  void _scheduleSentRefresh(int? senderUid) {
     _sentRefreshTimer?.cancel();
     _sentRefreshTimer = Timer(_sentRefreshDelay, () {
-      if (!isClosed) {
-        debug('private message sent, refreshing the conversation list');
-        add(const NotificationUpdateAllRequested(bypassGate: true));
+      if (isClosed) {
+        return;
       }
+      if (_sentRefreshStale(senderUid)) {
+        debug('private message sent, refresh skipped: the account changed or is switching');
+        return;
+      }
+      debug('private message sent, refreshing the conversation list');
+      add(NotificationUpdateAllRequested(bypassGate: true, forUid: senderUid));
     });
   }
 
-  Future<void> _onUpdateAllRequested(_Emit emit, {required bool bypassGate}) async {
+  Future<void> _onUpdateAllRequested(_Emit emit, {required bool bypassGate, int? forUid}) async {
     if (state.status == NotificationStatus.loading) {
       if (!bypassGate) {
         debug('update all notifications, skipped because already loading one');
@@ -402,6 +440,11 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     final uid = _authRepo.currentUser?.uid;
     if (uid == null) {
       info('skip request of update notification: uid is null, not authorized');
+      return;
+    }
+    // Asked for one account (the refresh after sending): it may have waited for a running fetch above.
+    if (forUid != null && _sentRefreshStale(forUid)) {
+      debug('skip request of update notification: asked for another account, or switching');
       return;
     }
     debug('updating all notifications...');
@@ -431,6 +474,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     late NotificationV2 info;
     late final int uid;
     int? since;
+    int? window;
     switch (infoState) {
       case NotificationInfoStateFailure():
         emit(state.copyWith(status: NotificationStatus.failure));
@@ -444,10 +488,11 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
       case NotificationInfoStateLoading():
         emit(state.copyWith(status: NotificationStatus.loading));
         return;
-      case NotificationInfoStateSuccess(uid: final u, info: final i, since: final s):
+      case NotificationInfoStateSuccess(uid: final u, info: final i, since: final s, window: final w):
         info = i;
         uid = u;
         since = s;
+        window = w;
     }
 
     emit(state.copyWith(status: NotificationStatus.loading));
@@ -460,6 +505,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
       uid: uid,
       fetched: info,
       since: since,
+      window: window,
     );
     // What is actually news, and the copies as stored.
     final fresh = persisted.fresh;
@@ -761,11 +807,14 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     await _storageProvider.deleteNotice(uid: uid, nid: nid).run();
   }
 
+  /// The delete is local only: it is remembered so the next fetch of the same conversation does not store it again,
+  /// see [deletePersonalMessageRemembered].
   Future<void> _onDeletePersonalMessage(_Emit emit, {required int uid, required int peerUid}) async {
+    final shown = state.personalMessageList.where((e) => e.peerUid == peerUid).firstOrNull;
     emit(
       state.copyWith(personalMessageList: state.personalMessageList.toList()..removeWhere((e) => e.peerUid == peerUid)),
     );
-    await _storageProvider.deletePersonalMessage(uid: uid, peerUid: peerUid).run();
+    await deletePersonalMessageRemembered(storage: _storageProvider, uid: uid, peerUid: peerUid, shown: shown);
   }
 
   Future<void> _onDeleteBroadcastMessage(_Emit emit, {required int uid, required int pmid}) async {

@@ -9,6 +9,7 @@ import 'package:tsdm_client/features/editor/utils/mention.dart';
 import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/parsing.dart';
@@ -293,11 +294,15 @@ final class ReplyRepository with LoggerMixin {
   });
 
   /// Run the private message [send] and tell [PersonalMessageSent] when the forum accepted it: the conversation list
-  /// is refreshed for it (GitHub #193).
+  /// of the account that sent is refreshed for it (GitHub #193).
+  ///
+  /// The account is the one of the global cookie the request carries, read before sending: the refresh must not run
+  /// for an account switched to meanwhile.
   static AsyncVoidEither _reportSent(Future<Either<AppException, void>> Function() send) => AsyncVoidEither(() async {
+    final sender = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null;
     final result = await send();
     if (result.isRight()) {
-      PersonalMessageSent.notify();
+      PersonalMessageSent.notify(sender);
     }
     return result;
   });

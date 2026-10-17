@@ -9,6 +9,7 @@ import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
+import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -34,9 +35,25 @@ import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
 /// * A refresh the user asks for on the notification page skips the API and keeps every conversation of the page.
 /// * A private message sent in the app refreshes the list once, the same way.
 ///
+/// Review of the fix:
+///
+/// * (e) A conversation deleted in the app (local only) came back on every refresh that bypassed the gate.
+/// * (f) Without a stored fetch time, the first refresh announced old conversations the peer wrote last as news.
+/// * (g) With a stored bound days ahead of the clock, no new conversation was ever announced by such a refresh.
+/// * (h) The refresh after sending ran for the account switched to meanwhile.
+///
 /// Synthetic pages and names, no real account or forum.
 const _alice = UserLoginInfo(username: 'Alice', uid: 3000);
+const _bob = UserLoginInfo(username: 'Bob', uid: 3002);
 const _peer = 3001;
+
+/// The current account can change in the middle of a test.
+final class _SwitchableAuth extends Fake implements AuthenticationRepository {
+  _SwitchableAuth(this.currentUser);
+
+  @override
+  UserLoginInfo? currentUser;
+}
 
 Map<String, String> _jar(String token) => {
   '.index': '["$baseHost"]',
@@ -69,6 +86,16 @@ String _sentPmPage(DateTime at, String text) =>
     '<dd class="m avt"><a href="home.php?mod=space&amp;uid=$_peer"><img src="a.jpg"></a></dd> '
     '<dd class="ptm pm_c"><div class="o"></div><span class="xi2 xw1">您</span> 对 '
     '<a href="home.php?mod=space&uid=$_peer" class="xw1">Peer</a> 说 :<br />$text &nbsp; <br /> '
+    '<span class="xg1"><span title="${_timeTextOf(at)}">1 小时前</span></span></dd>\n'
+    '</dl></div></form></body></html>';
+
+/// The private message page holding one unread conversation whose last message the peer sent at [at].
+String _receivedPmPage(DateTime at, String text) =>
+    '<html><body><div id="um"></div><form id="deletepmform"><div>\n'
+    '<dl id="pmlist_$_peer" class="cl newpm">\n'
+    '<dd class="m avt"><a href="home.php?mod=space&amp;uid=$_peer"><img src="a.jpg"></a><div class="newpm_avt"></div></dd> '
+    '<dd class="ptm pm_c"><div class="o"></div><a href="home.php?mod=space&uid=$_peer" class="xw1">Peer</a> 对 '
+    '<span class="xi2">您</span> 说 :<br />$text &nbsp; <br /> '
     '<span class="xg1"><span title="${_timeTextOf(at)}">1 小时前</span></span></dd>\n'
     '</dl></div></form></body></html>';
 
@@ -193,6 +220,10 @@ void main() {
     late StorageProvider storage;
     late SettingsRepository settings;
     late _Forum forum;
+    late _SwitchableAuth auth;
+    late NotificationInfoRepository infoRepository;
+    late List<NotificationAutoSyncInfo> announced;
+    late bool switching;
     late NotificationBloc bloc;
 
     /// Ten minutes ago: the bound a poll stored a moment ago.
@@ -216,12 +247,20 @@ void main() {
       await settings.init();
       await storage.saveCookie(username: _alice.username!, uid: _alice.uid!, cookie: _jar('alice'));
       await storage.updateLastFetchNoticeTime(_alice.uid!, bound).run();
+      auth = _SwitchableAuth(_alice);
+      // What the auto sync would show as a system notification ("N 则新私信"), whatever the test platform.
+      infoRepository = NotificationInfoRepository(localNotifications: true);
+      announced = [];
+      final announcements = infoRepository.autoSyncStatus.listen(announced.add);
+      addTearDown(announcements.cancel);
+      switching = false;
       bloc = NotificationBloc(
         notificationRepository: NotificationRepository(storageProvider: storage),
-        infoRepository: NotificationInfoRepository(),
-        authRepo: AuthenticationRepository(user: _alice),
+        infoRepository: infoRepository,
+        authRepo: auth,
         storageProvider: storage,
         sentRefreshDelay: const Duration(milliseconds: 300),
+        switchingAccount: () => switching,
       );
     });
 
@@ -232,8 +271,14 @@ void main() {
       await db.close();
     });
 
-    Future<List<PersonalMessageEntity>> stored() async =>
-        (await storage.fetchNotificationSince(uid: _alice.uid!, timestamp: 0).run()).personalMessageList;
+    Future<List<PersonalMessageEntity>> stored({int? uid}) async =>
+        (await storage.fetchNotificationSince(uid: uid ?? _alice.uid!, timestamp: 0).run()).personalMessageList;
+
+    const form = {'formhash': 'XXXXXXXX', 'message': 'hi', 'pmsubmit': 'true'};
+
+    /// Send a private message as the account of the global cookie (Alice) to another peer.
+    Future<void> send() async =>
+        expect((await const ReplyRepository().replyPersonalMessage('4000', form).run()).isRight(), isTrue);
 
     Future<void> sync(NotificationUpdateAllRequested event) async {
       final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
@@ -273,7 +318,6 @@ void main() {
 
     test('(c) sending a private message refreshes the list once, bypassing the gate', () async {
       forum.pmPage = _sentPmPage(DateTime.now(), 'just sent');
-      const form = {'formhash': 'XXXXXXXX', 'message': 'hi', 'pmsubmit': 'true'};
       final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
       // Two messages in a row: one refresh.
       expect((await const ReplyRepository().replyPersonalMessage('$_peer', form).run()).isRight(), isTrue);
@@ -285,6 +329,118 @@ void main() {
       expect(forum.apiRequests, isEmpty, reason: 'the refresh does not ask the API');
       expect(forum.pmPageRequests, hasLength(1), reason: 'once for the two messages');
       expect((await stored()).map((e) => (e.peerUid, e.sender, e.data)), [(_peer, true, 'just sent')]);
+    });
+
+    test('(e) a conversation deleted in the app stays deleted on refresh and after sending', () async {
+      final at = DateTime.now().subtract(const Duration(hours: 1));
+      forum.pmPage = _receivedPmPage(at, 'old');
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect((await stored()).map((e) => (e.peerUid, e.alreadyRead)), [(_peer, false)]);
+
+      bloc.add(const NotificationDeletePersonalMessageRequested(uid: 3000, peerUid: _peer));
+      for (var i = 0; i < 50 && (await stored()).isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(await stored(), isEmpty);
+
+      // The forum still lists it: the delete is local only.
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect(forum.pmPageRequests, hasLength(2));
+      expect(await stored(), isEmpty, reason: 'not stored again by the pull-to-refresh');
+      expect(bloc.state.personalMessageList, isEmpty, reason: 'not listed');
+      expect((await countUnreadNotification(storage: storage, uid: _alice.uid!)).personalMessage, 0);
+
+      // A message sent to someone else refreshes the same page once more.
+      final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
+      await send();
+      await done.timeout(const Duration(seconds: 5));
+      await pumpEventQueue();
+      expect(forum.pmPageRequests, hasLength(3));
+      expect(await stored(), isEmpty, reason: 'not stored again after sending');
+      expect(announced, isEmpty, reason: 'never announced again');
+
+      // A newer message of the peer brings it back, as news.
+      forum.pmPage = _receivedPmPage(DateTime.now(), 'new');
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect((await stored()).map((e) => (e.peerUid, e.data, e.alreadyRead)), [(_peer, 'new', false)]);
+      expect(announced.map((e) => e.personalMessage), [1]);
+    });
+
+    test('(e) the deletion survives a new bloc, and an unchanged copy from the automatic sync', () async {
+      final at = DateTime.now().subtract(const Duration(minutes: 5));
+      forum
+        ..pmPage = _receivedPmPage(at, 'hello')
+        ..api = (_) => _notify(pmLast: _now);
+      await sync(const NotificationUpdateAllRequested());
+      expect(await stored(), hasLength(1));
+      bloc.add(const NotificationDeletePersonalMessageRequested(uid: 3000, peerUid: _peer));
+      for (var i = 0; i < 50 && (await stored()).isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(await stored(), isEmpty);
+      await bloc.close();
+      bloc = NotificationBloc(
+        notificationRepository: NotificationRepository(storageProvider: storage),
+        infoRepository: infoRepository,
+        authRepo: auth,
+        storageProvider: storage,
+      );
+      // The poll inside the window gets the same copy again.
+      await sync(const NotificationUpdateAllRequested());
+      expect(await stored(), isEmpty);
+      expect(announced.map((e) => e.personalMessage), [1], reason: 'announced once, before the delete');
+    });
+
+    test('(f) without a stored fetch time, old conversations are listed but not announced', () async {
+      // Bob has no fetch time stored on this device yet.
+      auth.currentUser = _bob;
+      forum.pmPage = _receivedPmPage(DateTime.now().subtract(const Duration(days: 5)), 'long ago');
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect((await stored(uid: _bob.uid)).map((e) => e.peerUid), [_peer], reason: 'stored and listed');
+      expect(bloc.state.personalMessageList.map((e) => e.peerUid), [_peer]);
+      expect(announced, isEmpty, reason: 'older than the three days fetched: no news');
+
+      // A message from inside the three days is news on that first fetch, as for the automatic sync.
+      await storage.deletePersonalMessage(uid: _bob.uid!, peerUid: _peer).run();
+      forum.pmPage = _receivedPmPage(DateTime.now().subtract(const Duration(hours: 2)), 'recent');
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect(announced.map((e) => e.personalMessage), [1]);
+    });
+
+    test('(g) a stored bound days ahead of the clock does not hide new conversations', () async {
+      // The device clock was fast (GitHub #71): the stored bound lies two days ahead.
+      await storage.updateLastFetchNoticeTime(_alice.uid!, DateTime.now().add(const Duration(days: 2))).run();
+      forum.pmPage = _receivedPmPage(DateTime.now(), 'right now');
+      await sync(const NotificationUpdateAllRequested(bypassGate: true));
+      expect((await stored()).map((e) => e.data), ['right now']);
+      expect(announced.map((e) => e.personalMessage), [1], reason: 'announced with the clamped window');
+    });
+
+    test('(h) the refresh after sending is skipped once another account is current', () async {
+      forum.pmPage = _receivedPmPage(DateTime.now(), 'for Bob');
+      await send();
+      // Alice switches to Bob before the refresh runs.
+      auth.currentUser = _bob;
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await pumpEventQueue();
+      expect(forum.pmPageRequests, isEmpty, reason: 'nothing fetched for Bob');
+      expect(await stored(uid: _bob.uid), isEmpty);
+    });
+
+    test('(h) the refresh after sending is skipped while an account switch runs', () async {
+      forum.pmPage = _receivedPmPage(DateTime.now(), 'during the switch');
+      await send();
+      switching = true;
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await pumpEventQueue();
+      expect(forum.pmPageRequests, isEmpty);
+
+      // Still Alice and no switch: the refresh runs for her.
+      switching = false;
+      final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
+      await send();
+      await done.timeout(const Duration(seconds: 5));
+      expect(forum.pmPageRequests, hasLength(1));
     });
   });
 }
