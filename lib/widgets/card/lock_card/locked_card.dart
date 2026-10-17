@@ -27,6 +27,7 @@ import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/custom_alert_dialog.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/single_line_text.dart';
+import 'package:tsdm_client/widgets/text_widget_span.dart';
 import 'package:universal_html/parsing.dart';
 
 /// Each history item in sales log.
@@ -103,8 +104,9 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
   }
 
   WidgetSpan _buildUnderlineText(BuildContext context, String text) {
-    return WidgetSpan(
-      child: DecoratedBox(
+    // The word is in the text of the card: it follows the text scale once, with that text.
+    return textWidgetSpan(
+      DecoratedBox(
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.onSurface)),
         ),

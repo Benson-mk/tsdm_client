@@ -17,11 +17,11 @@ class PollRepository {
   /// carried to the thread page, whose blocks hold the poll form and the `discuz_uid` the identity check reads. Without
   /// the plugin the web page comes back. A card in the thread page shows the form of that page instead; it asks when it
   /// cannot, after a vote and after a login (see PollCard).
+  ///
+  /// An answer without a page (an empty body) fails the read ([fetchTsdmAppPageHtml]) instead of being a page served
+  /// to nobody, which the card would show as a poll to log in for.
   factory PollRepository.network(NetClientProvider client) => PollRepository(
-    getPage: (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
-      Right(:final value) => tsdmAppPageHtml(value.data),
-      Left(:final value) => throw value,
-    },
+    getPage: (url) => fetchTsdmAppPageHtml(client, url),
     postForm: (url, body) async => switch (await client.postForm(url, data: body).run()) {
       Right(:final value) => value.data as String,
       Left(:final value) => throw value,

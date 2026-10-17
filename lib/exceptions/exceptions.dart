@@ -324,16 +324,6 @@ final class ProfileStatusNotFoundException extends AppException with ProfileStat
   ProfileStatusNotFoundException();
 }
 
-/// Status field is unrecognized in profile response.
-@MappableClass()
-final class ProfileStatusUnknownException extends AppException with ProfileStatusUnknownExceptionMappable {
-  /// Constructor.
-  ProfileStatusUnknownException(this.status);
-
-  /// The unrecognized status message.
-  final String status;
-}
-
 /// Failed to fetch parameters used in replying to a post.
 @MappableClass()
 class ReplyToPostFetchParameterFailedException extends AppException

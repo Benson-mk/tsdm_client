@@ -1,5 +1,3 @@
-import 'package:fpdart/fpdart.dart';
-import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/draft_box/models/draft_data.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
@@ -19,15 +17,8 @@ class DraftRepository {
   /// answers the web page. A JSON answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or
   /// an empty body) is a failed request, not a page without the account, which the check would take for an expired
   /// session.
-  factory DraftRepository.network(NetClientProvider client) => DraftRepository(
-    (url) async => switch (await client.get(withTsdmAppJson(url)).run()) {
-      Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
-        value.statusCode,
-      ),
-      Right(:final value) => tsdmAppPageHtml(value.data),
-      Left(:final value) => throw value,
-    },
-  );
+  factory DraftRepository.network(NetClientProvider client) =>
+      DraftRepository((url) => fetchTsdmAppPageHtml(client, url));
 
   /// No POST is performed by this repository.
   final Future<String> Function(String url) getPage;

@@ -44,6 +44,7 @@ import 'package:tsdm_client/widgets/card/spoiler_card.dart';
 import 'package:tsdm_client/widgets/network_indicator_image.dart';
 // THIS CAN BE REMOVED
 import 'package:tsdm_client/widgets/quoted_text.dart';
+import 'package:tsdm_client/widgets/text_widget_span.dart';
 import 'package:universal_html/html.dart' as uh;
 
 /// Use the same span to append line break.
@@ -159,6 +160,9 @@ class _MunchState {
   ///
   /// Default is 0, increase when building in cards.
   double elevation = -_elevationStep;
+
+  /// Number of tables (not the one-row tables that only wrap something) the node being munched is in.
+  int tableDepth = 0;
 
   /// Flag indicating whether we should wrap line in word.
   ///
@@ -433,30 +437,31 @@ final class _Muncher with LoggerMixin {
         WidgetSpan(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 24, minWidth: 24, maxHeight: 24, minHeight: 24),
-            child: IconButton(
-              icon: Icon(Icons.navigate_before_outlined, color: Theme.of(context).colorScheme.tertiary),
-              // Constrains size to fit line height.
-              constraints: const BoxConstraints(maxWidth: 24, minWidth: 24, maxHeight: 24, minHeight: 24),
-              padding: EdgeInsets.zero,
-              tooltip: context.t.workaroundRedirect,
-              onPressed: hrefUrl != null ? () async => context.dispatchAsUrl(hrefUrl) : null,
+            // Usually in a quote card: its tooltip follows the text scale there too.
+            child: OverlayTextScale(
+              child: IconButton(
+                icon: Icon(Icons.navigate_before_outlined, color: Theme.of(context).colorScheme.tertiary),
+                // Constrains size to fit line height.
+                constraints: const BoxConstraints(maxWidth: 24, minWidth: 24, maxHeight: 24, minHeight: 24),
+                padding: EdgeInsets.zero,
+                tooltip: context.t.workaroundRedirect,
+                onPressed: hrefUrl != null ? () async => context.dispatchAsUrl(hrefUrl) : null,
+              ),
             ),
           ),
         ),
       ];
     }
 
-    return [
-      WidgetSpan(
-        child: GestureDetector(
-          onTap: () async => showImageActionBottomSheet(context: context, imageUrl: url, hrefUrl: hrefUrl),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: imgWidth ?? double.infinity, maxHeight: imgHeight ?? double.infinity),
-            child: NetworkIndicatorImage(url),
-          ),
-        ),
+    final Widget image = GestureDetector(
+      onTap: () async => showImageActionBottomSheet(context: context, imageUrl: url, hrefUrl: hrefUrl),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: imgWidth ?? double.infinity, maxHeight: imgHeight ?? double.infinity),
+        child: NetworkIndicatorImage(url),
       ),
-    ];
+    );
+    // A table narrowed to the screen keeps it at least a thumbnail (see [PostTableImage]).
+    return [WidgetSpan(child: state.tableDepth > 0 ? PostTableImage(child: image) : image)];
   }
 
   List<InlineSpan>? _buildFont(uh.Element element) {
@@ -540,8 +545,8 @@ final class _Muncher with LoggerMixin {
       return null;
     }
     return [
-      WidgetSpan(
-        child: Row(
+      textWidgetSpan(
+        Row(
           children: [
             Expanded(
               child: Text.rich(TextSpan(children: ret), textAlign: align),
@@ -627,7 +632,7 @@ final class _Muncher with LoggerMixin {
       content.removeLast();
     }
     final span = content == null ? null : TextSpan(children: content);
-    return [WidgetSpan(child: QuotedText.rich(span)), emptySpan];
+    return [textWidgetSpan(QuotedText.rich(span)), emptySpan];
   }
 
   List<InlineSpan>? _munchDiv(uh.Element element) {
@@ -674,8 +679,8 @@ final class _Muncher with LoggerMixin {
     final theme = Theme.of(context);
     return [
       emptySpan,
-      WidgetSpan(
-        child: Padding(
+      textWidgetSpan(
+        Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Container(
             width: double.infinity,
@@ -714,7 +719,7 @@ final class _Muncher with LoggerMixin {
     state
       ..headingBrNodePassed = true
       ..elevation += _elevationStep;
-    final ret = [WidgetSpan(child: RedPacketCard(entry, elevation: state.elevation)), emptySpan];
+    final ret = [textWidgetSpan(RedPacketCard(entry, elevation: state.elevation)), emptySpan];
     state.elevation -= _elevationStep;
     return ret;
   }
@@ -729,9 +734,7 @@ final class _Muncher with LoggerMixin {
     state
       ..headingBrNodePassed = true
       ..elevation += _elevationStep;
-    final ret = WidgetSpan(
-      child: CodeCard(code: text, elevation: state.elevation),
-    );
+    final ret = textWidgetSpan(CodeCard(code: text, elevation: state.elevation));
     state.elevation -= _elevationStep;
     return [ret];
   }
@@ -745,7 +748,7 @@ final class _Muncher with LoggerMixin {
     state
       ..headingBrNodePassed = true
       ..elevation += _elevationStep;
-    final ret = [WidgetSpan(child: LockedCard(lockedArea, elevation: state.elevation)), emptySpan];
+    final ret = [textWidgetSpan(LockedCard(lockedArea, elevation: state.elevation)), emptySpan];
     state.elevation -= _elevationStep;
     return ret;
   }
@@ -762,11 +765,7 @@ final class _Muncher with LoggerMixin {
         continue;
       }
       spans
-        ..add(
-          WidgetSpan(
-            child: ReviewCard(name: name ?? '', content: content ?? '', avatarUrl: avatarUrl),
-          ),
-        )
+        ..add(textWidgetSpan(ReviewCard(name: name ?? '', content: content ?? '', avatarUrl: avatarUrl)))
         ..add(emptySpan);
     }
     return spans.isEmpty ? null : spans;
@@ -810,8 +809,8 @@ final class _Muncher with LoggerMixin {
       content.removeLast();
     }
     state.headingBrNodePassed = true;
-    final ret = WidgetSpan(
-      child: SpoilerCard(
+    final ret = textWidgetSpan(
+      SpoilerCard(
         title: TextSpan(text: title),
         content: TextSpan(children: content),
         elevation: elevation,
@@ -831,7 +830,7 @@ final class _Muncher with LoggerMixin {
   List<InlineSpan>? _buildUnresolvedBounty(uh.Element element) {
     final price = element.querySelector('cite')?.innerText ?? '';
     return [
-      WidgetSpan(child: BountyCard(price: price, resolved: false)),
+      textWidgetSpan(BountyCard(price: price, resolved: false)),
       // Ensure an empty line space between post content.
       const TextSpan(text: '\n\n'),
     ];
@@ -849,7 +848,7 @@ final class _Muncher with LoggerMixin {
   List<InlineSpan>? _buildResolvedBounty(uh.Element element) {
     final price = element.querySelector('cite')?.innerText ?? '';
     return [
-      WidgetSpan(child: BountyCard(price: price, resolved: true)),
+      textWidgetSpan(BountyCard(price: price, resolved: true)),
       // Ensure an empty line space between post content.
       const TextSpan(text: '\n\n'),
     ];
@@ -898,8 +897,8 @@ final class _Muncher with LoggerMixin {
     }
 
     return [
-      WidgetSpan(
-        child: BountyAnswerCard(
+      textWidgetSpan(
+        BountyAnswerCard(
           userAvatarUrl: userAvatarUrl,
           username: username,
           userSpaceUrl: userSpaceUrl,
@@ -1033,6 +1032,7 @@ final class _Muncher with LoggerMixin {
         // Text already has the label, do not add duplicate one.
         content = null;
       } else {
+        // Scaled once by the span it is in, like a card (see [textWidgetSpan]) but without a MediaQuery for every link.
         content = Text(
           '@',
           style: TextStyle(color: Theme.of(context).colorScheme.primary),
@@ -1215,8 +1215,8 @@ final class _Muncher with LoggerMixin {
     state
       ..headingBrNodePassed = true
       ..elevation += _elevationStep;
-    final ret2 = WidgetSpan(
-      child: Card(
+    final ret2 = textWidgetSpan(
+      Card(
         elevation: state.elevation,
         color: Theme.of(context).colorScheme.onSecondary,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(5))),
@@ -1305,8 +1305,8 @@ final class _Muncher with LoggerMixin {
       dataSpanList.last = ch;
     }
     state.elevation += _elevationStep;
-    final ret = WidgetSpan(
-      child: SpoilerCard(
+    final ret = textWidgetSpan(
+      SpoilerCard(
         title: TextSpan(children: summarySpan),
         content: TextSpan(children: dataSpanList.flattened.toList()),
         elevation: state.elevation,
@@ -1321,7 +1321,7 @@ final class _Muncher with LoggerMixin {
     final neteasePlayerId = _neteasePlayerRe.firstMatch(element.attributes['src'] ?? '')?.namedGroup('id');
     if (neteasePlayerId != null) {
       // Recognized netease player iframe.
-      return [WidgetSpan(child: NeteaseCard(neteasePlayerId))];
+      return [textWidgetSpan(NeteaseCard(neteasePlayerId))];
     }
     return null;
   }
@@ -1372,14 +1372,10 @@ final class _Muncher with LoggerMixin {
     return _newcomerReportSpan(data, title: title);
   }
 
-  /// The [NewcomerReportCard] of [data] in the post.
-  ///
-  /// The [WidgetSpan] already scales the card by the text scale of the post, the text in the card is not scaled a
-  /// second time: at 1.3 it would be 1.69 and the field names would break on a phone screen.
+  /// The [NewcomerReportCard] of [data] in the post, scaled once with the post (see [textWidgetSpan]): at 1.3 its text
+  /// would be 1.69 and the field names would break on a phone screen.
   static List<InlineSpan> _newcomerReportSpan(List<NewcomerReportInfo> data, {String? title}) => [
-    WidgetSpan(
-      child: MediaQuery.withNoTextScaling(child: NewcomerReportCard(data, title: title)),
-    ),
+    textWidgetSpan(NewcomerReportCard(data, title: title)),
   ];
 
   /// Field names (`th`) and values (`td`) in the rows of a newcomer report [table], rows without either are skipped.
@@ -1439,6 +1435,7 @@ final class _Muncher with LoggerMixin {
     final tableRows = <TableRow>[];
     final allTableRowContent = <List<Widget>>[];
     var columnMaxCount = 0;
+    state.tableDepth += 1;
     for (final tr in allTr) {
       final tableRowContent = <Widget>[];
       // Header cells (`th`) are cells too, in bold, in their place in the row.
@@ -1451,6 +1448,7 @@ final class _Muncher with LoggerMixin {
       }
       allTableRowContent.add(tableRowContent);
     }
+    state.tableDepth -= 1;
 
     for (final row in allTableRowContent) {
       if (row.length < columnMaxCount) {
@@ -1466,12 +1464,12 @@ final class _Muncher with LoggerMixin {
     // FIXME: Support rowspan and colspan attr.
     tableRows.addAll(allTableRowContent.map((e) => TableRow(children: e)).toList());
 
+    // Fits the width of the post when it can, its long cells wrapping; scrolls sideways only when it cannot.
     return [
-      WidgetSpan(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+      textWidgetSpan(
+        PostTableScrollView(
           child: Table(
-            defaultColumnWidth: const MaxIntrinsicColumnWidth(maxWidth: htmlContentMaxWidth),
+            defaultColumnWidth: const PostTableColumnWidth(),
             defaultVerticalAlignment: TableCellVerticalAlignment.middle,
             children: tableRows,
             border: TableBorder.all(color: Theme.of(context).colorScheme.surfaceContainer),

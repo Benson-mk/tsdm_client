@@ -51,14 +51,8 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
       final auth = context.read<AuthenticationRepository>();
       _cubit = MedalCenterCubit(
         currentUid: () => auth.effectiveCurrentUid,
-        fetchPage: (url) async {
-          // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
-          final result = await getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).run();
-          return switch (result) {
-            Right(:final value) => tsdmAppPageHtml(value.data),
-            Left(:final value) => throw value,
-          };
-        },
+        // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
+        fetchPage: (url) => fetchTsdmAppPageHtml(getIt.get<NetClientProvider>(), url),
         fetchApi: (query) => TsdmAppApi.askWaiting(getIt.get<NetClientProvider>(), 'medals', query),
         submitForm: (url, data) async {
           final result = await getIt.get<NetClientProvider>().postForm(url, data: data).run();
