@@ -43,8 +43,20 @@ StreamSubscription<AuthStatus> listenLoginsOf(
 }) {
   final replayed = auth.latestStatus;
   return auth.status.listen((status) {
-    if (!identical(status, replayed) && status is AuthStatusAuthed && status.userInfo.uid == uid) {
+    if (!identical(status, replayed) && _isLoginOf(status, uid)) {
       onLogin();
     }
   });
 }
+
+/// Whether the latest status of [auth] ([AuthenticationRepository.latestStatus]) is a login of the account [uid] that
+/// ended after [since], a latest status read earlier.
+///
+/// For code that did not listen meanwhile ([listenLoginsOf] from then on would take that login for the replayed
+/// status): a request sent before the login went out with the session the forum may have dropped (issue #25).
+bool loggedInSince(AuthenticationRepository auth, AuthStatus? since, int uid) {
+  final latest = auth.latestStatus;
+  return !identical(latest, since) && _isLoginOf(latest, uid);
+}
+
+bool _isLoginOf(AuthStatus? status, int uid) => status is AuthStatusAuthed && status.userInfo.uid == uid;

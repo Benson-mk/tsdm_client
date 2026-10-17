@@ -7,8 +7,10 @@
 ///   The card now shows the form of the page; it asks the forum only when the page does not hold it, holds it for
 ///   another account, was served as to a guest while an account is in use (its session had expired, or the floors a
 ///   failed reload puts back were read before a login), or was read before a vote of the account (such floors too).
-///   Voting still asks once for the results, and so does a login of the account in use while the card asks to log in,
-///   from the card or elsewhere (its session had expired; the account in use stays the same, nothing else reloads).
+///   A reload for another account failing at once puts its floors back without building them again: their card asks
+///   for the poll of the account in use itself, once. Voting still asks once for the results, and so does a login of
+///   the account in use while the card asks to log in, from the card or elsewhere, also one ending while the card was
+///   asking (its session had expired; the account in use stays the same, nothing else reloads).
 /// * The points pages are asked in the JSON mode of the forum's app API (`tsdmapp=json`, plugin 1.7.0); an older
 ///   plugin ignores the parameter and the web page comes back. Both give the same. An answer without a page is a failed
 ///   load. The bank pages stay web pages: plugin 1.7.0 does not handle the bank (`bank_ane`), the parameter would only
@@ -155,7 +157,8 @@ final class _PollForum implements HttpClientAdapter {
   /// Holds the answers back while set.
   Completer<void>? gate;
 
-  /// Accounts whose session the forum dropped: their cookie gets the pages of a guest (issue #25).
+  /// Accounts whose session the forum dropped: what their cookie asks for meanwhile gets the pages of a guest (issue
+  /// #25), also when the answer comes after a new login.
   final guests = <int>{};
 
   /// Loads of the thread page itself fail (no connection) while set; the post of a poll card still answers.
@@ -187,13 +190,14 @@ final class _PollForum implements HttpClientAdapter {
   ) async {
     requests.add(options);
     bodies.add(requestStream == null ? null : utf8.decode(await requestStream.expand((e) => e).toList()));
+    // The session the request carried decides, also when its answer is held back.
+    final uid = guests.contains(_uidOf(options)) ? 0 : _uidOf(options);
     if (gate != null) {
       await gate!.future;
     }
     if (failThreadLoads && options.method == 'GET' && options.uri.queryParameters['mod'] == 'viewthread') {
       throw DioException.connectionError(requestOptions: options, reason: 'offline');
     }
-    final uid = guests.contains(_uidOf(options)) ? 0 : _uidOf(options);
     if (options.method == 'POST') {
       expect(options.uri.queryParameters['action'], 'votepoll', reason: 'the only form posted here is the vote');
       expect(options.uri.queryParameters['tsdmapp'], isNull, reason: 'a form is posted as before');
@@ -826,6 +830,64 @@ void main() {
       });
     }
 
+    // Review of 3e788556: a reload failing at once (no connection) ends before the frame that would show the page
+    // loading. The floors go back on screen without being built again: the card kept the poll of Alice for Bob, five
+    // options that did nothing (the account in use is not the one of the form).
+    testWidgets('floors put back at once after a failed reload for Bob: the same card asks for the poll of Bob once', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true);
+      await pumpThread(tester, forum);
+      final card = tester.state(_card);
+      final bloc = tester.element(_card).read<ThreadBloc>();
+      forum.failThreadLoads = true;
+
+      // No account change: the card keeps the form of the page of Alice and asks nothing.
+      bloc.add(ThreadRefreshRequested());
+      await _settle(tester);
+      expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1), reason: 'the floor is back');
+      expect(tester.state(_card), same(card), reason: 'failed at once: the floor was not built again');
+      expect(forum.threadLoads, 2);
+      expect(forum.pollLoads, 0, reason: 'the form of the account in use, nothing to ask');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5));
+
+      await switchToBob(tester);
+      expect(forum.threadLoads, 3, reason: 'the thread page reloads for Bob, and fails at once');
+      expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1));
+      expect(tester.state(_card), same(card), reason: 'the floor of the page of Alice, not built again');
+      expect(forum.pollLoads, 1, reason: 'the card asks for the poll of Bob once');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
+      await _vote(tester);
+      expect(forum.votes.single['formhash'], 'hashOf1001', reason: "Bob's vote goes out with Bob's formhash");
+      expect(forum.pollLoads, 2, reason: 'and the results once');
+      expect(_inCard(find.text(t.pollVoting.voted)), findsOneWidget);
+      expect(forum.threadLoads, 3);
+      await _dispose(tester);
+    });
+
+    testWidgets('switched to Bob under another page, the reload once shown again fails at once: the card asks once', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true);
+      final router = await pumpThread(tester, forum);
+      final card = tester.state(_card);
+      unawaited(router.push('/other'));
+      await _settle(tester);
+      forum.failThreadLoads = true;
+      await switchToBob(tester);
+      expect((forum.threadLoads, forum.pollLoads), (1, 0), reason: 'nothing asked while covered');
+
+      router.pop();
+      await _settle(tester);
+      expect(forum.threadLoads, 2, reason: 'the reload for Bob once shown again, failed at once');
+      expect(tester.state(_card), same(card), reason: 'the floor of the page of Alice, not built again');
+      expect(forum.pollLoads, 1, reason: 'the card asks for the poll of Bob once');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
+      await _vote(tester);
+      expect(forum.votes.single['formhash'], 'hashOf1001', reason: "Bob's vote goes out with Bob's formhash");
+      await _dispose(tester);
+    });
+
     testWidgets('a session the forum dropped: signed in again as the same account, the card asks once', (
       tester,
     ) async {
@@ -880,6 +942,47 @@ void main() {
       }
       expect(forum.pollLoads, 2);
       expect(forum.threadLoads, 1);
+      await _dispose(tester);
+    });
+
+    // Review of 3e788556: the card does not listen to logins while it asks. A login of Alice done meanwhile was taken
+    // for the status replayed to the listener of the card once the answer to the request sent with the dropped session
+    // asked to log in again, and the card stayed on "log in to vote".
+    testWidgets('a session the forum dropped, signed in again elsewhere while the card asks: it asks once more', (
+      tester,
+    ) async {
+      final forum = _useForum(json: true)..guests.add(_alice.uid!);
+      await pumpThread(tester, forum);
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
+      expect(forum.pollLoads, 1);
+
+      // Asked again with no login meanwhile: still the page of a guest, the card asks nothing more.
+      await tester.tap(_inCard(find.text(t.pollVoting.refresh)));
+      await _settle(tester);
+      expect(forum.pollLoads, 2);
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
+
+      // Asked again, the answer slow: Alice signs in again elsewhere (manage accounts) before it comes.
+      forum.gate = Completer<void>();
+      await tester.tap(_inCard(find.text(t.pollVoting.refresh)));
+      await _settle(tester);
+      expect(forum.pollLoads, 3);
+      forum.guests.clear();
+      final login = await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      expect(login!.isRight(), isTrue, reason: '$login');
+      await _settle(tester);
+      expect(forum.pollLoads, 3, reason: 'the card waits for its answer');
+      forum.gate!.complete();
+      forum.gate = null;
+      await _settle(tester);
+      expect(forum.threadLoads, 1, reason: 'the same account: the thread page does not reload');
+      expect(forum.pollLoads, 4, reason: 'the page of a guest for the request sent before the login: asked once more');
+      expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Alice');
+      expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsNothing);
+
+      await tester.runAsync(() => auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run());
+      await _settle(tester);
+      expect(forum.pollLoads, 4, reason: 'the card shows the form: the account reported again asks nothing more');
       await _dispose(tester);
     });
 
