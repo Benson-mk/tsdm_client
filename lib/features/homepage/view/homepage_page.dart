@@ -293,7 +293,7 @@ class _HomepagePageState extends State<HomepagePage> {
                 noticeCount: allowHint ? state.unreadNoticeCount : null,
                 hasPersonalMessage: allowHint ? state.hasUnreadMessage : null,
               );
-              context.read<NotificationBloc>().add(NotificationUpdateAllRequested());
+              context.read<NotificationBloc>().add(const NotificationUpdateAllRequested());
               // The greeting card shows whether this account checked in today, from the record of this app.
               context.read<CheckinBloc>().add(const CheckinStatusRequested());
             },

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
@@ -11,6 +13,7 @@ import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/auto_sync_info.dart';
+import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/notification_type.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
@@ -190,7 +193,12 @@ Future<PersistedNotification> _persistFetchedNotification({
   // shows them again, the conversations stay listed) but never count as news: no system notification, no auto sync
   // hint. For notices only the author from the notice's own ignore link is used, for conversations the peer.
   final blocked = await noticeBlockListOf(storage, uid);
-  final fresh = withoutBlockedNotices(freshNotifications(fetched: fetched, stored: stored), blocked);
+  final news = withoutBlockedNotices(freshNotifications(fetched: fetched, stored: stored), blocked);
+  // A refresh the user asked for keeps every conversation of the page (GitHub #193): one older than the window is
+  // stored and listed, but it is no news.
+  final fresh = since == null
+      ? news
+      : news.copyWith(personalMessageList: news.personalMessageList.where((e) => e.timestamp >= since).toList());
   // 诊断日志：区分"服务器没返回"和"fresh 过滤了"。
   // fetched 是本次从服务器拿到的所有副本，fresh 是其中真正算"新消息"的。
   // 当 fetched > 0 但 fresh == 0，说明服务器返回的都被过滤（老副本 / 自己发的）；
@@ -301,19 +309,24 @@ typedef _Emit = Emitter<NotificationState>;
 /// Bloc of notification.
 class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with LoggerMixin {
   /// Constructor.
+  ///
+  /// [sentRefreshDelay] is how long after the last private message sent in the app ([PersonalMessageSent]) the list
+  /// is refreshed: a burst of messages refreshes once.
   NotificationBloc({
     required NotificationRepository notificationRepository,
     required NotificationInfoRepository infoRepository,
     required AuthenticationRepository authRepo,
     required StorageProvider storageProvider,
+    Duration sentRefreshDelay = const Duration(seconds: 2),
   }) : _notificationRepository = notificationRepository,
        _infoRepository = infoRepository,
        _authRepo = authRepo,
        _storageProvider = storageProvider,
+       _sentRefreshDelay = sentRefreshDelay,
        super(const NotificationState()) {
     on<NotificationEvent>(
       (e, emit) => switch (e) {
-        NotificationUpdateAllRequested() => _onUpdateAllRequested(emit),
+        NotificationUpdateAllRequested(:final bypassGate) => _onUpdateAllRequested(emit, bypassGate: bypassGate),
         NotificationReloadFromStorageRequested() => _onReloadFromStorageRequested(emit),
         NotificationRecordFetchTimeRequested(:final time) => _onRecordFetchTimeRequested(time),
         NotificationMarkReadRequested(:final recordMark) => _onMarkReadRequested(emit, recordMark),
@@ -338,17 +351,51 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     );
 
     _notificationRepository.status.listen((info) => add(NotificationInfoFetched(info)));
+    _sentSubscription = PersonalMessageSent.stream.listen((_) => _scheduleSentRefresh());
   }
 
   final NotificationRepository _notificationRepository;
   final NotificationInfoRepository _infoRepository;
   final AuthenticationRepository _authRepo;
   final StorageProvider _storageProvider;
+  final Duration _sentRefreshDelay;
 
-  Future<void> _onUpdateAllRequested(_Emit emit) async {
+  late final StreamSubscription<void> _sentSubscription;
+
+  /// The pending refresh after a private message was sent.
+  Timer? _sentRefreshTimer;
+
+  /// Refresh the conversation list once, [_sentRefreshDelay] after the last private message sent (GitHub #193).
+  void _scheduleSentRefresh() {
+    _sentRefreshTimer?.cancel();
+    _sentRefreshTimer = Timer(_sentRefreshDelay, () {
+      if (!isClosed) {
+        debug('private message sent, refreshing the conversation list');
+        add(const NotificationUpdateAllRequested(bypassGate: true));
+      }
+    });
+  }
+
+  Future<void> _onUpdateAllRequested(_Emit emit, {required bool bypassGate}) async {
     if (state.status == NotificationStatus.loading) {
-      debug('update all notifications, skipped because already loading one');
-      return;
+      if (!bypassGate) {
+        debug('update all notifications, skipped because already loading one');
+        return;
+      }
+      // The running fetch may be a poll the app API told to skip the pages: wait for it, then fetch them.
+      debug('update all notifications bypassing the gate, waiting for the running one');
+      try {
+        // Closed meanwhile: the stream ends without such a state, the current one is taken.
+        await stream
+            .firstWhere((s) => s.status != NotificationStatus.loading, orElse: () => state)
+            .timeout(const Duration(seconds: 30));
+      } on TimeoutException catch (_) {
+        // Still loading, checked below.
+      }
+      if (isClosed || state.status == NotificationStatus.loading) {
+        debug('update all notifications bypassing the gate, skipped because still loading');
+        return;
+      }
     }
     // Checked before the state turns loading: nothing is fetched for a guest, and a state left loading would skip
     // every later sync and reload, also after logging in.
@@ -377,7 +424,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
 
     // The final state will be triggered inside repository, do NOT manually
     // update here.
-    await _notificationRepository.fetchNotificationV2(uid: uid, timestamp: timestamp).run();
+    await _notificationRepository.fetchNotificationV2(uid: uid, timestamp: timestamp, bypassGate: bypassGate).run();
   }
 
   Future<void> _onNoticeInfoFetched(_Emit emit, NotificationInfoState infoState) async {
@@ -729,6 +776,8 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
   /// Do NOT dispose [_infoRepository] here because the state cubit owns it.
   @override
   Future<void> close() async {
+    _sentRefreshTimer?.cancel();
+    await _sentSubscription.cancel();
     await _notificationRepository.dispose();
     return super.close();
   }

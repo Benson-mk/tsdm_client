@@ -171,7 +171,7 @@ void main() {
     addTearDown(bloc.close);
     Future<void> sync() async {
       final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
-      bloc.add(NotificationUpdateAllRequested());
+      bloc.add(const NotificationUpdateAllRequested());
       await done.timeout(const Duration(seconds: 5));
       await pumpEventQueue();
     }

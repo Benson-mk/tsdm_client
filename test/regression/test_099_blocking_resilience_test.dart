@@ -244,7 +244,7 @@ void main() {
 
     test('a sync requested without an account does not leave the state loading', () async {
       final auth = _SwitchableAuth(null);
-      final bloc = buildBloc(auth)..add(NotificationUpdateAllRequested());
+      final bloc = buildBloc(auth)..add(const NotificationUpdateAllRequested());
       await pumpEventQueue();
       expect(bloc.state.status, isNot(NotificationStatus.loading));
 

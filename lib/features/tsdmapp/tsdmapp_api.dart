@@ -157,6 +157,12 @@ final class TsdmAppNotLoggedIn extends TsdmAppNotifyGate {
 /// Notices and private messages carry the time they arrived. Broadcast messages carry the time they were written and
 /// reach the members in batches (GitHub #154), so any unread one counts as new; the web path then decides from the
 /// stored ones, as it always did.
+///
+/// `pms` lists the unread received conversations only: a conversation whose last message the user sent (in the app
+/// or on the web), or read on the web, never showed there, and the private message page was not fetched for it, so
+/// it never reached the stored list (GitHub #193). Plugin 1.8.0 adds `pm_last`, the time (seconds, forum clock) of the
+/// latest change of any conversation of the user, sent or received, read or not (0 when there is none): a time after
+/// [since] counts as new. An older plugin leaves it out and the gate decides as before.
 TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since}) {
   if (json == null) {
     return const TsdmAppFetchPages();
@@ -169,13 +175,15 @@ TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since})
       (json[key] as List).whereType<Map<String, dynamic>>().any((e) => ((e[timeKey] as num?)?.toInt() ?? 0) >= since);
   final announces = json['announces'];
   final time = (json['time'] as num?)?.toInt();
+  final pmLast = json['pm_last'];
   if (time == null ||
       json['notices'] is! List ||
       json['pms'] is! List ||
       announces is! List ||
       any('notices', 'dateline') ||
       any('pms', 'lastdateline') ||
-      announces.isNotEmpty) {
+      announces.isNotEmpty ||
+      (pmLast is num && pmLast.toInt() > since)) {
     return const TsdmAppFetchPages();
   }
   return TsdmAppNothingNew(DateTime.fromMillisecondsSinceEpoch(time * 1000, isUtc: true));

@@ -8,7 +8,15 @@ sealed class NotificationEvent with NotificationEventMappable {
 
 /// Required to refresh all kinds of notification.
 @MappableClass()
-final class NotificationUpdateAllRequested extends NotificationEvent with NotificationUpdateAllRequestedMappable {}
+final class NotificationUpdateAllRequested extends NotificationEvent with NotificationUpdateAllRequestedMappable {
+  /// Constructor.
+  const NotificationUpdateAllRequested({this.bypassGate = false});
+
+  /// Fetch the pages without asking the forum's app API first, keeping every conversation of the private message
+  /// page: a refresh the user asked for, or the one after a private message was sent (GitHub #193). The automatic
+  /// syncs leave it off.
+  final bool bypassGate;
+}
 
 /// Rebuild the lists from what is stored for the current user, without fetching.
 ///
