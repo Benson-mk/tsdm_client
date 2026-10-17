@@ -14,6 +14,7 @@ library;
 // ignore_for_file: missing_whitespace_between_adjacent_strings
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
@@ -36,6 +37,7 @@ import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/utils/html/html_muncher.dart';
 import 'package:tsdm_client/utils/html/netease_card.dart';
 import 'package:tsdm_client/utils/html/newcomer_report_card.dart';
+import 'package:tsdm_client/utils/html/table_width.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
 import 'package:tsdm_client/widgets/card/bounty_answer_card.dart';
 import 'package:tsdm_client/widgets/card/bounty_card.dart';
@@ -229,6 +231,35 @@ List<ScrollPosition> _horizontalScrolls(WidgetTester tester) => tester
 /// Whether the text of [paragraph] is laid out on one line: as wide as it is unwrapped.
 bool _oneLine(RenderParagraph paragraph) =>
     paragraph.getMaxIntrinsicWidth(double.infinity) <= paragraph.size.width + 0.01;
+
+/// How many lines the text of [paragraph] is laid out on.
+int _lines(RenderParagraph paragraph) =>
+    (paragraph.size.height / paragraph.getFullHeightForCaret(const TextPosition(offset: 0))).round();
+
+/// The text on the screen that contains [text].
+RenderParagraph _paragraphOf(WidgetTester tester, String text) => tester.renderObject<RenderParagraph>(
+  find.descendant(of: find.textContaining(text), matching: find.byType(RichText)),
+);
+
+/// The text in the table on the screen that is exactly one of [texts].
+Iterable<RenderParagraph> _cellsOf(WidgetTester tester, Set<String> texts) => tester
+    .renderObjectList<RenderParagraph>(find.descendant(of: find.byType(Table), matching: find.byType(RichText)))
+    .where((e) => texts.contains(e.text.toPlainText()));
+
+/// The width each column of the table on the screen is laid out at, in the table.
+List<double> _columnWidths(WidgetTester tester) {
+  final table = tester.renderObject<RenderTable>(find.byType(Table));
+  return [for (var x = 0; x < table.columns; x++) table.column(x).first.size.width];
+}
+
+/// The width each column of the table on the screen has as wide as its cells.
+List<double> _naturalWidths(WidgetTester tester) {
+  final table = tester.renderObject<RenderTable>(find.byType(Table));
+  return [
+    for (var x = 0; x < table.columns; x++)
+      (table.columnWidths?[x] ?? table.defaultColumnWidth).maxIntrinsicWidth(table.column(x), double.infinity),
+  ];
+}
 
 /// Checks that nothing overflows and that [card] and every piece of text lie inside the post on a screen of [width].
 void _expectFits(WidgetTester tester, Finder card, double width) {
@@ -609,6 +640,195 @@ void main() {
       for (final paragraph in _paragraphs(tester)) {
         expect(_effectiveScale(paragraph), closeTo(1.3, 0.01), reason: paragraph.text.toPlainText());
       }
+    });
+
+    // A table narrowed to the screen used to be shrunk by the table itself, one column after the other: the first long
+    // column gave up most of the room, down to its minimum, while the later ones kept theirs. Which column a text was
+    // in decided how many lines it got.
+    group('every long column', () {
+      // The room a table has: a post is laid out in the width of the screen - 2 * 16, a table in it is in a span scaled
+      // by the text scale.
+      double room(double scale) => (360 - 32) / scale;
+
+      testWidgets('two equally long columns get the same width', (tester) async {
+        final twin = '那是${longText.substring(2)}';
+        await pump(tester, '<table><tr><th>说明一</th><th>说明二</th></tr><tr><td>$longText</td><td>$twin</td></tr></table>');
+        expect(tester.takeException(), isNull);
+        expect(_horizontalScrolls(tester).single.maxScrollExtent, 0);
+        final widths = _columnWidths(tester);
+        expect(widths[0], closeTo(widths[1], 0.5));
+        expect(widths[0] + widths[1], closeTo(room(1), 0.5));
+        expect(_lines(_paragraphOf(tester, '这是表格里')), _lines(_paragraphOf(tester, '那是表格里')));
+      });
+
+      testWidgets('long columns keep the same share of their natural width, in either order', (tester) async {
+        const medium = '中等长度的说明文字二十个字左右的样子';
+        final layouts = <List<double>>[];
+        for (final cells in const [
+          [longText, medium],
+          [medium, longText],
+        ]) {
+          await pump(
+            tester,
+            '<table><tr><th>甲</th><th>乙</th></tr><tr><td>${cells[0]}</td><td>${cells[1]}</td></tr></table>',
+          );
+          expect(tester.takeException(), isNull);
+          expect(_horizontalScrolls(tester).single.maxScrollExtent, 0);
+          final widths = _columnWidths(tester);
+          final natural = _naturalWidths(tester);
+          // Neither is at its minimum.
+          expect(widths[0] / natural[0], closeTo(widths[1] / natural[1], 0.001));
+          layouts.add(widths);
+        }
+        // Swapped, the columns swap their widths.
+        expect(
+          layouts[1].reversed,
+          pairwiseCompare<double, double>(layouts[0], (a, b) => (a - b).abs() < 0.01, 'same'),
+        );
+      });
+
+      // A typical resource table: a long title first, a long note on the download last, short columns between them.
+      const title = '【某字幕组】某某某某番剧名称第二季 第01-12话 全集 简繁内封 1080P';
+      const resourceTable =
+          '<table><tr><th>名称</th><th>集数</th><th>字幕组</th><th>格式</th><th>下载</th></tr>'
+          '<tr><td>$title</td><td>12</td><td>某某字幕组</td><td>MKV</td><td>百度网盘 提取码 abcd 失效请回复</td></tr>'
+          '<tr><td>【某字幕组】某某某某番剧名称第一季 第13-24话 全集 简繁内封 720P</td><td>12</td><td>某某字幕组</td>'
+          '<td>MP4</td><td>磁力链接 见楼下 失效请回复</td></tr></table>';
+      const shortCells = {'名称', '集数', '字幕组', '格式', '下载', '12', '某某字幕组', 'MKV', 'MP4'};
+
+      for (final scale in const [1.0, 1.3]) {
+        testWidgets('the long title of a resource table stays readable at text scale $scale', (tester) async {
+          await pump(tester, resourceTable, textScale: scale);
+          expect(tester.takeException(), isNull);
+          final widths = _columnWidths(tester);
+          final scroll = _horizontalScrolls(tester).single;
+          if (scale == 1.0) {
+            // Its columns fit at their minimum widths: it fits the screen.
+            expect(scroll.maxScrollExtent, 0);
+          } else {
+            // They do not: it scrolls, the title wraps at the width of the screen.
+            expect(scroll.maxScrollExtent, greaterThan(0));
+            expect(widths[0], closeTo(room(scale), 0.01));
+          }
+          // A line is never wider than the screen, it is read without scrolling sideways.
+          for (final width in widths) {
+            expect(width, lessThanOrEqualTo(room(scale) + 0.01));
+          }
+          // The title, the longest, is not squeezed to leave the room to the shorter note on the download.
+          expect(widths[0], greaterThanOrEqualTo(widths.reduce(math.max) - 0.01));
+          expect(_lines(_paragraphOf(tester, '第01-12话')), lessThanOrEqualTo(5));
+          final shorts = _cellsOf(tester, shortCells).toList();
+          expect(shorts, hasLength(11));
+          for (final paragraph in shorts) {
+            expect(_oneLine(paragraph), isTrue, reason: paragraph.text.toPlainText());
+          }
+        });
+      }
+
+      testWidgets('a table that scrolls wraps each long column at the width of the screen', (tester) async {
+        const second = '另一段同样很长的说明文字，在手机的屏幕上一行同样放不下，以前整个表格只能左右滑动，现在要在屏幕里面自动换行。';
+        const third = '第三段也是很长的说明文字，在手机的屏幕上一行还是放不下，以前整个表格只能左右滑动，现在要在屏幕里面自动换行。';
+        final shorts = [for (var i = 1; i <= 4; i++) '<td>短栏$i</td>'].join();
+        await pump(
+          tester,
+          '<table><tr><td>$longText</td><td>$second</td><td>$third</td>$shorts</tr>'
+          '<tr><td>甲</td><td>乙</td><td>丙</td>$shorts</tr></table>',
+        );
+        expect(tester.takeException(), isNull);
+        expect(_horizontalScrolls(tester).single.maxScrollExtent, greaterThan(0));
+        final widths = _columnWidths(tester);
+        for (final width in widths) {
+          expect(width, lessThanOrEqualTo(room(1) + 0.01));
+        }
+        for (final text in ['这是表格里', '另一段', '第三段']) {
+          final paragraph = _paragraphOf(tester, text);
+          expect(_globalRect(paragraph).width, closeTo(360 - 32, 0.01), reason: text);
+          expect(_lines(paragraph), greaterThan(1), reason: text);
+        }
+        final shortCells = _cellsOf(tester, {for (var i = 1; i <= 4; i++) '短栏$i'}).toList();
+        expect(shortCells, hasLength(8));
+        for (final paragraph in shortCells) {
+          expect(_oneLine(paragraph), isTrue, reason: paragraph.text.toPlainText());
+        }
+      });
+
+      testWidgets('a wide image left or right of a long text gets the same width', (tester) async {
+        const wide = 'https://example.com/data/attachment/forum/wide.png';
+        await _seedPostImage(tester, wide, 360, width: 300, height: 100);
+        const image = '<td><img src="$wide"></td>';
+        const text = '<td>$longText</td>';
+        final layouts = <({Size image, double text, int lines})>[];
+        for (final html in const [
+          '<table><tr>$image$text</tr><tr><td>封面</td><td>简介</td></tr></table>',
+          '<table><tr>$text$image</tr><tr><td>简介</td><td>封面</td></tr></table>',
+        ]) {
+          await pump(tester, html);
+          expect(tester.takeException(), isNull);
+          expect(_horizontalScrolls(tester).single.maxScrollExtent, 0);
+          final paragraph = _paragraphOf(tester, '很长的说明文字');
+          layouts.add((
+            image: tester.getSize(find.byType(NetworkIndicatorImage)),
+            text: paragraph.size.width,
+            lines: _lines(paragraph),
+          ));
+        }
+        expect(layouts[1].image.width, closeTo(layouts[0].image.width, 0.01));
+        expect(layouts[1].image.height, closeTo(layouts[0].image.height, 0.01));
+        expect(layouts[1].text, closeTo(layouts[0].text, 0.01));
+        expect(layouts[1].lines, layouts[0].lines);
+        // The long text gives up its room first, the image is a thumbnail.
+        expect(layouts[0].image.width, closeTo(PostTableImage.minWidth, 0.01));
+      });
+
+      // The screen is turned: the post is laid out in another width, the table is not built again. A table whose cells
+      // did not change is only laid out again at other constraints, even when it is narrowed to the width it had when
+      // it scrolled.
+      testWidgets('a table laid out in another width, its cells unchanged, takes the widths of that width', (
+        tester,
+      ) async {
+        const medium = '中等长度的说明文字二十个字左右的样子';
+        final body = parseHtmlDocument(
+          '<html><body><table><tr><td>$longText</td><td>$medium</td><td>unbroken</td></tr>'
+          '<tr><td>甲</td><td>乙</td><td>丙</td></tr></table></body></html>',
+        ).body!;
+        final width = ValueNotifier<double>(200);
+        addTearDown(width.dispose);
+        await pumpWidget(
+          tester,
+          ValueListenableBuilder<double>(
+            valueListenable: width,
+            builder: (context, postWidth, child) => Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(width: postWidth, child: child),
+            ),
+            child: Builder(builder: (context) => munchElement(context, body)),
+          ),
+          width: 800,
+          textScale: 1,
+        );
+        // Too narrow for the minimum widths: it scrolls, the long columns as wide as the post.
+        final scroll = _horizontalScrolls(tester).single;
+        expect(scroll.maxScrollExtent, greaterThan(0));
+        final scrolling = _columnWidths(tester);
+        expect(scrolling.take(2), everyElement(closeTo(200, 0.01)));
+        // As wide as it was when it scrolled: narrowed to the width, the long columns keep the same share of their
+        // natural width.
+        final tableWidth = tester.getSize(find.byType(Table)).width;
+        width.value = tableWidth;
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(scroll.maxScrollExtent, 0);
+        final narrowed = _columnWidths(tester);
+        final natural = _naturalWidths(tester);
+        expect(narrowed[0] / natural[0], closeTo(narrowed[1] / natural[1], 0.001));
+        expect(narrowed.reduce((a, b) => a + b), closeTo(tableWidth, 0.01));
+        width.value = 200;
+        await tester.pumpAndSettle();
+        expect(
+          _columnWidths(tester),
+          pairwiseCompare<double, double>(scrolling, (a, b) => (a - b).abs() < 0.01, 'same'),
+        );
+      });
     });
 
     testWidgets('a table with a single row is only what it wraps', (tester) async {
