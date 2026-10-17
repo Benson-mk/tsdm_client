@@ -54,7 +54,7 @@ class Post with PostMappable {
     this.packetUrl,
     this.editUrl,
     this.userBriefProfile,
-    this.hasPoll = false,
+    this.poll,
     this.postMedals,
     this.badge,
     this.secondBadge,
@@ -140,8 +140,11 @@ class Post with PostMappable {
   /// not published yet.
   final bool isDraft;
 
-  /// Poll is not supported, leave a message instead.
-  final bool hasPoll;
+  /// The poll of the post (`form#poll`, only ever in the first floor) as the page it was read from showed it.
+  final PostPoll? poll;
+
+  /// Whether the post holds a poll.
+  bool get hasPoll => poll != null;
 
   /// User medals in current post.
   ///
@@ -172,7 +175,9 @@ class Post with PostMappable {
   /// Build [Post] from [element] that has attribute id "post_$postID".
   ///
   /// [reportContext] holds the ids of the page [element] was read from; without it no report target is kept.
-  static Post? fromPostNode(uh.Element element, int page, {PostReportPageContext? reportContext}) {
+  /// [viewerUid] is the account that page was served to (null for a guest page, or when it does not say), kept with
+  /// the poll of the post.
+  static Post? fromPostNode(uh.Element element, int page, {PostReportPageContext? reportContext, int? viewerUid}) {
     final trRootNode = element.querySelector('table > tbody > tr');
     final postID = element.id.replaceFirst('post_', '');
     if (postID.isEmpty) {
@@ -288,7 +293,7 @@ class Post with PostMappable {
         .where((e) => e.isValid())
         .toList();
 
-    final hasPoll = postDataNode?.querySelector('form#poll') != null;
+    final pollNode = postDataNode?.querySelector('form#poll');
 
     final postFloor = postDataNode?.querySelector('div.pi > strong > a > em')?.firstEndDeepText()?.parseToInt();
 
@@ -447,7 +452,7 @@ class Post with PostMappable {
       shareLink: shareLink,
       page: page,
       isDraft: isDraft,
-      hasPoll: hasPoll,
+      poll: pollNode == null ? null : PostPoll(form: pollNode.outerHtml ?? '', viewerUid: viewerUid),
       postMedals: postMedals,
       badge: badge,
       secondBadge: secondBadge,
@@ -465,11 +470,12 @@ class Post with PostMappable {
 
   /// Build a list of [Post] from the given [ThreadData] [uh.Element].
   ///
-  /// [element]'s id is "postlist".
+  /// [element]'s id is "postlist". [reportContext] and [viewerUid] are those of the page, see [fromPostNode].
   static List<Post> buildListFromThreadDataNode(
     uh.Element? element,
     int page, {
     PostReportPageContext? reportContext,
+    int? viewerUid,
   }) {
     if (element == null) {
       return [];
@@ -485,7 +491,7 @@ class Post with PostMappable {
       // This while is a while (0), will not loop twice.
       if ((currentElement.attributes['id'] ?? '').startsWith('post_')) {
         // Build post here.
-        final post = Post.fromPostNode(currentElement, page, reportContext: reportContext);
+        final post = Post.fromPostNode(currentElement, page, reportContext: reportContext, viewerUid: viewerUid);
         if (post == null) {
           talker.error('warning: post is empty');
           currentElement = currentElement.nextElementSibling;
@@ -500,4 +506,20 @@ class Post with PostMappable {
     }
     return tdPostList;
   }
+}
+
+/// The poll form of a post as the page it was read from showed it, and the account that page was served to.
+///
+/// The form, its formhash included, belongs to that account: the poll card shows it when it is still the account in
+/// use, instead of asking the forum for the same page again (see PollCard).
+@MappableClass()
+final class PostPoll with PostPollMappable {
+  /// Constructor.
+  const PostPoll({required this.form, required this.viewerUid});
+
+  /// The `form#poll` element, as html.
+  final String form;
+
+  /// The account the page was served to; null for a guest page, or a page that does not say.
+  final int? viewerUid;
 }

@@ -3,6 +3,7 @@ import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dar
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// Account-bound access to a poll. No automatic POST retry or persisted forms.
@@ -13,8 +14,9 @@ class PollRepository {
   /// Build using the app's existing cookie, identity and error handling.
   ///
   /// The poll's post is read in the JSON mode of the forum's app API (roadmap item 3): the `findpost` redirect is
-  /// carried to the thread page, whose blocks hold the poll form and the `discuz_uid` the identity check reads. Every
-  /// poll card on screen reads it again whenever the account changes. Without the plugin the web page comes back.
+  /// carried to the thread page, whose blocks hold the poll form and the `discuz_uid` the identity check reads. Without
+  /// the plugin the web page comes back. A card in the thread page shows the form of that page instead; it asks when it
+  /// cannot, after a vote and after a login (see PollCard).
   ///
   /// An answer without a page (an empty body) fails the read ([fetchTsdmAppPageHtml]) instead of being a page served
   /// to nobody, which the card would show as a poll to log in for.
@@ -36,7 +38,13 @@ class PollRepository {
   /// Fetch a fresh form and verify which account the server rendered it for.
   Future<ForumPoll> fetch(String url, int? uid) async {
     final document = parseHtmlDocument(await getPage(url));
-    final servedUid = parseLoggedUidFromDocument(document);
+    return pollOfPage(document, servedUid: parseLoggedUidFromDocument(document), uid: uid);
+  }
+
+  /// The poll of [document], a page the forum served to [servedUid] (null: a guest page, or one that does not say),
+  /// for the account [uid] now in use. Throws when the page belongs to another account: its form and formhash are
+  /// that account's.
+  static ForumPoll pollOfPage(uh.Document document, {required int? servedUid, required int? uid}) {
     if (servedUid != null && servedUid != uid) throw const FormatException('Poll identity changed');
     return parseForumPoll(document, loggedIn: uid != null && servedUid == uid);
   }

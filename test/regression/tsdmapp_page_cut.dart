@@ -30,6 +30,10 @@ final _Rule _ct = _r(r'<div\b[^>]*\bid="ct"', end: r'<div\b[^>]*\bid="ft"');
 /// private message pages (`#pt`, `#ct` up to the footer). Only 1.6.0 and later answer them.
 const pagesSince160 = {'notice', 'mythread', 'friend', 'guide'};
 
+/// The page type plugin 1.7.0 adds: the credit pages (`home.php?mod=spacecp&ac=credit`, base and log, type `credit` as
+/// in the answer), cut like the private message pages. 1.7.0 leaves the bank (`bank_ane`) out, its pages stay web pages.
+const pagesSince170 = {'credit'};
+
 /// `$keep` of the plugin, by page type.
 final Map<String, List<_Rule>> _keep = {
   'viewthread': [
@@ -42,7 +46,7 @@ final Map<String, List<_Rule>> _keep = {
     _r(r'<div\b[^>]*\bclass="pg"', first: true),
   ],
   'index': [_r(r'<div\b[^>]*\bid="hd"'), _pt, _ct],
-  for (final page in ['pm', 'favorite', 'search', ...pagesSince160]) page: [_pt, _ct],
+  for (final page in ['pm', 'favorite', 'search', ...pagesSince160, ...pagesSince170]) page: [_pt, _ct],
 };
 
 /// `$common` of the plugin: kept on every page.

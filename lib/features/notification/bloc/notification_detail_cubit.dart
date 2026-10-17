@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/post_report/utils/report_page_context.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
@@ -71,6 +72,7 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
               postNode,
               document.currentPage() ?? 1,
               reportContext: postReportPageContextOf(document, expectedTid: tid),
+              viewerUid: parseLoggedUidFromDocument(document),
             );
             final replyParameters = _parseParameters(document, tid);
             if (isClosed) {
