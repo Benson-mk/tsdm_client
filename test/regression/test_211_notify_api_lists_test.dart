@@ -30,19 +30,28 @@ import 'dart:io' show File, HttpDate;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
+import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
+import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:universal_html/parsing.dart';
 
 String _data(String name) => File('test/data/$name').readAsStringSync();
@@ -351,6 +360,14 @@ final class _Forum implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+/// The current account.
+final class _Auth extends Fake implements AuthenticationRepository {
+  _Auth(this.currentUser);
+
+  @override
+  UserLoginInfo? currentUser;
 }
 
 NetClientProvider _client(_Forum forum) =>
@@ -770,7 +787,7 @@ void main() {
       expect(forum.names, containsAll(<String>['notify', 'pmlist', 'broadcast page', 'seen']));
       expect(forum.seenForms.single, {'formhash': _formhash, 'pm': '1'});
       expect(value.info.personalMessageList.map((e) => e.peerUid), [3001]);
-      expect(value.window, closeTo(_now - 3 * 24 * 3600, 5));
+      expect(value.window, closeTo(_now - 3 * 24 * 3600, 65), reason: 'to the minute');
     });
 
     test('a poll takes the unread broadcast messages from notify, whatever their time (#154)', () async {
@@ -830,6 +847,60 @@ void main() {
       }
     });
 
+    test('a bound more than ten minutes ahead of the device clock is no bound: the last three days', () async {
+      final ahead = _Forum(notify: _Answer.json(_notify()));
+      await _fetch(ahead, timestamp: _now + 3 * 3600);
+      expect(int.parse(ahead.requests.single.uri.queryParameters['since']!), closeTo(_now - 3 * 24 * 3600, 5));
+      // A little ahead (a device clock behind the forum's, #71): used as it is.
+      final near = _Forum(notify: _Answer.json(_notify()));
+      await _fetch(near, timestamp: _now + 300);
+      expect(near.requests.single.uri.queryParameters['since'], '${_now + 300}');
+    });
+
+    test('a bound ahead of the forum clock: no notice is marked seen, the poll fetched none since then', () async {
+      // Nothing new: the unread notice is older than the bound.
+      final idle = _Forum(
+        notify: _Answer.json(_notify(notices: [_notice(90, _now - 3600)])),
+        seen: _seenOk,
+      );
+      await _fetch(idle, timestamp: _now + 300);
+      expect(idle.names, ['notify']);
+      // Something new (a broadcast message), the unread notice still before the bound.
+      final busy = _Forum(
+        notify: _Answer.json(_notify(notices: [_notice(90, _now - 3600)], announces: [_announce(7, _now, 'x')])),
+        seen: _seenOk,
+      );
+      final value = await _fetch(busy, timestamp: _now + 300);
+      expect(busy.names, ['notify']);
+      expect(value.info.broadcastMessageList.map((e) => e.pmid), [7]);
+    });
+
+    test('a member at +8 on a device in another zone: the window is in the times of the lists', () async {
+      // Run with TZ=Asia/Tokyo: the times read for +8 lie an hour before the real ones, and a new notice compared
+      // with the real bound was dropped (and marked seen); with TZ=Europe/Berlin, hours after: old ones were kept.
+      final forum = _Forum(
+        notify: _Answer.json(
+          _notify(
+            notices: [_notice(101, _since + 125), _notice(99, _since - 600, unread: false)],
+            pmLast: _since + 130,
+            timeOffset: 8,
+          ),
+        ),
+        pmlist: _Answer.json(
+          _pmlist([
+            _pm(1, peer: 3001, at: _since + 130, unread: true),
+            _pm(2, peer: 3002, at: _since - 600),
+          ], timeOffset: 8),
+        ),
+        seen: _seenOk,
+      );
+      final value = await _fetch(forum, timestamp: _since);
+      expect(value.info.noticeList.map((e) => e.id), [101]);
+      expect(value.info.personalMessageList.map((e) => e.peerUid), [3001]);
+      expect(value.window, apiTimeOf(_since, 8), reason: 'what persisting compares the conversations with');
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '$_now', 'pm': '1'});
+    });
+
     test('each account posts the form hash of its own notify answer', () async {
       _Forum forum(String formhash) => _Forum(
         notify: _Answer.json(_notify(notices: [_notice(101, _since + 125)], formhash: formhash)),
@@ -840,6 +911,113 @@ void main() {
       expect(alice.seenForms.single['formhash'], 'aaaa1111');
       expect(bob.seenForms.single['formhash'], 'bbbb2222');
     });
+  });
+
+  group('the bound the notification page records (a refresh, then a poll)', () {
+    const alice = UserLoginInfo(username: 'Alice', uid: _uid);
+    late AppDatabase db;
+    late StorageProvider storage;
+    late SettingsRepository settings;
+    late _Forum forum;
+    late NotificationBloc bloc;
+
+    setUp(() async {
+      db = AppDatabase(NativeDatabase.memory());
+      storage = StorageProvider(db, {}, {});
+      settings = SettingsRepository(storage);
+      final jar = {
+        '.index': '["$baseHost"]',
+        baseHost: '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=alice; Path=/;_crt=1"}}',
+      };
+      // The member's times are shown at +8 whatever zone the test runs in (TZ=Europe/Berlin: hours behind).
+      forum = _Forum(
+        notify: _Answer.json(_notify(notices: [_notice(101, _now - 120)], timeOffset: 8)),
+        pmlist: _Answer.json(_pmlist([], timeOffset: 8)),
+        broadcastPage: _Answer(_bmPage([])),
+        seen: _seenOk,
+      );
+      getIt
+        ..registerSingleton<StorageProvider>(storage)
+        ..registerSingleton<SettingsRepository>(settings)
+        ..registerFactory<NetClientProvider>(
+          () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum),
+        )
+        ..registerSingleton<CookieProvider>(CookieProvider(alice, jar));
+      await settings.init();
+      await storage.saveCookie(username: alice.username!, uid: _uid, cookie: jar);
+      bloc = NotificationBloc(
+        notificationRepository: NotificationRepository(storageProvider: storage),
+        infoRepository: NotificationInfoRepository(localNotifications: true),
+        authRepo: _Auth(alice),
+        storageProvider: storage,
+      );
+    });
+
+    tearDown(() async {
+      await bloc.close();
+      getIt
+        ..unregister<StorageProvider>()
+        ..unregister<SettingsRepository>()
+        ..unregister<NetClientProvider>()
+        ..unregister<CookieProvider>();
+      await settings.dispose();
+      await db.close();
+    });
+
+    Future<void> sync({bool bypassGate = false}) async {
+      final done = bloc.stream.firstWhere((s) => s.status == NotificationStatus.success);
+      bloc.add(NotificationUpdateAllRequested(bypassGate: bypassGate));
+      await done.timeout(const Duration(seconds: 5));
+      await pumpEventQueue();
+    }
+
+    Future<DateTime?> stored() async => (await storage.fetchLastFetchNoticeTime(_uid).run()).getOrElse((_) => null);
+
+    /// What the app records after a success (`app.dart`): the latest time of the state.
+    Future<DateTime?> record() async {
+      final before = await stored();
+      bloc.add(NotificationRecordFetchTimeRequested(bloc.state.latestTime!));
+      for (var i = 0; i < 50 && await stored() == before; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      return stored();
+    }
+
+    final bound = nextFetchBound(startedAt: DateTime.now(), serverTime: _clock(_now));
+
+    for (final (label, storedBefore) in [
+      ('a bound ten minutes ago', DateTime.now().subtract(const Duration(minutes: 10))),
+      // Recorded by an older build from the newest item's time on a device west of +8.
+      ('a bound hours ahead', DateTime.now().add(const Duration(hours: 6))),
+    ]) {
+      test('$label: the refresh records the bound of its own clock, never one in the future', () async {
+        await storage.updateLastFetchNoticeTime(_uid, storedBefore).run();
+        await sync(bypassGate: true);
+        expect(
+          bloc.state.latestTime?.millisecondsSinceEpoch,
+          bound.millisecondsSinceEpoch,
+          reason: 'the clock of notify, as the auto sync records it',
+        );
+        final recorded = await record();
+        expect(recorded?.millisecondsSinceEpoch, bound.millisecondsSinceEpoch);
+        expect(recorded!.isAfter(DateTime.now()), isFalse);
+
+        // The next poll: a notice that just arrived is fetched, kept and only then marked seen.
+        forum
+          ..requests.clear()
+          ..seenForms.clear()
+          ..notify = _Answer.json(_notify(notices: [_notice(102, _now), _notice(101, _now - 120)], timeOffset: 8));
+        await sync();
+        expect(forum.names.first, 'notify');
+        expect(
+          int.parse(forum.requests.first.uri.queryParameters['since']!),
+          bound.millisecondsSinceEpoch ~/ 1000,
+        );
+        final notices = (await storage.fetchNotificationSince(uid: _uid, timestamp: 0).run()).noticeList;
+        expect(notices.map((e) => e.nid), containsAll(<int>[101, 102]));
+        expect(forum.seenForms.single['notice'], '$_now');
+      });
+    }
   });
 
   group('notify tells the session expired', () {

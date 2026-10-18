@@ -18,7 +18,7 @@ final class NotificationInfoStateLoading extends NotificationInfoState with Noti
 @MappableClass()
 final class NotificationInfoStateSuccess extends NotificationInfoState with NotificationInfoStateSuccessMappable {
   /// Constructor.
-  const NotificationInfoStateSuccess(this.uid, this.info, {this.since, this.window});
+  const NotificationInfoStateSuccess(this.uid, this.info, {this.since, this.window, this.serverTime, this.startedAt});
 
   /// User id of whom the fetch action on.
   final int uid;
@@ -37,6 +37,13 @@ final class NotificationInfoStateSuccess extends NotificationInfoState with Noti
   /// Only a conversation not older than it is news (GitHub #193 review): the raw [since] is null on the first fetch
   /// and may lie days ahead when the device clock was fast (GitHub #71).
   final int? window;
+
+  /// The forum's clock of the fetch (the earliest `Date` header of its answers, or the clock of `notify`), null when
+  /// it did not say: the lower bound of the next fetch comes from it (`nextFetchBound`), as for the auto sync.
+  final DateTime? serverTime;
+
+  /// The device clock when the fetch started, for `nextFetchBound` without [serverTime].
+  final DateTime? startedAt;
 }
 
 /// Failed to fetch notification.

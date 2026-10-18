@@ -15,6 +15,7 @@ import 'package:tsdm_client/features/notification/repository/notification_info_r
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/auto_sync_info.dart';
 import 'package:tsdm_client/features/notification/utils/deleted_personal_messages.dart';
+import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
 import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/notification_type.dart';
@@ -475,6 +476,8 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
     late final int uid;
     int? since;
     int? window;
+    DateTime? serverTime;
+    DateTime? startedAt;
     switch (infoState) {
       case NotificationInfoStateFailure():
         emit(state.copyWith(status: NotificationStatus.failure));
@@ -488,16 +491,32 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
       case NotificationInfoStateLoading():
         emit(state.copyWith(status: NotificationStatus.loading));
         return;
-      case NotificationInfoStateSuccess(uid: final u, info: final i, since: final s, window: final w):
+      case NotificationInfoStateSuccess(
+        uid: final u,
+        info: final i,
+        since: final s,
+        window: final w,
+        serverTime: final t,
+        startedAt: final a,
+      ):
         info = i;
         uid = u;
         since = s;
         window = w;
+        serverTime = t;
+        startedAt = a;
     }
 
     emit(state.copyWith(status: NotificationStatus.loading));
 
-    final latestMessageTime = info.latestTimestamp();
+    // The bound of the next fetch, from the forum's clock as the auto sync and the sync of all accounts record it.
+    // Not the time of the newest item: since plugin 1.9.0 the items carry the time the page path reads (the member's
+    // wall clock taken as the device's local time, `apiTimeOf`), hours in the future on a device west of the member's
+    // forum offset, and such a bound made the next polls find nothing new. That time is only the fallback when the
+    // forum did not tell its clock, as before.
+    final latestMessageTime = serverTime != null
+        ? nextFetchBound(startedAt: startedAt ?? DateTime.now(), serverTime: serverTime)
+        : info.latestTimestamp();
 
     // Store and reconcile through the shared helper, the same path the sync of all accounts uses.
     final persisted = await persistFetchedNotification(
@@ -662,12 +681,15 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
       error('failed to update last fetch notice time: uid not found');
       return;
     }
-    // Never move the time backwards: the state keeps the latest message time of an earlier fetch and publishes it
-    // again on every success of a mark as read, while the auto sync and the sync of all accounts
-    // have already moved the time to the minute their fetch started in. A fetched message is never older than the
-    // inclusive bound it was fetched since, so a record from a real fetch is never skipped here.
+    // Never move the time backwards: the state keeps the bound of an earlier fetch and publishes it again on every
+    // success of a mark as read, while the auto sync and the sync of all accounts may have moved the time on since.
+    // A stored time too far ahead of the device clock is no bound (the fetch ignores it, see
+    // `NotificationRepository.boundAheadTolerance`) and is replaced: older builds recorded the time of the newest
+    // item, hours in the future on a device west of the member's forum offset.
     final stored = (await _storageProvider.fetchLastFetchNoticeTime(uid).run()).getOrElse((_) => null);
-    if (stored != null && !time.isAfter(stored)) {
+    if (stored != null &&
+        !stored.isAfter(DateTime.now().add(NotificationRepository.boundAheadTolerance)) &&
+        !time.isAfter(stored)) {
       debug('keep last fetch notification time ${stored.yyyyMMDDHHMMSS()}, ${time.yyyyMMDDHHMMSS()} is not later');
       return;
     }

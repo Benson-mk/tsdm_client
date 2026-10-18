@@ -79,7 +79,8 @@ final class AutoNotificationCubit extends Cubit<AutoNoticeState> with LoggerMixi
   ///
   /// The bound is written unconditionally on purpose: a device clock that ran ahead may have stored a bound in the
   /// future, and only a fetch that writes what the forum says can bring it back (GitHub #71). `NotificationBloc`
-  /// separately keeps the latest message time and never moves it backwards.
+  /// records the bound of its own fetches the same way, but never moves it backwards (unless the stored one lies too
+  /// far ahead of the device clock).
   AsyncVoidEither _emitDataState(int uid, DateTime? serverTime) {
     return AsyncVoidEither(() async {
       debug('auto fetch finished with data');

@@ -114,13 +114,20 @@ final class NotificationRepository with LoggerMixin {
     return answered ? withTsdmAppJson(url) : url;
   }
 
+  /// How far ahead of the device clock a stored fetch bound may lie and still be used: a device clock a little
+  /// behind the forum's (the bound comes from the forum's clock, GitHub #71).
+  static const boundAheadTolerance = Duration(minutes: 10);
+
   /// Build the timestamp (in seconds) to filter notifications, same rule as the old v2 API:
   ///
-  /// Use [timestamp] if it is in recent 3 days, otherwise 3 days ago.
+  /// Use [timestamp] if it is in recent 3 days, otherwise 3 days ago. A [timestamp] more than
+  /// [boundAheadTolerance] ahead of the device clock is no bound either: older builds recorded the time of the newest
+  /// item fetched, which on a device in another zone than the member's forum offset lies hours in the future (see
+  /// `apiTimeOf`), and such a bound made every poll find nothing new.
   static int _buildSinceTimestamp(int? timestamp) {
     final now = DateTime.now();
     final time = timestamp != null ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000) : now;
-    if (timestamp != null && 0 <= now.difference(time).inDays && now.difference(time).inDays <= 3) {
+    if (timestamp != null && !time.isAfter(now.add(boundAheadTolerance)) && now.difference(time).inDays <= 3) {
       return timestamp;
     }
     return now.add(const Duration(days: -3)).millisecondsSinceEpoch ~/ 1000;
@@ -197,8 +204,11 @@ final class NotificationRepository with LoggerMixin {
   /// does on the forum: the notices marked read when `notify` listed one unread (unless one arrived or was flagged
   /// again since it answered, see [notifyListsUnreadNotice]), the "new" prompts cleared. A failed `seen` is only
   /// logged; the next fetch posts it again while `notify` still lists unread notices, a poll with nothing new too
-  /// (the prompt of the private messages only after the next `pmlist`: `notify` does not tell it). `serverTime` is
-  /// the earliest of the `notify` clock and the `Date` headers of the pages read. With an older plugin, or without
+  /// (the prompt of the private messages only after the next `pmlist`: `notify` does not tell it); nothing is marked
+  /// with a bound ahead of the forum's clock. The lists are kept by the bound taken in their own time representation
+  /// ([apiTimeOf]: the member's wall clock as the device's local time), and the returned `window` is in it too; the
+  /// three pages are still compared with the real bound, as they always were. `serverTime` is the earliest of the
+  /// `notify` clock and the `Date` headers of the pages read. With an older plugin, or without
   /// one, the three pages are the source of every notification shown: fetching the notice page is also what marks
   /// the notices read on the forum, as it always did.
   ///
@@ -246,8 +256,9 @@ final class NotificationRepository with LoggerMixin {
         debug('nothing new since $since by the app api, pages skipped');
         // A successful `seen` leaves no unread notice on the forum: one still listed means an earlier `seen` failed
         // (or something else left it unread), and the web keeps its red dot until the next new event otherwise.
-        // The "new private message" prompt is not retried: `notify` does not tell it.
-        if (notifyCarriesLists(notify) && notifyListsUnreadNotice(notify!)) {
+        // The "new private message" prompt is not retried: `notify` does not tell it. Nor is anything marked with a
+        // bound ahead of the forum's clock: the notices since then were not fetched by this poll.
+        if (notifyCarriesLists(notify) && notifyListsUnreadNotice(notify!) && since <= (notify['time'] as int)) {
           await _markSeen(client, notify['formhash'] as String, notice: notify['time'] as int, pm: false);
         }
         return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
@@ -316,6 +327,7 @@ final class NotificationRepository with LoggerMixin {
     var pmListRead = false;
     var seenPm = false;
     var pmList = const <PersonalMessageV2>[];
+    num? pmTimeOffset;
     if (personalMessages != null) {
       switch (await personalMessages) {
         case Left(:final value):
@@ -326,6 +338,7 @@ final class NotificationRepository with LoggerMixin {
           pmList = value.list;
           pmListRead = value.fromApi;
           seenPm = value.seenPm;
+          pmTimeOffset = value.timeOffset;
           pageTimes.add(value.serverTime);
       }
     }
@@ -347,11 +360,18 @@ final class NotificationRepository with LoggerMixin {
       }
     }
 
+    // The times of the lists are what the page path reads ([apiTimeOf]): compared with the bound in that same
+    // representation, or a device in another zone than the member's offset keeps notices of hours before the window
+    // (west of it) or drops the new ones (east of it), which `seen` then marks read on the forum. The page path below
+    // still compares its times with the real bound, as it always did.
+    final listSince = apiTimeOf(since, timeOffset);
+    final pmSince = pmTimeOffset == null ? listSince : apiTimeOf(since, pmTimeOffset);
     final info = NotificationV2.within(
       notices: notices,
       personalMessages: pmList,
       broadcastMessages: broadcasts,
-      since: since,
+      since: listSince,
+      personalMessagesSince: pmSince,
       allPersonalMessages: bypassGate,
     );
     final serverTime = earliestOf([
@@ -366,11 +386,14 @@ final class NotificationRepository with LoggerMixin {
       'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
     );
 
-    final seenNotice = notifyListsUnreadNotice(notify) ? notify['time'] as int : null;
+    // Not with a bound ahead of the forum's clock either, see the poll with nothing new above.
+    final time = notify['time'] as int;
+    final seenNotice = notifyListsUnreadNotice(notify) && since <= time ? time : null;
     if (seenNotice != null || seenPm) {
       await _markSeen(client, notify['formhash'] as String, notice: seenNotice, pm: seenPm);
     }
-    return right((info: info, serverTime: serverTime, window: since));
+    // The window the conversations were kept by, in their representation: what decides that one is news.
+    return right((info: info, serverTime: serverTime, window: pmSince));
   }
 
   /// The conversation list asked of `pmlist` with [client] (plugin 1.9.0), `fromApi` true; the private message page
@@ -379,8 +402,14 @@ final class NotificationRepository with LoggerMixin {
   ///
   /// `seenPm` tells that `seen` has to clear the forum's "new private message" prompt for the list read, as reading
   /// the page does: not when the page was read, and not when the forum has private messages switched off (`closed`,
-  /// no conversation listed, as on the page then).
-  Future<Either<AppException, ({List<PersonalMessageV2> list, bool fromApi, bool seenPm, DateTime? serverTime})>>
+  /// no conversation listed, as on the page then). `timeOffset` is the offset `pmlist` gave the times with, null for
+  /// the page (the member's offset of `notify`).
+  Future<
+    Either<
+      AppException,
+      ({List<PersonalMessageV2> list, bool fromApi, bool seenPm, num? timeOffset, DateTime? serverTime})
+    >
+  >
   _personalMessagesWith(NetClientProvider client) async {
     final json = await TsdmAppApi.ask(client, 'pmlist');
     if (json case {'ok': 0, 'error': 'login'}) {
@@ -388,7 +417,13 @@ final class NotificationRepository with LoggerMixin {
       return left(NotificationUserNotFound());
     }
     if (PersonalMessage.listFromApi(json) case final list?) {
-      return right((list: list, fromApi: true, seenPm: json!['closed'] != 1, serverTime: null));
+      return right((
+        list: list,
+        fromApi: true,
+        seenPm: json!['closed'] != 1,
+        timeOffset: json['timeoffset'] as num,
+        serverTime: null,
+      ));
     }
     debug('pmlist not answered (${json?['error'] ?? 'no answer'}), reading the private message page');
     return switch (await _fetchPageWithTime(client, personalMessageUrl).run()) {
@@ -397,6 +432,7 @@ final class NotificationRepository with LoggerMixin {
         list: NotificationV2.personalMessagesOf(value.$1),
         fromApi: false,
         seenPm: false,
+        timeOffset: null,
         serverTime: value.$2,
       )),
     };
@@ -457,6 +493,7 @@ final class NotificationRepository with LoggerMixin {
   AsyncEither<DateTime?> fetchNotificationV2({required int uid, int? timestamp, bool bypassGate = false}) {
     _controller.add(const NotificationInfoStateLoading());
     return AsyncEither(() async {
+      final startedAt = DateTime.now();
       final result = await fetchNotificationWith(
         getIt.get<NetClientProvider>(),
         timestamp: timestamp,
@@ -471,7 +508,16 @@ final class NotificationRepository with LoggerMixin {
           _controller.add(const NotificationInfoStateFailure());
           return left(value);
         case Right(:final value):
-          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp, window: value.window));
+          _controller.add(
+            NotificationInfoStateSuccess(
+              uid,
+              value.info,
+              since: timestamp,
+              window: value.window,
+              serverTime: value.serverTime,
+              startedAt: startedAt,
+            ),
+          );
           return right(value.serverTime);
       }
     });

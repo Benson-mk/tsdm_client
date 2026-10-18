@@ -91,24 +91,29 @@ final class NotificationV2 with NotificationV2Mappable {
 
   /// The notifications of a fetch, kept by the rules of [fromDocuments] whatever page or answer of the forum's app
   /// API each list was read from: only those not earlier than [since] (seconds), when given, with every conversation
-  /// for [allPersonalMessages] and every unread broadcast message.
+  /// for [allPersonalMessages] and every unread broadcast message. The conversations are compared with
+  /// [personalMessagesSince] instead when given (a list read with another time offset).
   // ignore: prefer_constructors_over_static_methods
   static NotificationV2 within({
     required Iterable<NoticeV2> notices,
     required Iterable<PersonalMessageV2> personalMessages,
     required Iterable<BroadcastMessageV2> broadcastMessages,
     int? since,
+    int? personalMessagesSince,
     bool allPersonalMessages = false,
-  }) => NotificationV2(
-    status: 0,
-    noticeList: since == null ? notices.toList() : notices.where((e) => e.timestamp >= since).toList(),
-    personalMessageList: since == null || allPersonalMessages
-        ? personalMessages.toList()
-        : personalMessages.where((e) => e.timestamp >= since).toList(),
-    broadcastMessageList: since == null
-        ? broadcastMessages.toList()
-        : broadcastMessages.where((e) => !e.alreadyRead || e.timestamp >= since).toList(),
-  );
+  }) {
+    final pmSince = personalMessagesSince ?? since;
+    return NotificationV2(
+      status: 0,
+      noticeList: since == null ? notices.toList() : notices.where((e) => e.timestamp >= since).toList(),
+      personalMessageList: pmSince == null || allPersonalMessages
+          ? personalMessages.toList()
+          : personalMessages.where((e) => e.timestamp >= pmSince).toList(),
+      broadcastMessageList: since == null
+          ? broadcastMessages.toList()
+          : broadcastMessages.where((e) => !e.alreadyRead || e.timestamp >= since).toList(),
+    );
+  }
 
   /// Return the datetime of latest notification, no matter the notification is a notice, personal message or
   /// broadcast message.
