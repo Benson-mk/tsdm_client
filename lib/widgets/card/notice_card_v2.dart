@@ -27,6 +27,7 @@ import 'package:tsdm_client/utils/show_dialog.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/munched_html.dart';
+import 'package:universal_html/parsing.dart';
 
 enum _Actions { markAsRead, markAsUnread, deleteItem, copyRawContent, blockAuthor, ignoreOnForum }
 
@@ -40,6 +41,18 @@ enum _Actions { markAsRead, markAsUnread, deleteItem, copyRawContent, blockAutho
 /// Likely specialize the layout for all known messages is possible, but
 /// currently only use a more normal layout to ensure all kinds of messages are
 /// parsed successfully.
+
+/// The html a personal message or broadcast message card hands to [MunchedHtml] for the summary [data]: its text,
+/// never markup.
+///
+/// The summary is plain text since the forum's pages are parsed, but the forum keeps a numeric character reference
+/// written in a message, which the parser decodes: `&#060;img src=…&#062;` comes back as a real tag, which rendered
+/// would load a remote image or inject other markup. The copies stored by the v2 JSON API (until 2026-09) hold html
+/// and entities (`他说&quot;好&quot;`). So [data] is read as an html fragment and only its text is kept, escaped:
+/// entities decode, tags are dropped, never rendered.
+@visibleForTesting
+String summaryShownOf(String data) =>
+    htmlEscape.convert(parseHtmlDocument('<html><body>$data</body></html>').body?.text ?? '');
 
 /// Widget to display data in [NoticeV2].
 class NoticeCardV2 extends StatefulWidget {
@@ -343,11 +356,8 @@ class _PersonalMessageCardV2State extends State<PersonalMessageCardV2> {
       // The list only carries a summary of the last message and the server drops the `&` of every url in it
       // (`forum.php?mod=viewthreadtid=1`), so a link made of that text is not the one the sender wrote: it is
       // unrecognized and would open the browser. Plain text here; the real link is in the conversation the
-      // card opens (GitHub #46).
-      //
-      // Escaped, never markup: the forum keeps numeric character references in the summary, which the page parser
-      // (and the app API) decodes, so `&#060;img src=…&#062;` written in a message comes back as an image tag.
-      body: MunchedHtml(htmlEscape.convert(widget.data.data), options: const MunchOptions(renderUrl: false)),
+      // card opens (GitHub #46). Never markup either, see [summaryShownOf].
+      body: MunchedHtml(summaryShownOf(widget.data.data), options: const MunchOptions(renderUrl: false)),
     );
   }
 }
@@ -474,8 +484,8 @@ class _BroadcastMessageCardV2State extends State<BroadcastMessageCardV2> {
           }
         },
       ),
-      // Same summary as the personal message list, see above (escaped as well); the detail page has the full message.
-      body: MunchedHtml(htmlEscape.convert(widget.data.data), options: const MunchOptions(renderUrl: false)),
+      // Same summary as the personal message list, see above; the detail page has the full message.
+      body: MunchedHtml(summaryShownOf(widget.data.data), options: const MunchOptions(renderUrl: false)),
     );
   }
 }
