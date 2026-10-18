@@ -23,17 +23,25 @@ typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int w
 /// ## Note on API versions
 ///
 /// The v2 JSON API (`plugin.php?mobile=yes&tsdmapp=1&id=Kahrpba:usernotify`) is GONE since the server upgraded to
-/// Discuz X5, the server responds a normal html page on it now. So the "v2" fetching here is implemented by scraping
-/// the three html pages:
+/// Discuz X5, the server responds a normal html page on it now. The "v2" fetching here reads the forum's app API
+/// ([TsdmAppApi], the `tsdmapp` plugin) and three html pages instead:
 ///
 /// * `home.php?mod=space&do=notice` for notices.
 /// * `home.php?mod=space&do=pm&filter=privatepm` for personal messages.
 /// * `home.php?mod=space&do=pm&filter=announcepm` for broadcast messages.
 ///
-/// and converting the result into the same [NotificationV2] model so the whole notification stack (bloc, storage and
+/// and converts the result into the same [NotificationV2] model so the whole notification stack (bloc, storage and
 /// widgets) keeps working.
 ///
-/// The three pages are asked in the JSON mode of the forum's app API ([withTsdmAppJson], roadmap item 3): the private
+/// Every fetch asks the API's `notify` first. Since plugin 1.9.0 its answer carries the notices and the unread
+/// broadcast messages, and `pmlist` the conversation list of the private message page: the notice page and the
+/// private message page are not fetched any more, and the broadcast message page only when the read ones are wanted
+/// too (the first fetch, a refresh the user asked for). Opening the two pages on the web is also what marks the
+/// notices read and clears the forum's "new" prompts, so the fetch posts `seen` for that instead. With an older
+/// plugin `notify` only tells whether anything arrived (a poll with nothing new fetches no page), and without the
+/// plugin, or when an answer is missing, the three pages are read as before.
+///
+/// The pages are asked in the JSON mode of the forum's app API ([withTsdmAppJson], roadmap item 3): the private
 /// message pages are answered by plugin 1.3.0 and later, the notice page by 1.6.0. The forum still renders the whole
 /// page, so reading the notice page marks the notices read as before; an older plugin, or a forum without it, answers
 /// the web page, which parses the same ([tsdmAppPageDocument]).
@@ -44,12 +52,19 @@ final class NotificationRepository with LoggerMixin {
   /// not given and registered.
   ///
   /// [retryDelay] is the wait before the one retry of a polling fetch that could not reach the forum.
-  NotificationRepository({StorageProvider? storageProvider, Duration retryDelay = const Duration(seconds: 5)})
-    : _storageProvider = storageProvider,
-      _retryDelay = retryDelay;
+  ///
+  /// [seenTimeout] is how long a fetch waits for its `seen` ([TsdmAppApi.post]) before it goes on without it.
+  NotificationRepository({
+    StorageProvider? storageProvider,
+    Duration retryDelay = const Duration(seconds: 5),
+    Duration seenTimeout = const Duration(seconds: 8),
+  }) : _storageProvider = storageProvider,
+       _retryDelay = retryDelay,
+       _seenTimeout = seenTimeout;
 
   final StorageProvider? _storageProvider;
   final Duration _retryDelay;
+  final Duration _seenTimeout;
 
   StorageProvider? get _storage =>
       _storageProvider ?? (getIt.isRegistered<StorageProvider>() ? getIt.get<StorageProvider>() : null);
@@ -99,13 +114,20 @@ final class NotificationRepository with LoggerMixin {
     return answered ? withTsdmAppJson(url) : url;
   }
 
+  /// How far ahead of the device clock a stored fetch bound may lie and still be used: a device clock a little
+  /// behind the forum's (the bound comes from the forum's clock, GitHub #71).
+  static const boundAheadTolerance = Duration(minutes: 10);
+
   /// Build the timestamp (in seconds) to filter notifications, same rule as the old v2 API:
   ///
-  /// Use [timestamp] if it is in recent 3 days, otherwise 3 days ago.
+  /// Use [timestamp] if it is in recent 3 days, otherwise 3 days ago. A [timestamp] more than
+  /// [boundAheadTolerance] ahead of the device clock is no bound either: older builds recorded the time of the newest
+  /// item fetched, which on a device in another zone than the member's forum offset lies hours in the future (see
+  /// `apiTimeOf`), and such a bound made every poll find nothing new.
   static int _buildSinceTimestamp(int? timestamp) {
     final now = DateTime.now();
     final time = timestamp != null ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000) : now;
-    if (timestamp != null && 0 <= now.difference(time).inDays && now.difference(time).inDays <= 3) {
+    if (timestamp != null && !time.isAfter(now.add(boundAheadTolerance)) && now.difference(time).inDays <= 3) {
       return timestamp;
     }
     return now.add(const Duration(days: -3)).millisecondsSinceEpoch ~/ 1000;
@@ -166,18 +188,34 @@ final class NotificationRepository with LoggerMixin {
   /// client, the sync of all accounts passes one client per stored account. Returns [NotificationUserNotFound] when
   /// the server answered the guest page (session expired), the request error otherwise.
   ///
-  /// The returned `serverTime` is the earliest `Date` header of the three answers, null when
-  /// the server sent none: the caller stores the lower bound of its next fetch from that clock (GitHub #71).
+  /// The returned `serverTime` is the earliest `Date` header of the pages fetched (and the clock of `notify` when its
+  /// lists are read, see below), null when the server sent none: the caller stores the lower bound of its next fetch
+  /// from that clock (GitHub #71).
   ///
-  /// A polling fetch (with [timestamp]) asks the forum's app API first when it has one ([TsdmAppApi]): when nothing
-  /// arrived since then, the three pages are not fetched and an empty result with the forum's clock is returned. The
-  /// pages stay the source of every notification shown: fetching the notice page is also what marks the notices read
-  /// on the forum, as it always did.
+  /// Every fetch asks the forum's app API first when it has one ([TsdmAppApi], `notify`); an answer that the session
+  /// expired gives [NotificationUserNotFound] at once. For a polling fetch (with [timestamp]) with nothing arrived
+  /// since then, nothing else is fetched and an empty result with the forum's clock is returned; with plugin 1.9.0 a
+  /// `seen` for the notices it still lists as unread is posted first (see below).
   ///
-  /// With [bypassGate] the app API is not asked and the three pages are always fetched, keeping every conversation
-  /// of the private message page whatever its time: for a refresh the user asked for (the notification page) and the
-  /// one after sending a private message (GitHub #193). The API lists the unread received conversations only, so a
-  /// conversation last sent to, or read on the web, never made a poll fetch the pages and never reached the list.
+  /// Plugin 1.9.0 answers the lists themselves ([notifyCarriesLists]): the notices come from `notify`, the
+  /// conversations from `pmlist` (only when one changed, for a poll; the private message page when `pmlist` does not
+  /// answer) and the broadcast messages from `notify` (unread ones only, for a poll) or the broadcast message page.
+  /// The fetch then posts `seen` ([TsdmAppApi.post]) for what reading the notice page and the private message page
+  /// does on the forum: the notices marked read when `notify` listed one unread (unless one arrived or was flagged
+  /// again since it answered, see [notifyListsUnreadNotice]), the "new" prompts cleared. A failed `seen` is only
+  /// logged; the next fetch posts it again while `notify` still lists unread notices, a poll with nothing new too
+  /// (the prompt of the private messages only after the next `pmlist`: `notify` does not tell it); nothing is marked
+  /// with a bound ahead of the forum's clock. The lists are kept by the bound taken in their own time representation
+  /// ([apiTimeOf]: the member's wall clock as the device's local time), and the returned `window` is in it too; the
+  /// three pages are still compared with the real bound, as they always were. `serverTime` is the earliest of the
+  /// `notify` clock and the `Date` headers of the pages read. With an older plugin, or without
+  /// one, the three pages are the source of every notification shown: fetching the notice page is also what marks
+  /// the notices read on the forum, as it always did.
+  ///
+  /// With [bypassGate] the answer of `notify` never skips the fetch and every conversation of the private message
+  /// list is kept whatever its time: for a refresh the user asked for (the notification page) and the one after
+  /// sending a private message (GitHub #193). `notify` lists the unread received conversations only, so a
+  /// conversation last sent to, or read on the web, never made a poll fetch the list and never reached it.
   ///
   /// With [retry], a polling fetch that could not reach the forum at all (no answer: name resolution, connection or
   /// timeout) is tried once more after a few seconds: the network often comes back a moment after the device wakes
@@ -206,17 +244,29 @@ final class NotificationRepository with LoggerMixin {
     bool bypassGate = false,
   }) => AsyncEither(() async {
     final since = _buildSinceTimestamp(timestamp);
-    if (timestamp != null && !bypassGate) {
-      switch (notifyGateOf(await TsdmAppApi.ask(client, 'notify', {'since': '$since'}), since: since)) {
-        case TsdmAppNothingNew(:final serverTime):
-          debug('nothing new since $since by the app api, pages skipped');
-          return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
-        case TsdmAppNotLoggedIn():
-          error('failed to fetch notification: not logged in (app api)');
-          return left(NotificationUserNotFound());
-        case TsdmAppFetchPages():
-          break;
-      }
+    // A poll inside a known window; the first fetch and a refresh the user asked for read everything there is.
+    final polling = timestamp != null && !bypassGate;
+    final notify = await TsdmAppApi.ask(client, 'notify', {'since': '$since'});
+    switch (notifyGateOf(notify, since: since)) {
+      case TsdmAppNotLoggedIn():
+        // Every plugin version answers it before reading the action: the pages would be the guest page.
+        error('failed to fetch notification: not logged in (app api)');
+        return left(NotificationUserNotFound());
+      case TsdmAppNothingNew(:final serverTime) when polling:
+        debug('nothing new since $since by the app api, pages skipped');
+        // A successful `seen` leaves no unread notice on the forum: one still listed means an earlier `seen` failed
+        // (or something else left it unread), and the web keeps its red dot until the next new event otherwise.
+        // The "new private message" prompt is not retried: `notify` does not tell it. Nor is anything marked with a
+        // bound ahead of the forum's clock: the notices since then were not fetched by this poll.
+        if (notifyCarriesLists(notify) && notifyListsUnreadNotice(notify!) && since <= (notify['time'] as int)) {
+          await _markSeen(client, notify['formhash'] as String, notice: notify['time'] as int, pm: false);
+        }
+        return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
+      case TsdmAppNothingNew() || TsdmAppFetchPages():
+        break;
+    }
+    if (notifyCarriesLists(notify)) {
+      return _fetchWithApiLists(client, notify!, since: since, polling: polling, bypassGate: bypassGate);
     }
     final results = await Future.wait([
       _fetchPageWithTime(client, noticeUrl).run(),
@@ -252,6 +302,180 @@ final class NotificationRepository with LoggerMixin {
     return right((info: info, serverTime: serverTime, window: since));
   });
 
+  /// The rest of a fetch since [since] whose `notify` answer [notify] carries the lists ([notifyCarriesLists], plugin
+  /// 1.9.0), see [fetchNotificationWith]. [polling] is a poll inside a known window, [bypassGate] a refresh that keeps
+  /// every conversation.
+  Future<Either<AppException, FetchedNotification>> _fetchWithApiLists(
+    NetClientProvider client,
+    Map<String, dynamic> notify, {
+    required int since,
+    required bool polling,
+    required bool bypassGate,
+  }) async {
+    final timeOffset = notify['timeoffset'] as num;
+    final notices = (notify['notices'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map((e) => Notice.toV2FromApi(e, timeOffset: timeOffset))
+        .whereType<NoticeV2>()
+        .toList();
+    // The first fetch and a refresh list every conversation; a poll only when one changed since its window began.
+    final personalMessages = !polling || notifyPmSignalOf(notify, since: since) ? _personalMessagesWith(client) : null;
+    // `notify` holds the unread broadcast messages only, which is all a poll keeps (GitHub #154).
+    final broadcastPage = polling ? null : _fetchPageWithTime(client, broadcastMessageUrl).run();
+
+    final pageTimes = <DateTime?>[];
+    var pmListRead = false;
+    var seenPm = false;
+    var pmList = const <PersonalMessageV2>[];
+    num? pmTimeOffset;
+    if (personalMessages != null) {
+      switch (await personalMessages) {
+        case Left(:final value):
+          await broadcastPage;
+          error('failed to fetch notification: $value');
+          return left(value);
+        case Right(:final value):
+          pmList = value.list;
+          pmListRead = value.fromApi;
+          seenPm = value.seenPm;
+          pmTimeOffset = value.timeOffset;
+          pageTimes.add(value.serverTime);
+      }
+    }
+    final List<BroadcastMessageV2> broadcasts;
+    if (broadcastPage == null) {
+      broadcasts = (notify['announces'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map((e) => BroadcastMessage.toV2FromApi(e, timeOffset: timeOffset))
+          .whereType<BroadcastMessageV2>()
+          .toList();
+    } else {
+      switch (await broadcastPage) {
+        case Left(:final value):
+          error('failed to fetch notification: $value');
+          return left(value);
+        case Right(:final value):
+          broadcasts = NotificationV2.broadcastMessagesOf(value.$1);
+          pageTimes.add(value.$2);
+      }
+    }
+
+    // The times of the lists are what the page path reads ([apiTimeOf]): compared with the bound in that same
+    // representation, or a device in another zone than the member's offset keeps notices of hours before the window
+    // (west of it) or drops the new ones (east of it), which `seen` then marks read on the forum. The page path below
+    // still compares its times with the real bound, as it always did.
+    final listSince = apiTimeOf(since, timeOffset);
+    final pmSince = pmTimeOffset == null ? listSince : apiTimeOf(since, pmTimeOffset);
+    final info = NotificationV2.within(
+      notices: notices,
+      personalMessages: pmList,
+      broadcastMessages: broadcasts,
+      since: listSince,
+      personalMessagesSince: pmSince,
+      allPersonalMessages: bypassGate,
+    );
+    final serverTime = earliestOf([
+      DateTime.fromMillisecondsSinceEpoch((notify['time'] as int) * 1000, isUtc: true),
+      ...pageTimes,
+    ]);
+    debug(
+      'fetched notification by the app api since $since${bypassGate ? ' (gate bypassed, every conversation)' : ''}: '
+      'notice=${info.noticeList.length} pm=${info.personalMessageList.length} '
+      '(${personalMessages == null ? 'not asked' : (pmListRead ? 'pmlist' : 'page')}) '
+      'bm=${info.broadcastMessageList.length} (${broadcastPage == null ? 'notify' : 'page'}) '
+      'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
+    );
+
+    // Not with a bound ahead of the forum's clock either, see the poll with nothing new above.
+    final time = notify['time'] as int;
+    final seenNotice = notifyListsUnreadNotice(notify) && since <= time ? time : null;
+    if (seenNotice != null || seenPm) {
+      await _markSeen(client, notify['formhash'] as String, notice: seenNotice, pm: seenPm);
+    }
+    // The window the conversations were kept by, in their representation: what decides that one is news.
+    return right((info: info, serverTime: serverTime, window: pmSince));
+  }
+
+  /// The conversation list asked of `pmlist` with [client] (plugin 1.9.0), `fromApi` true; the private message page
+  /// when the API does not answer it (refused as too soon, not understood), `fromApi` false and the page's clock in
+  /// `serverTime`. [NotificationUserNotFound] when the API answered that the session expired.
+  ///
+  /// `seenPm` tells that `seen` has to clear the forum's "new private message" prompt for the list read, as reading
+  /// the page does: not when the page was read, and not when the forum has private messages switched off (`closed`,
+  /// no conversation listed, as on the page then). `timeOffset` is the offset `pmlist` gave the times with, null for
+  /// the page (the member's offset of `notify`).
+  Future<
+    Either<
+      AppException,
+      ({List<PersonalMessageV2> list, bool fromApi, bool seenPm, num? timeOffset, DateTime? serverTime})
+    >
+  >
+  _personalMessagesWith(NetClientProvider client) async {
+    final json = await TsdmAppApi.ask(client, 'pmlist');
+    if (json case {'ok': 0, 'error': 'login'}) {
+      error('failed to fetch notification: not logged in (app api pmlist)');
+      return left(NotificationUserNotFound());
+    }
+    if (PersonalMessage.listFromApi(json) case final list?) {
+      return right((
+        list: list,
+        fromApi: true,
+        seenPm: json!['closed'] != 1,
+        timeOffset: json['timeoffset'] as num,
+        serverTime: null,
+      ));
+    }
+    debug('pmlist not answered (${json?['error'] ?? 'no answer'}), reading the private message page');
+    return switch (await _fetchPageWithTime(client, personalMessageUrl).run()) {
+      Left(:final value) => left(value),
+      Right(:final value) => right((
+        list: NotificationV2.personalMessagesOf(value.$1),
+        fromApi: false,
+        seenPm: false,
+        timeOffset: null,
+        serverTime: value.$2,
+      )),
+    };
+  }
+
+  /// Post `seen` with [client] and the [formhash] of its `notify` answer: the unread notices marked read when [notice]
+  /// (the clock of that answer, seconds) is given and none is unread with a time at or after it, and the forum's "new
+  /// private message" prompt cleared when [pm]. Only logged when it fails.
+  ///
+  /// Waited for, so a background sync does not end before it is sent, but not longer than [_seenTimeout]: the fetch
+  /// holds the sync's "fetching" state (which the login and account switch flows wait on) until it returns, and the
+  /// request alone may take its whole connect and receive timeouts. The request is not cancelled then; its answer is
+  /// only not read.
+  Future<void> _markSeen(NetClientProvider client, String formhash, {required int? notice, required bool pm}) async {
+    var timedOut = false;
+    final answer =
+        await TsdmAppApi.post(client, 'seen', {
+          'formhash': formhash,
+          if (notice != null) 'notice': '$notice',
+          if (pm) 'pm': '1',
+        }).timeout(
+          _seenTimeout,
+          onTimeout: () {
+            timedOut = true;
+            return null;
+          },
+        );
+    if (timedOut) {
+      warning('marking notifications seen on the forum (notice=$notice pm=$pm) did not answer in time, going on');
+      return;
+    }
+    if (answer == null || answer['ok'] != 1) {
+      warning(
+        'failed to mark notifications seen on the forum (notice=$notice pm=$pm): ${answer?['error'] ?? 'no answer'}',
+      );
+      return;
+    }
+    debug(
+      'marked seen on the forum: notice=${answer['notice']}${answer['newer'] == 1 ? ' (a newer one arrived)' : ''} '
+      'pm=${answer['pm']}',
+    );
+  }
+
   /// Fetch all kinds of notification of the current user.
   ///
   /// [timestamp] is the last time call this api (in seconds). Only notifications since [timestamp] are returned.
@@ -269,6 +493,7 @@ final class NotificationRepository with LoggerMixin {
   AsyncEither<DateTime?> fetchNotificationV2({required int uid, int? timestamp, bool bypassGate = false}) {
     _controller.add(const NotificationInfoStateLoading());
     return AsyncEither(() async {
+      final startedAt = DateTime.now();
       final result = await fetchNotificationWith(
         getIt.get<NetClientProvider>(),
         timestamp: timestamp,
@@ -283,7 +508,16 @@ final class NotificationRepository with LoggerMixin {
           _controller.add(const NotificationInfoStateFailure());
           return left(value);
         case Right(:final value):
-          _controller.add(NotificationInfoStateSuccess(uid, value.info, since: timestamp, window: value.window));
+          _controller.add(
+            NotificationInfoStateSuccess(
+              uid,
+              value.info,
+              since: timestamp,
+              window: value.window,
+              serverTime: value.serverTime,
+              startedAt: startedAt,
+            ),
+          );
           return right(value.serverTime);
       }
     });

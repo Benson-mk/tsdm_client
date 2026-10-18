@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -25,6 +26,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/widgets/card/notice_card_v2.dart';
 import 'package:tsdm_client/widgets/munched_html.dart';
+import 'package:tsdm_client/widgets/network_indicator_image.dart';
 import 'package:universal_html/parsing.dart';
 
 String _data(String name) => File('test/data/$name').readAsStringSync();
@@ -197,5 +199,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('chat history 1000'), findsOneWidget);
     expect(launched, isEmpty);
+  });
+
+  test('the summary shown: the text of the html, escaped (entities decoded, tags dropped)', () {
+    // Stored by the v2 JSON API: entities.
+    expect(summaryShownOf('他说&quot;好&quot;'), htmlEscape.convert('他说"好"'));
+    expect(summaryShownOf('Tom & Jerry'), htmlEscape.convert('Tom & Jerry'));
+    expect(summaryShownOf('<img src=https://evil.example/p.png>'), '');
+    expect(summaryShownOf('a <b>bold</b> word'), htmlEscape.convert('a bold word'));
+    // Spelled with numeric references in a stored copy: shown as the text it spells, never as a tag.
+    expect(summaryShownOf('&#060;img src=x&#062;'), htmlEscape.convert('<img src=x>'));
+  });
+
+  testWidgets('a summary holding markup shows no markup on both cards and builds no image', (tester) async {
+    // The forum keeps a numeric character reference written in a message (`&#060;img …&#062;`) and the page parser
+    // (or the app API) decodes it: the summary text then holds a real tag. Older stored copies hold entities.
+    const cases = [
+      ('<img src=https://evil.example/p.png> <b>bold</b> &amp; 1 < 2', 'bold & 1 < 2'),
+      ('他说&quot;好&quot;', '他说"好"'),
+      ('Tom & Jerry', 'Tom & Jerry'),
+      ('&#060;img src=https://evil.example/q.png&#062;', '<img src=https://evil.example/q.png>'),
+    ];
+    final auth = AuthenticationRepository();
+    addTearDown(auth.dispose);
+    for (final (data, shown) in cases) {
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: RepositoryProvider<AuthenticationRepository>.value(
+            value: auth,
+            child: MaterialApp(
+              home: Scaffold(
+                body: ListView(
+                  children: [
+                    PersonalMessageCardV2(summary().copyWith(data: data, alreadyRead: true)),
+                    BroadcastMessageCardV2(BroadcastMessageV2(timestamp: 1, data: data, pmid: 5, alreadyRead: true)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(NetworkIndicatorImage), findsNothing, reason: data);
+      Finder texts(String part) =>
+          find.byWidgetPredicate((w) => w is Text && (w.textSpan?.toPlainText().contains(part) ?? false));
+      expect(texts(shown), findsNWidgets(2), reason: data);
+      if (!shown.contains('<')) {
+        expect(texts('<'), findsNothing, reason: 'no markup shown: $data');
+      }
+      expect(texts('p.png'), findsNothing, reason: 'the tag is dropped, not shown: $data');
+    }
   });
 }

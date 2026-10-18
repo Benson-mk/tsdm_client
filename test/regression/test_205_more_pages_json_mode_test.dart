@@ -509,11 +509,27 @@ void main() {
         ('an empty body', _json('')),
         ('a blank body', _json(' \n')),
       ]) {
-        final forum = _Forum((o) => o.uri.queryParameters['do'] == 'notice' ? answer : page(o));
+        // The fetch asks the app API first: an older plugin with nothing new, which the first fetch reads past.
+        final olderNotify = _json({
+          'ok': 1,
+          'api': 1,
+          'time': 0,
+          'notices': <Object>[],
+          'pms': <Object>[],
+          'announces': <Object>[],
+        });
+        final forum = _Forum(
+          (o) => switch (o.uri.queryParameters) {
+            {'id': 'tsdmapp:api'} => olderNotify,
+            {'do': 'notice'} => answer,
+            _ => page(o),
+          },
+        );
         final result = await NotificationRepository().fetchNotificationWith(_client(forum)).run();
         expect(result.isLeft(), isTrue, reason: label);
         expect(result.getLeft().toNullable(), isNot(isA<NotificationUserNotFound>()), reason: label);
-        expect(forum.requests, hasLength(3), reason: label);
+        expect(forum.apiRequests, hasLength(1), reason: label);
+        expect(forum.requests, hasLength(4), reason: label);
       }
       expect(tsdmAppAnswerWithoutPage('{"ok":0,"error":"internal"}'), isTrue);
       expect(tsdmAppAnswerWithoutPage(null), isTrue);

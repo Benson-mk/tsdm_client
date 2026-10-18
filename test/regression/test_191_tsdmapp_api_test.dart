@@ -248,10 +248,13 @@ void main() {
       expect(forum.requests, hasLength(1));
     });
 
-    test('the first fetch (no timestamp) reads the pages without asking', () async {
+    test('the first fetch (no timestamp) asks once and reads the pages: an older plugin only gates polls', () async {
+      // Plugin 1.9.0 answers the lists themselves (test 211); this answer is an older plugin's.
       final forum = _Forum(api: _notify(), pages: [_noticePage, _emptyPage, _emptyPage]);
-      await NotificationRepository().fetchNotificationWith(_client(forum)).run();
-      expect(forum.apiRequests, isEmpty);
+      final result = await NotificationRepository().fetchNotificationWith(_client(forum)).run();
+      expect(result.isRight(), isTrue);
+      expect(forum.apiRequests, hasLength(1));
+      expect(forum.requests, hasLength(4));
     });
   });
 

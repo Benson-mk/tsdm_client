@@ -20,6 +20,12 @@ import 'package:universal_html/parsing.dart';
 /// when the meaning of a field changes. Since plugin 1.1.0 the forum can switch the API off (`error: off`, treated as
 /// missing) and answers calls too close together with HTTP 429 (`error: busy`, a failed request here: the web path
 /// is used for that one call).
+///
+/// Plugin 1.9.0 adds the private conversation list (`pmlist`) and `seen`, the only action that writes: it does what
+/// opening the notice page and the private message page on the web does to the forum (the notices marked read, the
+/// "new" prompts cleared), now that the notification fetch reads the lists from here instead of those pages. It is
+/// sent with [post]; its `notify` answer carries the form hash for it ([notifyCarriesLists]) and the clock the notices
+/// are marked read as of ([notifyListsUnreadNotice]).
 abstract final class TsdmAppApi {
   /// Url of an action.
   static String url(String action, [Map<String, String> query = const {}]) => Uri.parse(
@@ -99,15 +105,8 @@ abstract final class TsdmAppApi {
         talker.debug('tsdmapp api $action failed: $value');
         return null;
       case Right(:final value):
-        final data = value.data;
-        final text = data is String ? data : (data == null ? '' : jsonEncode(data));
-        Object? decoded;
-        try {
-          decoded = data is Map<String, dynamic> ? data : jsonDecode(text);
-        } on FormatException {
-          decoded = null;
-        }
-        if (decoded is! Map<String, dynamic> || decoded['ok'] is! int) {
+        final decoded = _jsonObjectOf(value.data);
+        if (decoded == null || decoded['ok'] is! int) {
           talker.info('tsdmapp api not available on the forum, using web pages for ${unavailableFor.inMinutes} min');
           _unavailableUntil = DateTime.now().add(unavailableFor);
           return null;
@@ -122,6 +121,52 @@ abstract final class TsdmAppApi {
           return null;
         }
         return decoded;
+    }
+  }
+
+  /// Post [form] to [action] with [client], once (no transport retry, no redirect followed); the parsed JSON object
+  /// when the forum answered one, null otherwise. For `seen` (plugin 1.9.0), the only action that writes.
+  ///
+  /// Unlike [ask], an answer that is not JSON does not mark the API missing: Discuz itself answers a form hash it
+  /// does not take with its "System Error" page (HTTP 503, a failed request here), before the plugin is reached, and
+  /// that tells nothing about the plugin. A failed request, HTTP 429 (`error: busy`), an older plugin without the
+  /// action (`error: action`) and an API switched off (`error: off`) give null as well. The caller logs it and asks
+  /// again on its next fetch.
+  static Future<Map<String, dynamic>?> post(NetClientProvider client, String action, Map<String, String> form) async {
+    if (knownUnavailable) {
+      return null;
+    }
+    switch (await client.postForm(url(action), data: form, singleAttempt: true).run()) {
+      case Left(:final value):
+        talker.debug('tsdmapp api $action (post) failed: $value');
+        return null;
+      case Right(:final value):
+        final decoded = _jsonObjectOf(value.data);
+        if (decoded == null || decoded['ok'] is! int) {
+          talker.warning('tsdmapp api $action (post) answered no JSON (HTTP ${value.statusCode})');
+          return null;
+        }
+        if (decoded['ok'] == 0 && (decoded['error'] == 'action' || decoded['error'] == 'off')) {
+          talker.debug('tsdmapp api $action (post) not available: ${decoded['error']}');
+          return null;
+        }
+        return decoded;
+    }
+  }
+
+  /// The JSON object of an answer body [data], null when it is not one.
+  static Map<String, dynamic>? _jsonObjectOf(Object? data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    final text = data is String ? data : (data == null ? '' : jsonEncode(data));
+    try {
+      return switch (jsonDecode(text)) {
+        final Map<String, dynamic> json => json,
+        _ => null,
+      };
+    } on FormatException {
+      return null;
     }
   }
 }
@@ -170,23 +215,55 @@ TsdmAppNotifyGate notifyGateOf(Map<String, dynamic>? json, {required int since})
   if (json['ok'] != 1) {
     return json['error'] == 'login' ? const TsdmAppNotLoggedIn() : const TsdmAppFetchPages();
   }
-  bool any(String key, String timeKey) =>
-      (json[key] is List) &&
-      (json[key] as List).whereType<Map<String, dynamic>>().any((e) => ((e[timeKey] as num?)?.toInt() ?? 0) >= since);
+  final notices = json['notices'];
   final announces = json['announces'];
   final time = (json['time'] as num?)?.toInt();
-  final pmLast = json['pm_last'];
   if (time == null ||
-      json['notices'] is! List ||
-      json['pms'] is! List ||
+      notices is! List ||
       announces is! List ||
-      any('notices', 'dateline') ||
-      any('pms', 'lastdateline') ||
+      notices.whereType<Map<String, dynamic>>().any((e) => ((e['dateline'] as num?)?.toInt() ?? 0) >= since) ||
       announces.isNotEmpty ||
-      (pmLast is num && pmLast.toInt() > since)) {
+      notifyPmSignalOf(json, since: since)) {
     return const TsdmAppFetchPages();
   }
   return TsdmAppNothingNew(DateTime.fromMillisecondsSinceEpoch(time * 1000, isUtc: true));
+}
+
+/// Whether a `notify` answer [json] tells that a private conversation changed at or after [since] (seconds), the
+/// private message part of [notifyGateOf]: an unread received conversation (`pms`) with its last message since then,
+/// or the latest change of any conversation (`pm_last`, plugin 1.8.0) after it. A `pms` that is not a list cannot
+/// tell, which counts as a change.
+bool notifyPmSignalOf(Map<String, dynamic> json, {required int since}) {
+  final pms = json['pms'];
+  final pmLast = json['pm_last'];
+  return pms is! List ||
+      pms.whereType<Map<String, dynamic>>().any((e) => ((e['lastdateline'] as num?)?.toInt() ?? 0) >= since) ||
+      (pmLast is num && pmLast.toInt() > since);
+}
+
+/// Whether a `notify` answer [json] carries the lists the notification fetch reads instead of the notice and private
+/// message pages (plugin 1.9.0): the form hash `seen` is posted with, the notices, the unread broadcast messages, the
+/// forum's clock and the offset (hours) the forum shows the member's times with, `timeoffset`. An older plugin leaves
+/// the form hash out; its answer only gates the pages ([notifyGateOf]).
+bool notifyCarriesLists(Map<String, dynamic>? json) =>
+    json != null &&
+    json['ok'] == 1 &&
+    json['formhash'] is String &&
+    json['notices'] is List &&
+    json['announces'] is List &&
+    json['time'] is int &&
+    json['timeoffset'] is num;
+
+/// Whether a `notify` answer [json] lists an unread notice: then `seen` is posted for the notices, with the clock of
+/// that answer (`time`) as `notice`.
+///
+/// The forum marks every unread notice read for it, as the notice page does, unless one is unread with a time at or
+/// after that clock (`newer`: it arrived, or was flagged unread again, while or after `notify` answered), which the
+/// next fetch gets first. Not an id: Discuz updates a notice in place when the same thread or post fires again (same
+/// id, unread again, the time of now), so a bound by id would mark read a notice the app never got.
+bool notifyListsUnreadNotice(Map<String, dynamic> json) {
+  final notices = json['notices'];
+  return notices is List && notices.whereType<Map<String, dynamic>>().any((e) => e['new'] == 1);
 }
 
 /// The checkin state told by `checkin`, null when the API cannot tell (missing plugin, no checkin plugin, old API).

@@ -209,6 +209,48 @@ class Notice with NoticeMappable {
     );
   }
 
+  /// Convert a notice of the `notify` answer of the forum's app API (plugin 1.9.0) into [NoticeV2], the same as
+  /// [toV2] gives for that notice on the notice page.
+  ///
+  /// The answer's `note` is the html the notice page prints in `dd.ntc_body` as it is, and the page prints the ignore
+  /// link from the notice's `authorid` and `type`. Both are put in a notice node of the same shape and read by the
+  /// same parsers ([buildBodyHtml], [parseIgnoreTarget]): the body gets the same absolute urls and image sources, a
+  /// system notice (author 0) the same target. The time is the one the page path reads ([apiTimeOf], with the
+  /// [timeOffset] of the answer). Unread is the answer's `new`. Return null if id, time or note is missing.
+  static NoticeV2? toV2FromApi(Map<String, dynamic> json, {required num timeOffset}) {
+    final id = json['id'];
+    final dateline = json['dateline'];
+    final note = json['note'];
+    if (id is! int || dateline is! int || note is! String) {
+      talker.error('failed to build notice v2 from the app api: id=$id, dateline=$dateline, hasNote=${note is String}');
+      return null;
+    }
+    final authorId = json['authorid'] is int ? json['authorid'] : '';
+    final type = json['type'] is String ? json['type'] : '';
+    // The markup of the notice page (`template/default/home/space_notice.php`): the template compiler escapes the `&`
+    // of the link, the values are printed as they are.
+    const ignore = 'home.php?mod=spacecp&amp;ac=common&amp;op=ignore';
+    final ignoreUrl = '$ignore&amp;authorid=$authorId&amp;type=$type&amp;handlekey=noticeignore';
+    final element = parseHtmlDocument(
+      '<html><body><div class="nts"><dl class="cl" notice="$id" id="notice_$id"><dt><a class="d b" '
+      'href="$ignoreUrl" id="a_note_$id">屏蔽</a></dt><dd class="ntc_body">$note</dd></dl></div></body></html>',
+    ).querySelector('div.nts > dl');
+    final data = element == null ? null : buildBodyHtml(element);
+    if (element == null || data == null) {
+      talker.error('failed to build notice v2 from the app api: no body for notice $id');
+      return null;
+    }
+    final target = parseIgnoreTarget(element);
+    return NoticeV2(
+      id: id,
+      timestamp: apiTimeOf(dateline, timeOffset),
+      data: data,
+      alreadyRead: json['new'] == 0,
+      ignoreType: target?.type,
+      authorId: target?.authorId,
+    );
+  }
+
   /// Build a [Notice] from html node [element] :
   /// div#ct > div.mn > div.bm.bw0 > div.xld.xlda > div.nts > dl (Discuz X5)
   /// div#ct > div.mn > div.bm.bw0 > div.xld.xlda > div.nts > div.cl (Discuz X3)
@@ -382,6 +424,23 @@ class Notice with NoticeMappable {
       taskId: taskId,
     );
   }
+}
+
+/// The time (seconds) of a notification of the forum's app API that carries [seconds] (the real time) for a member
+/// whose times the forum shows with an offset of [offsetHours] (`timeoffset` of the answer), the same number the web
+/// page path reads for it.
+///
+/// The pages show a time as the member's wall clock to the minute (`Y-n-j H:i`), and the page parsers read that text
+/// as the device's local time (`parseToDateTimeUtc8`, which does not apply +8: a bug of the page path, left as it is
+/// here). This takes the same wall clock from [seconds] and [offsetHours] and reads it the same way, so a notice, a
+/// conversation or a broadcast message has the same time whichever path fetched it, whatever the device's zone: the
+/// stored copies are reconciled by time (a newer copy is a new event, unread again; an older one is dropped as
+/// stale), and a copy the API gives must not be "newer" or "older" than the copy a fetch that falls back to the pages
+/// (an older plugin, an answer refused as too soon) reads. It is the real time to the minute when the device's zone
+/// is the member's offset, as on most devices. The bound of the next fetch is a whole minute (`nextFetchBound`).
+int apiTimeOf(int seconds, num offsetHours) {
+  final wall = DateTime.fromMillisecondsSinceEpoch((seconds + (offsetHours * 3600).round()) * 1000, isUtc: true);
+  return DateTime(wall.year, wall.month, wall.day, wall.hour, wall.minute).millisecondsSinceEpoch ~/ 1000;
 }
 
 /// Get the image url of an `<img>` node, lazy loaded images use `data-src`.

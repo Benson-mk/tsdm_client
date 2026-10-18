@@ -39,10 +39,9 @@ class NotificationState with NotificationStateMappable {
   /// All fetched [BroadcastMessageV2].
   final List<BroadcastMessageV2> broadcastMessageList;
 
-  /// The timestamp of latest notification.
+  /// The lower bound of the next fetch, recorded after a successful one.
   ///
-  /// This field stores the latest timestamp of notification.
-  /// For a complete and consist notification fetch time, use this field for the next fetch since it's just continue
-  /// since the latest fetched notification confirmed by the server side.
+  /// From the forum's clock of the fetch (`nextFetchBound`), as the auto sync records it; the time of the newest
+  /// notification fetched only when the forum did not tell its clock.
   final DateTime? latestTime;
 }

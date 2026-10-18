@@ -13,6 +13,7 @@ import 'package:tsdm_client/features/notification/repository/notification_reposi
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -36,11 +37,14 @@ Map<String, String> _jar(String token) => {
 };
 
 /// Answers every notification page with [_page]. With [serverTime] set, each answer carries a `Date` header that
-/// starts there and moves one second forward per request, so the earliest one is the first request's.
+/// starts there and moves one second forward per page request, so the earliest one is the first page's.
+///
+/// The app API, which every fetch asks first, is answered the same web page: a forum without the plugin.
 final class _Adapter implements HttpClientAdapter {
   /// Forum clock of the next answer; null sends no `Date` header.
   DateTime? serverTime;
   final requests = <Uri>[];
+  final apiRequests = <Uri>[];
 
   @override
   Future<ResponseBody> fetch(
@@ -49,7 +53,7 @@ final class _Adapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     final index = requests.length;
-    requests.add(options.uri);
+    (options.uri.queryParameters['id'] == 'tsdmapp:api' ? apiRequests : requests).add(options.uri);
     final date = serverTime?.add(Duration(seconds: index));
     return ResponseBody.fromString(
       _page,
@@ -67,6 +71,8 @@ final class _Adapter implements HttpClientAdapter {
 
 void main() {
   setUpAll(() => talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false)));
+  // A forum without the plugin is remembered for an hour; each test starts without knowing it.
+  setUp(TsdmAppApi.reset);
 
   group('nextFetchBound', () {
     test('the forum clock wins over a device clock that runs ahead', () {
@@ -160,6 +166,7 @@ void main() {
       expect(withDate.isRight(), isTrue, reason: '$withDate');
       expect(withDate.getOrElse((_) => throw StateError('unreachable')).serverTime, forum);
       expect(adapter.requests, hasLength(3));
+      expect(adapter.apiRequests, hasLength(1), reason: 'asked first, a web page: not asked again');
 
       adapter.serverTime = null;
       final withoutDate = await NotificationRepository().fetchNotificationWith(client).run();
