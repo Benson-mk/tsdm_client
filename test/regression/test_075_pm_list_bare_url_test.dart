@@ -25,6 +25,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/widgets/card/notice_card_v2.dart';
 import 'package:tsdm_client/widgets/munched_html.dart';
+import 'package:tsdm_client/widgets/network_indicator_image.dart';
 import 'package:universal_html/parsing.dart';
 
 String _data(String name) => File('test/data/$name').readAsStringSync();
@@ -197,5 +198,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('chat history 1000'), findsOneWidget);
     expect(launched, isEmpty);
+  });
+
+  testWidgets('a summary holding markup is shown as its text on both cards: no image is built', (tester) async {
+    // The forum keeps a numeric character reference written in a message (`&#060;img …&#062;`) and the page parser
+    // (or the app API) decodes it: the summary text then holds a real tag.
+    const text = '<img src=https://evil.example/p.png> <b>bold</b> &amp; 1 < 2';
+    final auth = AuthenticationRepository();
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: RepositoryProvider<AuthenticationRepository>.value(
+          value: auth,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  PersonalMessageCardV2(summary().copyWith(data: text, alreadyRead: true)),
+                  const BroadcastMessageCardV2(
+                    BroadcastMessageV2(timestamp: 1, data: text, pmid: 5, alreadyRead: true),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(NetworkIndicatorImage), findsNothing);
+    final shown = find.byWidgetPredicate((w) => w is Text && (w.textSpan?.toPlainText().contains(text) ?? false));
+    expect(shown, findsNWidgets(2), reason: 'the text as it is, tags and entities included');
   });
 }

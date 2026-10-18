@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -342,7 +344,10 @@ class _PersonalMessageCardV2State extends State<PersonalMessageCardV2> {
       // (`forum.php?mod=viewthreadtid=1`), so a link made of that text is not the one the sender wrote: it is
       // unrecognized and would open the browser. Plain text here; the real link is in the conversation the
       // card opens (GitHub #46).
-      body: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
+      //
+      // Escaped, never markup: the forum keeps numeric character references in the summary, which the page parser
+      // (and the app API) decodes, so `&#060;img src=…&#062;` written in a message comes back as an image tag.
+      body: MunchedHtml(htmlEscape.convert(widget.data.data), options: const MunchOptions(renderUrl: false)),
     );
   }
 }
@@ -469,8 +474,8 @@ class _BroadcastMessageCardV2State extends State<BroadcastMessageCardV2> {
           }
         },
       ),
-      // Same summary as the personal message list, see above; the detail page has the full message.
-      body: MunchedHtml(widget.data.data, options: const MunchOptions(renderUrl: false)),
+      // Same summary as the personal message list, see above (escaped as well); the detail page has the full message.
+      body: MunchedHtml(htmlEscape.convert(widget.data.data), options: const MunchOptions(renderUrl: false)),
     );
   }
 }
