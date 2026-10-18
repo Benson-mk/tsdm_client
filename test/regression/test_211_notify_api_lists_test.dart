@@ -455,7 +455,7 @@ void main() {
   });
 
   group('plugin 1.9.0', () {
-    test('a poll with new notices reads them from notify only and marks them seen up to the newest unread', () async {
+    test('a poll with new notices reads them from notify only and marks them seen as of its clock', () async {
       final notices = [
         _notice(105, _since + 300),
         _notice(101, _since + 125),
@@ -463,14 +463,16 @@ void main() {
         // notify lists every unread notice; this one is before the window, so not kept, but read on the forum too.
         _notice(110, _since - 3600),
       ];
+      // The clock of the answer, not of the device nor an id: a notice updated in place keeps its id (see
+      // notifyListsUnreadNotice).
       final forum = _Forum(
-        notify: _Answer.json(_notify(notices: notices)),
+        notify: _Answer.json(_notify(notices: notices, time: _now - 5)),
         seen: _seenOk,
       );
       final value = await _fetch(forum, timestamp: _since);
       expect(forum.names, ['notify', 'seen']);
       expect(forum.requests.last.method, 'POST');
-      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '110'});
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '${_now - 5}'});
 
       final fromPages = NotificationV2.fromDocuments(
         noticeDoc: parseHtmlDocument(_noticePage(notices)),
@@ -484,7 +486,7 @@ void main() {
       expect(value.info.noticeList.first.data, contains('src="$baseUrl/static/image/smiley/default/smile.gif"'));
       expect((value.info.noticeList.first.ignoreType, value.info.noticeList.first.authorId), ('post', 3001));
       expect(value.info.personalMessageList, isEmpty);
-      expect(value.serverTime, _clock(_now), reason: 'the clock of notify');
+      expect(value.serverTime, _clock(_now - 5), reason: 'the clock of notify');
       expect(value.window, _since);
     });
 
@@ -512,7 +514,7 @@ void main() {
       );
       final value = await _fetch(forum, timestamp: _since);
       expect(forum.names, ['notify', 'seen']);
-      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '95'});
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '$_now'});
       expect(value.info, NotificationV2.empty);
       expect(value.serverTime, _clock(_now));
 
@@ -569,7 +571,7 @@ void main() {
       );
       final value = await _fetch(forum, timestamp: _since);
       expect(forum.names, ['notify', 'seen']);
-      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '101'});
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '$_now'});
       expect(value.info.personalMessageList, isEmpty);
     });
 
@@ -628,7 +630,7 @@ void main() {
       expect(forum.names.sublist(1, 3), unorderedEquals(['pmlist', 'broadcast page']));
       expect(forum.names.last, 'seen');
       expect(forum.names, hasLength(4));
-      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '101', 'pm': '1'});
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '$_now', 'pm': '1'});
       expect(value.info.noticeList.map((e) => e.id), [101]);
       expect(value.info.personalMessageList.map((e) => e.peerUid), [3001, 3002], reason: 'whatever their time, #193');
       expect(

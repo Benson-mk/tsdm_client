@@ -24,7 +24,8 @@ import 'package:universal_html/parsing.dart';
 /// Plugin 1.9.0 adds the private conversation list (`pmlist`) and `seen`, the only action that writes: it does what
 /// opening the notice page and the private message page on the web does to the forum (the notices marked read, the
 /// "new" prompts cleared), now that the notification fetch reads the lists from here instead of those pages. It is
-/// sent with [post]; its `notify` answer carries the form hash for it ([notifyCarriesLists]).
+/// sent with [post]; its `notify` answer carries the form hash for it ([notifyCarriesLists]) and the clock the notices
+/// are marked read as of ([notifyListsUnreadNotice]).
 abstract final class TsdmAppApi {
   /// Url of an action.
   static String url(String action, [Map<String, String> query = const {}]) => Uri.parse(
@@ -250,21 +251,16 @@ bool notifyCarriesLists(Map<String, dynamic>? json) =>
     json['announces'] is List &&
     json['time'] is int;
 
-/// The largest id of the unread notices in a `notify` answer [json], null when none is unread: the `notice` to post
-/// with `seen`, which marks every unread notice read unless one newer than that arrived meanwhile.
-int? notifyLatestUnreadNoticeOf(Map<String, dynamic> json) {
+/// Whether a `notify` answer [json] lists an unread notice: then `seen` is posted for the notices, with the clock of
+/// that answer (`time`) as `notice`.
+///
+/// The forum marks every unread notice read for it, as the notice page does, unless one is unread with a time at or
+/// after that clock (`newer`: it arrived, or was flagged unread again, while or after `notify` answered), which the
+/// next fetch gets first. Not an id: Discuz updates a notice in place when the same thread or post fires again (same
+/// id, unread again, the time of now), so a bound by id would mark read a notice the app never got.
+bool notifyListsUnreadNotice(Map<String, dynamic> json) {
   final notices = json['notices'];
-  if (notices is! List) {
-    return null;
-  }
-  int? latest;
-  for (final e in notices.whereType<Map<String, dynamic>>()) {
-    final id = e['id'];
-    if (e['new'] == 1 && id is int && (latest == null || id > latest)) {
-      latest = id;
-    }
-  }
-  return latest;
+  return notices is List && notices.whereType<Map<String, dynamic>>().any((e) => e['new'] == 1);
 }
 
 /// The checkin state told by `checkin`, null when the API cannot tell (missing plugin, no checkin plugin, old API).
