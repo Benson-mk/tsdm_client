@@ -13,6 +13,7 @@ import 'package:tsdm_client/features/notification/repository/notification_reposi
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -70,6 +71,8 @@ final class _Adapter implements HttpClientAdapter {
 
 void main() {
   setUpAll(() => talker = TalkerFlutter.init(settings: TalkerSettings(enabled: false)));
+  // A forum without the plugin is remembered for an hour; each test starts without knowing it.
+  setUp(TsdmAppApi.reset);
 
   group('nextFetchBound', () {
     test('the forum clock wins over a device clock that runs ahead', () {
