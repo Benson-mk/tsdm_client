@@ -209,6 +209,48 @@ class Notice with NoticeMappable {
     );
   }
 
+  /// Convert a notice of the `notify` answer of the forum's app API (plugin 1.9.0) into [NoticeV2], the same as
+  /// [toV2] gives for that notice on the notice page.
+  ///
+  /// The answer's `note` is the html the notice page prints in `dd.ntc_body` as it is, and the page prints the ignore
+  /// link from the notice's `authorid` and `type`. Both are put in a notice node of the same shape and read by the
+  /// same parsers ([buildBodyHtml], [parseIgnoreTarget]): the body gets the same absolute urls and image sources, a
+  /// system notice (author 0) the same target. The time is the minute the page shows ([apiTimeOf]). Unread is the
+  /// answer's `new`. Return null if id, time or note is missing.
+  static NoticeV2? toV2FromApi(Map<String, dynamic> json) {
+    final id = json['id'];
+    final dateline = json['dateline'];
+    final note = json['note'];
+    if (id is! int || dateline is! int || note is! String) {
+      talker.error('failed to build notice v2 from the app api: id=$id, dateline=$dateline, hasNote=${note is String}');
+      return null;
+    }
+    final authorId = json['authorid'] is int ? json['authorid'] : '';
+    final type = json['type'] is String ? json['type'] : '';
+    // The markup of the notice page (`template/default/home/space_notice.php`): the template compiler escapes the `&`
+    // of the link, the values are printed as they are.
+    const ignore = 'home.php?mod=spacecp&amp;ac=common&amp;op=ignore';
+    final ignoreUrl = '$ignore&amp;authorid=$authorId&amp;type=$type&amp;handlekey=noticeignore';
+    final element = parseHtmlDocument(
+      '<html><body><div class="nts"><dl class="cl" notice="$id" id="notice_$id"><dt><a class="d b" '
+      'href="$ignoreUrl" id="a_note_$id">屏蔽</a></dt><dd class="ntc_body">$note</dd></dl></div></body></html>',
+    ).querySelector('div.nts > dl');
+    final data = element == null ? null : buildBodyHtml(element);
+    if (element == null || data == null) {
+      talker.error('failed to build notice v2 from the app api: no body for notice $id');
+      return null;
+    }
+    final target = parseIgnoreTarget(element);
+    return NoticeV2(
+      id: id,
+      timestamp: apiTimeOf(dateline),
+      data: data,
+      alreadyRead: json['new'] == 0,
+      ignoreType: target?.type,
+      authorId: target?.authorId,
+    );
+  }
+
   /// Build a [Notice] from html node [element] :
   /// div#ct > div.mn > div.bm.bw0 > div.xld.xlda > div.nts > dl (Discuz X5)
   /// div#ct > div.mn > div.bm.bw0 > div.xld.xlda > div.nts > div.cl (Discuz X3)
@@ -383,6 +425,16 @@ class Notice with NoticeMappable {
     );
   }
 }
+
+/// The time (seconds) a notification of the forum's app API carries as [seconds], to the minute.
+///
+/// The web pages show the time of a notice, a conversation and a broadcast message to the minute, and the stored
+/// copies are reconciled by time: a copy newer than the stored one is a new event (a merged notice, another message)
+/// and unread again. Taken to the second, the copy the API gives would be a minute "newer" than the copy the same
+/// fetch reads from a page whenever the fetch falls back to the pages (an older plugin, an answer refused as too
+/// soon), and every notice of the window would come back as news. The bound of the next fetch is a whole minute
+/// (`nextFetchBound`), so nothing falls out of a window by this.
+int apiTimeOf(int seconds) => seconds - seconds % 60;
 
 /// Get the image url of an `<img>` node, lazy loaded images use `data-src`.
 String? _imgUrl(uh.Element? element) {

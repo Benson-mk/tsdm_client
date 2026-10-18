@@ -118,14 +118,71 @@ final class PersonalMessage with PersonalMessageMappable {
       return null;
     }
     final sender = parseSentByMe(contentNode);
-    final hasNewFlag = element.querySelector('div.newpm_avt') != null;
     return PersonalMessageV2(
       timestamp: time.millisecondsSinceEpoch ~/ 1000,
       data: message,
       peerUid: peerUid.parseToInt() ?? 0,
       peerUsername: peerUsername,
       sender: sender,
-      alreadyRead: sender || !hasNewFlag,
+      alreadyRead: sender || !isUnreadNode(element),
+    );
+  }
+
+  /// Whether the private message page rendered the conversation node [element] (`<dl id="pmlist_XXX">`) as unread.
+  ///
+  /// The forum adds the class `newpm` to the node of an unread conversation (`{if $value[isnew]} newpm{/if}`). The
+  /// red dot `div.newpm_avt` in it is no marker: Discuz! X5 prints it in every node (`template/default/home/
+  /// space_pm.php`) and its style only shows it inside `.newpm` (`.pml .newpm .newpm_avt`), so every conversation
+  /// on the page was taken for unread.
+  static bool isUnreadNode(uh.Element element) => element.classes.contains('newpm');
+
+  /// The conversations of a `pmlist` answer [json] of the forum's app API (plugin 1.9.0) as [PersonalMessageV2];
+  /// null when it is no usable answer (none, not `ok`, an unknown shape): the private message page is read instead.
+  ///
+  /// The list is the one of the private message page (`filter=privatepm`): every conversation, sent or received, read
+  /// or not, newest first. See [toV2FromApi] for each one. A forum with private messages switched off answers
+  /// `closed` 1 and no conversation, as its page lists none.
+  static List<PersonalMessageV2>? listFromApi(Map<String, dynamic>? json) {
+    final uid = json?['uid'];
+    final rows = json?['pms'];
+    if (json == null || json['ok'] != 1 || uid is! int || rows is! List) {
+      return null;
+    }
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map((e) => toV2FromApi(e, uid: uid))
+        .whereType<PersonalMessageV2>()
+        .toList();
+  }
+
+  /// Convert a conversation [row] of a `pmlist` answer of the forum's app API (plugin 1.9.0) into
+  /// [PersonalMessageV2], for the account [uid] the answer is for.
+  ///
+  /// The current user sent the last message when its author is [uid]; such a conversation, and one the forum keeps
+  /// as read (`new` 0), is read. The time is the minute the page shows ([apiTimeOf]). A group chat (`type` 2) is
+  /// dropped: [toV2] finds no peer in its node on the page either. So is a row without peer or time.
+  static PersonalMessageV2? toV2FromApi(Map<String, dynamic> row, {required int uid}) {
+    if (row['type'] != 1) {
+      return null;
+    }
+    final peerUid = row['touid'] is int ? row['touid'] as int : 0;
+    final peerUsername = row['tousername'] is String ? row['tousername'] as String : '';
+    final time = row['lastdateline'] is int ? row['lastdateline'] as int : 0;
+    if (peerUid <= 0 || peerUsername.isEmpty || time <= 0) {
+      talker.error(
+        'failed to build personal message v2 from the app api: plid=${row['plid']}, peerUid=$peerUid, '
+        'hasPeerUsername=${peerUsername.isNotEmpty}, time=$time',
+      );
+      return null;
+    }
+    final sender = row['lastauthorid'] == uid;
+    return PersonalMessageV2(
+      timestamp: apiTimeOf(time),
+      data: row['lastsummary'] is String ? row['lastsummary'] as String : '',
+      peerUid: peerUid,
+      peerUsername: peerUsername,
+      sender: sender,
+      alreadyRead: sender || row['new'] == 0,
     );
   }
 
@@ -239,6 +296,24 @@ final class BroadcastMessage with BroadcastMessageMappable {
       data: _parseMessageText(infoNode),
       pmid: pmid,
       alreadyRead: !hasNewFlag,
+    );
+  }
+
+  /// Convert an unread broadcast message of the `notify` answer of the forum's app API (`announces`) into
+  /// [BroadcastMessageV2]: its plain text (at most 300 characters), the minute it was written ([apiTimeOf]; not when
+  /// it reached the account, GitHub #154) and the answer's `new`. Return null if id or time is missing.
+  static BroadcastMessageV2? toV2FromApi(Map<String, dynamic> json) {
+    final pmid = json['id'];
+    final dateline = json['dateline'];
+    if (pmid is! int || dateline is! int) {
+      talker.error('failed to build broadcast message v2 from the app api: pmid=$pmid, dateline=$dateline');
+      return null;
+    }
+    return BroadcastMessageV2(
+      timestamp: apiTimeOf(dateline),
+      data: json['text'] is String ? json['text'] as String : '',
+      pmid: pmid,
+      alreadyRead: json['new'] == 0,
     );
   }
 

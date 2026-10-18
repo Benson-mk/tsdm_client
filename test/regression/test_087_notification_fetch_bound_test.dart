@@ -36,11 +36,14 @@ Map<String, String> _jar(String token) => {
 };
 
 /// Answers every notification page with [_page]. With [serverTime] set, each answer carries a `Date` header that
-/// starts there and moves one second forward per request, so the earliest one is the first request's.
+/// starts there and moves one second forward per page request, so the earliest one is the first page's.
+///
+/// The app API, which every fetch asks first, is answered the same web page: a forum without the plugin.
 final class _Adapter implements HttpClientAdapter {
   /// Forum clock of the next answer; null sends no `Date` header.
   DateTime? serverTime;
   final requests = <Uri>[];
+  final apiRequests = <Uri>[];
 
   @override
   Future<ResponseBody> fetch(
@@ -49,7 +52,7 @@ final class _Adapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     final index = requests.length;
-    requests.add(options.uri);
+    (options.uri.queryParameters['id'] == 'tsdmapp:api' ? apiRequests : requests).add(options.uri);
     final date = serverTime?.add(Duration(seconds: index));
     return ResponseBody.fromString(
       _page,
@@ -160,6 +163,7 @@ void main() {
       expect(withDate.isRight(), isTrue, reason: '$withDate');
       expect(withDate.getOrElse((_) => throw StateError('unreachable')).serverTime, forum);
       expect(adapter.requests, hasLength(3));
+      expect(adapter.apiRequests, hasLength(1), reason: 'asked first, a web page: not asked again');
 
       adapter.serverTime = null;
       final withoutDate = await NotificationRepository().fetchNotificationWith(client).run();

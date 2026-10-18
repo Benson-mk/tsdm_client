@@ -309,7 +309,8 @@ void main() {
       // Alice wrote to the peer an hour ago, before the stored bound: the polls since then skipped the pages.
       forum.pmPage = _sentPmPage(DateTime.now().subtract(const Duration(hours: 1)), 'hello');
       await sync(const NotificationUpdateAllRequested(bypassGate: true));
-      expect(forum.apiRequests, isEmpty, reason: 'the API is not asked');
+      // Asked since the lists of plugin 1.9.0 (test 211); the answer of an older plugin gates no refresh.
+      expect(forum.apiRequests, hasLength(1), reason: 'asked, its "nothing new" ignored');
       expect(forum.pmPageRequests, hasLength(1));
       final rows = await stored();
       expect(rows.map((e) => (e.peerUid, e.sender, e.alreadyRead)), [(_peer, true, true)]);
@@ -326,7 +327,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await pumpEventQueue();
       expect(forum.sends, hasLength(2));
-      expect(forum.apiRequests, isEmpty, reason: 'the refresh does not ask the API');
+      expect(forum.apiRequests, hasLength(1), reason: 'the refresh is not gated by the answer of an older plugin');
       expect(forum.pmPageRequests, hasLength(1), reason: 'once for the two messages');
       expect((await stored()).map((e) => (e.peerUid, e.sender, e.data)), [(_peer, true, 'just sent')]);
     });
