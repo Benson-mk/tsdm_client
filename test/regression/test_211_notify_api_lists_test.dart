@@ -12,14 +12,19 @@
 /// * Opening the notice page marked the notices read, opening the private message page cleared the forum's "new"
 ///   prompt: the fetch posts `seen` for that, and a failed `seen` changes nothing else.
 ///
+/// * The summary of a conversation is the one the page prints (`lastsummary_html`), and every time is the one the page
+///   path reads (the member's wall clock, `timeoffset`, taken as the device's local time): the same item from either
+///   path is equal, whatever zone the device is in (run these tests with `TZ=America/New_York` or `TZ=Asia/Tokyo`).
+///
 /// An older plugin, no plugin, or a `notify` refused as too soon: the three pages as before.
 ///
-/// Also: the private message page prints the red dot `div.newpm_avt` in every row on Discuz! X5, the unread marker is
-/// the row's class `newpm`.
+/// Also: the private message page and the broadcast message page print the red dot `div.newpm_avt` in every row on
+/// Discuz! X5, the unread marker is the row's class `newpm`.
 ///
 /// Synthetic answers and names, except the notice and private message pages of `test/data`; no real account.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File, HttpDate;
 import 'dart:typed_data';
@@ -48,13 +53,22 @@ final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 /// The bound a poll stored ten minutes ago: a whole minute, as `nextFetchBound` stores it.
 final int _since = (_now - 600) - (_now - 600) % 60;
 
+/// The offset (hours) the forum shows the member's times with in these tests: the test machine's own zone, so the
+/// time the page path reads (the wall clock taken as the device's local time, see `apiTimeOf`) is the real one and
+/// the windows behave as on a device in the forum's zone, whatever zone the tests run in. The conversions are compared
+/// with other offsets too.
+final num _offset = DateTime.now().timeZoneOffset.inMinutes / 60;
+
 const _uid = 3000;
 const _formhash = 'a1b2c3d4';
 
 String _timeTextOf(DateTime t) =>
     '${t.year}-${t.month}-${t.day} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-String _timeOf(int seconds) => _timeTextOf(DateTime.fromMillisecondsSinceEpoch(seconds * 1000));
+/// The wall clock the forum shows for [seconds] to a member whose times it shows with [offset] hours ([_offset]).
+String _timeOf(int seconds, [num? offset]) => _timeTextOf(
+  DateTime.fromMillisecondsSinceEpoch((seconds + ((offset ?? _offset) * 3600).round()) * 1000, isUtc: true),
+);
 
 /// A reply notice body as the forum stores it: relative links, raw `&`, a smiley.
 String _replyNote(int pid) =>
@@ -96,6 +110,7 @@ Map<String, Object?> _pm(
   int type = 1,
   String text = 'hello',
   String? name,
+  String? faithful,
 }) => {
   'plid': plid,
   'new': unread ? 1 : 0,
@@ -107,7 +122,9 @@ Map<String, Object?> _pm(
   'tousername': name ?? 'Peer$peer',
   'lastauthorid': sentByMe ? _uid : peer,
   'lastauthor': sentByMe ? 'Alice' : 'Peer$peer',
-  'lastsummary': text,
+  // The text as the private message page prints it, and the faithful one the app does not use.
+  'lastsummary': faithful ?? text,
+  'lastsummary_html': text,
   'lastdateline': at,
 };
 
@@ -131,6 +148,7 @@ Map<String, Object?> _notify({
   bool lists = true,
   String formhash = _formhash,
   int? time,
+  num? timeOffset,
 }) => {
   'ok': 1,
   'api': 1,
@@ -138,6 +156,7 @@ Map<String, Object?> _notify({
   'time': time ?? _now,
   'uid': _uid,
   if (lists) 'formhash': formhash,
+  if (lists) 'timeoffset': timeOffset ?? _offset,
   'counts': {
     'notice': notices.where((e) => e['new'] == 1).length,
     'pm': pms.length,
@@ -149,12 +168,13 @@ Map<String, Object?> _notify({
   'announces': announces,
 };
 
-Map<String, Object?> _pmlist(List<Map<String, Object?>> pms, {int closed = 0}) => {
+Map<String, Object?> _pmlist(List<Map<String, Object?>> pms, {int closed = 0, num? timeOffset}) => {
   'ok': 1,
   'api': 1,
   'time': _now,
   'uid': _uid,
   'closed': closed,
+  'timeoffset': timeOffset ?? _offset,
   'page': 1,
   'perpage': 20,
   'count': pms.length,
@@ -162,7 +182,7 @@ Map<String, Object?> _pmlist(List<Map<String, Object?>> pms, {int closed = 0}) =
 };
 
 /// A notice node as the notice page renders it (`template/default/home/space_notice.php`).
-String _noticeNode(Map<String, Object?> n) {
+String _noticeNode(Map<String, Object?> n, [num? offset]) {
   final id = n['id'];
   final author = n['authorid'];
   final avatar = author == 0
@@ -172,18 +192,18 @@ String _noticeNode(Map<String, Object?> n) {
   final href = '$ignore&amp;authorid=$author&amp;type=${n['type']}&amp;handlekey=noticeignore';
   return '<dl class="cl "  notice="$id" id="notice_$id">\n<dd class="m avt mbn">\n$avatar\n</dd>\n<dt>\n'
       '<a class="d b" href="$href" id="a_note_$id" onclick="showWindow(\'noticeignore\', this.href, \'get\', 0);" '
-      'title="屏蔽">屏蔽</a>\n<span class="xg1 xw0"><span title="${_timeOf(n['dateline']! as int)}">1&nbsp;分钟前</span>\n'
+      'title="屏蔽">屏蔽</a>\n<span class="xg1 xw0"><span title="${_timeOf(n['dateline']! as int, offset)}">1&nbsp;分钟前</span>\n'
       '</span>\n</dt>\n<dd class="ntc_body" style="${n['new'] == 1 ? 'color:#000;font-weight:bold;' : ''}">\n'
       '${n['note']}\n</dd>\n\n\n</dl>\n';
 }
 
-String _noticePage(List<Map<String, Object?>> notices) =>
+String _noticePage(List<Map<String, Object?>> notices, {num? offset}) =>
     '<html><body><div id="um"></div><div id="ct"><div class="mn"><div class="bm bw0"><div class="xld xlda">\n'
-    '<div class="nts">${notices.map(_noticeNode).join()}</div></div></div></div></div></body></html>';
+    '<div class="nts">${notices.map((e) => _noticeNode(e, offset)).join()}</div></div></div></div></div></body></html>';
 
 /// A conversation node as the private message page renders it (`template/default/home/space_pm.php`): the red dot
-/// in every row, the class `newpm` on the unread ones.
-String _pmNode(Map<String, Object?> pm) {
+/// in every row, the class `newpm` on the unread ones, the summary as the page prints it (`lastsummary_html`).
+String _pmNode(Map<String, Object?> pm, [num? offset]) {
   final peer = pm['touid'];
   final plid = pm['plid'];
   final name = pm['tousername'];
@@ -195,33 +215,35 @@ String _pmNode(Map<String, Object?> pm) {
       '<a href="home.php?mod=space&amp;uid=$peer" target="_blank"><img data-src="./data/avatar/a.jpg" class="_avt"></a>\n'
       '</dd>\n<dd class="ptm pm_c">\n<div class="o">\n'
       '<input type="checkbox" name="deletepm_deluid[]" id="a_delete_$plid" class="pc" value="$peer" />\n</div>\n'
-      '$who<br />\n${pm['lastsummary']} &nbsp;  <br />\n'
-      '<span class="xg1"><span title="${_timeOf(pm['lastdateline']! as int)}">1&nbsp;分钟前</span></span> &nbsp; \n'
+      '$who<br />\n${pm['lastsummary_html']} &nbsp;  <br />\n'
+      '<span class="xg1"><span title="${_timeOf(pm['lastdateline']! as int, offset)}">1&nbsp;分钟前</span></span> &nbsp; \n'
       '<span class="pm_o y"><span class="xg1 z">共 2 条</span>\n'
       '<a href="home.php?mod=space&amp;do=pm&amp;subop=view&amp;touid=$peer#last" id="pmlist_${plid}_a">回复</a>\n'
       '</span>\n</dd>\n</dl>\n';
 }
 
-String _pmPage(List<Map<String, Object?>> pms) =>
+String _pmPage(List<Map<String, Object?>> pms, {num? offset}) =>
     '<html><body><div id="um"></div><form id="deletepmform"><div class="xld xlda pml mtm mbm">'
-    '${pms.map(_pmNode).join()}</div></form></body></html>';
+    '${pms.map((e) => _pmNode(e, offset)).join()}</div></form></body></html>';
 
-/// A broadcast message node (markup of test 185).
-String _bmNode((int pmid, int at, bool unread) message) {
+/// A broadcast message node as the broadcast message page renders it (`template/default/home/space_pm.php`): the red
+/// dot in every row, the class `newpm` on the unread ones.
+String _bmNode((int pmid, int at, bool unread) message, [num? offset]) {
   final (pmid, at, unread) = message;
   final view = 'home.php?mod=space&amp;do=pm&amp;subop=viewg&amp;pmid=$pmid';
   return '<dl id="gpmlist_$pmid" class="bbda cur1 cl${unread ? ' newpm' : ''}">\n'
       '<dd class="y mtm pm_o"><a href="javascript:;" id="pm_g_$pmid" class="o">菜单</a></dd>\n'
-      '<dd class="m avt">${unread ? '<div class="newpm_avt" title="有未读消息"></div>' : ''}\n'
+      '<dd class="m avt">\n<div class="newpm_avt" title="有未读消息"></div>\n'
       '<a href="$view"><img src="a.png" alt="" /></a>\n</dd>\n<dd class="ptm pm_c">\n'
       '<span id="p_gpmid_$pmid">Broadcast $pmid</span> &nbsp;\n'
-      '<span class="xg1"><span title="${_timeOf(at)}">9&nbsp;小时前</span></span>&nbsp;\n'
+      '<span class="xg1"><span title="${_timeOf(at, offset)}">9&nbsp;小时前</span></span>&nbsp;\n'
       '<a href="$view" id="gpmlist_${pmid}_a">查看</a>\n</dd>\n</dl>\n';
 }
 
 /// The broadcast message page.
-String _bmPage(List<(int pmid, int at, bool unread)> messages) =>
-    '<html><body><div id="um"></div><div class="pml">${messages.map(_bmNode).join()}</div></body></html>';
+String _bmPage(List<(int pmid, int at, bool unread)> messages, {num? offset}) =>
+    '<html><body><div id="um"></div><div class="pml">${messages.map((e) => _bmNode(e, offset)).join()}</div>\n'
+    '</body></html>';
 
 /// One answer of the fake forum.
 final class _Answer {
@@ -241,10 +263,15 @@ const _offline = _Answer('offline', status: 0);
 /// HTTP 429 of the plugin: the same action of the same account within its interval.
 final _busy = _Answer.json({'ok': 0, 'error': 'busy', 'retry_after': 3}, status: 429);
 
-/// What Discuz itself answers a POST with a form hash it does not take, before the plugin is reached.
+/// What Discuz itself answers a POST with a form hash it does not take, before the plugin is reached
+/// (`discuz_error.php`: HTTP 503).
 const _systemError = _Answer(
   '<!DOCTYPE html><html><head><title>System Error</title></head><body>System Error</body></html>',
+  status: 503,
 );
+
+/// No answer ever: a request the network holds.
+const _never = _Answer('never', status: -1);
 
 /// Answers every action of the app API and every notification page from its fields; a request without an answer
 /// fails the test. Records the requests in order and the forms posted to `seen`.
@@ -306,6 +333,9 @@ final class _Forum implements HttpClientAdapter {
       unexpected.add('${options.method} ${options.uri}');
       throw DioException.connectionError(requestOptions: options, reason: 'unexpected request');
     }
+    if (identical(answer, _never)) {
+      return Completer<ResponseBody>().future;
+    }
     if (identical(answer, _offline)) {
       throw DioException.connectionError(requestOptions: options, reason: 'offline');
     }
@@ -326,11 +356,22 @@ final class _Forum implements HttpClientAdapter {
 NetClientProvider _client(_Forum forum) =>
     NetClientProvider.buildNoCookie(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum);
 
-Future<Either<AppException, FetchedNotification>> _run(_Forum forum, {int? timestamp, bool bypassGate = false}) =>
-    NotificationRepository().fetchNotificationWith(_client(forum), timestamp: timestamp, bypassGate: bypassGate).run();
+Future<Either<AppException, FetchedNotification>> _run(
+  _Forum forum, {
+  int? timestamp,
+  bool bypassGate = false,
+  NotificationRepository? repository,
+}) => (repository ?? NotificationRepository())
+    .fetchNotificationWith(_client(forum), timestamp: timestamp, bypassGate: bypassGate)
+    .run();
 
-Future<FetchedNotification> _fetch(_Forum forum, {int? timestamp, bool bypassGate = false}) async {
-  final result = await _run(forum, timestamp: timestamp, bypassGate: bypassGate);
+Future<FetchedNotification> _fetch(
+  _Forum forum, {
+  int? timestamp,
+  bool bypassGate = false,
+  NotificationRepository? repository,
+}) async {
+  final result = await _run(forum, timestamp: timestamp, bypassGate: bypassGate, repository: repository);
   expect(forum.unexpected, isEmpty, reason: 'requests nobody answers');
   return result.getOrElse((e) => fail('fetch failed: $e'));
 }
@@ -360,17 +401,20 @@ void main() {
 
   group('conversions', () {
     test('a notice of notify is the notice the notice page shows (pages of the forum)', () {
+      // The pages show the times of a member at +8 (17:38 is 09:38 UTC); the page path reads that wall clock as the
+      // test machine's local time, and so does the API path, whatever zone the test runs in.
       for (final (file, id, unread, type, at) in [
-        ('notice_unread_x5.html', 1984, true, 'post', DateTime(2026, 9, 5, 17, 38, 37)),
-        ('notice_read_x5.html', 1984, false, 'post', DateTime(2026, 9, 5, 17, 38, 2)),
+        ('notice_unread_x5.html', 1984, true, 'post', DateTime.utc(2026, 9, 5, 9, 38, 37)),
+        ('notice_read_x5.html', 1984, false, 'post', DateTime.utc(2026, 9, 5, 9, 38, 2)),
         // Two id attributes on the node (a friend request), see NotificationV2.noticeNodes.
-        ('notice_friend_request_x5.html', 2436, true, 'friend', DateTime(2026, 9, 6, 20, 23, 59)),
+        ('notice_friend_request_x5.html', 2436, true, 'friend', DateTime.utc(2026, 9, 6, 12, 23, 59)),
       ]) {
         const author = 1000;
         final page = _data(file);
         final fromPage = NotificationV2.noticeNodes(parseHtmlDocument(page)).map(Notice.toV2).single!;
         final fromApi = Notice.toV2FromApi(
           _notice(id, _secondsOf(at), unread: unread, authorId: author, type: type, note: _rawNote(page, id)),
+          timeOffset: 8,
         );
         expect(fromApi, fromPage, reason: file);
         expect((fromApi!.ignoreType, fromApi.authorId), (type, author), reason: file);
@@ -385,14 +429,42 @@ void main() {
         _notice(8, _since + 59, unread: false, authorId: 0, type: 'system', note: '您的帖子被 <b>管理员</b> 移动'),
       ]) {
         final fromPage = NotificationV2.noticeNodes(parseHtmlDocument(_noticePage([n]))).map(Notice.toV2).single;
-        final fromApi = Notice.toV2FromApi(n);
+        final fromApi = Notice.toV2FromApi(n, timeOffset: _offset);
         expect(fromApi, fromPage);
         expect(fromApi!.timestamp % 60, 0, reason: 'the minute the page shows');
       }
-      final system = Notice.toV2FromApi(_notice(8, _since, authorId: 0, type: 'system', note: 'x'))!;
+      final system = Notice.toV2FromApi(_notice(8, _since, authorId: 0, type: 'system', note: 'x'), timeOffset: 8)!;
       expect((system.ignoreType, system.authorId), ('system', 0));
-      expect(Notice.toV2FromApi(_notice(9, _since)..remove('note')), isNull);
-      expect(Notice.toV2FromApi(_notice(9, _since)..['dateline'] = '1'), isNull);
+      expect(Notice.toV2FromApi(_notice(9, _since)..remove('note'), timeOffset: 8), isNull);
+      expect(Notice.toV2FromApi(_notice(9, _since)..['dateline'] = '1', timeOffset: 8), isNull);
+    });
+
+    test('a member whose times the forum shows at another offset: the page and the API still agree', () {
+      final at = _since + 125;
+      for (final offset in [8, 9, -5, 5.5]) {
+        final n = _notice(7, at);
+        expect(
+          Notice.toV2FromApi(n, timeOffset: offset),
+          NotificationV2.noticeNodes(parseHtmlDocument(_noticePage([n], offset: offset))).map(Notice.toV2).single,
+          reason: 'notice at $offset',
+        );
+        final rows = [_pm(1, peer: 3001, at: at, unread: true)];
+        expect(
+          PersonalMessage.listFromApi(_pmlist(rows, timeOffset: offset)),
+          NotificationV2.personalMessagesOf(parseHtmlDocument(_pmPage(rows, offset: offset))),
+          reason: 'conversation at $offset',
+        );
+        expect(
+          BroadcastMessage.toV2FromApi(_announce(5, at, 'Broadcast 5'), timeOffset: offset)!.timestamp,
+          NotificationV2.broadcastMessagesOf(
+            parseHtmlDocument(_bmPage([(5, at, true)], offset: offset)),
+          ).single.timestamp,
+          reason: 'broadcast at $offset',
+        );
+      }
+      // The wall clock moves with the offset, the real time and the clock of the answer do not.
+      final at8 = Notice.toV2FromApi(_notice(7, at), timeOffset: 8)!.timestamp;
+      expect(Notice.toV2FromApi(_notice(7, at), timeOffset: 9)!.timestamp - at8, 3600);
     });
 
     test('the conversations of pmlist: the sender, the read state, no group chat', () {
@@ -416,30 +488,65 @@ void main() {
         (3002, 'Peer3002', true, true, 'sent by me'),
         (3003, 'Peer3003', false, true, 'read on the web'),
       ]);
-      expect(list.first.timestamp, at - at % 60);
+      expect(list.first.timestamp, at - at % 60, reason: "the real time when the device is in the member's zone");
       expect(list, NotificationV2.personalMessagesOf(parseHtmlDocument(_pmPage(valid))), reason: 'same as the page');
 
       expect(PersonalMessage.listFromApi(null), isNull);
       expect(PersonalMessage.listFromApi({'ok': 0, 'error': 'busy'}), isNull);
       expect(PersonalMessage.listFromApi(_pmlist(valid)..remove('uid')), isNull);
       expect(PersonalMessage.listFromApi(_pmlist(valid)..['pms'] = 'x'), isNull);
+      expect(PersonalMessage.listFromApi(_pmlist(valid)..remove('timeoffset')), isNull);
       // Private messages switched off on the forum: no conversation, as on its page.
       expect(PersonalMessage.listFromApi(_pmlist([], closed: 1)), isEmpty);
     });
 
     test('the broadcast messages of notify', () {
       final dateline = _now - 30 * 24 * 3600 + 17;
-      final message = BroadcastMessage.toV2FromApi(_announce(7, dateline, 'Synthetic broadcast'))!;
-      expect(
-        (message.pmid, message.timestamp, message.data, message.alreadyRead),
-        (
-          7,
-          dateline - dateline % 60,
-          'Synthetic broadcast',
-          false,
+      final message = BroadcastMessage.toV2FromApi(_announce(7, dateline, 'Synthetic broadcast'), timeOffset: 8)!;
+      expect((message.pmid, message.data, message.alreadyRead), (7, 'Synthetic broadcast', false));
+      final onPage = NotificationV2.broadcastMessagesOf(parseHtmlDocument(_bmPage([(7, dateline, true)], offset: 8)));
+      expect(message.timestamp, onPage.single.timestamp);
+      expect(BroadcastMessage.toV2FromApi(_announce(7, dateline, 'x')..remove('id'), timeOffset: 8), isNull);
+    });
+
+    test('the summary is the one the private message page prints (lastsummary_html), read the same way', () {
+      final at = _since + 125;
+      final rows = [
+        _pm(
+          1,
+          peer: 3001,
+          at: at,
+          text: r"tsdmapp 1.9.0 摘要 A  B b粗體/b 引號 \'單引號\' amp; 1792286876",
+          faithful: "tsdmapp 1.9.0 摘要 A  B <b>粗體</b> 引號 '單引號' & 1792286876",
         ),
+        _pm(2, peer: 3002, at: at, text: '分享帖子: forum.php?mod=viewthread&amp;tid=5', faithful: 'viewthread&tid=5'),
+        // As the forum lists it (pm_list_bare_url_x5.html): the `&` of the url is lost on the page.
+        _pm(3, peer: 3003, at: at, text: '链接测试 forum.php?mod=viewthreadtid=1264975', faithful: 'viewthread&tid='),
+        _pm(4, peer: 3004, at: at, text: 'line one\nline two  ', faithful: 'line one line two'),
+        _pm(5, peer: 3005, at: at, text: '&#060;img src=https://evil.example/p.png&#062;', faithful: '<img>'),
+      ];
+      final fromApi = PersonalMessage.listFromApi(_pmlist(rows))!;
+      expect(fromApi, NotificationV2.personalMessagesOf(parseHtmlDocument(_pmPage(rows))), reason: 'same as the page');
+      expect(fromApi.map((e) => e.data), [
+        r"tsdmapp 1.9.0 摘要 A  B b粗體/b 引號 \'單引號\' amp; 1792286876",
+        '分享帖子: forum.php?mod=viewthread&tid=5',
+        '链接测试 forum.php?mod=viewthreadtid=1264975',
+        'line one\nline two',
+        // Text, which the card shows escaped (test 075).
+        '<img src=https://evil.example/p.png>',
+      ]);
+      // A conversation without the printed summary: the list is read from the page.
+      expect(
+        PersonalMessage.listFromApi(_pmlist([...rows, _pm(6, peer: 3006, at: at)..remove('lastsummary_html')])),
+        isNull,
       );
-      expect(BroadcastMessage.toV2FromApi(_announce(7, dateline, 'x')..remove('id')), isNull);
+      expect(PersonalMessage.summaryOfHtml('&nbsp; a &amp; b&nbsp;'), 'a & b');
+    });
+
+    test('the broadcast message page: unread is the row marked newpm, not the red dot every row has', () {
+      final page = parseHtmlDocument(_bmPage([(5, _since, true), (6, _since, false)]));
+      expect(page.querySelectorAll('div.newpm_avt'), hasLength(2), reason: 'Discuz! X5 prints it in every row');
+      expect(NotificationV2.broadcastMessagesOf(page).map((e) => (e.pmid, e.alreadyRead)), [(5, false), (6, true)]);
     });
 
     test('the private message page: unread is the row marked newpm, not the red dot every row has', () {
@@ -586,6 +693,12 @@ void main() {
         _Answer.json({'ok': 0, 'error': 'internal'}),
         _Answer.json({'ok': 0, 'error': 'action'}),
         _Answer.json(_pmlist(rows)..['pms'] = 'x'),
+        _Answer.json(_pmlist(rows)..remove('timeoffset')),
+        _Answer.json(
+          _pmlist([
+            for (final r in rows) {...r}..remove('lastsummary_html'),
+          ]),
+        ),
       ]) {
         final forum = _Forum(
           notify: _Answer.json(_notify(pmLast: _since + 130)),
@@ -683,6 +796,21 @@ void main() {
       }
     });
 
+    test('seen that never answers: the fetch goes on after a while', () async {
+      final forum = _Forum(
+        notify: _Answer.json(_notify(notices: [_notice(101, _since + 125)])),
+        seen: _never,
+      );
+      final value = await _fetch(
+        forum,
+        timestamp: _since,
+        repository: NotificationRepository(seenTimeout: const Duration(milliseconds: 300)),
+      ).timeout(const Duration(seconds: 5));
+      expect(forum.names, ['notify', 'seen']);
+      expect(value.info.noticeList.map((e) => e.id), [101]);
+      expect(value.serverTime, _clock(_now));
+    });
+
     test('seen refused, offline, or answered the System Error page: the same result, the API stays in use', () async {
       for (final answer in [
         _busy,
@@ -768,6 +896,13 @@ void main() {
         expect(old.names.skip(1), unorderedEquals(pages));
         expect(value.info.noticeList.map((e) => e.id), [101]);
       }
+    });
+
+    test('a 1.9.0 answer without timeoffset: the three pages', () async {
+      final old = forum(_Answer.json(_notify(notices: notices, pmLast: _since + 130)..remove('timeoffset')));
+      await _fetch(old, timestamp: _since);
+      expect(old.names.first, 'notify');
+      expect(old.names.skip(1), unorderedEquals(pages));
     });
 
     test('notify refused as too soon: the three pages', () async {

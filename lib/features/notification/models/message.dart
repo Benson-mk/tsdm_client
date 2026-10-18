@@ -137,7 +137,8 @@ final class PersonalMessage with PersonalMessageMappable {
   static bool isUnreadNode(uh.Element element) => element.classes.contains('newpm');
 
   /// The conversations of a `pmlist` answer [json] of the forum's app API (plugin 1.9.0) as [PersonalMessageV2];
-  /// null when it is no usable answer (none, not `ok`, an unknown shape): the private message page is read instead.
+  /// null when it is no usable answer (none, not `ok`, an unknown shape, no `timeoffset`, a conversation without
+  /// `lastsummary_html`): the private message page is read instead.
   ///
   /// The list is the one of the private message page (`filter=privatepm`): every conversation, sent or received, read
   /// or not, newest first. See [toV2FromApi] for each one. A forum with private messages switched off answers
@@ -145,45 +146,68 @@ final class PersonalMessage with PersonalMessageMappable {
   static List<PersonalMessageV2>? listFromApi(Map<String, dynamic>? json) {
     final uid = json?['uid'];
     final rows = json?['pms'];
-    if (json == null || json['ok'] != 1 || uid is! int || rows is! List) {
+    final timeOffset = json?['timeoffset'];
+    if (json == null || json['ok'] != 1 || uid is! int || rows is! List || timeOffset is! num) {
       return null;
     }
-    return rows
-        .whereType<Map<String, dynamic>>()
-        .map((e) => toV2FromApi(e, uid: uid))
+    final conversations = rows.whereType<Map<String, dynamic>>();
+    if (conversations.any((e) => e['type'] == 1 && e['lastsummary_html'] is! String)) {
+      talker.error('pmlist answered a conversation without lastsummary_html');
+      return null;
+    }
+    return conversations
+        .map((e) => toV2FromApi(e, uid: uid, timeOffset: timeOffset))
         .whereType<PersonalMessageV2>()
         .toList();
   }
 
   /// Convert a conversation [row] of a `pmlist` answer of the forum's app API (plugin 1.9.0) into
-  /// [PersonalMessageV2], for the account [uid] the answer is for.
+  /// [PersonalMessageV2], for the account [uid] the answer is for, the same as [toV2] gives for its node on the
+  /// private message page.
   ///
   /// The current user sent the last message when its author is [uid]; such a conversation, and one the forum keeps
-  /// as read (`new` 0), is read. The time is the minute the page shows ([apiTimeOf]). A group chat (`type` 2) is
-  /// dropped: [toV2] finds no peer in its node on the page either. So is a row without peer or time.
-  static PersonalMessageV2? toV2FromApi(Map<String, dynamic> row, {required int uid}) {
+  /// as read (`new` 0), is read. The message is [summaryOfHtml] of `lastsummary_html`, the summary as the page prints
+  /// it; `lastsummary`, the faithful text, is not what the page shows. The time is the one the page path reads
+  /// ([apiTimeOf], with the [timeOffset] of the answer). A group chat (`type` 2) is dropped: [toV2] finds no peer in
+  /// its node on the page either. So is a row without peer, time or summary.
+  static PersonalMessageV2? toV2FromApi(Map<String, dynamic> row, {required int uid, required num timeOffset}) {
     if (row['type'] != 1) {
       return null;
     }
     final peerUid = row['touid'] is int ? row['touid'] as int : 0;
     final peerUsername = row['tousername'] is String ? row['tousername'] as String : '';
     final time = row['lastdateline'] is int ? row['lastdateline'] as int : 0;
-    if (peerUid <= 0 || peerUsername.isEmpty || time <= 0) {
+    final summary = row['lastsummary_html'];
+    final message = summary is String ? summaryOfHtml(summary) : null;
+    if (peerUid <= 0 || peerUsername.isEmpty || time <= 0 || message == null) {
       talker.error(
         'failed to build personal message v2 from the app api: plid=${row['plid']}, peerUid=$peerUid, '
-        'hasPeerUsername=${peerUsername.isNotEmpty}, time=$time',
+        'hasPeerUsername=${peerUsername.isNotEmpty}, time=$time, hasSummary=${message != null}',
       );
       return null;
     }
     final sender = row['lastauthorid'] == uid;
     return PersonalMessageV2(
-      timestamp: apiTimeOf(time),
-      data: row['lastsummary'] is String ? row['lastsummary'] as String : '',
+      timestamp: apiTimeOf(time, timeOffset),
+      data: message,
       peerUid: peerUid,
       peerUsername: peerUsername,
       sender: sender,
       alreadyRead: sender || row['new'] == 0,
     );
+  }
+
+  /// The message [parseLastMessage] reads from a conversation node of the private message page that prints [html]
+  /// as its summary (`template/default/home/space_pm.php`: `$value[lastsummary] &nbsp;  <br />` after the line naming
+  /// the sender): the text of that html, entities decoded, the no-break space as a space, trimmed, the spaces and
+  /// line breaks inside kept.
+  static String? summaryOfHtml(String html) {
+    const who = '<a href="home.php?mod=space&amp;uid=0" class="xw1">-</a> 对 <span class="xi2">您</span> 说 :';
+    final node = parseHtmlDocument(
+      '<html><body><div class="xld xlda pml"><dl id="pmlist_0" class="bbda cur1 cl"><dd class="ptm pm_c">\n'
+      '<div class="o"></div>$who<br />\n$html &nbsp;  <br />\n<span class="xg1"></span></dd></dl></div></body></html>',
+    ).querySelector('dd.ptm.pm_c');
+    return node == null ? null : parseLastMessage(node);
   }
 
   /// Build from dl with id "pmlist_XXXX".
@@ -290,19 +314,24 @@ final class BroadcastMessage with BroadcastMessageMappable {
       talker.error('failed to build broadcast message v2: pmid=$pmid, time=$time, hasInfo=${infoNode != null}');
       return null;
     }
-    final hasNewFlag = element.querySelector('div.newpm_avt') != null || element.classes.contains('newpm');
     return BroadcastMessageV2(
       timestamp: time.millisecondsSinceEpoch ~/ 1000,
       data: _parseMessageText(infoNode),
       pmid: pmid,
-      alreadyRead: !hasNewFlag,
+      alreadyRead: !isUnreadNode(element),
     );
   }
 
+  /// Whether the broadcast message page rendered the message node [element] (`<dl id="gpmlist_XXX">`) as unread: the
+  /// class `newpm` (`{if !$gpmstatus[$grouppm[id]]} newpm{/if}`). As on the private message page, the red dot
+  /// `div.newpm_avt` is printed in every node and is no marker ([PersonalMessage.isUnreadNode]).
+  static bool isUnreadNode(uh.Element element) => element.classes.contains('newpm');
+
   /// Convert an unread broadcast message of the `notify` answer of the forum's app API (`announces`) into
-  /// [BroadcastMessageV2]: its plain text (at most 300 characters), the minute it was written ([apiTimeOf]; not when
-  /// it reached the account, GitHub #154) and the answer's `new`. Return null if id or time is missing.
-  static BroadcastMessageV2? toV2FromApi(Map<String, dynamic> json) {
+  /// [BroadcastMessageV2]: its plain text (at most 300 characters), the time it was written (not when it reached the
+  /// account, GitHub #154) as the page path reads it ([apiTimeOf], with the [timeOffset] of the answer) and the
+  /// answer's `new`. Return null if id or time is missing.
+  static BroadcastMessageV2? toV2FromApi(Map<String, dynamic> json, {required num timeOffset}) {
     final pmid = json['id'];
     final dateline = json['dateline'];
     if (pmid is! int || dateline is! int) {
@@ -310,7 +339,7 @@ final class BroadcastMessage with BroadcastMessageMappable {
       return null;
     }
     return BroadcastMessageV2(
-      timestamp: apiTimeOf(dateline),
+      timestamp: apiTimeOf(dateline, timeOffset),
       data: json['text'] is String ? json['text'] as String : '',
       pmid: pmid,
       alreadyRead: json['new'] == 0,

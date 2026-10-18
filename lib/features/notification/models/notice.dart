@@ -215,9 +215,9 @@ class Notice with NoticeMappable {
   /// The answer's `note` is the html the notice page prints in `dd.ntc_body` as it is, and the page prints the ignore
   /// link from the notice's `authorid` and `type`. Both are put in a notice node of the same shape and read by the
   /// same parsers ([buildBodyHtml], [parseIgnoreTarget]): the body gets the same absolute urls and image sources, a
-  /// system notice (author 0) the same target. The time is the minute the page shows ([apiTimeOf]). Unread is the
-  /// answer's `new`. Return null if id, time or note is missing.
-  static NoticeV2? toV2FromApi(Map<String, dynamic> json) {
+  /// system notice (author 0) the same target. The time is the one the page path reads ([apiTimeOf], with the
+  /// [timeOffset] of the answer). Unread is the answer's `new`. Return null if id, time or note is missing.
+  static NoticeV2? toV2FromApi(Map<String, dynamic> json, {required num timeOffset}) {
     final id = json['id'];
     final dateline = json['dateline'];
     final note = json['note'];
@@ -243,7 +243,7 @@ class Notice with NoticeMappable {
     final target = parseIgnoreTarget(element);
     return NoticeV2(
       id: id,
-      timestamp: apiTimeOf(dateline),
+      timestamp: apiTimeOf(dateline, timeOffset),
       data: data,
       alreadyRead: json['new'] == 0,
       ignoreType: target?.type,
@@ -426,15 +426,22 @@ class Notice with NoticeMappable {
   }
 }
 
-/// The time (seconds) a notification of the forum's app API carries as [seconds], to the minute.
+/// The time (seconds) of a notification of the forum's app API that carries [seconds] (the real time) for a member
+/// whose times the forum shows with an offset of [offsetHours] (`timeoffset` of the answer), the same number the web
+/// page path reads for it.
 ///
-/// The web pages show the time of a notice, a conversation and a broadcast message to the minute, and the stored
-/// copies are reconciled by time: a copy newer than the stored one is a new event (a merged notice, another message)
-/// and unread again. Taken to the second, the copy the API gives would be a minute "newer" than the copy the same
-/// fetch reads from a page whenever the fetch falls back to the pages (an older plugin, an answer refused as too
-/// soon), and every notice of the window would come back as news. The bound of the next fetch is a whole minute
-/// (`nextFetchBound`), so nothing falls out of a window by this.
-int apiTimeOf(int seconds) => seconds - seconds % 60;
+/// The pages show a time as the member's wall clock to the minute (`Y-n-j H:i`), and the page parsers read that text
+/// as the device's local time (`parseToDateTimeUtc8`, which does not apply +8: a bug of the page path, left as it is
+/// here). This takes the same wall clock from [seconds] and [offsetHours] and reads it the same way, so a notice, a
+/// conversation or a broadcast message has the same time whichever path fetched it, whatever the device's zone: the
+/// stored copies are reconciled by time (a newer copy is a new event, unread again; an older one is dropped as
+/// stale), and a copy the API gives must not be "newer" or "older" than the copy a fetch that falls back to the pages
+/// (an older plugin, an answer refused as too soon) reads. It is the real time to the minute when the device's zone
+/// is the member's offset, as on most devices. The bound of the next fetch is a whole minute (`nextFetchBound`).
+int apiTimeOf(int seconds, num offsetHours) {
+  final wall = DateTime.fromMillisecondsSinceEpoch((seconds + (offsetHours * 3600).round()) * 1000, isUtc: true);
+  return DateTime(wall.year, wall.month, wall.day, wall.hour, wall.minute).millisecondsSinceEpoch ~/ 1000;
+}
 
 /// Get the image url of an `<img>` node, lazy loaded images use `data-src`.
 String? _imgUrl(uh.Element? element) {

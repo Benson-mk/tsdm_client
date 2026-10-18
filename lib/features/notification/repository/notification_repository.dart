@@ -52,12 +52,19 @@ final class NotificationRepository with LoggerMixin {
   /// not given and registered.
   ///
   /// [retryDelay] is the wait before the one retry of a polling fetch that could not reach the forum.
-  NotificationRepository({StorageProvider? storageProvider, Duration retryDelay = const Duration(seconds: 5)})
-    : _storageProvider = storageProvider,
-      _retryDelay = retryDelay;
+  ///
+  /// [seenTimeout] is how long a fetch waits for its `seen` ([TsdmAppApi.post]) before it goes on without it.
+  NotificationRepository({
+    StorageProvider? storageProvider,
+    Duration retryDelay = const Duration(seconds: 5),
+    Duration seenTimeout = const Duration(seconds: 8),
+  }) : _storageProvider = storageProvider,
+       _retryDelay = retryDelay,
+       _seenTimeout = seenTimeout;
 
   final StorageProvider? _storageProvider;
   final Duration _retryDelay;
+  final Duration _seenTimeout;
 
   StorageProvider? get _storage =>
       _storageProvider ?? (getIt.isRegistered<StorageProvider>() ? getIt.get<StorageProvider>() : null);
@@ -294,9 +301,10 @@ final class NotificationRepository with LoggerMixin {
     required bool polling,
     required bool bypassGate,
   }) async {
+    final timeOffset = notify['timeoffset'] as num;
     final notices = (notify['notices'] as List)
         .whereType<Map<String, dynamic>>()
-        .map(Notice.toV2FromApi)
+        .map((e) => Notice.toV2FromApi(e, timeOffset: timeOffset))
         .whereType<NoticeV2>()
         .toList();
     // The first fetch and a refresh list every conversation; a poll only when one changed since its window began.
@@ -325,7 +333,7 @@ final class NotificationRepository with LoggerMixin {
     if (broadcastPage == null) {
       broadcasts = (notify['announces'] as List)
           .whereType<Map<String, dynamic>>()
-          .map(BroadcastMessage.toV2FromApi)
+          .map((e) => BroadcastMessage.toV2FromApi(e, timeOffset: timeOffset))
           .whereType<BroadcastMessageV2>()
           .toList();
     } else {
@@ -397,12 +405,29 @@ final class NotificationRepository with LoggerMixin {
   /// Post `seen` with [client] and the [formhash] of its `notify` answer: the unread notices marked read when [notice]
   /// (the clock of that answer, seconds) is given and none is unread with a time at or after it, and the forum's "new
   /// private message" prompt cleared when [pm]. Only logged when it fails.
+  ///
+  /// Waited for, so a background sync does not end before it is sent, but not longer than [_seenTimeout]: the fetch
+  /// holds the sync's "fetching" state (which the login and account switch flows wait on) until it returns, and the
+  /// request alone may take its whole connect and receive timeouts. The request is not cancelled then; its answer is
+  /// only not read.
   Future<void> _markSeen(NetClientProvider client, String formhash, {required int? notice, required bool pm}) async {
-    final answer = await TsdmAppApi.post(client, 'seen', {
-      'formhash': formhash,
-      if (notice != null) 'notice': '$notice',
-      if (pm) 'pm': '1',
-    });
+    var timedOut = false;
+    final answer =
+        await TsdmAppApi.post(client, 'seen', {
+          'formhash': formhash,
+          if (notice != null) 'notice': '$notice',
+          if (pm) 'pm': '1',
+        }).timeout(
+          _seenTimeout,
+          onTimeout: () {
+            timedOut = true;
+            return null;
+          },
+        );
+    if (timedOut) {
+      warning('marking notifications seen on the forum (notice=$notice pm=$pm) did not answer in time, going on');
+      return;
+    }
     if (answer == null || answer['ok'] != 1) {
       warning(
         'failed to mark notifications seen on the forum (notice=$notice pm=$pm): ${answer?['error'] ?? 'no answer'}',

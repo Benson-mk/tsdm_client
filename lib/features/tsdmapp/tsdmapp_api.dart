@@ -128,9 +128,10 @@ abstract final class TsdmAppApi {
   /// when the forum answered one, null otherwise. For `seen` (plugin 1.9.0), the only action that writes.
   ///
   /// Unlike [ask], an answer that is not JSON does not mark the API missing: Discuz itself answers a form hash it
-  /// does not take with its "System Error" page, before the plugin is reached, and that tells nothing about the
-  /// plugin. A failed request, HTTP 429 (`error: busy`), an older plugin without the action (`error: action`) and an
-  /// API switched off (`error: off`) give null as well. The caller logs it and asks again on its next fetch.
+  /// does not take with its "System Error" page (HTTP 503, a failed request here), before the plugin is reached, and
+  /// that tells nothing about the plugin. A failed request, HTTP 429 (`error: busy`), an older plugin without the
+  /// action (`error: action`) and an API switched off (`error: off`) give null as well. The caller logs it and asks
+  /// again on its next fetch.
   static Future<Map<String, dynamic>?> post(NetClientProvider client, String action, Map<String, String> form) async {
     if (knownUnavailable) {
       return null;
@@ -241,15 +242,17 @@ bool notifyPmSignalOf(Map<String, dynamic> json, {required int since}) {
 }
 
 /// Whether a `notify` answer [json] carries the lists the notification fetch reads instead of the notice and private
-/// message pages (plugin 1.9.0): the form hash `seen` is posted with, the notices, the unread broadcast messages and
-/// the forum's clock. An older plugin leaves the form hash out; its answer only gates the pages ([notifyGateOf]).
+/// message pages (plugin 1.9.0): the form hash `seen` is posted with, the notices, the unread broadcast messages, the
+/// forum's clock and the offset (hours) the forum shows the member's times with, `timeoffset`. An older plugin leaves
+/// the form hash out; its answer only gates the pages ([notifyGateOf]).
 bool notifyCarriesLists(Map<String, dynamic>? json) =>
     json != null &&
     json['ok'] == 1 &&
     json['formhash'] is String &&
     json['notices'] is List &&
     json['announces'] is List &&
-    json['time'] is int;
+    json['time'] is int &&
+    json['timeoffset'] is num;
 
 /// Whether a `notify` answer [json] lists an unread notice: then `seen` is posted for the notices, with the clock of
 /// that answer (`time`) as `notice`.
