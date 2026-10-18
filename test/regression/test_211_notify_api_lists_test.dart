@@ -503,6 +503,32 @@ void main() {
       expect(value.serverTime, _clock(_now));
     });
 
+    test('nothing new, yet unread notices before the window: seen again (an earlier one failed)', () async {
+      final forum = _Forum(
+        notify: _Answer.json(
+          _notify(notices: [_notice(90, _since - 3600), _notice(95, _since - 600), _notice(80, _since - 7200)]),
+        ),
+        seen: _seenOk,
+      );
+      final value = await _fetch(forum, timestamp: _since);
+      expect(forum.names, ['notify', 'seen']);
+      expect(forum.seenForms.single, {'formhash': _formhash, 'notice': '95'});
+      expect(value.info, NotificationV2.empty);
+      expect(value.serverTime, _clock(_now));
+
+      // Failing again changes nothing either.
+      final failing = _Forum(notify: forum.notify, seen: _busy);
+      expect((await _fetch(failing, timestamp: _since)).info, NotificationV2.empty);
+      expect(failing.names, ['notify', 'seen']);
+    });
+
+    test('nothing new and every notice read: no seen', () async {
+      final forum = _Forum(notify: _Answer.json(_notify(notices: [_notice(90, _since - 3600, unread: false)])));
+      final value = await _fetch(forum, timestamp: _since);
+      expect(forum.names, ['notify']);
+      expect(value.info, NotificationV2.empty);
+    });
+
     test('a conversation changed: pmlist instead of the private message page, seen clears the prompt', () async {
       final rows = [
         _pm(1, peer: 3001, at: _since + 130, unread: true, text: 'new'),
@@ -720,10 +746,16 @@ void main() {
       expect(value.info.personalMessageList.map((e) => e.peerUid), [3001]);
     });
 
-    test('plugin 1.8.0, a poll with nothing new: notify only', () async {
-      final old = forum(_Answer.json(_notify(lists: false)));
-      await _fetch(old, timestamp: _since);
-      expect(old.names, ['notify']);
+    test('plugin 1.8.0, a poll with nothing new: notify only, even with unread notices (no seen)', () async {
+      for (final notices in [
+        <Map<String, Object?>>[],
+        [_notice(90, _since - 3600)],
+      ]) {
+        final old = forum(_Answer.json(_notify(notices: notices, lists: false)));
+        final value = await _fetch(old, timestamp: _since);
+        expect(old.names, ['notify']);
+        expect(value.info, NotificationV2.empty);
+      }
     });
 
     test('plugin 1.8.0, a refresh and the first fetch: notify is asked, its answer ignored, the three pages', () async {

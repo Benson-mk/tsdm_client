@@ -180,15 +180,17 @@ final class NotificationRepository with LoggerMixin {
   ///
   /// Every fetch asks the forum's app API first when it has one ([TsdmAppApi], `notify`); an answer that the session
   /// expired gives [NotificationUserNotFound] at once. For a polling fetch (with [timestamp]) with nothing arrived
-  /// since then, nothing else is fetched and an empty result with the forum's clock is returned.
+  /// since then, nothing else is fetched and an empty result with the forum's clock is returned; with plugin 1.9.0 a
+  /// `seen` for the notices it still lists as unread is posted first (see below).
   ///
   /// Plugin 1.9.0 answers the lists themselves ([notifyCarriesLists]): the notices come from `notify`, the
   /// conversations from `pmlist` (only when one changed, for a poll; the private message page when `pmlist` does not
   /// answer) and the broadcast messages from `notify` (unread ones only, for a poll) or the broadcast message page.
   /// The fetch then posts `seen` ([TsdmAppApi.post]) for what reading the notice page and the private message page
   /// does on the forum: the notices marked read up to the newest unread one it got, the "new" prompts cleared. A
-  /// failed `seen` is only logged; the next fetch that reads the lists posts it again (a poll with nothing new does
-  /// not). `serverTime` is the earliest of the `notify` clock and the `Date` headers of the pages read. With an older plugin, or without one, the three pages are the source
+  /// failed `seen` is only logged; the next fetch posts it again while `notify` still lists unread notices, a poll
+  /// with nothing new too (the prompt of the private messages only after the next `pmlist`, `notify` does not tell
+  /// it). `serverTime` is the earliest of the `notify` clock and the `Date` headers of the pages read. With an older plugin, or without one, the three pages are the source
   /// of every notification shown: fetching the notice page is also what marks the notices read on the forum, as it
   /// always did.
   ///
@@ -234,6 +236,14 @@ final class NotificationRepository with LoggerMixin {
         return left(NotificationUserNotFound());
       case TsdmAppNothingNew(:final serverTime) when polling:
         debug('nothing new since $since by the app api, pages skipped');
+        // A successful `seen` leaves no unread notice on the forum: one still listed means an earlier `seen` failed
+        // (or something else left it unread), and the web keeps its red dot until the next new event otherwise.
+        // The "new private message" prompt is not retried: `notify` does not tell it.
+        if (notifyCarriesLists(notify)) {
+          if (notifyLatestUnreadNoticeOf(notify!) case final latest?) {
+            await _markSeen(client, notify['formhash'] as String, notice: latest, pm: false);
+          }
+        }
         return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
       case TsdmAppNothingNew() || TsdmAppFetchPages():
         break;
