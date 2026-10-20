@@ -46,6 +46,7 @@ import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
+import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/post_list.dart';
 import 'package:tsdm_client/features/thread_visit_history/bloc/thread_visit_history_bloc.dart';
@@ -278,6 +279,25 @@ final class _HeldThreadRepository extends Fake implements ThreadRepository {
     pages.add(pageNumber);
     return AsyncEither(() => answer.future);
   }
+
+  /// The page the bloc asks for, parsed from the document answered: every test answer here is a web page.
+  @override
+  AsyncEither<ThreadPageInfo> fetchThreadPage({
+    String? tid,
+    String? pid,
+    int pageNumber = 1,
+    int? pageFallback,
+    String? onlyVisibleUid,
+    bool? reverseOrder,
+    int? exactOrder,
+  }) => fetchThread(
+    tid: tid,
+    pid: pid,
+    pageNumber: pageNumber,
+    onlyVisibleUid: onlyVisibleUid,
+    reverseOrder: reverseOrder,
+    exactOrder: exactOrder,
+  ).map((document) => parseThreadDocument(document, pageFallback ?? pageNumber));
 }
 
 /// A forum without threads whose only sub forum is [board].

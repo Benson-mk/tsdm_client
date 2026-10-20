@@ -138,6 +138,13 @@ class Locked extends Equatable {
          allowWithSale: allowWithSales,
        );
 
+  /// A purchase lock from the fields of a structured thread page answer of the forum's app API (`thread.pay`, plugin
+  /// 2.1.0): the lock [Locked.fromLockDivNode] reads from the `div.locked` of the first floor of a paid thread the
+  /// viewer has not bought (its [price], the [purchasedCount] the page prints when somebody bought it, the thread [tid]
+  /// and the floor [pid] of the pay link).
+  Locked.purchase({required int price, required int? purchasedCount, required String tid, required String pid})
+    : _info = _LockedWithPurchase(price: price, purchasedCount: purchasedCount, tid: tid, pid: pid);
+
   static final _purchareRe = RegExp(r'forum.php\?mod=misc&action=pay&tid=(?<tid>\d+)&pid=(?<pid>\d+)');
   static final _salesCountRe = RegExp(r'已购买人数\s*[:：]\s*(?<count>\d+)');
 

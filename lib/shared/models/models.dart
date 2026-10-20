@@ -15,6 +15,7 @@ import 'package:tsdm_client/widgets/card/post_card/checkin.dart';
 import 'package:tsdm_client/widgets/card/post_card/pokemon.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_medal.dart';
 import 'package:universal_html/html.dart' as uh;
+import 'package:universal_html/parsing.dart';
 
 part 'cookie.dart';
 part 'css_types.dart';
