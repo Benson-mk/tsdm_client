@@ -243,7 +243,9 @@ class NormalThread with NormalThreadMappable {
   ///   device's zone. The web page path reads the forum's wall clock text as the device's local time (an old bug
   ///   kept there), so the two differ by the zone difference, and by the minute the page rounds to.
   /// * A moved thread (`moved` is the tid of the thread it was moved to) is the row of its target, as the page links
-  ///   the row's title to the target: its id and url are the target's, and it is closed.
+  ///   the row's title to the target: its id and url are the target's, it is closed, and its reply count is 0 (the
+  ///   page prints `-` for the pointer row). A thread pushed from a group (`grouptid`) is likewise the row of the
+  ///   group's thread.
   /// * The author is a link to the member by uid, with the avatar built from the uid as [fromTBody] does. An
   ///   anonymous thread (`anonymous` 1; the forum gives no name and `authorid` 0 then, each of which counts as well)
   ///   has no uid, no avatar and no link, and is named as the page names it; an anonymous or deleted last replier
@@ -252,7 +254,8 @@ class NormalThread with NormalThreadMappable {
   ///   types as a prefix (Discuz forumdisplay builds `typehtml` for prefix 1 or 2 only), so a thread of a forum
   ///   with prefix 0 has no [threadType] either, as on the page.
   /// * The reply count is `replies` + `comments`, the `allreplies` the page prints in its reply column
-  ///   (Discuz forumdisplay: `$thread['allreplies'] = $thread['replies'] + $thread['comments']`).
+  ///   (Discuz forumdisplay: `$thread['allreplies'] = $thread['replies'] + $thread['comments']`), 0 for a moved
+  ///   thread.
   /// * `price` is the price of a thread for sale only: a reward thread (`special` 3) carries its reward there, which
   ///   the page prints as "悬赏" and the app does not read. `readperm` is the privilege.
   /// * States: the sticky level, closed (`closed` 1, or a moved thread: `moved` is the tid it points to), poll
@@ -260,7 +263,8 @@ class NormalThread with NormalThreadMappable {
   ///   both the picture state, as [fromTBody] does), digest (`digest` > 0).
   factory NormalThread.fromApi(Map<String, dynamic> t, {required int fid, required int typePrefix}) {
     final moved = _apiInt(t['moved']);
-    final tid = moved > 0 ? moved : _apiInt(t['tid']);
+    final groupTid = _apiInt(t['grouptid']);
+    final tid = moved > 0 ? moved : (groupTid > 0 ? groupTid : _apiInt(t['tid']));
     final authorName = _apiInt(t['anonymous']) == 1 ? '' : _apiText(t['author']);
     final authorId = _apiInt(t['authorid']);
     final anonymous = authorName.isEmpty || authorId <= 0;
@@ -335,7 +339,7 @@ class NormalThread with NormalThreadMappable {
       latestReplyTime: _apiTime(t['lastpost']),
       iconUrl: '',
       threadType: threadType,
-      replyCount: _apiInt(t['replies']) + _apiInt(t['comments']),
+      replyCount: moved > 0 ? 0 : _apiInt(t['replies']) + _apiInt(t['comments']),
       viewCount: _apiInt(t['views']),
       price: price > 0 && special != 3 ? price : null,
       privilege: readPerm > 0 ? readPerm : null,

@@ -13,12 +13,15 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:go_router/go_router.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
@@ -27,13 +30,24 @@ import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_api.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
+import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
+import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
+import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
+import 'package:tsdm_client/widgets/heroes.dart';
+import 'package:universal_html/parsing.dart';
 
 const _dir = 'test/data/tsdmapp';
 
@@ -372,6 +386,20 @@ void main() {
       expect(open.stateSet, isNot(contains(ThreadStateModel.closed)));
     });
 
+    test("a thread pushed from a group is the row of the group's thread", () {
+      final row = _row('forum_v2_fid2.json', 9199849)..['grouptid'] = 7700;
+      final t = NormalThread.fromApi(row, fid: 2, typePrefix: 0);
+      expect(t.threadID, '7700');
+      expect(t.url, '$baseUrl/forum.php?mod=viewthread&tid=7700');
+      expect(t.replyCount, 0, reason: 'replies 0 in the row');
+      // Moved wins over the group's thread.
+      final both = NormalThread.fromApi(row..['moved'] = 7800, fid: 2, typePrefix: 0);
+      expect(both.threadID, '7800');
+      // grouptid 0 (every ordinary row) changes nothing.
+      expect(_row('forum_v2_fid2.json', 9199849)['grouptid'], 0);
+      expect(_thread('forum_v2_fid2.json', 9199849).threadID, '9199849');
+    });
+
     test('a digest with a highlighted title: bold and red', () {
       final t = _thread('forum_v2_fid2.json', 9199838);
       expect(t.stateSet, {ThreadStateModel.digested});
@@ -444,9 +472,15 @@ void main() {
       // No comments: the replies alone.
       expect(_row('forum_v2_fid2.json', 9199345)['comments'], 0);
       expect(_thread('forum_v2_fid2.json', 9199345).replyCount, 8);
-      // A moved thread has no replies of its own, only what the plugin gives.
-      final moved = NormalThread.fromApi(_row('forum_v2_fid2.json', 9199834)..['comments'] = 3, fid: 2, typePrefix: 0);
-      expect(moved.replyCount, 0 + 3);
+      // A moved thread: the page prints `-` for the pointer row, 0 here whatever the row carries.
+      final moved = NormalThread.fromApi(
+        _row('forum_v2_fid2.json', 9199834)
+          ..['replies'] = 4
+          ..['comments'] = 3,
+        fid: 2,
+        typePrefix: 0,
+      );
+      expect(moved.replyCount, 0);
     });
 
     test('published today', () {
@@ -656,6 +690,44 @@ void main() {
       expect(denied.permissionDeniedMessage?.innerText.trim(), deniedWeb.permissionDeniedMessage?.innerText.trim());
     });
 
+    test('an older plugin (1.9.0): the production markup in its document is parsed as the web page', () async {
+      // The test forum's template lists threads as `<li>` (parsed by neither path), so the production rows are the
+      // fixtures of the page parsers, wrapped into a 1.9.0 answer (no `schema`, no `login`).
+      final rows = File('test/data/forum_thread_list_authors_x5.html').readAsStringSync();
+      final page = (await _fetch(jsonEncode({'ok': 1, 'api': 1, 'type': 'forum', 'document': rows}))).getOrElse(
+        (e) => throw e,
+      );
+      final web = parseForumPage(parseHtmlDocument(rows), '2');
+      expect(web.normalThreadList.map((e) => e.threadID), ['1000001', '1000002', '1000003']);
+      expect(page.normalThreadList.map((e) => e.threadID), web.normalThreadList.map((e) => e.threadID));
+      expect(page.normalThreadList.map((e) => e.author.uid), web.normalThreadList.map((e) => e.author.uid));
+      expect(page.normalThreadList.map((e) => e.author.name), web.normalThreadList.map((e) => e.author.name));
+      expect(page.normalThreadList.map((e) => e.stateSet), web.normalThreadList.map((e) => e.stateSet));
+      expect(
+        page.normalThreadList.map((e) => e.latestReplyAuthor.name),
+        web.normalThreadList.map((e) => e.latestReplyAuthor.name),
+      );
+      // The third row's author cell is `<cite>匿名</cite>` without a link: the page path falls back to the last reply
+      // cell (regression 078), the same on both sides, and nothing like the structured path's "匿名" row.
+      expect(page.normalThreadList[2].author.uid, isNull);
+      expect(page.normalThreadList[2].author.name, web.normalThreadList[2].author.name);
+      expect(page.normalThreadList.map((e) => e.author.name), isNot(contains('匿名')));
+
+      final filters = File('test/data/forum_thread_filters_x5.html').readAsStringSync();
+      final filterPage = (await _fetch(
+        jsonEncode({'ok': 1, 'api': 1, 'type': 'forum', 'document': filters}),
+        fid: '4',
+      )).getOrElse((e) => throw e);
+      final filterWeb = parseForumPage(parseHtmlDocument(filters), '4');
+      expect(filterWeb.filterTypeList.length, greaterThan(1));
+      expect(filterPage.filterTypeList.map((e) => e.name), filterWeb.filterTypeList.map((e) => e.name));
+      expect(filterPage.filterTypeList.map((e) => e.typeID), filterWeb.filterTypeList.map((e) => e.typeID));
+      expect(filterPage.filterSpecialTypeList.map((e) => e.name), filterWeb.filterSpecialTypeList.map((e) => e.name));
+      expect(filterPage.filterOrderList.map((e) => e.orderBy), filterWeb.filterOrderList.map((e) => e.orderBy));
+      expect(filterPage.filterDatelineList.map((e) => e.name), filterWeb.filterDatelineList.map((e) => e.name));
+      expect(filterPage.normalThreadList.map((e) => e.threadID), filterWeb.normalThreadList.map((e) => e.threadID));
+    });
+
     test('a web page (a forum without the plugin) is parsed as before', () async {
       const html =
           '<html><body><div id="wp"><div id="ct"><h1 class="xs2"><a href="forum.php?mod=forumdisplay&fid=2">板</a></h1> '
@@ -680,12 +752,140 @@ void main() {
     expect(files.length, 12);
     for (final file in files) {
       final raw = file.readAsStringSync();
-      for (final marker in ['127.0.0.1', '櫻花', '"password"', '"email"', '"head"']) {
+      // No host of the forum (the plugin gives relative paths), no address, no page head, no member data.
+      expect(raw, isNot(contains('http://')), reason: file.path);
+      expect(raw, isNot(contains('https://')), reason: file.path);
+      expect(raw, isNot(matches(RegExp(r'\b\d{1,3}(\.\d{1,3}){3}\b'))), reason: '${file.path}: an IPv4 address');
+      for (final marker in ['"head"', '"password"', '"email"', '"loginname"']) {
         expect(raw, isNot(contains(marker)), reason: '${file.path} $marker');
       }
       if (!file.path.endsWith('forum_v2_fid2.json')) {
         expect(raw, isNot(contains('"document"')), reason: file.path);
       }
     }
+  });
+
+  group('the thread card of an anonymous author', () {
+    late AppDatabase db;
+    late StorageProvider storage;
+    late SettingsRepository settings;
+    late Directory tmp;
+
+    setUpAll(() async {
+      tmp = Directory.systemTemp.createTempSync('tsdm_forum_api_');
+      TestWidgetsFlutterBinding.ensureInitialized();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => switch (call.method) {
+          'getApplicationCachePath' || 'getApplicationCacheDirectory' => '${tmp.path}/cache',
+          'getApplicationSupportPath' || 'getApplicationSupportDirectory' => '${tmp.path}/support',
+          'getTemporaryPath' || 'getTemporaryDirectory' => '${tmp.path}/tmp',
+          'getApplicationDocumentsPath' || 'getApplicationDocumentsDirectory' => '${tmp.path}/docs',
+          _ => null,
+        },
+      );
+      await initCache();
+    });
+
+    tearDownAll(() => tmp.delete(recursive: true));
+
+    setUp(() async {
+      db = AppDatabase(NativeDatabase.memory());
+      storage = StorageProvider(db, {}, {});
+      settings = SettingsRepository(storage);
+      getIt
+        ..registerSingleton<StorageProvider>(storage)
+        ..registerSingleton<SettingsRepository>(settings)
+        ..registerSingleton<ImageCacheProvider>(
+          ImageCacheProvider(
+            NetClientProvider.buildNoCookie(dio: Dio()..httpClientAdapter = _Forum('', contentType: 'text/html')),
+          ),
+        );
+      await settings.init();
+    });
+
+    tearDown(() async {
+      await getIt.get<ImageCacheProvider>().dispose();
+      await getIt.unregister<ImageCacheProvider>();
+      await getIt.unregister<SettingsRepository>();
+      await getIt.unregister<StorageProvider>();
+      await settings.dispose();
+      await db.close();
+    });
+
+    /// The card of [thread] in an app whose router knows the "open in app" page, pumped until the card is built.
+    Future<GoRouter> pump(WidgetTester tester, NormalThread thread) async {
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(body: ListView(children: [NormalThreadCard(thread)])),
+          ),
+          GoRoute(
+            path: ScreenPaths.openInApp,
+            name: ScreenPaths.openInApp,
+            builder: (_, _) => const Scaffold(body: Text('OPEN IN APP')),
+          ),
+          // The card itself opens the thread: a tap on the author that opens nothing falls through to it.
+          GoRoute(
+            path: ScreenPaths.threadV1,
+            name: ScreenPaths.threadV1,
+            builder: (_, _) => const Scaffold(body: Text('THREAD')),
+          ),
+        ],
+      );
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: BlocProvider<SettingsBloc>(
+              create: (_) => SettingsBloc(settingsRepository: settings, fragmentsRepository: FragmentsRepository()),
+              child: MaterialApp.router(routerConfig: router),
+            ),
+          ),
+        );
+        for (var i = 0; i < 100; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump(const Duration(milliseconds: 20));
+          if (i > 4 && find.byType(HeroUserAvatar).evaluate().isNotEmpty) {
+            return;
+          }
+        }
+      });
+      return router;
+    }
+
+    GestureDetector detectorOf(WidgetTester tester, Finder child) =>
+        tester.widget<GestureDetector>(find.ancestor(of: child, matching: find.byType(GestureDetector)).first);
+
+    testWidgets('tapping the name or the avatar opens nothing', (tester) async {
+      // The anonymous row, with a named last replier so that "匿名" is the author's name only.
+      final thread = NormalThread.fromApi(
+        _row('forum_v2_fid25.json', 9199069)
+          ..['lastposter'] = 'ag_low2'
+          ..['lastposterid'] = 35,
+        fid: 25,
+        typePrefix: 0,
+      );
+      expect(thread.author.name, '匿名');
+      expect(thread.author.url, '');
+      final router = await pump(tester, thread);
+
+      expect(find.text('匿名'), findsOneWidget);
+      expect(detectorOf(tester, find.text('匿名')).onTap, isNull);
+      expect(detectorOf(tester, find.byType(HeroUserAvatar)).onTap, isNull);
+
+      // A tap on the name falls through to the card, which opens the thread, never the "open in app" page.
+      await tester.tap(find.text('匿名'));
+      await tester.pumpAndSettle();
+      expect(find.text('OPEN IN APP'), findsNothing);
+      expect(router.state.uri.path, ScreenPaths.threadV1);
+    });
+
+    testWidgets('a named author keeps the tap', (tester) async {
+      final thread = _thread('forum_v2_fid2.json', 9199849);
+      expect(thread.author.url, isNotEmpty);
+      await pump(tester, thread);
+      expect(detectorOf(tester, find.text('ag_admin')).onTap, isNotNull);
+    });
   });
 }
