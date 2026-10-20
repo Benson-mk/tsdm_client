@@ -1,7 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/routes/app_routes.dart';
 import 'package:tsdm_client/routes/page_stack.dart';
+import 'package:tsdm_client/routes/popup_route_observer.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 
 /// What the app does with a tap on the auto sync notification.
@@ -69,6 +73,27 @@ LocalNoticeTapAction decideLocalNoticeTap({
     unawaited(router.pushNamed(ScreenPaths.notice));
   }
   return (top: top, action: action);
+}
+
+/// Open the notice page from a control inside the app: the bell of the app bars, the "notifications" item of their
+/// menu and of the profile page's menu. Every way into the notice page goes through here or [openNoticePageForTap]
+/// and nowhere pushes it by itself (a regression test checks the sources).
+///
+/// The same as a tap on the auto sync notification: a notice page already open under the pages on top is shown again
+/// when they can all be closed quietly, otherwise one is pushed. Reading the notices one by one (notice page, a
+/// thread, the bell of the thread page, the next thread...) pushed another notice page each time and piled them up,
+/// as the notification tap did before GitHub #117 (GitHub #196).
+///
+/// The account is not checked here: the controls are only offered with one, and the notice page asks for a login
+/// itself, as before. [popups] is the observer of the app's dialogs and menus ([popupRouteObserver] by default): with
+/// one open the pages under it are never closed. A menu item runs after its menu closed, so it does not count.
+void openNoticePageInApp(BuildContext context, {PopupRouteObserver? popups}) {
+  final (:top, :action) = openNoticePageForTap(
+    GoRouter.of(context),
+    loggedIn: true,
+    hasPopup: (popups ?? popupRouteObserver).hasPopupRoute,
+  );
+  talker.debug('open notice page in app: action=${action.name} top=$top');
 }
 
 /// Location of the page on top of [router], `null` before the first route matched.

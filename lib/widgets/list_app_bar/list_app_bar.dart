@@ -10,6 +10,7 @@ import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/jump_page/cubit/jump_page_cubit.dart';
 import 'package:tsdm_client/features/jump_page/widgets/jump_page_dialog.dart';
+import 'package:tsdm_client/features/local_notice/tap.dart';
 import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
@@ -334,7 +335,7 @@ class ListAppBar extends StatelessWidget implements PreferredSizeWidget {
               case MenuActions.profile:
                 await context.pushNamed(ScreenPaths.profile);
               case MenuActions.openNoticePage:
-                await context.pushNamed(ScreenPaths.notice);
+                openNoticePageInApp(context);
               case MenuActions.openSettingsPage:
                 await context.pushNamed(ScreenPaths.rootSettings);
               case MenuActions.debugViewLog:

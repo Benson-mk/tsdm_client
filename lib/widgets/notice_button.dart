@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/local_notice/tap.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
-import 'package:tsdm_client/routes/screen_paths.dart';
 
 /// Widget to show notice state and allow user goto the notification page.
 ///
@@ -53,7 +52,7 @@ class _NoticeButtonState extends State<NoticeButton> {
     return IconButton(
       icon: noticeIcon,
       tooltip: context.t.noticePage.title,
-      onPressed: () async => context.pushNamed(ScreenPaths.notice),
+      onPressed: () => openNoticePageInApp(context),
     );
   }
 }
