@@ -36,14 +36,14 @@ final class TopicsTabSelected extends TopicsEvent with TopicsTabSelectedMappable
   final int tabIndex;
 }
 
-/// A fresh `forum.php` document was fetched, by this bloc or by the homepage.
+/// A fresh `forum.php` page was fetched, by this bloc or by the homepage.
 @MappableClass()
-final class TopicsDocumentUpdated extends TopicsEvent with TopicsDocumentUpdatedMappable {
+final class TopicsPageUpdated extends TopicsEvent with TopicsPageUpdatedMappable {
   /// Constructor.
-  const TopicsDocumentUpdated(this.document);
+  const TopicsPageUpdated(this.page);
 
-  /// The new document.
-  final uh.Document document;
+  /// The new page: the web page, or the structured answer of the forum's app API.
+  final ForumHomePage page;
 }
 
 /// Authentication status changed.

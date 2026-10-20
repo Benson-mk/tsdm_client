@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_api.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/forum/utils/group.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -30,7 +31,7 @@ class ForumRepository {
     final netClient = getIt.get<NetClientProvider>();
     // JSON mode of the forum's app API when the forum has it, the web page otherwise (see TsdmAppApi).
     final respEither = await netClient
-        .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, 'tsdmapp': 'json'}))
+        .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, ...tsdmAppJsonQueryParameters}))
         .run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
@@ -100,10 +101,25 @@ class ForumRepository {
   /// Fetch the page data on a forum group specified by group id [gid].
   ///
   /// The forum serves a group page as its board index (`CURMODULE` index), which the forum's app API answers in JSON
-  /// mode like the homepage (roadmap item 3); the web page otherwise.
-  AsyncEither<ForumGroup?> fetchForumGroup(String gid) => getIt
-      .get<NetClientProvider>()
-      .get(withTsdmAppJson('$baseUrl/forum.php?gid=$gid'))
-      .mapHttpPage(buildGroupListFromDocument)
-      .map((v) => v.firstOrNull);
+  /// mode like the homepage (roadmap item 3): an answer of plugin 2.3.0 carries it as structured fields
+  /// (`schema: 5`, the group among its categories, [forumGroupsFromApi]); any other answer is parsed as the web
+  /// page.
+  AsyncEither<ForumGroup?> fetchForumGroup(String gid) => AsyncEither(() async {
+    switch (await getIt.get<NetClientProvider>().get(withTsdmAppJson('$baseUrl/forum.php?gid=$gid')).run()) {
+      case Left(:final value):
+        return left(value);
+      case Right(:final value):
+        if (value.statusCode != HttpStatus.ok) {
+          return left(HttpRequestFailedException(value.statusCode));
+        }
+        final api = indexApiAnswerOf(value.data);
+        if (api != null) {
+          return right(forumGroupsFromApi(api).where((e) => !e.isFavorites).firstOrNull);
+        }
+        if (tsdmAppAnswerWithoutPage(value.data)) {
+          return left(HttpRequestFailedException(value.statusCode));
+        }
+        return right(buildGroupListFromDocument(tsdmAppPageDocument(value.data)).firstOrNull);
+    }
+  });
 }

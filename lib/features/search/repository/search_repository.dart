@@ -91,7 +91,9 @@ class SearchRepository with LoggerMixin {
 
     final netClient = getIt.get<NetClientProvider>();
     // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the redirect to the results keeps it.
-    final respEither = await netClient.get(_searchUrl, queryParameters: {...queryParameters, 'tsdmapp': 'json'}).run();
+    final respEither = await netClient
+        .get(_searchUrl, queryParameters: {...queryParameters, ...tsdmAppJsonQueryParameters})
+        .run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
     }

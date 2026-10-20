@@ -81,8 +81,10 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
   /// lost in it ([tsdmAppAnswerWithoutContent]). An answer without a page (the plugin failed to build it, or an empty
   /// body) is asked again as well. An answer holding the posts is never asked again, whatever its `ok`: the thread
   /// cache a guest is served is answered `unknown` with the whole post list, and asking again would read (and count a
-  /// view of) the thread twice. Thread pages, and the `findpost` redirect ending on one, are the only JSON mode pages
-  /// the forum guards.
+  /// view of) the thread twice. Nor is an answer that carries the thread as structured fields (`schema`) or the
+  /// forum's message with `login`, which plugin 2.3.0 answers without a `document` when asked with
+  /// [tsdmAppNodocQuery] ([tsdmAppAnswerHasStructuredPage]): the page is there, just not as blocks. Thread pages, and
+  /// the `findpost` redirect ending on one, are the only JSON mode pages the forum guards.
   ///
   /// Marked as public for testing.
   static bool hidesChallenge(RequestOptions options, Object? data) {
@@ -188,6 +190,7 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
     // As for the challenge retry: other interceptors add their parameters again; a sign that did not help is dropped.
     final query = Map.of(options.uri.queryParametersAll)
       ..remove('tsdmapp')
+      ..remove('nodoc')
       ..remove('mobile')
       ..remove(AntitheftDecoder.dsignKey);
     debug('antitheft: ${options.uri} answered JSON without the thread, asking the web page');

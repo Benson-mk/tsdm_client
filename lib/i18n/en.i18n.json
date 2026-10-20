@@ -455,6 +455,12 @@
     "advancedSection": {
       "title": "Advanced",
       "useProxy": "Use proxy",
+      "forumApi": {
+        "title": "Forum API",
+        "detected": "Plugin ${seen} · app expects ${expected}",
+        "notDetected": "Not detected · app expects ${expected}",
+        "olderNote": "Some pages are parsed from the web page"
+      },
       "proxySettings": {
         "title": "Proxy Settings",
         "host": "Host",

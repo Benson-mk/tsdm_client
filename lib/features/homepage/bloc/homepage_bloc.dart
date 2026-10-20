@@ -12,8 +12,8 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
-import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
 import 'package:tsdm_client/features/red_packet/models/models.dart';
@@ -28,6 +28,7 @@ import 'package:universal_html/html.dart' as uh;
 part 'homepage_bloc.mapper.dart';
 part 'homepage_event.dart';
 part 'homepage_state.dart';
+part 'homepage_state_from_api.dart';
 
 /// Bloc for the homepage of the app.
 class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
@@ -41,7 +42,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
        _authenticationRepository = authenticationRepository,
        super(
          forumHomeRepository.hasCache()
-             ? _parseStateFromDocument(
+             ? _parseState(
                  forumHomeRepository.getCache()!,
                  authenticationRepository.currentUser?.username,
                  avatarUrl: profileRepository.getCache()?.avatarUrl,
@@ -107,129 +108,25 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         .toList();
   }
 
-  /// For the following structure, filter and combine thread and its author.
-  ///
-  /// <div class="Kahrpba_threads">
-  ///   <a href="thread_url">
-  ///     thread_title
-  ///   </a>
-  ///   <a href="author_url">
-  ///     <em>author_name</em>
-  ///   </a>
-  ///
-  /// Filter out thread_url, thread_title, author_url and author_name.
-  ///
-  /// Where [element] is <div class="Kahrpba_threads"> node.
-  static PinnedThread? _filterThreadAndAuthors(uh.Element element) {
-    final allNode = element.querySelectorAll('a').toList();
-    // The "见习天使" (new members) tab lists one link per row, to the new member's space: "欢迎NAME加入~" (GitHub #155).
-    // The member is both the row and its "author", so the tile shows the avatar and name and opens the profile.
-    if (allNode.length == 1) {
-      final url = allNode.single.attributes['href'];
-      final text = allNode.single.firstEndDeepText()?.trim();
-      if (url == null || text == null || text.isEmpty || !url.contains('mod=space')) {
-        talker.info('skip pinned row with one link that is not a user space');
-        return null;
-      }
-      final name = RegExp('^欢迎(.+?)加入').firstMatch(text)?.group(1)?.trim();
-      return PinnedThread(
-        threadUrl: url,
-        threadTitle: text,
-        authorUrl: url,
-        authorName: name == null || name.isEmpty ? text : name,
-      );
-    }
-    // There should be two <a> in children.
-    if (allNode.length != 2) {
-      talker.info(
-        'skip build thread author pair: '
-        'node count is ${allNode.length}',
-      );
-      return null;
-    }
+  /// The tabs of the homepage block of the `Kahrpba` plugin read from the web page: [parsePinnedThreadGroups] of
+  /// the homepage API helpers, kept here for the tests of the page parser.
+  static List<PinnedThreadGroup> parsePinnedThreadGroups(uh.Document document) =>
+      parsePinnedThreadGroupsFromDocument(document);
 
-    final threadUrl = allNode[0].attributes['href'];
-    if (threadUrl == null) {
-      talker.info('skip incomplete thread author pair: thread url not found');
-      return null;
-    }
-
-    final threadTitle = allNode[0].firstEndDeepText();
-    if (threadTitle == null) {
-      talker.info('skip incomplete thread author pair: thread title not found');
-      return null;
-    }
-
-    final authorUrl = allNode[1].attributes['href'];
-    if (authorUrl == null) {
-      talker.info('skip incomplete thread author pair: author url not found');
-      return null;
-    }
-
-    final authorName = allNode[1].firstEndDeepText();
-    if (authorName == null) {
-      talker.info('skip incomplete thread author pair: author name not found');
-      return null;
-    }
-
-    return PinnedThread(threadUrl: threadUrl, threadTitle: threadTitle, authorUrl: authorUrl, authorName: authorName);
-  }
-
-  /// The tabs of the homepage block of the `Kahrpba` plugin (最新活动, 见习天使, ..., 发帖排行), in the order the
-  /// website shows them; tabs without any row the app can show are left out (GitHub #155).
-  static List<PinnedThreadGroup> parsePinnedThreadGroups(uh.Document document) {
-    final pinnedThreadGroupList = <PinnedThreadGroup>[];
-    final navNameList = document
-        .querySelector('td#Kahrpba_nav')
-        ?.children
-        .map((e) => e.firstEndDeepText())
-        .whereType<String>()
-        .toList();
-    final navShowList = document
-        .querySelector('td#Kahrpba_show')
-        ?.children
-        .where((e) => e.id.startsWith('Kahrpba_c'))
-        .whereType<uh.Element>()
-        .toList();
-
-    if (navNameList != null && navShowList != null && navNameList.length == navShowList.length) {
-      if (navNameList.length >= 7) {
-        navNameList
-          ..swap(4, 6)
-          ..swap(5, 6);
-      }
-      final count = navNameList.length;
-      for (var i = 0; i < count; i++) {
-        final threadList = navShowList[i]
-            .querySelectorAll('div.Kahrpba_threads')
-            .map(_filterThreadAndAuthors)
-            .whereType<PinnedThread>()
-            .toList();
-        // Kept even when empty here so the reordering below still finds every tab where it expects it; empty
-        // groups are left out after that.
-        final group = PinnedThreadGroup(title: navNameList[i], threadList: threadList);
-        pinnedThreadGroupList.add(group);
-      }
-
-      // The sort on server side is not as displayed, fix the sort to keep the
-      // same with website appearance.
-      if (pinnedThreadGroupList.length >= 7) {
-        pinnedThreadGroupList
-          ..swap(4, 5)
-          ..swap(5, 6);
-        // The rank is the last tab once reordered; marked before empty tabs are left out and the indices move.
-        pinnedThreadGroupList[6] = pinnedThreadGroupList[6].copyWith(isRank: true);
-      }
-    }
-    // A tab without any row the app can show would be an empty card as tall as the full ones (GitHub #155).
-    pinnedThreadGroupList.removeWhere((e) => e.threadList.isEmpty);
-    return pinnedThreadGroupList;
-  }
+  /// Tell the authentication repository the account [page] was served to, as `loginWithDocument` reads it from
+  /// the web page: the structured answer names it in `user`.
+  AsyncVoidEither _loginWithPage(ForumHomePage page) => switch (page) {
+    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(document),
+    ForumHomeApiPage(:final json) => _authenticationRepository.loginWithServedUser(
+      servedUserOf(json),
+      guest: indexAnswerIsGuest(json),
+    ),
+  };
 
   Future<void> _onHomepageLoadRequested(HomepageLoadRequested event, Emitter<HomepageState> emit) async {
     _pageGeneration++;
     if (_forumHomeRepository.hasCache()) {
-      final s = _parseStateFromDocument(
+      final s = _parseState(
         _forumHomeRepository.getCache()!,
         _authenticationRepository.currentUser?.username,
         avatarUrl: state.loggedUserInfo?.avatarUrl,
@@ -270,11 +167,11 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         return;
       }
     }
-    final document = respList[0] as uh.Document;
+    final page = respList[0] as ForumHomePage;
     final avatarUrl = respList[1] as String;
-    await _authenticationRepository.loginWithDocument(document).mapLeft(handle).run();
+    await _loginWithPage(page).mapLeft(handle).run();
     // Parse data and change state.
-    final s = _parseStateFromDocument(document, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
+    final s = _parseState(page, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
     emit(s);
   }
 
@@ -289,8 +186,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         debug('failed to fetch dom: $value');
         emit(state.copyWith(status: HomepageStatus.failure));
       case Right(:final value):
-        await _authenticationRepository
-            .loginWithDocument(value)
+        await _loginWithPage(value)
             .mapLeft((e) {
               handle(e);
               emit(state.copyWith(status: HomepageStatus.failure));
@@ -310,17 +206,17 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         }
         final avatarUrl = d2.unwrap().avatarUrl;
         // Parse data and change state.
-        final s = _parseStateFromDocument(value, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
+        final s = _parseState(value, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
         emit(s);
     }
   }
 
   /// Ask the forum again for today's daily red packet only (its entry on the greeting card had none).
   ///
-  /// The homepage document is fetched like a refresh does (same identity checks and daily rewards handling in
+  /// The homepage is fetched like a refresh does (same identity checks and daily rewards handling in
   /// [ForumHomeRepository]), but only [HomepageState.dailyRedPacket] and [HomepageState.formHash] change: the loaded
   /// page stays on screen, nothing else is reloaded. The answer is dropped when the page was reloaded or the account
-  /// changed meanwhile, or when the document belongs to another account.
+  /// changed meanwhile, or when the page belongs to another account.
   Future<void> _onDailyRedPacketCheckRequested(
     HomepageDailyRedPacketCheckRequested event,
     Emitter<HomepageState> emit,
@@ -348,16 +244,12 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       case Left(:final value):
         handle(value);
         emit(state.copyWith(checkingDailyRedPacket: false));
-      case Right(:final value) when parseLoggedUidFromDocument(value) != uid:
+      case Right(:final value) when value.servedUid != uid:
         debug('drop the daily red packet check for uid $uid: the page belongs to another account');
         emit(state.copyWith(checkingDailyRedPacket: false));
       case Right(:final value):
         emit(
-          state.copyWith(
-            checkingDailyRedPacket: false,
-            dailyRedPacket: parseDailyRedPacketConfig(value),
-            formHash: parseFormHash(value),
-          ),
+          state.copyWith(checkingDailyRedPacket: false, dailyRedPacket: value.dailyRedPacket, formHash: value.formHash),
         );
     }
   }
@@ -405,6 +297,14 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   @visibleForTesting
   static HomepageState parseStateForTest(uh.Document document, String? username, {String? avatarUrl}) =>
       _parseStateFromDocument(document, username, avatarUrl: avatarUrl);
+
+  /// The state of [page], for the account [username] with the avatar [avatarUrl] the app has: the web page parsed
+  /// as before ([_parseStateFromDocument]), the structured answer of the forum's app API built from its fields
+  /// ([homepageStateFromApi]).
+  static HomepageState _parseState(ForumHomePage page, String? username, {String? avatarUrl}) => switch (page) {
+    ForumHomeWebPage(:final document) => _parseStateFromDocument(document, username, avatarUrl: avatarUrl),
+    ForumHomeApiPage(:final json) => homepageStateFromApi(json, username, avatarUrl: avatarUrl),
+  };
 
   static HomepageState _parseStateFromDocument(uh.Document document, String? username, {String? avatarUrl}) {
     final swiperUrlList = <SwiperUrl>[];
@@ -480,7 +380,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       avatarUrl: loggedUserAvatar,
     );
 
-    pinnedThreadGroupList.addAll(parsePinnedThreadGroups(document));
+    pinnedThreadGroupList.addAll(parsePinnedThreadGroupsFromDocument(document));
     // Discuz! X5 renders the unread state in the page header; keep it so the badge can show up right away.
     final (unreadNoticeCount, hasUnreadMessage) = buildUnreadInfoStatus(document);
     return HomepageState(

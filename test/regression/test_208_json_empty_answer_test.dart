@@ -45,6 +45,7 @@ import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/friend/repository/friend_repository.dart';
 import 'package:tsdm_client/features/homepage/repository/guide_index_repository.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
 import 'package:tsdm_client/features/medal_center/view/medal_center_page.dart';
 import 'package:tsdm_client/features/my_thread/repository/my_thread_repository.dart';
@@ -89,6 +90,20 @@ $main
 <div id="ft" class="wp cl">Footer</div>
 </body></html>''';
 
+/// The page of a guest around [main]: no user node, `discuz_uid` 0.
+String _guestPage(String main) =>
+    '''
+<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>Synthetic - Powered by Discuz!</title>
+<script type="text/javascript">var STYLEID = '2', STATICURL = 'static/', discuz_uid = '0', cookiepre = 'x_';</script>
+</head><body>
+<div id="hd"><div class="wp"><div id="lsform">login</div></div></div>
+<div id="wp" class="wp">
+$main
+</div>
+<div id="ft" class="wp cl">Footer</div>
+</body></html>''';
+
 /// What the plugin answers a page whose blocks are [blocks]: the `discuz_uid` script of the page head and the blocks.
 Map<String, Object?> _answer(String blocks, {bool ok = true, String? error}) => {
   'ok': ok ? 1 : 0,
@@ -103,6 +118,21 @@ const _emptyBlocks = '<div id="pt" class="bm cl"></div><div id="ct" class="ct2_a
 
 /// A forum message the web page shows for a request it refuses.
 const _deniedBlocks = '<div id="messagetext" class="alert_info"><p>抱歉，您没有权限访问该内容</p></div>';
+
+/// The same refusal as Discuz! classes it by default (`alert_error`), the page [tsdmAppMessageDocument] rebuilds.
+const _deniedErrorBlocks = '<div id="messagetext" class="alert_error"><p>抱歉，您没有权限访问该内容</p></div>';
+
+/// The forum's message answered without its blocks (plugin 2.3.0 asked with `nodoc=1`): the text, `login` and the
+/// account served, nothing else.
+Map<String, Object?> _leanMessage(String message, {required bool login, required int uid}) => {
+  'ok': 0,
+  'error': 'message',
+  'api': 1,
+  'message': message,
+  'login': login ? 1 : 0,
+  'uid': uid,
+  'checknewpm': '',
+};
 
 /// The message of a guest asked to log in.
 const _loginBlocks = '<div id="messagelogin"></div><div id="messagetext" class="alert_info"><p>您需要先登录才能继续本操作</p></div>';
@@ -275,7 +305,13 @@ final List<_Caller> _callers = [
   ),
   (
     name: 'profile of another user',
-    run: (_) => _state(ProfileRepository().fetchProfile(uid: '1001'), (p) => _docView((p as ProfileWebPage).document)),
+    run: (_) => _state(
+      ProfileRepository().fetchProfile(uid: '1001'),
+      (p) => switch (p) {
+        ProfileWebPage(:final document) => _docView(document),
+        ProfileApiPage(:final json) => _apiMessageView(json),
+      },
+    ),
     pages: true,
   ),
   (
@@ -376,10 +412,28 @@ final List<_Caller> _callers = [
 /// The default client of the app is the forum's too, for the callers that look it up.
 void _serve(_Forum forum) => getIt.registerFactory<NetClientProvider>(() => _clientOf(forum));
 
+/// The homepage the way the tests compare it: its document as [_docView]; the structured answer of plugin 2.3.0 (the
+/// forum's message among the replies here) as the same four things read from its fields.
+String _homeView(ForumHomePage page) => switch (page) {
+  ForumHomeWebPage(:final document) => _docView(document),
+  ForumHomeApiPage(:final json) => _apiMessageView(json),
+};
+
+/// [_docView] of the forum's message answered as fields: the message, the login prompt, the account served, no rows.
+String _apiMessageView(Map<String, dynamic> json) => [
+  json['message'] ?? '-',
+  json['login'] == 1,
+  switch (json['uid']) {
+    final int uid when uid > 0 => uid,
+    _ => null,
+  },
+  0,
+].join('|');
+
 Future<String> _homepage() async {
   final repo = ForumHomeRepository();
   try {
-    return await _state(repo.fetchHomePage(force: true), _docView);
+    return await _state(repo.fetchHomePage(force: true), _homeView);
   } finally {
     await repo.dispose();
   }
@@ -407,6 +461,17 @@ final List<_Kind> _kinds = [
     name: 'a guest asked to log in',
     json: _jsonOf(_answer(_loginBlocks, ok: false, error: 'message')),
     web: _Html(_page(_loginBlocks)),
+  ),
+  // Plugin 2.3.0 asked with nodoc=1: the message without its blocks, rebuilt as the page the forum prints.
+  (
+    name: 'a refused request, lean',
+    json: _jsonOf(_leanMessage('抱歉，您没有权限访问该内容', login: false, uid: _uid)),
+    web: _Html(_page(_deniedErrorBlocks)),
+  ),
+  (
+    name: 'a guest asked to log in, lean',
+    json: _jsonOf(_leanMessage('您需要先登录才能继续本操作', login: true, uid: 0)),
+    web: _Html(_guestPage(_loginBlocks)),
   ),
 ];
 

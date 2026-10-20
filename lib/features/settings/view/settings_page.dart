@@ -41,6 +41,7 @@ import 'package:tsdm_client/features/settings/widgets/proxy_settings_dialog.dart
 import 'package:tsdm_client/features/settings/widgets/select_thread_floor_interaction_mode_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/thread_content_scale_dialog.dart';
 import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -779,7 +780,32 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               barrierDismissible: false,
             ),
           ),
+        _buildForumApiTile(context),
       ],
+    );
+  }
+
+  /// The forum's app API: the plugin version the forum last named ([TsdmAppApi.pluginInfo], from a `status` or
+  /// `notify` answer of this run; nothing is asked here) beside the version this app was written against
+  /// ([expectedTsdmAppVersion]), and a line telling that some pages are parsed from the web page when the forum's is
+  /// older.
+  Widget _buildForumApiTile(BuildContext context) {
+    final tr = context.t.settingsPage.advancedSection.forumApi;
+    return ValueListenableBuilder<TsdmAppPluginInfo?>(
+      valueListenable: TsdmAppApi.pluginInfo,
+      builder: (context, info, _) {
+        final older = info?.olderThanExpected ?? false;
+        final line = info == null
+            ? tr.notDetected(expected: expectedTsdmAppVersion)
+            : tr.detected(seen: info.version, expected: expectedTsdmAppVersion);
+        return SectionListTile(
+          key: const ValueKey('settings-forum-api'),
+          leading: const Icon(Icons.api_outlined),
+          title: Text(tr.title),
+          subtitle: Text(older ? '$line\n${tr.olderNote}' : line),
+          isThreeLine: older,
+        );
+      },
     );
   }
 

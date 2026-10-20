@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' if (dart.library.js) 'package:web/web.dart';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
@@ -30,6 +31,11 @@ import 'package:universal_html/parsing.dart';
 /// Plugin 2.0.0 answers the forum page in the JSON mode with every field the app reads as structured data
 /// (`schema: 2`): the app builds the page from them and never parses the `document` of such an answer
 /// (`forumPageFromApi`); an older plugin's answer, without `schema`, is parsed from its `document` as before.
+///
+/// Plugin 2.3.0 answers a page asked with `nodoc=1` ([tsdmAppNodocQuery], sent with every JSON mode request) without
+/// the `document` and `head` blocks when the answer carries the page as structured fields (`schema`) or is the forum's
+/// message: an answer with a `schema` is a page whether or not it carries the blocks ([tsdmAppAnswerHasStructuredPage]).
+/// The plugin version the last `status` or `notify` answer named is kept in [pluginInfo], for the settings page.
 abstract final class TsdmAppApi {
   /// Url of an action.
   static String url(String action, [Map<String, String> query = const {}]) => Uri.parse(
@@ -44,8 +50,40 @@ abstract final class TsdmAppApi {
   /// Whether the last answer said the forum has no API (for tests).
   static bool get knownUnavailable => _unavailableUntil != null && DateTime.now().isBefore(_unavailableUntil!);
 
-  /// Forget a missing plugin (for tests, or after the user asks to check again).
-  static void reset() => _unavailableUntil = null;
+  /// What the forum's plugin last told about itself (its `version`, and since 2.3.0 whether it takes `nodoc`), null
+  /// until an answer of an action named it (`status` and `notify` do, every plugin version). Kept for this run only:
+  /// the settings page shows it, without asking the forum itself; the notification poll asks `notify` soon after
+  /// the app starts with a logged in account.
+  static final ValueNotifier<TsdmAppPluginInfo?> pluginInfo = ValueNotifier(null);
+
+  /// Forget a missing plugin, and what the plugin told about itself (for tests, or after the user asks to check again).
+  static void reset() {
+    _unavailableUntil = null;
+    pluginInfo.value = null;
+  }
+
+  /// Keep what an answer [json] of an action tells about the plugin ([pluginInfo]): an answer without a `version`
+  /// (an older action's, or a message such as `login`) tells nothing and changes nothing. Only `status` names
+  /// `nodoc`, and not every answer names `api`: what is known of the version holds through the answers of the same
+  /// version that leave them out.
+  static void _notePluginInfo(Map<String, dynamic> json) {
+    var info = TsdmAppPluginInfo.fromAnswer(json);
+    if (info == null) {
+      return;
+    }
+    final known = pluginInfo.value;
+    if (known != null && known.version == info.version) {
+      // The same plugin: what an answer does not name (`api`, `nodoc`) stays as known.
+      info = TsdmAppPluginInfo(
+        version: info.version,
+        api: info.api ?? known.api,
+        nodoc: json.containsKey('nodoc') ? info.nodoc : known.nodoc,
+      );
+    }
+    if (info != known) {
+      pluginInfo.value = info;
+    }
+  }
 
   /// Behave as on a forum without the plugin for [unavailableFor] (for tests of the web page paths).
   static void markUnavailable() => _unavailableUntil = DateTime.now().add(unavailableFor);
@@ -124,6 +162,7 @@ abstract final class TsdmAppApi {
           // An older plugin without this action: not missing, just not for this question.
           return null;
         }
+        _notePluginInfo(decoded);
         return decoded;
     }
   }
@@ -154,6 +193,7 @@ abstract final class TsdmAppApi {
           talker.debug('tsdmapp api $action (post) not available: ${decoded['error']}');
           return null;
         }
+        _notePluginInfo(decoded);
         return decoded;
     }
   }
@@ -173,6 +213,74 @@ abstract final class TsdmAppApi {
       return null;
     }
   }
+}
+
+/// The version of the forum's plugin this app was written against: every page it builds from structured fields, and
+/// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
+/// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
+/// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
+const expectedTsdmAppVersion = '2.3.0';
+
+/// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
+/// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].
+@immutable
+final class TsdmAppPluginInfo {
+  /// Constructor.
+  const TsdmAppPluginInfo({required this.version, required this.api, required this.nodoc});
+
+  /// The info of an action answer [json], null when it names no `version`.
+  static TsdmAppPluginInfo? fromAnswer(Map<String, dynamic> json) {
+    final version = json['version'];
+    if (version is! String || version.isEmpty) {
+      return null;
+    }
+    return TsdmAppPluginInfo(
+      version: version,
+      api: (json['api'] as num?)?.toInt(),
+      nodoc: json['nodoc'] == 1 || json['nodoc'] == true,
+    );
+  }
+
+  /// The plugin's version, as it names it (`2.3.0`).
+  final String version;
+
+  /// The `api` of the answer (raised when the meaning of a field changes), null when the answer has none.
+  final int? api;
+
+  /// Whether the plugin said it takes `nodoc=1` (`nodoc: 1` in `status`, plugin 2.3.0). An answer without the field
+  /// (an older plugin, `notify`) leaves it false: it tells nothing about the parameter, which the plugin ignores.
+  final bool nodoc;
+
+  /// Whether [version] is older than [expectedTsdmAppVersion]: some pages are then parsed from the web page.
+  bool get olderThanExpected => compareTsdmAppVersions(version, expectedTsdmAppVersion) < 0;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TsdmAppPluginInfo && other.version == version && other.api == api && other.nodoc == nodoc;
+
+  @override
+  int get hashCode => Object.hash(version, api, nodoc);
+
+  @override
+  String toString() => 'TsdmAppPluginInfo(version: $version, api: $api, nodoc: $nodoc)';
+}
+
+/// Compare two dotted versions [a] and [b] (`2.3.0`, `2.10.1`) part by part as numbers, a missing part as 0, a part
+/// that is not a number (`2.3.0-beta`: `0-beta`) by its leading digits: negative when [a] is older, 0 when they are
+/// the same, positive when [a] is newer.
+int compareTsdmAppVersions(String a, String b) {
+  int partOf(List<String> parts, int i) =>
+      i < parts.length ? int.tryParse(RegExp(r'^\d*').firstMatch(parts[i].trim())?.group(0) ?? '') ?? 0 : 0;
+  final pa = a.split('.');
+  final pb = b.split('.');
+  final length = pa.length > pb.length ? pa.length : pb.length;
+  for (var i = 0; i < length; i++) {
+    final diff = partOf(pa, i) - partOf(pb, i);
+    if (diff != 0) {
+      return diff;
+    }
+  }
+  return 0;
 }
 
 /// What `notify` tells about the time since the last fetch.
@@ -290,9 +398,27 @@ bool notifyListsUnreadNotice(Map<String, dynamic> json) {
 /// sidebar. Without the plugin (or with it switched off) the parameter is ignored and the page comes back as usual.
 const tsdmAppJsonQuery = 'tsdmapp=json';
 
-/// Add [tsdmAppJsonQuery] to [url]; an AJAX url (`inajax=1`, answered as an XML fragment) is left as it is.
+/// Query parameter asking the plugin for a lean JSON answer (plugin 2.3.0), sent together with [tsdmAppJsonQuery]
+/// on every page asked in the JSON mode.
 ///
-/// The parameter goes before a `#fragment`, which is never sent to the server: the chat history url ends with `#last`
+/// A page the plugin answers as structured fields (`schema`: the forum page, the thread page, the profile, the
+/// homepage) then comes without the `document` and `head` blocks, which the app never reads of such an answer. The
+/// forum's own message (`error: message`, with `message`, `login` and `uid`) comes without them too, whatever the
+/// page: the pages built from fields read the message from them, and for the pages the app still parses from their
+/// blocks (the private messages, the favorites, the search…) [tsdmAppPageDocument] rebuilds the message page the
+/// forum would have printed, so their parsers read it as before. The `unknown` answers (the antitheft challenge,
+/// the thread cache a guest is served) keep their blocks. An older plugin ignores the parameter and answers the
+/// blocks as before. See [tsdmAppAnswerHasStructuredPage] for what the app takes for a page without them.
+const tsdmAppNodocQuery = 'nodoc=1';
+
+/// The query of the JSON mode as parameters ([tsdmAppJsonQuery] and [tsdmAppNodocQuery]), for a page whose url is
+/// built from a map of parameters.
+const tsdmAppJsonQueryParameters = {'tsdmapp': 'json', 'nodoc': '1'};
+
+/// Add [tsdmAppJsonQuery] and [tsdmAppNodocQuery] to [url]; an AJAX url (`inajax=1`, answered as an XML fragment) is
+/// left as it is, as is one already in the JSON mode.
+///
+/// The parameters go before a `#fragment`, which is never sent to the server: the chat history url ends with `#last`
 /// and so was always answered the web page (roadmap item 3).
 String withTsdmAppJson(String url) {
   final hash = url.indexOf('#');
@@ -301,11 +427,15 @@ String withTsdmAppJson(String url) {
     return url;
   }
   final separator = !base.contains('?') ? '?' : (base.endsWith('?') || base.endsWith('&') ? '' : '&');
-  return '$base$separator$tsdmAppJsonQuery${hash < 0 ? '' : url.substring(hash)}';
+  return '$base$separator$tsdmAppJsonQuery&$tsdmAppNodocQuery${hash < 0 ? '' : url.substring(hash)}';
 }
 
 /// The document to parse from a forum page answer [data]: the web page itself, or the page rebuilt from the blocks of
 /// a JSON answer. A thread answer also gets the `<link>` to the thread the thread parser reads the tid from.
+///
+/// The forum's message answered without its blocks (`error: message` asked with [tsdmAppNodocQuery], plugin 2.3.0)
+/// is rebuilt as the 提示信息 page the forum prints and the 2.2.x plugin cut ([tsdmAppMessageDocument]): the parsers
+/// that read the message and the login prompt from the page keep reading them.
 uh.Document tsdmAppPageDocument(Object? data) {
   final Object? json;
   if (data is Map<String, dynamic>) {
@@ -318,6 +448,9 @@ uh.Document tsdmAppPageDocument(Object? data) {
     }
   } else {
     return parseHtmlDocument(data is String ? data : '');
+  }
+  if (json is Map<String, dynamic> && json['document'] is! String && json['ok'] == 0 && json['error'] == 'message') {
+    return tsdmAppMessageDocument(json);
   }
   if (json is! Map<String, dynamic> || json['document'] is! String) {
     return parseHtmlDocument(data is String ? data : '');
@@ -333,6 +466,26 @@ uh.Document tsdmAppPageDocument(Object? data) {
   );
 }
 
+/// The 提示信息 page of the forum's message answer [json] (`ok` 0, `error: message`), as the forum prints it and the
+/// 2.2.x plugin answered it in `document` and `head`: the message in `div#messagetext > p` (`alert_info` for the
+/// login prompt, `alert_error` for a refusal, as Discuz! classes them), `div#messagelogin` when the forum asks to log
+/// in (`login` 1), and the `discuz_uid` of the account the page was served to (`uid`, none for a guest) in the head
+/// script the 2.2.x `head` carried. The parsers of the pages read from their blocks tell the message, the prompt and
+/// the account from these, as they did.
+uh.Document tsdmAppMessageDocument(Map<dynamic, dynamic> json) {
+  final message = json['message'];
+  final login = json['login'] == 1;
+  final uid = json['uid'];
+  final head = uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
+  final text = htmlEscape.convert(message is String ? message : '');
+  return parseHtmlDocument(
+    '<html><head>$head</head><body><div id="wp" class="wp"><div id="ct" class="wp cl"> '
+    '${login ? '<div id="messagelogin"></div> ' : ''}'
+    '<div id="messagetext" class="${login ? 'alert_info' : 'alert_error'}"><p>$text</p></div> '
+    '</div></div></body></html>',
+  );
+}
+
 /// Whether a forum page answer [data] has no page at all: a JSON answer the plugin failed to build
 /// (`{"ok":0,"error":"internal"}`, without the page's blocks), an empty JSON body (the request died before the plugin
 /// printed its answer; dio reads an empty `application/json` body as null), or a blank one served as a web page (a PHP
@@ -342,14 +495,29 @@ uh.Document tsdmAppPageDocument(Object? data) {
 /// which then finds no account on it; a list page, which then shows an empty list) treats it as a failed request: every
 /// page asked in the JSON mode does, through [TsdmAppPageHttpExt.mapHttpPage] or [fetchTsdmAppPageHtml] where it does
 /// not check by itself.
+///
+/// A JSON answer that carries the page as structured fields, or is the forum's message with `login`, is a page
+/// whether or not it carries the blocks ([tsdmAppAnswerHasStructuredPage]): asked with [tsdmAppNodocQuery], plugin
+/// 2.3.0 leaves them out of such an answer.
 bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
   null => true,
   final String text when text.trim().isEmpty => true,
   _ => switch (_tsdmAppAnswerJson(data)) {
-    final Map<dynamic, dynamic> json => json['document'] is! String,
+    final Map<dynamic, dynamic> json => json['document'] is! String && !tsdmAppAnswerHasStructuredPage(json),
     _ => false,
   },
 };
+
+/// Whether a JSON answer [json] of a forum page carries the page without its `document`: as structured fields (a
+/// numeric `schema`: the forum page since plugin 2.0.0, the thread page since 2.1.0, the profile since 2.2.0, the
+/// homepage since 2.3.0), or as the forum's own message with `login` telling a guest apart (`ok` 0, `error: message`,
+/// plugin 2.2.0). Asked with [tsdmAppNodocQuery], plugin 2.3.0 leaves the `document` and `head` out of these; the
+/// app reads their fields instead and never misses the blocks.
+///
+/// An answer without `schema` and without `login` (an older plugin's, the `unknown` of the antitheft challenge or
+/// the thread cache, a failed build) is read from its `document` as before, and has no page without one.
+bool tsdmAppAnswerHasStructuredPage(Map<dynamic, dynamic> json) =>
+    json['schema'] is num || (json['ok'] == 0 && json['error'] == 'message' && json['login'] is int);
 
 /// Whether a thread page answer [data] holds neither the thread nor a forum message: no page at all
 /// ([tsdmAppAnswerWithoutPage]), or a JSON answer that is not `ok` 1, not a forum message (`error: message`: no
@@ -372,7 +540,10 @@ bool tsdmAppAnswerWithoutContent(Object? data) {
   if (json == null || json['ok'] == 1 || json['error'] == 'message') {
     return false;
   }
-  return parseHtmlDocument(json['document'] as String).querySelector('div#postlist, div[id^="post_"]') == null;
+  // An `unknown` answer always carries its document (the challenge, the thread cache); one without is a page built
+  // from nothing, which holds no post either.
+  final document = json['document'];
+  return document is! String || parseHtmlDocument(document).querySelector('div#postlist, div[id^="post_"]') == null;
 }
 
 /// The JSON object of a forum page answer [data], null when it is a web page (or not a JSON object).
@@ -443,10 +614,10 @@ Future<String> fetchTsdmAppPageHtml(NetClientProvider client, String url) async 
 /// The answer of the forum page [url] asked of [client] in the JSON mode ([withTsdmAppJson]), as the forum gave it:
 /// the web page, or the JSON answer (for the callers that read its structured fields when it has them, and its
 /// page otherwise, [tsdmAppPageHtml]). An answer that carries the page as structured fields (`schema`) is a page
-/// whether or not it carries the blocks too; otherwise throws as [fetchTsdmAppPageHtml] throws.
+/// whether or not it carries the blocks too ([tsdmAppAnswerHasStructuredPage]); otherwise throws as
+/// [fetchTsdmAppPageHtml] throws.
 Future<Object?> fetchTsdmAppPageAnswer(NetClientProvider client, String url) async =>
     switch (await client.get(withTsdmAppJson(url)).run()) {
-      Right(:final value) when tsdmAppAnswerJson(value.data)?['schema'] is num => value.data,
       Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
         value.statusCode,
       ),

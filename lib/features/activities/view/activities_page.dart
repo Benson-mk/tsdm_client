@@ -7,6 +7,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/activities/models/forum_activity.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/utils/retry_button.dart';
@@ -43,19 +44,22 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       _failed = false;
     });
     try {
-      final uh.Document document;
+      final List<ForumActivity> activities;
       if (widget.loadDocument case final loader?) {
-        document = await loader();
+        activities = parseForumActivities(await loader());
       } else {
+        // The shared homepage: the web page parsed as before, or the structured answer of the forum's app API
+        // (plugin 2.3.0), whose forum descriptions hold the same links.
         final result = await context.read<ForumHomeRepository>().fetchHomePage(force: true).run();
-        document = switch (result) {
-          Right(:final value) => value,
+        activities = switch (result) {
+          Right(value: ForumHomeWebPage(:final document)) => parseForumActivities(document),
+          Right(value: ForumHomeApiPage(:final json)) => parseForumActivitiesFromApi(json),
           Left(:final value) => throw value,
         };
       }
       if (!mounted) return;
       setState(() {
-        _activities = parseForumActivities(document);
+        _activities = activities;
         _loading = false;
       });
     } on Exception {

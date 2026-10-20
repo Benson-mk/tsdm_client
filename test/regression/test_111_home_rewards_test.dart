@@ -9,6 +9,7 @@ import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/points/stream.dart';
 import 'package:tsdm_client/features/red_packet/utils/parse_red_packet.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -146,7 +147,8 @@ void main() {
     final result = await home.fetchHomePage().run();
     expect(result.isRight(), isTrue);
     expect(await reward.timeout(const Duration(seconds: 3)), '0D0D2D0D0D0D0D0D0D1000');
-    result.fold((_) => fail('homepage should remain available'), (doc) {
+    result.fold((_) => fail('homepage should remain available'), (page) {
+      final doc = (page as ForumHomeWebPage).document;
       expect(doc.querySelector('#balance')?.text, '17');
       expect(parseDailyRedPacketConfig(doc), isNull);
     });
@@ -160,7 +162,7 @@ void main() {
 
   test('default-off leaves manual red packet entry and never posts a claim', () async {
     final result = await home.fetchHomePage().run();
-    result.fold((_) => fail('homepage failed'), (doc) => expect(parseDailyRedPacketConfig(doc), isNotNull));
+    result.fold((_) => fail('homepage failed'), (page) => expect(page.dailyRedPacket, isNotNull));
     expect(adapter.requests.where((e) => e.$2 == 'POST'), isEmpty);
   });
 
@@ -171,7 +173,7 @@ void main() {
       ..claimFails = true;
     final result = await home.fetchHomePage().run();
     expect(result.isRight(), isTrue);
-    result.fold((_) => fail('homepage failed'), (doc) => expect(parseDailyRedPacketConfig(doc), isNotNull));
+    result.fold((_) => fail('homepage failed'), (page) => expect(page.dailyRedPacket, isNotNull));
     expect(adapter.homeCalls, 1);
   });
 

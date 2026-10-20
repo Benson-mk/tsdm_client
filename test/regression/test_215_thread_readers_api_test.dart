@@ -670,9 +670,10 @@ void main() {
         await fails(withDocument(guest, '<div id="messagelogin">$text</div>')),
         PostReportProblem.notLoggedIn,
       );
-      // Without its document (the fixtures dropped it) nothing tells the account: not understood, as a page without
-      // one is.
-      expect(await fails(_raw('thread_v3_denied_guest.json')), PostReportProblem.unsupported);
+      // Without its document (the fixtures dropped it; plugin 2.3.0 asked with nodoc=1) the message page is rebuilt
+      // from the fields (tsdmAppPageDocument, test_217): the guest's prompt is told; a message of a plugin that
+      // names no account is not understood, as a page without one is.
+      expect(await fails(_raw('thread_v3_denied_guest.json')), PostReportProblem.notLoggedIn);
       expect(await fails(jsonEncode(_memberMessage)), PostReportProblem.unsupported);
     });
 

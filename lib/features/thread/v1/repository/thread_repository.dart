@@ -60,13 +60,21 @@ class ThreadRepository {
         reverseOrder: reverseOrder,
         exactOrder: exactOrder,
       ).flatMap(
-        (data) => AsyncEither(
-          () async => tsdmAppAnswerWithoutPage(data)
-              // The antitheft interceptor asked the web page again for an answer without a page; what is still one here
-              // is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage).
-              ? left(HttpRequestFailedException(HttpStatus.ok))
-              : right(tsdmAppPageDocument(data)),
-        ),
+        (data) => AsyncEither(() async {
+          // The antitheft interceptor asked the web page again for an answer without a page; what is still one here
+          // is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage).
+          if (tsdmAppAnswerWithoutPage(data)) {
+            return left(HttpRequestFailedException(HttpStatus.ok));
+          }
+          // A structured answer without its blocks (lean, plugin 2.3.0) has no document to give: the thread page
+          // shown to the user is built from its fields by fetchThreadPage instead. The forum's message is rebuilt
+          // as the page (tsdmAppPageDocument).
+          final json = tsdmAppAnswerJson(data);
+          if (json != null && json['schema'] is num && json['document'] is! String) {
+            return left(HttpRequestFailedException(HttpStatus.ok));
+          }
+          return right(tsdmAppPageDocument(data));
+        }),
       );
 
   /// Fetch the thread page with [tid] on page [pageNumber], built.

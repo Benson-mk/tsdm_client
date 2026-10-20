@@ -455,6 +455,12 @@
     "advancedSection": {
       "title": "高级",
       "useProxy": "启用代理",
+      "forumApi": {
+        "title": "论坛接口",
+        "detected": "插件 ${seen} · 应用预期 ${expected}",
+        "notDetected": "未检测到 · 应用预期 ${expected}",
+        "olderNote": "部分页面将按网页解析"
+      },
       "proxySettings": {
         "title": "代理设置",
         "host": "地址",

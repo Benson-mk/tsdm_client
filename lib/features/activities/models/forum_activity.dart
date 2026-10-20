@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:tsdm_client/constants/url.dart';
 import 'package:universal_html/html.dart' as uh;
+import 'package:universal_html/parsing.dart';
 
 /// An activity link published in the forum homepage description.
 final class ForumActivity {
@@ -47,4 +50,30 @@ List<ForumActivity> parseForumActivities(uh.Document document) {
     }
   }
   return List.unmodifiable(links);
+}
+
+/// [parseForumActivities] for the homepage answered by the forum's app API as structured fields (plugin 2.3.0,
+/// `schema: 5`): the description of 活动专区 is the `description` of that forum among the categories (the html the
+/// page prints in its `p.xg2`), read with the same rules by putting it where the page has it. Empty when the forum
+/// is not listed or has no description.
+List<ForumActivity> parseForumActivitiesFromApi(Map<String, dynamic> json) {
+  final categories = json['categories'];
+  if (categories is! List) return const [];
+  for (final category in categories.whereType<Map<String, dynamic>>()) {
+    final forums = category['forums'];
+    if (forums is! List) continue;
+    for (final forum in forums.whereType<Map<String, dynamic>>()) {
+      final name = forum['name'];
+      if (name is! String || (name.trim() != '活动专区' && name.trim() != '活動專區')) continue;
+      final description = forum['description'];
+      if (description is! String || description.trim().isEmpty) return const [];
+      return parseForumActivities(
+        parseHtmlDocument(
+          '<html><body><div><h2><a>${htmlEscape.convert(name.trim())}</a></h2><p class="xg2">$description</p></div> '
+          '</body></html>',
+        ),
+      );
+    }
+  }
+  return const [];
 }
