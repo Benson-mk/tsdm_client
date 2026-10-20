@@ -6,8 +6,8 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/latest_thread/bloc/latest_thread_bloc.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// Serves the captured Discuz! X5 guide page instead of the network.
@@ -15,9 +15,9 @@ class _FixtureRepository extends LatestThreadRepository {
   final requested = <String>[];
 
   @override
-  AsyncEither<uh.Document> fetchDocument(String url) {
+  AsyncEither<TsdmAppPageAnswer> fetchPage(String url) {
     requested.add(url);
-    return AsyncEither.of(parseHtmlDocument(File('test/data/guide_new_x5.html').readAsStringSync()));
+    return AsyncEither.of(TsdmAppWebPage(parseHtmlDocument(File('test/data/guide_new_x5.html').readAsStringSync())));
   }
 }
 

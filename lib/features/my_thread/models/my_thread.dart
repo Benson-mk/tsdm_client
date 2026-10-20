@@ -18,6 +18,36 @@ class MyThread with MyThreadMappable {
     required this.stateSet,
   });
 
+  /// Build a [MyThread] from a thread row [t] of a structured "my threads" answer of the forum's app API (plugin
+  /// 2.4.0, `schema: 9`, see `myThreadsFromApi`).
+  ///
+  /// The row is the shared row shape of the list pages, read as [NormalThread.fromApi] reads it (a moved thread is
+  /// the row of its target, as the page links it; the times are the forum's unix seconds): the forum from `fid` and
+  /// `forum`, the last replier by name (`lastposter`: the list pages name no uid for them, as the web page links
+  /// them by name) and `lastpost`, the states from the flags (closed, digest, attachment, poll, reward, the sticky
+  /// level) with a draft told by its `displayorder` (-4, the page's "草稿箱" mark). A row that is one reply
+  /// (`pid` > 0: the reply page lists one row per reply, as [buildReplyListFromTr] builds them) links the reply
+  /// (`goto=findpost`) and quotes it (`summary`).
+  factory MyThread.fromApi(Map<String, dynamic> t) {
+    final fid = tsdmAppInt(t['fid']);
+    final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0);
+    final pid = tsdmAppInt(t['pid']);
+    final summary = tsdmAppText(t['summary']);
+    return MyThread(
+      title: thread.title,
+      url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
+      threadID: thread.threadID,
+      forumName: tsdmAppText(t['forum']),
+      forumUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+      replyCount: thread.replyCount,
+      viewCount: thread.viewCount,
+      latestReplyAuthor: thread.latestReplyAuthor,
+      latestReplyTime: thread.latestReplyTime,
+      quotedMessage: summary.isEmpty ? null : summary,
+      stateSet: {...thread.stateSet, if (tsdmAppInt(t['displayorder']) == -4) ThreadStateModel.draft},
+    );
+  }
+
   /// Thread title.
   final String title;
 

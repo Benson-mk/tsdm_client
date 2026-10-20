@@ -36,6 +36,7 @@ import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/view/thread_page.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -52,7 +53,6 @@ import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/reply_bar/reply_bar.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// Widget level regressions of the local block and the forum notice rules, on the real pages and cards:
@@ -226,9 +226,9 @@ final class _FixtureRepository extends LatestThreadRepository {
   final urls = <String>[];
 
   @override
-  AsyncEither<uh.Document> fetchDocument(String url) {
+  AsyncEither<TsdmAppPageAnswer> fetchPage(String url) {
     urls.add(url);
-    return AsyncEither.of(parseHtmlDocument(File('test/data/$name').readAsStringSync()));
+    return AsyncEither.of(TsdmAppWebPage(parseHtmlDocument(File('test/data/$name').readAsStringSync())));
   }
 }
 

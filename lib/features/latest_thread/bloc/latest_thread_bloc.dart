@@ -4,6 +4,8 @@ import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/latest_thread/models/latest_thread.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
+import 'package:tsdm_client/features/latest_thread/utils/guide_page_api.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
@@ -33,8 +35,9 @@ final class LatestThreadBloc extends Bloc<LatestThreadEvent, LatestThreadState> 
     if (state.nextPageUrl == null) {
       return;
     }
+    final url = state.nextPageUrl!;
     await _latestThreadRepository
-        .fetchDocument(state.nextPageUrl!)
+        .fetchPage(url)
         .match(
           (e) {
             handle(e);
@@ -42,7 +45,7 @@ final class LatestThreadBloc extends Bloc<LatestThreadEvent, LatestThreadState> 
             emit(state.copyWith(status: LatestThreadStatus.failed));
           },
           (v) {
-            final (threadList, nextPageUrl) = _parseThreadList(v);
+            final (threadList, nextPageUrl) = _parsePage(v, url);
             emit(
               state.copyWith(
                 status: LatestThreadStatus.success,
@@ -59,7 +62,7 @@ final class LatestThreadBloc extends Bloc<LatestThreadEvent, LatestThreadState> 
   Future<void> _onLatestThreadRefreshRequested(LatestThreadRefreshRequested event, LatestThreadEmitter emit) async {
     emit(state.copyWith(status: LatestThreadStatus.loading, threadList: []));
     await _latestThreadRepository
-        .fetchDocument(event.url)
+        .fetchPage(event.url)
         .match(
           (e) {
             handle(e);
@@ -67,7 +70,7 @@ final class LatestThreadBloc extends Bloc<LatestThreadEvent, LatestThreadState> 
             emit(state.copyWith(status: LatestThreadStatus.failed));
           },
           (v) {
-            final (threadList, nextPageUrl) = _parseThreadList(v);
+            final (threadList, nextPageUrl) = _parsePage(v, event.url);
             emit(
               state.copyWith(
                 status: LatestThreadStatus.success,
@@ -80,6 +83,14 @@ final class LatestThreadBloc extends Bloc<LatestThreadEvent, LatestThreadState> 
         )
         .run();
   }
+
+  /// The thread list and the next page url of the page [answer] fetched from [url]: the structured answer of the
+  /// forum's app API built from its fields (`latestThreadsFromApi`), the web page parsed as before
+  /// ([_parseThreadList]).
+  (List<LatestThread>?, String? nextPageUrl) _parsePage(TsdmAppPageAnswer answer, String url) => switch (answer) {
+    TsdmAppWebPage(:final document) => _parseThreadList(document),
+    TsdmAppStructuredPage(:final json) => latestThreadsFromApi(json, url),
+  };
 
   /// Parse thread list and next page url from [document].
   ///

@@ -32,6 +32,11 @@ import 'package:universal_html/parsing.dart';
 /// (`schema: 2`): the app builds the page from them and never parses the `document` of such an answer
 /// (`forumPageFromApi`); an older plugin's answer, without `schema`, is parsed from its `document` as before.
 ///
+/// Plugin 2.4.0 answers the search results (`schema: 6`), the guide lists (`schema: 7`) and the "my threads" pages
+/// (`schema: 9`) as structured fields too, one row shape for the three (`searchApiAnswerOf`, `guideApiAnswerOf`,
+/// `myThreadApiAnswerOf`); their readers take such an answer as a [TsdmAppStructuredPage] and the web page (or an
+/// older plugin's answer) as a [TsdmAppWebPage] ([TsdmAppPageHttpExt.mapHttpPageAnswer]).
+///
 /// Plugin 2.3.0 answers a page asked with `nodoc=1` ([tsdmAppNodocQuery], sent with every JSON mode request) without
 /// the `document` and `head` blocks when the answer carries the page as structured fields (`schema`) or is the forum's
 /// message: an answer with a `schema` is a page whether or not it carries the blocks ([tsdmAppAnswerHasStructuredPage]).
@@ -219,7 +224,7 @@ abstract final class TsdmAppApi {
 /// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
 /// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
 /// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
-const expectedTsdmAppVersion = '2.3.0';
+const expectedTsdmAppVersion = '2.4.0';
 
 /// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
 /// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].
@@ -510,9 +515,10 @@ bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
 
 /// Whether a JSON answer [json] of a forum page carries the page without its `document`: as structured fields (a
 /// numeric `schema`: the forum page since plugin 2.0.0, the thread page since 2.1.0, the profile since 2.2.0, the
-/// homepage since 2.3.0), or as the forum's own message with `login` telling a guest apart (`ok` 0, `error: message`,
-/// plugin 2.2.0). Asked with [tsdmAppNodocQuery], plugin 2.3.0 leaves the `document` and `head` out of these; the
-/// app reads their fields instead and never misses the blocks.
+/// homepage since 2.3.0, the search results, the guide lists and the "my threads" pages since 2.4.0), or as the
+/// forum's own message with `login` telling a guest apart (`ok` 0, `error: message`, plugin 2.2.0). Asked with
+/// [tsdmAppNodocQuery], plugin 2.3.0 leaves the `document` and `head` out of these; the app reads their fields
+/// instead and never misses the blocks.
 ///
 /// An answer without `schema` and without `login` (an older plugin's, the `unknown` of the antitheft challenge or
 /// the thread cache, a failed build) is read from its `document` as before, and has no page without one.
@@ -583,26 +589,107 @@ String tsdmAppPageHtml(Object? data) {
 }
 
 /// [FPHttpExt.mapHttp] for a forum page asked in the JSON mode ([withTsdmAppJson]), given the document of the answer
-/// ([tsdmAppPageDocument]).
+/// ([tsdmAppPageDocument], [mapHttpPage]) or, for a page the forum may answer as structured fields, the answer the
+/// way its reader takes it ([mapHttpPageAnswer]).
 ///
 /// An answer without a page ([tsdmAppAnswerWithoutPage]) is a failed request like a bad status code is. Taken as the
 /// empty document it would be, the page would show an empty list (or ask the user to log in) for a forum that merely
 /// failed to answer. A JSON answer that carries a page is parsed as ever, whether its list is empty or its `ok` is 0
 /// (a forum message such as "no permission" is a page too).
 extension TsdmAppPageHttpExt on AsyncEither<Response<dynamic>> {
-  /// * Return error if any.
-  /// * Return `HttpRequestFailedException` when status code is not 200, or the answer has no page.
-  /// * Return result called on [onPage] when ok.
-  AsyncEither<T> mapHttpPage<T>(T Function(uh.Document document) onPage) => AsyncEither(
+  /// The answer when it is a page: `HttpRequestFailedException` when the status code is not 200, or the answer has
+  /// no page.
+  AsyncEither<Response<dynamic>> _page() => AsyncEither(
     () async => switch (await run()) {
       Left(:final value) => left(value),
       Right(:final value) when value.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(value.data) => left(
         HttpRequestFailedException(value.statusCode),
       ),
-      Right(:final value) => right(onPage(tsdmAppPageDocument(value.data))),
+      Right(:final value) => right(value),
     },
   );
+
+  /// * Return error if any.
+  /// * Return `HttpRequestFailedException` when status code is not 200, or the answer has no page.
+  /// * Return result called on [onPage] when ok.
+  AsyncEither<T> mapHttpPage<T>(T Function(uh.Document document) onPage) =>
+      _page().map((response) => onPage(tsdmAppPageDocument(response.data)));
+
+  /// [mapHttpPage] for a page the forum may answer as structured fields: the page's `…ApiAnswerOf`
+  /// (`searchApiAnswerOf`, `guideApiAnswerOf`, `myThreadApiAnswerOf`, [structuredOf]) tells the answers to build
+  /// from their fields ([TsdmAppStructuredPage]), every other page is the document to parse as before
+  /// ([TsdmAppWebPage]).
+  ///
+  /// * Return error if any.
+  /// * Return `HttpRequestFailedException` when status code is not 200, or the answer has no page.
+  /// * Return the structured answer when [structuredOf] takes it, else the document of the answer.
+  AsyncEither<TsdmAppPageAnswer> mapHttpPageAnswer(Map<String, dynamic>? Function(Object? data) structuredOf) =>
+      _page().map(
+        (response) => switch (structuredOf(response.data)) {
+          final Map<String, dynamic> json => TsdmAppStructuredPage(json),
+          null => TsdmAppWebPage(tsdmAppPageDocument(response.data)),
+        },
+      );
 }
+
+/// A forum page asked in the JSON mode, the way the readers of the list pages (the search results, the guide lists,
+/// the "my threads" pages) take it from their repository: the web page (or an older plugin's answer, whose blocks
+/// are rebuilt as one, [tsdmAppPageDocument]), parsed as it always was, or the structured answer of the forum's app
+/// API (plugin 2.4.0), built from its fields and never from a `document` (which a lean answer, `nodoc=1`, does not
+/// carry). See [TsdmAppPageHttpExt.mapHttpPageAnswer].
+sealed class TsdmAppPageAnswer {
+  const TsdmAppPageAnswer();
+}
+
+/// The web page, or an older plugin's answer rebuilt as one.
+final class TsdmAppWebPage extends TsdmAppPageAnswer {
+  /// Constructor.
+  const TsdmAppWebPage(this.document);
+
+  /// The page.
+  final uh.Document document;
+}
+
+/// The structured answer of the forum's app API: the page as fields (`schema`), or the forum's own message of such a
+/// plugin (`ok` 0, `error: message`), as the page's `…ApiAnswerOf` told them apart.
+final class TsdmAppStructuredPage extends TsdmAppPageAnswer {
+  /// Constructor.
+  const TsdmAppStructuredPage(this.json);
+
+  /// The answer.
+  final Map<String, dynamic> json;
+}
+
+/// The url of page [page] of the list page [url]: its `page` parameter replaced (or added), the rest of the query as
+/// it was. A structured answer of a list page (plugin 2.4.0) tells whether there is a next page (`has_next`) but
+/// names no url for it, as the web page did in its pagination links.
+String tsdmAppListPageUrl(String url, int page) {
+  final uri = Uri.parse(url);
+  return uri.replace(queryParameters: {...uri.queryParameters, 'page': '$page'}).toString();
+}
+
+/// An integer field of an API answer [value]: 0 when missing or not a number.
+int tsdmAppInt(Object? value) => switch (value) {
+  final num n => n.toInt(),
+  final String s => int.tryParse(s) ?? 0,
+  _ => 0,
+};
+
+/// A text field of an API answer [value]: empty when missing.
+String tsdmAppText(Object? value) => value is String ? value : '';
+
+/// An object field of an API answer [value]: empty when missing.
+Map<String, dynamic> tsdmAppMap(Object? value) => value is Map<String, dynamic> ? value : const {};
+
+/// A list of objects of an API answer [value]: empty when missing, anything that is not an object left out.
+List<Map<String, dynamic>> tsdmAppList(Object? value) =>
+    value is List ? value.whereType<Map<String, dynamic>>().toList() : const [];
+
+/// Whether a row [row] of a list page answer (the search results, the guide lists, the "my threads" pages: plugin
+/// 2.4.0, one row shape) names a thread (`tid`) and its subject, as the web parsers require of a row before they take
+/// it; a row without is dropped, as the parsers drop a malformed row.
+bool tsdmAppIsThreadRow(Map<String, dynamic> row) =>
+    tsdmAppInt(row['tid']) > 0 && tsdmAppText(row['subject']).isNotEmpty;
 
 /// The html of the forum page [url] asked of [client] in the JSON mode ([withTsdmAppJson]), for the pages that hand a
 /// page around as a string ([tsdmAppPageHtml]). Throws the failure of the request, and [HttpRequestFailedException]
