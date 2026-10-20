@@ -268,6 +268,27 @@ class AuthenticationRepository with LoggerMixin {
     return rightVoid();
   });
 
+  /// [loginWithDocument] for a page the forum's app API answered as structured fields (the homepage of plugin
+  /// 2.3.0, `schema: 5`): [user] is the account the page was served to, null for a guest or the forum's message.
+  /// [guest] tells the guest's page (served to nobody, or the login prompt) from any other page without an
+  /// account: fetched with the cookie of the account in use, the guest's page means that session is dead (issue
+  /// #25), as the guest web page does.
+  AsyncVoidEither loginWithServedUser(UserLoginInfo? user, {required bool guest}) => AsyncVoidEither(() async {
+    if (user == null || user.uid == null || user.username == null) {
+      debug('failed to login with served user: user info not found');
+      if (guest) {
+        await markCurrentSessionExpired();
+      }
+      return left(LoginUserInfoNotFoundException());
+    }
+
+    await getIt.get<CookieProvider>().saveCookieToStorage();
+    await _markAuthenticated(user);
+
+    debug('login with served user: user $user');
+    return rightVoid();
+  });
+
   /// Record in storage that the forum session of the account in use ([effectiveCurrentUid]) is dead (issue #25).
   ///
   /// For code that got the guest page with the current account's cookie and has no other way to say so; nothing

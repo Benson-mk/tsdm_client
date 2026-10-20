@@ -45,6 +45,7 @@ import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/friend/repository/friend_repository.dart';
 import 'package:tsdm_client/features/homepage/repository/guide_index_repository.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
 import 'package:tsdm_client/features/medal_center/view/medal_center_page.dart';
 import 'package:tsdm_client/features/my_thread/repository/my_thread_repository.dart';
@@ -376,10 +377,17 @@ final List<_Caller> _callers = [
 /// The default client of the app is the forum's too, for the callers that look it up.
 void _serve(_Forum forum) => getIt.registerFactory<NetClientProvider>(() => _clientOf(forum));
 
+/// The homepage the way the tests compare it: its document as [_docView]; the structured answer of plugin 2.3.0 (not
+/// among the replies here) by the account served.
+String _homeView(ForumHomePage page) => switch (page) {
+  ForumHomeWebPage(:final document) => _docView(document),
+  ForumHomeApiPage(:final json) => 'api:${json['uid']}',
+};
+
 Future<String> _homepage() async {
   final repo = ForumHomeRepository();
   try {
-    return await _state(repo.fetchHomePage(force: true), _docView);
+    return await _state(repo.fetchHomePage(force: true), _homeView);
   } finally {
     await repo.dispose();
   }

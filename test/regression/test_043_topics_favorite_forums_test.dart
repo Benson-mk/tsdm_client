@@ -293,8 +293,8 @@ void main() {
 
       // Wait for the guest index itself, not for a moment that is usually long enough: reaching the bloc after the
       // next sign in, it is a document of the wrong user and costs one more fetch, which raced on a loaded runner.
-      // The stream replays its latest document to a new listener, so skip that one.
-      final guestIndex = forumHome.documentStream.skip(1).first;
+      // The stream replays its latest page to a new listener, so skip that one.
+      final guestIndex = forumHome.pageStream.skip(1).first;
       auth
         ..signIn(alice)
         ..signOut();

@@ -12,8 +12,8 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
-import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
+import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
 import 'package:tsdm_client/features/red_packet/models/models.dart';
@@ -41,7 +41,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
        _authenticationRepository = authenticationRepository,
        super(
          forumHomeRepository.hasCache()
-             ? _parseStateFromDocument(
+             ? _parseState(
                  forumHomeRepository.getCache()!,
                  authenticationRepository.currentUser?.username,
                  avatarUrl: profileRepository.getCache()?.avatarUrl,
@@ -226,10 +226,20 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     return pinnedThreadGroupList;
   }
 
+  /// Tell the authentication repository the account [page] was served to, as `loginWithDocument` reads it from
+  /// the web page: the structured answer names it in `user`.
+  AsyncVoidEither _loginWithPage(ForumHomePage page) => switch (page) {
+    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(document),
+    ForumHomeApiPage(:final json) => _authenticationRepository.loginWithServedUser(
+      servedUserOf(json),
+      guest: indexAnswerIsGuest(json),
+    ),
+  };
+
   Future<void> _onHomepageLoadRequested(HomepageLoadRequested event, Emitter<HomepageState> emit) async {
     _pageGeneration++;
     if (_forumHomeRepository.hasCache()) {
-      final s = _parseStateFromDocument(
+      final s = _parseState(
         _forumHomeRepository.getCache()!,
         _authenticationRepository.currentUser?.username,
         avatarUrl: state.loggedUserInfo?.avatarUrl,
@@ -270,11 +280,11 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         return;
       }
     }
-    final document = respList[0] as uh.Document;
+    final page = respList[0] as ForumHomePage;
     final avatarUrl = respList[1] as String;
-    await _authenticationRepository.loginWithDocument(document).mapLeft(handle).run();
+    await _loginWithPage(page).mapLeft(handle).run();
     // Parse data and change state.
-    final s = _parseStateFromDocument(document, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
+    final s = _parseState(page, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
     emit(s);
   }
 
@@ -289,8 +299,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         debug('failed to fetch dom: $value');
         emit(state.copyWith(status: HomepageStatus.failure));
       case Right(:final value):
-        await _authenticationRepository
-            .loginWithDocument(value)
+        await _loginWithPage(value)
             .mapLeft((e) {
               handle(e);
               emit(state.copyWith(status: HomepageStatus.failure));
@@ -310,17 +319,17 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         }
         final avatarUrl = d2.unwrap().avatarUrl;
         // Parse data and change state.
-        final s = _parseStateFromDocument(value, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
+        final s = _parseState(value, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
         emit(s);
     }
   }
 
   /// Ask the forum again for today's daily red packet only (its entry on the greeting card had none).
   ///
-  /// The homepage document is fetched like a refresh does (same identity checks and daily rewards handling in
+  /// The homepage is fetched like a refresh does (same identity checks and daily rewards handling in
   /// [ForumHomeRepository]), but only [HomepageState.dailyRedPacket] and [HomepageState.formHash] change: the loaded
   /// page stays on screen, nothing else is reloaded. The answer is dropped when the page was reloaded or the account
-  /// changed meanwhile, or when the document belongs to another account.
+  /// changed meanwhile, or when the page belongs to another account.
   Future<void> _onDailyRedPacketCheckRequested(
     HomepageDailyRedPacketCheckRequested event,
     Emitter<HomepageState> emit,
@@ -348,16 +357,12 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       case Left(:final value):
         handle(value);
         emit(state.copyWith(checkingDailyRedPacket: false));
-      case Right(:final value) when parseLoggedUidFromDocument(value) != uid:
+      case Right(:final value) when value.servedUid != uid:
         debug('drop the daily red packet check for uid $uid: the page belongs to another account');
         emit(state.copyWith(checkingDailyRedPacket: false));
       case Right(:final value):
         emit(
-          state.copyWith(
-            checkingDailyRedPacket: false,
-            dailyRedPacket: parseDailyRedPacketConfig(value),
-            formHash: parseFormHash(value),
-          ),
+          state.copyWith(checkingDailyRedPacket: false, dailyRedPacket: value.dailyRedPacket, formHash: value.formHash),
         );
     }
   }
@@ -405,6 +410,14 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   @visibleForTesting
   static HomepageState parseStateForTest(uh.Document document, String? username, {String? avatarUrl}) =>
       _parseStateFromDocument(document, username, avatarUrl: avatarUrl);
+
+  /// The state of [page], for the account [username] with the avatar [avatarUrl] the app has: the web page parsed
+  /// as before ([_parseStateFromDocument]), the structured answer of the forum's app API built from its fields
+  /// ([homepageStateFromApi]).
+  static HomepageState _parseState(ForumHomePage page, String? username, {String? avatarUrl}) => switch (page) {
+    ForumHomeWebPage(:final document) => _parseStateFromDocument(document, username, avatarUrl: avatarUrl),
+    ForumHomeApiPage(:final json) => homepageStateFromApi(json, username, avatarUrl: avatarUrl),
+  };
 
   static HomepageState _parseStateFromDocument(uh.Document document, String? username, {String? avatarUrl}) {
     final swiperUrlList = <SwiperUrl>[];
