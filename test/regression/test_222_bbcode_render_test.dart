@@ -30,6 +30,8 @@ import 'package:tsdm_client/features/blocking/repository/user_block_repository.d
 import 'package:tsdm_client/features/blocking/widgets/block_aware_post.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/settings/view/settings_page.dart';
+import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode_view.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/smilies.dart';
@@ -332,13 +334,19 @@ void main() {
       expect(render.htmlAfter, isNot(contains('原生发帖页')));
     });
 
-    test('literal floors: the text as it is, tags as text, no smiley, no link with parseurloff 1', () {
+    test('literal floors: the text as it is, tags as text, no smiley with smileyoff 1', () {
       final json = _json('thread_v14_attachments.json');
       final posts = _posts(json);
-      final noLink = _render(posts[7], smilies: _table());
-      expect(noLink.nodes.single, isA<BbText>());
-      expect((noLink.nodes.single as BbText).text, _floor(json, 7)['message']);
-      expect((noLink.nodes.single as BbText).text, startsWith(':) http://example.com/x 不換表情不自動連結'));
+      final literal = _render(posts[7], smilies: _table());
+      expect(posts[7].parseUrlOff, isTrue);
+      expect(literal.nodes.whereType<BbSmiley>(), isEmpty);
+      expect(_plain(literal.nodes), _floor(json, 7)['message']);
+      expect(_plain(literal.nodes), startsWith(':) http://example.com/x 不換表情不自動連結'));
+      expect(
+        literal.nodes.whereType<BbLink>().map((e) => e.href),
+        ['http://example.com/x'],
+        reason: 'linked as the html renderer links it, parseurloff or not',
+      );
       final lines = _render(posts[8]);
       expect(_plain(lines.nodes), (_floor(json, 8)['message'] as String).replaceAll('\r\n', '\n'));
       expect(_plain(lines.nodes), matches(RegExp(r'^純文字\n第二行 \d+\n\n日本語とemoji 😀 結尾$')));
@@ -478,6 +486,26 @@ void main() {
         ),
       );
       expect(twice.nodes.whereType<BbAttachment>(), hasLength(1), reason: 'the forum drops the second one');
+      final zeroLed = _render(
+        _synthetic(
+          'a [attach]09[/attach] b [attach]0[/attach]',
+          attachments: [
+            {
+              'aid': 9,
+              'filename': 'a.zip',
+              'isimage': 0,
+              'url': 'https://www.tsdm39.com/d',
+              'download': 'https://www.tsdm39.com/d',
+            },
+          ],
+        ),
+      );
+      expect(
+        zeroLed.nodes.whereType<BbAttachment>(),
+        isEmpty,
+        reason: 'an id with a leading zero: the forum prints nothing',
+      );
+      expect(_plain(zeroLed.nodes), 'a  b');
       expect(_fallback(_synthetic('[code][attach]1[/attach][/code]')), 'attach-in-code');
     });
 
@@ -549,13 +577,15 @@ void main() {
       expect(fixOldForumUrl('mailto:a@b.c', relative: true), 'mailto:a@b.c');
     });
 
-    test('bare urls are linked with parseurloff 0 only', () {
+    test('bare urls are linked whatever parseurloff says, as the html renderer links them', () {
       final linked = _render(_synthetic('see https://example.com/x.'));
       final link = linked.nodes.whereType<BbLink>().single;
       expect((link.href, link.auto), ('https://example.com/x', true));
       expect(_plain(linked.nodes), 'see https://example.com/x.');
-      final kept = _render(_synthetic('see https://example.com/x.', parseurloff: 1));
-      expect(kept.nodes.whereType<BbLink>(), isEmpty);
+      final off = _render(_synthetic('see https://example.com/x.', parseurloff: 1));
+      expect(off.nodes.whereType<BbLink>().single.href, 'https://example.com/x');
+      final literal = _render(_synthetic('see https://example.com/y', bbcodeoff: 1, parseurloff: 1));
+      expect(literal.nodes.whereType<BbLink>().single.href, 'https://example.com/y');
       final inUrl = _render(_synthetic('[url=https://a.example/]https://b.example/[/url]'));
       expect(_all(inUrl.nodes).whereType<BbLink>().map((e) => e.href), ['https://a.example/']);
     });
@@ -593,8 +623,18 @@ void main() {
         smilies: _table(),
       );
       expect(unlimited.nodes.whereType<BbSmiley>(), hasLength(12));
-      final zero = _synthetic(':)', smileyoff: 0, codes: {'maxsmilies': 0});
-      expect(postBbcodeNeedsSmilies(zero), isFalse, reason: 'the forum turns none with a limit of 0');
+      final zero = _synthetic(List.filled(12, ':)').join(' '), smileyoff: 0, codes: {'maxsmilies': 0});
+      expect(postBbcodeNeedsSmilies(zero), isTrue);
+      expect(
+        _render(zero, smilies: _table()).nodes.whereType<BbSmiley>(),
+        hasLength(12),
+        reason: "the forum's settings cache turns a limit of 0 into -1: no limit",
+      );
+      final literalSmiley = _synthetic(':) and [b]', smileyoff: 0, bbcodeoff: 1);
+      expect(postBbcodeNeedsSmilies(literalSmiley), isTrue, reason: 'bbcodeoff does not stop the smilies');
+      final literal = _render(literalSmiley, smilies: _table());
+      expect(literal.nodes.whereType<BbSmiley>(), hasLength(1));
+      expect(_plain(literal.nodes), ':) and [b]');
 
       const longer = Smiley(id: 2, code: ':))', url: 'https://www.tsdm39.com/b.gif', type: 'x');
       const shorter = Smiley(id: 1, code: ':)', url: 'https://www.tsdm39.com/a.gif', type: 'x');
@@ -867,6 +907,63 @@ void main() {
       expect(fetches, 1);
       expect(find.byType(PostBbcodeView), findsOneWidget);
       expect(find.textContaining('bold text', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('the switch in the advanced settings: off by default, toggled, kept for the next run', (tester) async {
+      getIt
+        ..registerSingleton<AppDatabase>(db)
+        ..registerFactory<NetClientProvider>(
+          () => NetClientProvider.buildNoCookie(dio: Dio()..httpClientAdapter = _OfflineAdapter()),
+        );
+      tester.view
+        ..physicalSize = const Size(384, 792)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final theme = ThemeCubit();
+      addTearDown(theme.close);
+      Future<void> settle() async {
+        for (var i = 0; i < 8; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+      }
+
+      Future<bool?> stored() => tester.runAsync(() => settings.getValue(SettingsKeys.enableAppPostRenderer));
+
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<SettingsBloc>.value(value: bloc),
+            BlocProvider<ThemeCubit>.value(value: theme),
+          ],
+          child: TranslationProvider(child: const MaterialApp(home: SettingsPage())),
+        ),
+      );
+      await settle();
+      final tile = find.byKey(const ValueKey('settings-app-post-renderer'));
+      final list = find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)).first;
+      await tester.scrollUntilVisible(tile, 200, scrollable: list);
+      await settle();
+      final tr = t.settingsPage.advancedSection.appPostRenderer;
+      expect(find.descendant(of: tile, matching: find.text(tr.title)), findsOneWidget);
+      expect(find.descendant(of: tile, matching: find.text(tr.detail)), findsOneWidget);
+      expect(tester.widget<SwitchListTile>(tile).value, isFalse, reason: 'off by default');
+
+      await tester.tap(tile);
+      await settle();
+      expect(tester.widget<SwitchListTile>(tile).value, isTrue);
+      expect(settings.currentSettings.enableAppPostRenderer, isTrue);
+      expect(await stored(), isTrue);
+      // The next run reads it back from the database.
+      final next = SettingsRepository(getIt.get<StorageProvider>());
+      await tester.runAsync(next.init);
+      expect(next.currentSettings.enableAppPostRenderer, isTrue);
+      await tester.runAsync(next.dispose);
+
+      await tester.tap(tile);
+      await settle();
+      expect(tester.widget<SwitchListTile>(tile).value, isFalse);
+      expect(await stored(), isFalse);
     });
 
     testWidgets('a spoofed floor shows a neutral line instead of an empty floor, with either renderer', (tester) async {

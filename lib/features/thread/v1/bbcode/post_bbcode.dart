@@ -249,11 +249,11 @@ final class BbDivider extends BbNode {
 }
 
 /// Whether the app renderer needs the smilies table for [post]: the forum turns its smiley codes into images
-/// (`smileyoff` 0 — the forum stores 1 for a post without any smiley code — the forum allows smilies, and its limit
-/// is not 0).
+/// (`smileyoff` 0 — the forum stores 1 for a post without any smiley code — and the forum allows smilies), with tags
+/// or without (`bbcodeoff` 1 does not stop the forum's smilies either).
 bool postBbcodeNeedsSmilies(Post post) {
   final codes = post.bbcodeCodes;
-  return post.messageBbcode != null && !post.smileyOff && codes != null && codes.allowSmilies && codes.maxSmilies != 0;
+  return post.messageBbcode != null && !post.smileyOff && codes != null && codes.allowSmilies;
 }
 
 /// The tags the app draws as the forum does; any other tag (`[table]`, `[media]`, `[flash]`, `[audio]`, `[email]`,
@@ -449,10 +449,11 @@ const _tab = '\u00a0 \u00a0 \u00a0 \u00a0 ';
 ///   not crossed, no `[quote]` or `[spoiler]` in another, no block in a link, no `[*]` outside a list;
 /// * `[img]` only where the forum shows images; `[attach]aid[/attach]` is the floor's attachment of that id (a
 ///   locked one, or one not listed, is drawn as a placeholder and nothing is fetched for it), the first of the same
-///   id only, as the forum does;
-/// * smiley codes are turned into the table's images, in the table's order, at most `maxsmilies` times each (not in
-///   `[code]`), when the forum does it (`smileyoff` 0, smilies allowed);
-/// * with `parseurloff` 0, bare urls are linked.
+///   id only, as the forum does; an id written with a leading zero is dropped, as the forum drops it;
+/// * smiley codes are turned into the table's images, in the table's order, at most `maxsmilies` times each (no
+///   limit when it is 0 or less, as the forum's settings cache makes it), not in `[code]`, when the forum does it
+///   (`smileyoff` 0, smilies allowed);
+/// * bare urls are linked, whatever `parseurloff` says (see [_linkBareUrls]).
 ///
 /// Anything else, or an error while reading, is a [PostBbcodeFallback].
 PostBbcodeDecision decidePostBbcode(Post post, {SmiliesTable? smilies}) {
@@ -484,9 +485,7 @@ PostBbcodeDecision decidePostBbcode(Post post, {SmiliesTable? smilies}) {
     if (useSmilies) {
       nodes = _applySmilies(nodes, smilies!, codes.maxSmilies);
     }
-    if (!post.parseUrlOff) {
-      nodes = _linkBareUrls(nodes);
-    }
+    nodes = _linkBareUrls(nodes);
     return PostBbcodeRender(nodes: _trimEdges(nodes), htmlBefore: split.before, htmlAfter: split.after);
   } on _Fallback catch (e) {
     return PostBbcodeFallback(e.reason);
@@ -761,7 +760,12 @@ final class _Builder {
       }
       last = m.end;
       if (m.group(1) != null) {
-        final aid = int.parse(m.group(1)!);
+        final id = m.group(1)!;
+        // An id with a leading zero matches no attachment of the forum, which then drops the tag: nothing shown.
+        if (id.startsWith('0')) {
+          continue;
+        }
+        final aid = int.parse(id);
         // The forum puts an attachment at its first `[attach]` and drops the others of the same id.
         if (_placed.add(aid)) {
           out.add(BbAttachment(aid, attachments[aid]));
@@ -993,8 +997,10 @@ void _collectTexts(List<BbNode> nodes, List<BbText> into) {
 }
 
 /// Turn the smiley codes of the text of [nodes] into [BbSmiley]s as the forum does: each smiley of [table] in turn,
-/// in the table's order, over the whole message from its start, at most [max] times (no limit when negative).
-List<BbNode> _applySmilies(List<BbNode> nodes, SmiliesTable table, int max) {
+/// in the table's order, over the whole message from its start, at most [limit] times (no limit when it is 0 or less:
+/// the forum's settings cache turns such a `maxsmilies` into -1, which `preg_replace` takes as no limit).
+List<BbNode> _applySmilies(List<BbNode> nodes, SmiliesTable table, int limit) {
+  final max = limit > 0 ? limit : -1;
   final texts = <BbText>[];
   _collectTexts(nodes, texts);
   // The pieces of each text: a String not turned yet, or a Smiley.
@@ -1048,6 +1054,10 @@ List<BbNode> _applySmilies(List<BbNode> nodes, SmiliesTable table, int max) {
 }
 
 /// Link the bare `http(s)://` urls of the text of [nodes] that is not in a link already.
+///
+/// Whatever the floor's `parseurloff` says: the forum itself does not link bare urls when it shows a post (it is its
+/// editor that wraps them in `[url]` when posting), but the html renderer links every bare url it meets, so readers
+/// are used to tapping them; switching renderers must not take that away.
 List<BbNode> _linkBareUrls(List<BbNode> nodes) => _mapTexts(nodes, (t, {required inLink}) {
   if (inLink || !t.text.contains('://')) {
     return [t];

@@ -349,7 +349,8 @@ class Post with PostMappable {
   /// The forum leaves smiley codes as text in this floor (`smileyoff` 1).
   final bool smileyOff;
 
-  /// Bare urls are not linked in this floor (`parseurloff` 1).
+  /// The author asked the forum's editor not to link bare urls (`parseurloff` 1). The forum does not link bare urls
+  /// when it shows a post either way; kept for reference, the app links them as its html renderer does.
   final bool parseUrlOff;
 
   /// The attachments of the floor the forum loaded for this request ([PostAttachment]).

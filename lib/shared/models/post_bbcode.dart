@@ -157,6 +157,6 @@ final class PostBbcodeCodes with PostBbcodeCodesMappable {
   final bool jammer;
 
   /// How many times each smiley code is turned into an image in a floor at most, as the forum's `preg_replace` limit:
-  /// a negative value has no limit, 0 turns none.
+  /// 0 or less has no limit (the forum's settings cache turns `maxsmilies` 0 into -1).
   final int maxSmilies;
 }
