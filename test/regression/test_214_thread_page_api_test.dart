@@ -177,7 +177,7 @@ void main() {
       expect(page.threadType, isNull, reason: 'typeid 0');
       expect(page.isDraft, isFalse);
       expect(page.latestModAct, isNull, reason: 'modact empty');
-      expect(page.viewCount, 112);
+      expect(page.viewCount, 100);
       expect(page.replyCount, 8);
 
       // The breadcrumbs from the group down to the forum, the thread not among them, linked as the page links them.
@@ -191,8 +191,8 @@ void main() {
       final reply = page.replyParameters!;
       expect(reply.fid, '2');
       expect(reply.tid, '9199345');
-      expect(reply.postTime, '1792484637');
-      expect(reply.formHash, 'e331f023');
+      expect(reply.postTime, '1700000000');
+      expect(reply.formHash, 'f1f2f3f4');
       expect(reply.subject, '');
 
       // The medal menus of the page, one per menu.
@@ -289,7 +289,8 @@ void main() {
 
     test('a moderated thread: the moderation sentence', () {
       final page = _page('thread_v3_moderated.json');
-      expect(page.latestModAct, '本主题由 管理团队 于 6\u00a0小时前 打开');
+      // The forum prints the moderation time relative to now ("N 小时前"), so the fixture carries whatever it was when refreshed.
+      expect(page.latestModAct, matches(RegExp(r'^本主题由 管理团队 于 .+ 打开$')));
       expect(page.threadClosed, isFalse);
     });
 
@@ -784,7 +785,7 @@ void main() {
       expect(page.tid, '9199345');
       expect(page.postList.map((e) => e.postID), contains('3954'));
       expect(page.postList.map((e) => e.postID), isNot(contains('1')), reason: 'the garbage document');
-      expect(page.replyParameters?.formHash, 'e331f023');
+      expect(page.replyParameters?.formHash, 'f1f2f3f4');
     });
 
     test('the message of the plugin: the login prompt', () async {
