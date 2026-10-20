@@ -29,22 +29,22 @@ class MyThread with MyThreadMappable {
   /// (`pid` > 0: the reply page lists one row per reply, as [buildReplyListFromTr] builds them) links the reply
   /// (`goto=findpost`) and quotes it (`summary`).
   factory MyThread.fromApi(Map<String, dynamic> t) {
-    final fid = _apiInt(t['fid']);
+    final fid = tsdmAppInt(t['fid']);
     final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0);
-    final pid = _apiInt(t['pid']);
-    final summary = _apiText(t['summary']);
+    final pid = tsdmAppInt(t['pid']);
+    final summary = tsdmAppText(t['summary']);
     return MyThread(
       title: thread.title,
       url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
       threadID: thread.threadID,
-      forumName: _apiText(t['forum']),
+      forumName: tsdmAppText(t['forum']),
       forumUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
       replyCount: thread.replyCount,
       viewCount: thread.viewCount,
       latestReplyAuthor: thread.latestReplyAuthor,
       latestReplyTime: thread.latestReplyTime,
       quotedMessage: summary.isEmpty ? null : summary,
-      stateSet: {...thread.stateSet, if (_apiInt(t['displayorder']) == -4) ThreadStateModel.draft},
+      stateSet: {...thread.stateSet, if (tsdmAppInt(t['displayorder']) == -4) ThreadStateModel.draft},
     );
   }
 
@@ -237,13 +237,3 @@ failed to parse MyThread node: {
     return ret;
   }
 }
-
-/// An integer field of an API answer: 0 when missing or not a number.
-int _apiInt(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-/// A text field of an API answer: empty when missing.
-String _apiText(Object? value) => value is String ? value : '';

@@ -31,16 +31,17 @@ Map<String, dynamic>? searchApiAnswerOf(Object? data) {
 ///
 /// The same [SearchResult] the web page gives through [SearchResult.fromDocument], from the fields instead of the
 /// html: `page` / `pages` are the pagination the forum printed, `count` the total of the search (as the page's
-/// "找到 … 相关内容 N 个"), `threads` the rows of the page as [SearchedThread.fromApi] builds them. A search without
-/// a result is a page of its own (`count` 0, `threads` empty): the forum prints the results page then, not a message.
+/// "找到 … 相关内容 N 个"), `threads` the rows of the page as [SearchedThread.fromApi] builds them (a row without a
+/// thread or a subject dropped, as the page parser drops a malformed row, [tsdmAppIsThreadRow]). A search without a
+/// result is a page of its own (`count` 0, `threads` empty): the forum prints the results page then, not a message.
 SearchResult searchResultFromApi(Map<String, dynamic> json) {
-  final page = _int(json['page']);
-  final pages = _int(json['pages']);
+  final page = tsdmAppInt(json['page']);
+  final pages = tsdmAppInt(json['pages']);
   return SearchResult(
     currentPage: page > 0 ? page : 1,
     totalPages: pages > 0 ? pages : (page > 0 ? page : 1),
-    count: json['count'] is num ? _int(json['count']) : null,
-    data: _list(json['threads']).map(SearchedThread.fromApi).toList(),
+    count: json['count'] is num ? tsdmAppInt(json['count']) : null,
+    data: tsdmAppList(json['threads']).where(tsdmAppIsThreadRow).map(SearchedThread.fromApi).toList(),
   );
 }
 
@@ -48,7 +49,7 @@ SearchResult searchResultFromApi(Map<String, dynamic> json) {
 /// with (`search.php?mod=forum&searchid=…`), as the web path reads it from the pagination links; null when the
 /// answer names none.
 String? searchIdOfApi(Map<String, dynamic> json) {
-  final id = _int(json['searchid']);
+  final id = tsdmAppInt(json['searchid']);
   return id > 0 ? '$id' : null;
 }
 
@@ -60,21 +61,10 @@ String? searchResultPageUrl(Map<String, dynamic> json, int page) {
   if (id == null) {
     return null;
   }
-  final orderBy = _text(json['orderby']);
-  final ascDesc = _text(json['ascdesc']);
+  final orderBy = tsdmAppText(json['orderby']);
+  final ascDesc = tsdmAppText(json['ascdesc']);
   return '$baseUrl/search.php?mod=forum&searchid=$id'
       '&orderby=${orderBy.isEmpty ? 'lastpost' : orderBy}'
       '&ascdesc=${ascDesc.isEmpty ? 'desc' : ascDesc}'
       '&searchsubmit=yes&page=$page';
 }
-
-int _int(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-String _text(Object? value) => value is String ? value : '';
-
-List<Map<String, dynamic>> _list(Object? value) =>
-    value is List ? value.whereType<Map<String, dynamic>>().toList() : const [];

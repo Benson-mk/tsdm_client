@@ -31,13 +31,13 @@ Map<String, dynamic>? myThreadApiAnswerOf(Object? data) {
 /// the document path. The account whose list it is (`owner.uid`, the viewer unless the page was asked with `uid=`)
 /// is [myThreadApiOwnerUid].
 int? myThreadApiViewerUid(Map<String, dynamic> json) {
-  final uid = json['ok'] == 1 ? _int(json['uid']) : 0;
+  final uid = json['ok'] == 1 ? tsdmAppInt(json['uid']) : 0;
   return uid > 0 ? uid : null;
 }
 
 /// The account whose list a structured answer [json] (`ok` 1) is (`owner.uid`), null when the answer names none.
 int? myThreadApiOwnerUid(Map<String, dynamic> json) {
-  final uid = _int(_map(json['owner'])['uid']);
+  final uid = tsdmAppInt(tsdmAppMap(json['owner'])['uid']);
   return uid > 0 ? uid : null;
 }
 
@@ -45,7 +45,8 @@ int? myThreadApiOwnerUid(Map<String, dynamic> json) {
 ///
 /// The same list the web page gives through `MyThread.fromTr` (and `MyThread.buildReplyListFromTr` for the
 /// replies): the rows of the page as [MyThread.fromApi] builds them, one row per reply on the reply page (`pid`,
-/// its text in `summary`), and the url of the next page when the forum has one (`has_next`: the page's "下一页"
+/// its text in `summary`; a row without a thread or a subject dropped, as the page parser drops a malformed row,
+/// [tsdmAppIsThreadRow]), and the url of the next page when the forum has one (`has_next`: the page's "下一页"
 /// link; the page paginates without a total, `pages` is 0). The forum's message (`ok` 0: a guest) is an empty
 /// list, as the web page of the message parsed to one.
 (List<MyThread>, String? nextPageUrl) myThreadsFromApi(Map<String, dynamic> json, String url) {
@@ -53,19 +54,8 @@ int? myThreadApiOwnerUid(Map<String, dynamic> json) {
     talker.info('my thread page: the forum answered a message: ${json['message']}');
     return (const [], null);
   }
-  final threads = _list(json['threads']).map(MyThread.fromApi).toList();
-  final page = _int(json['page']);
-  final nextPageUrl = _int(json['has_next']) == 1 && page > 0 ? tsdmAppListPageUrl(url, page + 1) : null;
+  final threads = tsdmAppList(json['threads']).where(tsdmAppIsThreadRow).map(MyThread.fromApi).toList();
+  final page = tsdmAppInt(json['page']);
+  final nextPageUrl = tsdmAppInt(json['has_next']) == 1 && page > 0 ? tsdmAppListPageUrl(url, page + 1) : null;
   return (threads, nextPageUrl);
 }
-
-int _int(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-Map<String, dynamic> _map(Object? value) => value is Map<String, dynamic> ? value : const {};
-
-List<Map<String, dynamic>> _list(Object? value) =>
-    value is List ? value.whereType<Map<String, dynamic>>().toList() : const [];

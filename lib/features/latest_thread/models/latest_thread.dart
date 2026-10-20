@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -88,16 +89,24 @@ class LatestThread {
   /// </tbody>
   LatestThread.fromTBody(uh.Element element) : _info = _buildFromTBodyNode(element);
 
-  /// Build from a thread row [row] of a structured answer of the forum's app API (plugin 2.4.0): a guide list
-  /// (`schema: 7`, `latestThreadsFromApi`) or the search results of 查看新帖 (`schema: 6`), which share one row shape.
+  /// Build from a thread row [row] of a structured guide list answer of the forum's app API (plugin 2.4.0,
+  /// `schema: 7`, `latestThreadsFromApi`).
   ///
   /// The row is read as [NormalThread.fromApi] reads it (a moved thread is the row of its target, as the page links
   /// it; an anonymous author has no uid; the times are the forum's unix seconds): the forum from `fid` and `forum`,
   /// the last replier and time from `lastposter` / `lastpost` (the replier by name only: the list pages name no uid
-  /// for them, as the web page links them by name), the thread's author as [threadAuthor]. A row that is one reply
-  /// (`pid`: the guide's "my replies", a reply of 查看新帖) links the reply (`goto=findpost`) and quotes it
-  /// (`summary`); the excerpt of a search row is quoted the same, as the search layout's was.
+  /// for them, as the web page links them by name), the thread's author as [threadAuthor], as [LatestThread.fromTBody] reads the
+  /// guide page. A row that is one reply (`pid`: the guide's "my replies") links the reply (`goto=findpost`) and
+  /// quotes it (`summary`).
   LatestThread.fromApi(Map<String, dynamic> row) : _info = _buildFromApi(row);
+
+  /// Build from a thread row [row] of the structured search results of 查看新帖 (`search.php?mod=forum&srchfrom=…`,
+  /// plugin 2.4.0, `schema: 6`), which share the guide's row shape.
+  ///
+  /// As [LatestThread.fromApi], but the person and the time shown are the thread's author and its publish time (`author`,
+  /// `dateline`), as the search layout prints them (`dateline - author`) and [LatestThread.fromLi] reads them; the last replier
+  /// and the last reply are not shown there. The excerpt (`summary`) is quoted, as the layout's was.
+  LatestThread.fromSearchApi(Map<String, dynamic> row) : _info = _buildFromApi(row, search: true);
 
   final _LatestThreadInfo? _info;
 
@@ -139,21 +148,21 @@ class LatestThread {
   /// Author of the thread (not the latest reply), null when the layout does not tell.
   User? get threadAuthor => _info?.threadAuthor;
 
-  static _LatestThreadInfo _buildFromApi(Map<String, dynamic> row) {
-    final fid = _apiInt(row['fid']);
+  static _LatestThreadInfo _buildFromApi(Map<String, dynamic> row, {bool search = false}) {
+    final fid = tsdmAppInt(row['fid']);
     final thread = NormalThread.fromApi(row, fid: fid, typePrefix: 0);
-    final pid = _apiInt(row['pid']);
-    final summary = _apiText(row['summary']);
+    final pid = tsdmAppInt(row['pid']);
+    final summary = tsdmAppText(row['summary']);
     return _LatestThreadInfo(
       title: thread.title,
       url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
       threadID: thread.threadID,
-      forumName: _apiText(row['forum']),
+      forumName: tsdmAppText(row['forum']),
       forumUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
       replyCount: thread.replyCount,
       viewCount: thread.viewCount,
-      latestReplyAuthor: thread.latestReplyAuthor,
-      latestReplyTime: thread.latestReplyTime,
+      latestReplyAuthor: search ? thread.author : thread.latestReplyAuthor,
+      latestReplyTime: search ? thread.publishDate : thread.latestReplyTime,
       quotedMessage: summary.isEmpty ? null : summary,
       threadAuthor: thread.author,
     );
@@ -266,13 +275,3 @@ failed to parse LatestThread node: {
     );
   }
 }
-
-/// An integer field of an API answer: 0 when missing or not a number.
-int _apiInt(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-/// A text field of an API answer: empty when missing.
-String _apiText(Object? value) => value is String ? value : '';

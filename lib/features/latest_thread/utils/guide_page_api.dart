@@ -35,34 +35,30 @@ Map<String, dynamic>? latestThreadApiAnswerOf(Object? data) => guideApiAnswerOf(
 /// [url].
 ///
 /// The same list the web page gives: the rows of the page as [LatestThread.fromApi] builds them (`threads`; the
-/// guide index, `view=index`, lists its rows in `modules` and none here), and the url of the next page when the
-/// forum has one (`has_next`: the page's "下一页" link): the guide page asked with the next `page`, a search its own
-/// paging link (`searchid`). The forum's message (`ok` 0: the guide switched off, a guest asked for "my" threads)
-/// is an empty list, as the web page of the message parsed to one.
+/// guide index, `view=index`, lists its rows in `modules` and none here; a search's rows as
+/// [LatestThread.fromSearchApi] builds them, the author and the publish time shown as the search layout shows them;
+/// a row without a thread or a subject dropped, as the page parsers drop a malformed row, [tsdmAppIsThreadRow]), and
+/// the url of the next page when the forum has one (`has_next`: the page's "下一页" link): the guide page asked with
+/// the next `page`, a search its own paging link (`searchid`). The forum's message (`ok` 0: the guide switched off, a
+/// guest asked for "my" threads) is an empty list, as the web page of the message parsed to one.
 (List<LatestThread>, String? nextPageUrl) latestThreadsFromApi(Map<String, dynamic> json, String url) {
   if (json['ok'] != 1) {
     talker.info('latest thread page: the forum answered a message: ${json['message']}');
     return (const [], null);
   }
-  final threads = _list(json['threads']).map(LatestThread.fromApi).toList();
-  final page = _int(json['page']);
-  final hasNext = _int(json['has_next']) == 1 && page > 0;
+  final search = json['type'] == 'search';
+  final threads = tsdmAppList(
+    json['threads'],
+  ).where(tsdmAppIsThreadRow).map(search ? LatestThread.fromSearchApi : LatestThread.fromApi).toList();
+  final page = tsdmAppInt(json['page']);
+  final hasNext = tsdmAppInt(json['has_next']) == 1 && page > 0;
   final String? nextPageUrl;
   if (!hasNext) {
     nextPageUrl = null;
-  } else if (json['type'] == 'search') {
+  } else if (search) {
     nextPageUrl = searchResultPageUrl(json, page + 1);
   } else {
     nextPageUrl = tsdmAppListPageUrl(url, page + 1);
   }
   return (threads, nextPageUrl);
 }
-
-int _int(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-List<Map<String, dynamic>> _list(Object? value) =>
-    value is List ? value.whereType<Map<String, dynamic>>().toList() : const [];

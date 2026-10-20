@@ -24,7 +24,7 @@ class SearchedThread with SearchedThreadMappable {
   /// and no link, as the page prints none), the forum from `fid` and `forum`. The publish time is null when the
   /// row names none (the web path drops such a row).
   factory SearchedThread.fromApi(Map<String, dynamic> t) {
-    final fid = _apiInt(t['fid']);
+    final fid = tsdmAppInt(t['fid']);
     final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0);
     return SearchedThread(
       tid: int.tryParse(thread.threadID) ?? 0,
@@ -32,7 +32,7 @@ class SearchedThread with SearchedThreadMappable {
       url: thread.url,
       author: thread.author,
       publishTime: thread.publishDate,
-      forumName: _apiText(t['forum']),
+      forumName: tsdmAppText(t['forum']),
       forumUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
     );
   }
@@ -179,13 +179,3 @@ class SearchedThread with SearchedThreadMappable {
   /// Forum url this thread belongs to.
   final String forumUrl;
 }
-
-/// An integer field of an API answer: 0 when missing or not a number.
-int _apiInt(Object? value) => switch (value) {
-  final num n => n.toInt(),
-  final String s => int.tryParse(s) ?? 0,
-  _ => 0,
-};
-
-/// A text field of an API answer: empty when missing.
-String _apiText(Object? value) => value is String ? value : '';

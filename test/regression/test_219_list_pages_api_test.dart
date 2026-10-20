@@ -275,6 +275,19 @@ void main() {
       expect(moved.url, '$baseUrl/forum.php?mod=viewthread&tid=9199000');
       expect(SearchedThread.fromApi({...row, 'dateline': 0}).publishTime, isNull);
     });
+
+    test('a row without a thread or a subject is dropped, as the page parser drops a malformed row', () {
+      final row = _row('search_v6_results.json', 9199879);
+      final rows = [
+        {...row, 'tid': 0},
+        {...row, 'subject': ''},
+        {...row, 'tid': 1},
+        'not a row',
+      ];
+      final result = searchResultFromApi(_with('search_v6_results.json', {'threads': rows}));
+      expect(result.data!.map((e) => e.tid), [1]);
+      expect(result.count, 211, reason: "the total is the forum's");
+    });
   });
 
   group('the guide lists: latestThreadsFromApi', () {
@@ -375,6 +388,19 @@ void main() {
       expect(lastAnonymous.latestReplyAuthor?.url, isEmpty);
     });
 
+    test('a row without a thread or a subject is dropped, as the page parser drops a malformed row', () {
+      final row = _row('guide_v7_new.json', 9199961);
+      final rows = [
+        {...row, 'tid': 0},
+        {...row, 'subject': ''},
+        {...row, 'tid': 1},
+      ];
+      final (threads, _) = latestThreadsFromApi(_with('guide_v7_new.json', {'threads': rows}), newUrl);
+      expect(threads.map((e) => e.threadID), ['1']);
+      final (search, _) = latestThreadsFromApi(_with('search_v6_results.json', {'threads': rows}), newUrl);
+      expect(search.map((e) => e.threadID), ['1']);
+    });
+
     test('the forum message (the guide switched off, a guest asking "my") is an empty list, as the page parsed to', () {
       final (threads, next) = latestThreadsFromApi(_json('guide_v7_guest_my.json'), guideUrl('my'));
       expect(threads, isEmpty);
@@ -395,6 +421,23 @@ void main() {
       expect(first.latestReplyTime, _at(1792293941));
       expect(first.forumName, '主機・PC 遊戲');
       expect(first.forumUrl, '$baseUrl/forum.php?mod=forumdisplay&fid=11');
+
+      // The person and the time shown are the author and the publish time, as the search layout prints them
+      // (`dateline - author`), not the last reply: the row whose last reply is later than its publish time.
+      final row = _row('search_v6_results.json', 9199751);
+      expect(row['lastpost'], isNot(row['dateline']));
+      final replied = threads.singleWhere((e) => e.threadID == '9199751');
+      expect(replied.latestReplyTime, _at(1792076503), reason: 'the publish time (dateline), not lastpost');
+      expect(replied.latestReplyAuthor?.name, 'ag_low');
+      expect(replied.latestReplyAuthor?.uid, '31');
+      expect(replied.threadAuthor?.name, 'ag_low');
+      expect(replied.replyCount, 7);
+      final other = LatestThread.fromSearchApi({...row, 'lastposter': 'someone_else', 'lastpost': 1792300000});
+      expect(other.latestReplyAuthor?.name, 'ag_low', reason: 'the author, not the last poster');
+      expect(other.latestReplyTime, _at(1792076503));
+      // The guide builder of the same row would show the last reply.
+      final asGuide = LatestThread.fromApi(row);
+      expect(asGuide.latestReplyTime, _at(1792177148));
 
       final (last, nextLast) = latestThreadsFromApi(_with('search_v6_results.json', {'page': 11, 'has_next': 0}), url);
       expect(last, hasLength(20));
@@ -482,6 +525,7 @@ void main() {
         isEmpty,
         reason: 'a row without a title is skipped, as the page parser skips it',
       );
+      expect(items({...row, 'tid': 0}), isEmpty, reason: 'a row without a thread the same');
       // A module that names no view (nothing to open) is skipped, as the page parser skips a header without a link.
       expect(
         guideModulesFromApi({
@@ -583,6 +627,18 @@ void main() {
       expect(anonymous.latestReplyAuthor?.url, isEmpty);
     });
 
+    test('a row without a thread or a subject is dropped, as the page parser drops a malformed row', () {
+      final row = _row('mythread_v9_thread.json', 9199936);
+      final rows = [
+        {...row, 'tid': 0},
+        {...row, 'subject': ''},
+        {...row, 'tid': 1},
+      ];
+      final (threads, next) = myThreadsFromApi(_with('mythread_v9_thread.json', {'threads': rows}), myThreadThreadUrl);
+      expect(threads.map((e) => e.threadID), ['1']);
+      expect(next, '$myThreadThreadUrl&page=2');
+    });
+
     test('the guest message is an empty list, as the page parsed to; it names no account', () {
       final json = _json('mythread_v9_guest.json');
       final (threads, next) = myThreadsFromApi(json, myThreadThreadUrl);
@@ -629,6 +685,8 @@ void main() {
         throwsFormatException,
       );
       expect(() => draftPageFromApi({...draft, 'view': 'we'}, page: 1, uid: 35), throwsFormatException);
+      expect(() => draftPageFromApi({...draft, 'kind': 'thread'}, page: 1, uid: 35), throwsFormatException);
+      expect(() => draftPageFromApi({...draft, 'filter': ''}, page: 1, uid: 35), throwsFormatException);
       final row = _rows('mythread_v9_draft.json').single;
       for (final bad in [
         {...row, 'tid': 0},

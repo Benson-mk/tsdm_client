@@ -113,7 +113,8 @@ class SearchRepository with LoggerMixin {
     if (api != null) {
       if (api['ok'] != 1) {
         // The forum's own refusal: "抱歉，您的搜索过于频繁", an expired search, no permission, please log in. A search
-        // without a result is a results page of plugin 2.4.0, never a message; the old rule is kept all the same.
+        // without a result is a results page of plugin 2.4.0 (count 0), never a message; the old rule is kept all
+        // the same, a dead path here (its count is 0 where the message page gave none: nothing shows the difference).
         final message = api['message'] is String ? (api['message'] as String).trim() : '';
         if (!message.contains('没有找到')) {
           error('search failed: $message');
