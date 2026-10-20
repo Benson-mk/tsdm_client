@@ -20,6 +20,7 @@ import 'package:tsdm_client/features/blocking/widgets/user_block_button.dart';
 import 'package:tsdm_client/features/checkin/bloc/checkin_bloc.dart';
 import 'package:tsdm_client/features/checkin/widgets/checkin_button.dart';
 import 'package:tsdm_client/features/friend/widgets/add_friend_dialog.dart';
+import 'package:tsdm_client/features/local_notice/tap.dart';
 import 'package:tsdm_client/features/need_login/view/need_login_page.dart';
 import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/bloc/profile_bloc.dart';
@@ -170,7 +171,7 @@ class _ProfilePageState extends State<ProfilePage> {
           onSelected: (action) async {
             switch (action) {
               case _ProfileActions.viewNotification:
-                await context.pushNamed(ScreenPaths.notice);
+                openNoticePageInApp(context);
               case _ProfileActions.checkin:
                 context.read<CheckinBloc>().add(const CheckinRequested());
               case _ProfileActions.viewPoints:
