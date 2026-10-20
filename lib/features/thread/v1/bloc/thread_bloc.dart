@@ -96,7 +96,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       emit(state.copyWith(status: ThreadStatus.loading));
     }
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           pageNumber: event.pageNumber,
@@ -114,7 +114,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           },
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(v, event.pageNumber).map((v) => emit(v)).run();
+              _stateOf(v).map((v) => emit(v)).run();
             }
           },
         )
@@ -127,7 +127,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     final previousPosts = state.postList;
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           onlyVisibleUid: state.onlyVisibleUid,
@@ -144,7 +144,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           },
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(v, 1).map((v) => emit(v)).run();
+              _stateOf(v).map((v) => emit(v)).run();
             }
           },
         )
@@ -157,7 +157,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     final previousPosts = state.postList;
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           pageNumber: event.pageNumber,
@@ -175,7 +175,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           },
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(v, event.pageNumber).map((v) => emit(v)).run();
+              _stateOf(v).map((v) => emit(v)).run();
             }
           },
         )
@@ -190,7 +190,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     final load = _beginPageLoad();
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           pageNumber: state.currentPage,
@@ -213,7 +213,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           // Use "1" as current page number to prevent page number overflow.
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(v, 1).map((v) => emit(v.copyWith(onlyVisibleUid: event.uid))).run();
+              _stateOf(v).map((v) => emit(v.copyWith(onlyVisibleUid: event.uid))).run();
             }
           },
         )
@@ -227,7 +227,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     // will have more posts and pages so there is no page number overflow
     // risk.
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           pageNumber: state.currentPage,
@@ -248,9 +248,8 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           },
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(
+              _stateOf(
                 v,
-                state.currentPage,
                 clearOnlyVisibleUid: true,
               ).map((v) => emit(v.copyWith(onlyVisibleUid: state.onlyVisibleUid))).run();
             }
@@ -273,7 +272,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       ),
     );
     await _threadRepository
-        .fetchThread(
+        .fetchThreadPage(
           tid: state.tid,
           pid: state.pid,
           pageNumber: state.currentPage,
@@ -294,19 +293,16 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           },
           (v) {
             if (_isCurrent(load)) {
-              _parseFromDocument(
-                v,
-                state.currentPage,
-              ).map((v) => emit(v.copyWith(reverseOrder: state.reverseOrder))).run();
+              _stateOf(v).map((v) => emit(v.copyWith(reverseOrder: state.reverseOrder))).run();
             }
           },
         )
         .run();
   }
 
-  IO<ThreadState> _parseFromDocument(uh.Document document, int pageNumber, {bool? clearOnlyVisibleUid}) => IO(() {
-    final info = parseThreadDocument(document, pageNumber);
-
+  /// The state of the page [info] the repository built (from the structured answer of the forum's app API, or
+  /// parsed from the web page).
+  IO<ThreadState> _stateOf(ThreadPageInfo info, {bool? clearOnlyVisibleUid}) => IO(() {
     final threadState = ThreadState(
       // A login or no-permission page names no thread: keep the one asked for, or the next reload (after logging in,
       // or for another account, GitHub #184 follow-up) would ask for no thread at all.

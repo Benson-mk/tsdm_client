@@ -5,6 +5,8 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
+import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -27,7 +29,13 @@ class ThreadRepository {
       '$baseUrl/forum.php?mod=misc&action=viewthreadmod&tid=$tid'
       '&infloat=yes&handlekey=viewthreadmod&inajax=1&ajaxtarget=fwin_content_viewthreadmod';
 
-  /// Fetch the thread page with [tid] on page [pageNumber].
+  /// Fetch the thread page with [tid] on page [pageNumber] as a document, for the readers that parse the page
+  /// themselves (`parseThreadDocument`).
+  ///
+  /// The page is asked in the JSON mode of the forum's app API; whatever the answer is (the web page, or a JSON
+  /// answer whose `document` holds the blocks of the page: the structured answer of plugin 2.1.0 carries them too),
+  /// it is given as the document of the page. The thread page shown to the user is fetched with [fetchThreadPage],
+  /// which reads the structured fields of such an answer instead.
   ///
   /// # Exception
   ///
@@ -39,6 +47,75 @@ class ThreadRepository {
     String? onlyVisibleUid,
     bool? reverseOrder,
     int? exactOrder,
+  }) =>
+      _fetchAnswer(
+        tid: tid,
+        pid: pid,
+        pageNumber: pageNumber,
+        onlyVisibleUid: onlyVisibleUid,
+        reverseOrder: reverseOrder,
+        exactOrder: exactOrder,
+      ).flatMap(
+        (data) => AsyncEither(
+          () async => tsdmAppAnswerWithoutPage(data)
+              // The antitheft interceptor asked the web page again for an answer without a page; what is still one here
+              // is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage).
+              ? left(HttpRequestFailedException(HttpStatus.ok))
+              : right(tsdmAppPageDocument(data)),
+        ),
+      );
+
+  /// Fetch the thread page with [tid] on page [pageNumber], built.
+  ///
+  /// The page is asked in the JSON mode of the forum's app API. An answer of plugin 2.1.0 or later carries the page
+  /// as structured fields (`schema: 3`), or is the forum's own message with `login` (no permission, please log in):
+  /// the page is built from them ([threadPageFromApi]), its `document` never read. Any other answer (a web page from
+  /// a forum without the plugin, an older plugin's answer, the antitheft challenge or the thread cache a guest is
+  /// served, whose `document` holds the blocks of the page) is parsed as the web page ([parseThreadDocument]), with
+  /// [pageNumber] as the page when the page does not tell.
+  ///
+  /// # Exception
+  ///
+  /// * **HttpRequestedFailedException** when http request failed.
+  AsyncEither<ThreadPageInfo> fetchThreadPage({
+    String? tid,
+    String? pid,
+    int pageNumber = 1,
+    String? onlyVisibleUid,
+    bool? reverseOrder,
+    int? exactOrder,
+  }) =>
+      _fetchAnswer(
+        tid: tid,
+        pid: pid,
+        pageNumber: pageNumber,
+        onlyVisibleUid: onlyVisibleUid,
+        reverseOrder: reverseOrder,
+        exactOrder: exactOrder,
+      ).flatMap(
+        (data) => AsyncEither(() async {
+          final api = threadApiAnswerOf(data);
+          if (api != null) {
+            return right(threadPageFromApi(api, pageNumber));
+          }
+          // An answer without a page is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage); the
+          // antitheft interceptor asked the web page again for one already.
+          if (tsdmAppAnswerWithoutPage(data)) {
+            return left(HttpRequestFailedException(HttpStatus.ok));
+          }
+          return right(parseThreadDocument(tsdmAppPageDocument(data), pageNumber));
+        }),
+      );
+
+  /// The body of the thread page answer: the web page, or the JSON answer of the forum's app API (which may be one
+  /// without a page, see [tsdmAppAnswerWithoutPage]: the callers tell).
+  AsyncEither<Object?> _fetchAnswer({
+    required String? tid,
+    required String? pid,
+    required int pageNumber,
+    required String? onlyVisibleUid,
+    required bool? reverseOrder,
+    required int? exactOrder,
   }) => AsyncEither(() async {
     assert(tid != null || pid != null, 'tid and pid MUST not be null at the same time');
 
@@ -84,13 +161,11 @@ class ThreadRepository {
     }
 
     final resp = respEither.unwrap();
-    // The antitheft interceptor asked the web page again for an answer without a page; what is still one here is a
-    // failed request, not a thread without posts (see tsdmAppAnswerWithoutPage).
-    if (resp.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(resp.data)) {
+    if (resp.statusCode != HttpStatus.ok) {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
-    return right(tsdmAppPageDocument(resp.data));
+    return right(resp.data);
   });
 
   /// Fetch the operation log for thread [tid].

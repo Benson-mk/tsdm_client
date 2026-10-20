@@ -64,6 +64,128 @@ class Post with PostMappable {
     this.reportTarget,
   });
 
+  /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
+  /// `schema: 3`, see `threadPageFromApi`), the same [Post] [fromPostNode] reads from the floor of the web page.
+  ///
+  /// The floor's content `body_html` (the `div.pcb` of the floor, cut from the page as it is) is the `data` the content
+  /// renderer gets, untouched: quotes, spoilers, hidden parts, the comment and rate blocks are all in there as on the
+  /// web page. The author column `author_html` (the `td.pls` of the floor) is parsed with the selectors of the web
+  /// page ([_parseAuthorColumn]) for what the other plugins put there: the brief profile, medals, badges, pokemon,
+  /// checkin. The rest comes from the fields:
+  ///
+  /// * the author from `author` / `authorid` / `avatar`, an anonymous floor (`anonymous` 1) named "匿名" without uid,
+  ///   link or avatar; `dateline` (unix seconds) as the publish time;
+  /// * `position` as the floor number (the forum's -1 of a hot reply gives none), `share_url` as the share link;
+  /// * `lastedit` as the last edit (the name and the time text the page prints);
+  /// * the purchase lock of the first floor of a paid thread not yet bought ([pay], `thread.pay`, `need_pay` 1), the
+  ///   other locks stay in the content for the renderer, as on the web page;
+  /// * `rate` as the rate table (the columns, each record's values and reason, the totals), `poll_html` as the poll
+  ///   form of the first floor of a poll thread (with [viewerUid], the account the answer was served to);
+  /// * the actions the forum allows this account (`can.*` 1) with their urls (`urls.*`): reply, rate, edit, and the
+  ///   report of the floor for [viewerUid] in thread [tid] of forum [fid];
+  /// * the red packet of the floor, when its block `div#ts_packet` is in the content.
+  ///
+  /// [page] is the page the floor was asked on; [draft] whether the thread is a draft (its first floor is then the
+  /// draft, as on the web page, when it can be edited).
+  factory Post.fromApi(
+    Map<String, dynamic> p, {
+    required String tid,
+    required int fid,
+    required int viewerUid,
+    required int page,
+    Map<String, dynamic>? pay,
+    bool draft = false,
+  }) {
+    final pid = _apiInt(p['pid']);
+    final postID = '$pid';
+    final first = _apiInt(p['first']) == 1;
+    final position = _apiInt(p['position']);
+    final authorId = _apiInt(p['authorid']);
+    final anonymous = _apiInt(p['anonymous']) == 1 || authorId <= 0;
+    final author = anonymous
+        ? const User(name: _anonymousName, url: '')
+        : User(
+            name: _apiText(p['author']),
+            uid: '$authorId',
+            url: '$baseUrl/home.php?mod=space&uid=$authorId',
+            avatarUrl: _apiImageUrl(p['avatar']),
+          );
+
+    final authorHtml = _apiText(p['author_html']);
+    final table = parseHtmlDocument(
+      '<table><tbody><tr><td class="pls">$authorHtml</td></tr></tbody></table>',
+    ).querySelector('table')!;
+    final column = _parseAuthorColumn(
+      table,
+      table.querySelector('td.pls'),
+      postID: postID,
+      author: author,
+    );
+    final signatureHtml = _apiText(p['signature_html']);
+
+    final can = _apiMap(p['can']);
+    final urls = _apiMap(p['urls']);
+    String? allowed(String key) =>
+        _apiInt(can[key]) == 1 && _apiText(urls[key]).isNotEmpty ? _apiText(urls[key]).prependHost() : null;
+    final editUrl = allowed('edit');
+    final reportTarget = _apiInt(can['report']) == 1 && viewerUid > 0 && pid > 0 && fid > 0 && !anonymous
+        ? PostReportTarget(pid: pid, tid: int.tryParse(tid) ?? 0, fid: fid, viewerUid: viewerUid)
+        : null;
+
+    final lastEdit = p['lastedit'] is Map<String, dynamic> ? _apiMap(p['lastedit']) : null;
+
+    final locked = <Locked>[];
+    if (first && pay != null && _apiInt(pay['need_pay']) == 1 && _apiInt(pay['price']) > 0) {
+      final payers = _apiInt(pay['payers']);
+      locked.add(
+        Locked.purchase(
+          price: _apiInt(pay['price']),
+          purchasedCount: payers > 0 ? payers : null,
+          tid: tid,
+          pid: postID,
+        ),
+      );
+    }
+
+    final pollHtml = _apiText(p['poll_html']);
+    final bodyHtml = _apiText(p['body_html']);
+    // The red packet block sits beside the content on the web page (`div.pct > div#ts_packet`); it is only read here
+    // when the forum put it inside the content.
+    final packetNode = bodyHtml.contains('ts_packet')
+        ? parseHtmlDocument('<div class="pcb">$bodyHtml</div>').querySelector('div#ts_packet > a')
+        : null;
+    final shareUrl = _apiText(p['share_url']);
+
+    return Post(
+      postID: postID,
+      postFloor: position > 0 ? position : null,
+      author: author,
+      publishTime: _apiTime(p['dateline']),
+      data: bodyHtml,
+      locked: locked,
+      replyAction: allowed('reply'),
+      rate: _rateFromApi(p['rate'], tid: tid, pid: postID),
+      rateAction: allowed('rate'),
+      packetUrl: packetNode?.attributes['href']?.prependHost(),
+      packetAllTaken: packetNode?.querySelector('img')?.attributes['src'] == _emptyPacketImageUrl,
+      editUrl: editUrl,
+      lastEditUsername: lastEdit == null ? null : _apiText(lastEdit['username']),
+      lastEditTime: lastEdit == null ? null : _apiText(lastEdit['time']),
+      userBriefProfile: column.userBriefProfile,
+      shareLink: shareUrl.isEmpty ? null : shareUrl.prependHost(),
+      page: page,
+      isDraft: first && draft && editUrl != null,
+      poll: pollHtml.isEmpty ? null : PostPoll(form: pollHtml, viewerUid: viewerUid > 0 ? viewerUid : null),
+      postMedals: column.postMedals,
+      badge: column.badge,
+      secondBadge: column.secondBadge,
+      signature: signatureHtml.isEmpty ? column.signature : signatureHtml,
+      pokemon: column.pokemon,
+      checkin: column.checkin,
+      reportTarget: reportTarget,
+    );
+  }
+
   /// Post ID.
   final String postID;
 
@@ -367,71 +489,9 @@ class Post with PostMappable {
       lastEditTime = '$date $time';
     }
 
-    // User profile
-    //
-    // The user info column is empty for guests (and the profile is not available), do not treat it as an error.
-    UserBriefProfile? userBriefProfile;
-    if (userProfileNode != null && userProfileNode.querySelector('div.tsdm_statbar') != null) {
-      userBriefProfile = UserBriefProfile.buildFromUserProfileNode(userProfileNode, author: postAuthor);
-    } else {
-      talker.info('post $postID: user profile node not found, maybe not logged in');
-    }
+    final column = _parseAuthorColumn(element, userProfileNode, postID: postID, author: postAuthor);
 
     final isDraft = isFirstThreadPost(element) && element.querySelectorAll('a.psave').any(isDraftPublishLink);
-
-    // Medals used by the current posts' author.
-    //
-    // Discuz X5: `<div class="tsdm_medalbar"><a><img id="md_${PID}_${MID}"><img ...></a></div>`, not all `<img>` are
-    // wrapped in `<a>`.
-    // Legacy: `<div class="md_ctrl"><a><img></a></div>`.
-    var postMedals = element
-        .querySelectorAll('div.tsdm_medalbar img[id^="md_"]')
-        .map(PostMedal.fromImg)
-        .whereType<PostMedal>()
-        .toList();
-    if (postMedals.isEmpty) {
-      postMedals = element
-          .querySelectorAll('div.md_ctrl > a > img')
-          .map(PostMedal.fromImg)
-          .whereType<PostMedal>()
-          .toList();
-    }
-
-    // User group badge and optional second badge.
-    final badge = element.querySelector('div#$avatarId div.tsdm_norm_title > img')?._lazyImageUrl();
-    // We can not use `:is(.tsdmtitles, .tsdm_lv_title)` here.
-    //
-    // Discuz X5: `<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img></div></div>`. The image is looked
-    // up anywhere inside that same title block, so a link around it (`<a><img></a>`) still counts; nothing outside
-    // the block of this floor's author column is used.
-    final secondBadge =
-        userProfileNode?.querySelector('div.tsdmtitle-badges div.tsdmtitle-title img')?._lazyImageUrl() ??
-        element.querySelector('div.tsdm_statbar > a > img.tsdmtitles')?._lazyImageUrl() ??
-        element.querySelector('div.tsdm_statbar > a > img.tsdm_lv_title')?._lazyImageUrl();
-    final signature = element.querySelector('div.sign_inner')?.innerHtml;
-
-    // Pokemon, optional.
-    //
-    // Legacy: `<div class="tsdm_pokemon">`.
-    // Discuz X5: `<div class="tns xg2">` in the user info column.
-    PostFloorPokemon? pokemon;
-    final pokemonNode = element.querySelector('div.tsdm_pokemon');
-    if (pokemonNode != null) {
-      pokemon = PostFloorPokemon.fromDiv(pokemonNode);
-    }
-    final pokemonNodeX5 = userProfileNode?.querySelector('div.tns');
-    if (pokemon == null && pokemonNodeX5 != null) {
-      pokemon = PostFloorPokemon.fromTnsDiv(pokemonNodeX5);
-    }
-
-    // Checkin status, optional.
-    final PostCheckinStatus? checkin;
-    final checkinNode = element.querySelector('div.qdsmile');
-    if (checkinNode != null) {
-      checkin = PostCheckinStatus.fromDiv(checkinNode);
-    } else {
-      checkin = null;
-    }
 
     return Post(
       postID: postID,
@@ -448,23 +508,151 @@ class Post with PostMappable {
       editUrl: editUrl,
       lastEditUsername: lastEditUsername,
       lastEditTime: lastEditTime,
-      userBriefProfile: userBriefProfile,
+      userBriefProfile: column.userBriefProfile,
       shareLink: shareLink,
       page: page,
       isDraft: isDraft,
       poll: pollNode == null ? null : PostPoll(form: pollNode.outerHtml ?? '', viewerUid: viewerUid),
-      postMedals: postMedals,
-      badge: badge,
-      secondBadge: secondBadge,
-      signature: signature,
-      pokemon: pokemon,
-      checkin: checkin,
+      postMedals: column.postMedals,
+      badge: column.badge,
+      secondBadge: column.secondBadge,
+      signature: column.signature,
+      pokemon: column.pokemon,
+      checkin: column.checkin,
       reportTarget: extractPostReportTarget(
         element,
         postId: postID,
         context: reportContext,
         authorUid: postAuthor.uid,
       ),
+    );
+  }
+
+  /// What the author column of a floor (`td.pls`, [userProfileNode]) and the blocks other plugins add to the floor
+  /// hold about the author: the brief profile, the medals worn, the group badges, the signature, the pokemon and the
+  /// checkin state.
+  ///
+  /// [scope] is the node the floor-wide selectors search: the whole `div#post_PID` of a web page
+  /// ([fromPostNode]), or the table the author column of a structured answer is wrapped in ([Post.fromApi]), so that
+  /// both paths read the same selectors.
+  static _AuthorColumn _parseAuthorColumn(
+    uh.Element scope,
+    uh.Element? userProfileNode, {
+    required String postID,
+    required User author,
+  }) {
+    final avatarId = 'ts_avatar_$postID';
+    // User profile
+    //
+    // The user info column is empty for guests (and the profile is not available), do not treat it as an error.
+    UserBriefProfile? userBriefProfile;
+    if (userProfileNode != null && userProfileNode.querySelector('div.tsdm_statbar') != null) {
+      userBriefProfile = UserBriefProfile.buildFromUserProfileNode(userProfileNode, author: author);
+    } else {
+      talker.info('post $postID: user profile node not found, maybe not logged in');
+    }
+
+    // Medals used by the current posts' author.
+    //
+    // Discuz X5: `<div class="tsdm_medalbar"><a><img id="md_${PID}_${MID}"><img ...></a></div>`, not all `<img>` are
+    // wrapped in `<a>`.
+    // Legacy: `<div class="md_ctrl"><a><img></a></div>`.
+    var postMedals = scope
+        .querySelectorAll('div.tsdm_medalbar img[id^="md_"]')
+        .map(PostMedal.fromImg)
+        .whereType<PostMedal>()
+        .toList();
+    if (postMedals.isEmpty) {
+      postMedals = scope
+          .querySelectorAll('div.md_ctrl > a > img')
+          .map(PostMedal.fromImg)
+          .whereType<PostMedal>()
+          .toList();
+    }
+
+    // User group badge and optional second badge.
+    final badge = scope.querySelector('div#$avatarId div.tsdm_norm_title > img')?._lazyImageUrl();
+    // We can not use `:is(.tsdmtitles, .tsdm_lv_title)` here.
+    //
+    // Discuz X5: `<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img></div></div>`. The image is looked
+    // up anywhere inside that same title block, so a link around it (`<a><img></a>`) still counts; nothing outside
+    // the block of this floor's author column is used.
+    final secondBadge =
+        userProfileNode?.querySelector('div.tsdmtitle-badges div.tsdmtitle-title img')?._lazyImageUrl() ??
+        scope.querySelector('div.tsdm_statbar > a > img.tsdmtitles')?._lazyImageUrl() ??
+        scope.querySelector('div.tsdm_statbar > a > img.tsdm_lv_title')?._lazyImageUrl();
+    final signature = scope.querySelector('div.sign_inner')?.innerHtml;
+
+    // Pokemon, optional.
+    //
+    // Legacy: `<div class="tsdm_pokemon">`.
+    // Discuz X5: `<div class="tns xg2">` in the user info column.
+    PostFloorPokemon? pokemon;
+    final pokemonNode = scope.querySelector('div.tsdm_pokemon');
+    if (pokemonNode != null) {
+      pokemon = PostFloorPokemon.fromDiv(pokemonNode);
+    }
+    final pokemonNodeX5 = userProfileNode?.querySelector('div.tns');
+    if (pokemon == null && pokemonNodeX5 != null) {
+      pokemon = PostFloorPokemon.fromTnsDiv(pokemonNodeX5);
+    }
+
+    // Checkin status, optional.
+    final PostCheckinStatus? checkin;
+    final checkinNode = scope.querySelector('div.qdsmile');
+    if (checkinNode != null) {
+      checkin = PostCheckinStatus.fromDiv(checkinNode);
+    } else {
+      checkin = null;
+    }
+
+    return (
+      userBriefProfile: userBriefProfile,
+      postMedals: postMedals,
+      badge: badge,
+      secondBadge: secondBadge,
+      signature: signature,
+      pokemon: pokemon,
+      checkin: checkin,
+    );
+  }
+
+  /// The [Rate] of a floor from the `rate` field [value] of a structured answer, shaped as [Rate.fromRateLogNode]
+  /// reads it from the rate table of the web page: the columns with the reason column last, each record's values
+  /// printed as the page prints them (`+ 2`, `-1`) with the reason as the last value, the totals as the status.
+  /// Null when the floor has no rate, or the field lists no record.
+  static Rate? _rateFromApi(Object? value, {required String tid, required String pid}) {
+    if (value is! Map<String, dynamic>) {
+      return null;
+    }
+    final columns = _apiList(value['columns']).map(_apiText).toList();
+    final totals = _apiList(value['totals']).map(_apiInt).toList();
+    final records = _apiList(value['records']).whereType<Map<String, dynamic>>().map((r) {
+      final uid = _apiInt(r['uid']);
+      final values = _apiList(r['values']).map(_apiInt).map((e) => e > 0 ? '+ $e' : '$e');
+      return SingleRate(
+        user: User(
+          name: _apiText(r['username']),
+          uid: uid > 0 ? '$uid' : null,
+          url: '$baseUrl/home.php?mod=space&uid=$uid',
+          avatarUrl: _apiImageUrl(r['avatar']),
+        ),
+        attrValueList: [...values, _apiText(r['reason'])],
+      );
+    }).toList();
+    if (columns.isEmpty || records.isEmpty) {
+      return null;
+    }
+    final status = <String>[];
+    for (var i = 0; i < columns.length && i < totals.length; i++) {
+      status.add('${columns[i]} ${totals[i] > 0 ? '+${totals[i]}' : '${totals[i]}'}');
+    }
+    return Rate(
+      userCount: _apiInt(value['count']),
+      detailUrl: '$baseUrl/forum.php?mod=misc&action=viewratings&tid=$tid&pid=$pid',
+      attrList: [...columns, _rateReasonColumn],
+      records: records,
+      rateStatus: status.join(' '),
     );
   }
 
@@ -522,4 +710,32 @@ final class PostPoll with PostPollMappable {
 
   /// The account the page was served to; null for a guest page, or a page that does not say.
   final int? viewerUid;
+}
+
+/// The reason column the rate table of the web page ends with, after the credit columns.
+const _rateReasonColumn = '理由';
+
+/// What [Post._parseAuthorColumn] reads from the author column of a floor.
+typedef _AuthorColumn = ({
+  UserBriefProfile? userBriefProfile,
+  List<PostMedal> postMedals,
+  String? badge,
+  String? secondBadge,
+  String? signature,
+  PostFloorPokemon? pokemon,
+  PostCheckinStatus? checkin,
+});
+
+Map<String, dynamic> _apiMap(Object? value) => value is Map<String, dynamic> ? value : const {};
+
+List<Object?> _apiList(Object? value) => value is List ? value : const [];
+
+/// An image url of a structured answer as the forum prints it (`./data/avatar/…`, `data/avatar/…` or absolute), on
+/// the forum's host; null when empty.
+String? _apiImageUrl(Object? value) {
+  final url = _apiText(value);
+  if (url.isEmpty) {
+    return null;
+  }
+  return (url.startsWith('./') ? url.substring(2) : url).prependHost();
 }
