@@ -30,6 +30,7 @@ part 'locked.dart';
 part 'models.mapper.dart';
 part 'normal_thread.dart';
 part 'post.dart';
+part 'post_bbcode.dart';
 part 'post_report_target.dart';
 part 'rate.dart';
 part 'reply_parameters.dart';

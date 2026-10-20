@@ -462,6 +462,10 @@
         "notDetected": "未偵測到 · 應用預期 ${expected}",
         "olderNote": "部分頁面將按網頁解析"
       },
+      "appPostRenderer": {
+        "title": "用 App 渲染器顯示帖子（實驗）",
+        "detail": "論壇接口外掛 2.7.0 起，看得到完整內容的樓層改用帖子原文（bbcode）由 App 自己顯示；App 畫不準的樓層照舊顯示論壇的網頁內容"
+      },
       "proxySettings": {
         "title": "代理設定",
         "host": "位址",
@@ -1217,6 +1221,11 @@
     }
   },
   "postCard": {
+    "contentUnavailable": "此樓內容無法顯示",
+    "bbcode": {
+      "attachmentLocked": "無法查看：需要購買、權限不足或要先登入",
+      "attachmentUnavailable": "附件無法顯示"
+    },
     "interactiveHtml": {
       "open": "互動內容",
       "description": "開啟此樓層的互動排版、表單與按鈕。",

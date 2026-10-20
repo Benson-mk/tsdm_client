@@ -237,18 +237,19 @@ abstract final class TsdmAppApi {
 /// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
 /// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
 /// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
-const expectedTsdmAppVersion = '2.6.0';
+const expectedTsdmAppVersion = '2.7.0';
 
 /// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
 /// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].
+/// The `smilies` action (2.7.0) names it `plugin_version`: its `version` is the version of the smilies table.
 @immutable
 final class TsdmAppPluginInfo {
   /// Constructor.
   const TsdmAppPluginInfo({required this.version, required this.api, required this.nodoc});
 
-  /// The info of an action answer [json], null when it names no `version`.
+  /// The info of an action answer [json], null when it names no `version` (or `plugin_version`, which comes first).
   static TsdmAppPluginInfo? fromAnswer(Map<String, dynamic> json) {
-    final version = json['version'];
+    final version = json.containsKey('plugin_version') ? json['plugin_version'] : json['version'];
     if (version is! String || version.isEmpty) {
       return null;
     }

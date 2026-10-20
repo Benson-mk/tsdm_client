@@ -46,6 +46,16 @@ posted without AJAX (`reply_redirect`: a 301 the client does not follow for a PO
 the result names the new post); the tests pin both outcomes. `write_v13_formhash_bad.orig.txt` is the forum's "System
 Error" page of a bad form hash (never JSON); its back trace id and System Info block (the machine and the server
 versions) are replaced by fixed text. `write_v13_reply_ok.json` carries a deliberate garbage `document`: a `handle`
-never reads one. `forum_v2_fid29_pending.json` is hand-written (the pending-application
+never reads one.
+
+`thread_v14_*.json` (the thread page with each floor's bbcode, `schema: 14`, plugin 2.7.0: a plain thread; the
+fixture thread with its first floor of every tag and attachment, hidden, password, free, payment, `bbcodeoff`, raw
+html and literal floors, seen by a member, the author, a guest without attachments, a guest of a forum showing guests
+thumbnails, a member who may not view images, and in a forum with jammer; a paid thread; a reply hidden from the
+viewer; a moderated reply; a thread of smilies and a jsonEditor floor; a banned author's floor; a single-banned floor
+seen by a moderator; floors whose ids another floor's html forged (`spoofed`); a custom code with a hidden part,
+`[index]` and an attachment id with a leading zero) and `thread_v14_smilies.json` (the `smilies` action) are copied from the plugin's 2.7.0
+contract samples and scrubbed the same way (host, name, `formhash`, `reply.posttime` → `1700000000`, `thread.views`
+→ `100`). `forum_v2_fid29_pending.json` is hand-written (the pending-application
 message). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
 (and the same rows in `profile_html`), `checkin.last` (and the check-in row), the IP ports. Everything else must not be edited by hand; change the plugin or the tool instead.

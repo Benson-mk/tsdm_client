@@ -462,6 +462,10 @@
         "notDetected": "未检测到 · 应用预期 ${expected}",
         "olderNote": "部分页面将按网页解析"
       },
+      "appPostRenderer": {
+        "title": "用 App 渲染器显示帖子（实验）",
+        "detail": "论坛接口插件 2.7.0 起，看得到完整内容的楼层改用帖子原文（bbcode）由 App 自己显示；App 画不准的楼层照旧显示论坛的网页内容"
+      },
       "proxySettings": {
         "title": "代理设置",
         "host": "地址",
@@ -1217,6 +1221,11 @@
     }
   },
   "postCard": {
+    "contentUnavailable": "此楼内容无法显示",
+    "bbcode": {
+      "attachmentLocked": "无法查看：需要购买、权限不足或要先登录",
+      "attachmentUnavailable": "附件无法显示"
+    },
     "interactiveHtml": {
       "open": "互动内容",
       "description": "打开此楼层的互动排版、表单和按钮。",

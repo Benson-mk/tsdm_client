@@ -12,6 +12,7 @@ import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode_view.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/interactive_post_entry.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -291,12 +292,18 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
 
   Widget _buildPostBody(BuildContext context) {
     final interactionMode = context.read<SettingsBloc>().state.settingsMap.threadFloorInteractionMode;
+    // The experimental app renderer draws the floor from its bbcode where it can (off by default: the html as before).
+    final appRenderer = context.select<SettingsBloc, bool>((e) => e.state.settingsMap.enableAppPostRenderer);
     final child = Row(
       children: [
         Expanded(
           child: Padding(
             padding: edgeInsetsL16R16,
-            child: MunchedHtml(widget.post.data),
+            child: widget.post.isSpoofed
+                ? const _ContentUnavailable()
+                : appRenderer
+                ? PostBbcodeBody(widget.post)
+                : MunchedHtml(widget.post.data),
           ),
         ),
       ],
@@ -542,4 +549,26 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
   // Add mixin and return true to avoid post list shaking when scrolling.
   @override
   bool get wantKeepAlive => true;
+}
+
+/// The content of a floor the forum's app API gives nothing of ([Post.isSpoofed]): a neutral line, not an empty floor.
+class _ContentUnavailable extends StatelessWidget {
+  const _ContentUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.outline;
+    return Row(
+      children: [
+        Icon(Icons.visibility_off_outlined, size: 18, color: color),
+        sizedBoxW8H8,
+        Expanded(
+          child: Text(
+            context.t.postCard.contentUnavailable,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          ),
+        ),
+      ],
+    );
+  }
 }

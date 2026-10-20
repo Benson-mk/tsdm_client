@@ -403,7 +403,11 @@ void main() {
       expect(Uri.parse(withTsdmAppJsonWrite(ajax)).queryParameters, isNot(contains('nodoc')));
       // The JSON mode of a page still leaves an AJAX url alone.
       expect(withTsdmAppJson(ajax), ajax);
-      expect(expectedTsdmAppVersion, '2.6.0');
+      expect(
+        compareTsdmAppVersions(expectedTsdmAppVersion, '2.6.0'),
+        greaterThanOrEqualTo(0),
+        reason: 'the write results came with 2.6.0',
+      );
     });
 
     test('tsdmAppWriteAnswerHtml: the page of a result, text as it is', () {

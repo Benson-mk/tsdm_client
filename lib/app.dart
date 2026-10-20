@@ -44,6 +44,7 @@ import 'package:tsdm_client/features/session_expiry/cubit/session_expiry_cubit.d
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/theme/cubit/theme_cubit.dart';
+import 'package:tsdm_client/features/thread/v1/bbcode/smilies.dart';
 import 'package:tsdm_client/features/thread_visit_history/bloc/thread_visit_history_bloc.dart';
 import 'package:tsdm_client/features/thread_visit_history/repository/thread_visit_history_repository.dart';
 import 'package:tsdm_client/features/update/cubit/update_cubit.dart';
@@ -305,6 +306,11 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
           create: (context) =>
               NotificationSyncAllRepository(storageProvider: getIt(), notificationRepository: context.repo()),
           dispose: (repo) async => repo.dispose(),
+        ),
+        // Created on first use: only the experimental app renderer asks it, for a floor showing smilies.
+        RepositoryProvider<SmiliesRepository>(
+          create: (_) => SmiliesRepository(store: StorageSmiliesStore(getIt.get<StorageProvider>())),
+          dispose: (repo) => repo.dispose(),
         ),
       ],
       child: MultiBlocProvider(

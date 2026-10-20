@@ -781,6 +781,15 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             ),
           ),
         _buildForumApiTile(context),
+        SectionSwitchListTile(
+          key: const ValueKey('settings-app-post-renderer'),
+          secondary: const Icon(Icons.science_outlined),
+          title: Text(tr.appPostRenderer.title),
+          subtitle: Text(tr.appPostRenderer.detail),
+          value: state.settingsMap.enableAppPostRenderer,
+          onChanged: (v) =>
+              context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.enableAppPostRenderer, v)),
+        ),
       ],
     );
   }
