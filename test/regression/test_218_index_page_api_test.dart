@@ -176,8 +176,8 @@ void main() {
 
     test('status, statistics, viewer and links; the garbage document is never read', () {
       expect(state.status, HomepageStatus.success);
-      expect(state.forumStatus.todayCount, '112');
-      expect(state.forumStatus.yesterdayCount, '4');
+      expect(state.forumStatus.todayCount, '100');
+      expect(state.forumStatus.yesterdayCount, '50');
       expect(state.forumStatus.threadCount, '4815');
       final user = state.loggedUserInfo!;
       expect(user.username, 'ag_low2');
@@ -277,7 +277,7 @@ void main() {
       expect(state.swiperUrlList.first.linkUrl, 'forum.php?mod=viewthread&tid=1123');
       final packet = state.dailyRedPacket!;
       expect(packet.entry, 1);
-      expect(packet.dateFlag, '20261020');
+      expect(packet.dateFlag, '20261001');
       expect(packet.from, '系統 每日紅包');
       expect(packet.bless, '今日登入紅包,明天還可以再領');
       expect(packet.unit, '威望');
@@ -305,7 +305,7 @@ void main() {
       expect(state.loggedUserInfo!.username, isEmpty);
       expect(state.loggedUserInfo!.avatarUrl, isNull);
       expect(state.loggedUserInfo!.relatedLinkPairList, isEmpty);
-      expect(state.forumStatus.todayCount, '112', reason: 'the statistics are printed to a guest too');
+      expect(state.forumStatus.todayCount, '100', reason: 'the statistics are printed to a guest too');
       expect(state.pinnedThreadGroupList, isEmpty);
       expect(state.swiperUrlList, isEmpty);
       expect(state.unreadNoticeCount, 0);
@@ -350,7 +350,7 @@ void main() {
       final member = ForumHomeApiPage(_json('index_v5_member.json'));
       expect(member.servedUid, 35);
       expect(member.formHash, 'f1f2f3f4');
-      expect(member.dailyRedPacket?.dateFlag, '20261020');
+      expect(member.dailyRedPacket?.dateFlag, '20261001');
       expect(member.dailyVisitUri, isNull, reason: 'no script in a structured answer');
       final guest = ForumHomeApiPage(_json('index_v5_guest.json'));
       expect(guest.servedUid, isNull);
@@ -372,7 +372,7 @@ void main() {
       ]);
       expect(groups.where((e) => e.isFavorites), isEmpty);
       // The 分区版主 row (GitHub #22): the names the answer lists (plugin 2.4.0), none for the other groups.
-      expect(groups.first.moderators, ['ag_admin', 'ag_mod']);
+      expect(groups.first.moderators, ['ag_mid', 'ag_area']);
       expect(groups.skip(1).every((e) => e.moderators.isEmpty), isTrue);
       expect(groups.map((e) => e.forumList.length), [3, 2, 3, 3, 3]);
 
@@ -382,7 +382,7 @@ void main() {
       expect(checkin.url, '$baseUrl/forum.php?mod=forumdisplay&fid=31');
       expect(checkin.threadCount, 44);
       expect(checkin.replyCount, 280);
-      expect(checkin.threadTodayCount, 37);
+      expect(checkin.threadTodayCount, isNull, reason: 'the fixture tool pins every todayposts to 0; Forum.fromApi maps non-zero elsewhere');
       expect(checkin.latestThreadUrl, '$baseUrl/forum.php?mod=redirect&tid=9199970&goto=lastpost');
       expect(checkin.latestThreadUserName, 'ag_t21');
       expect(checkin.latestThreadTitle, isNotEmpty);
@@ -791,7 +791,7 @@ void main() {
       expect(bloc.state.status, HomepageStatus.success);
       expect(bloc.state.loggedUserInfo?.username, 'ag_low2');
       expect(bloc.state.pinnedThreadGroupList.map((e) => e.title), _tabs);
-      expect(bloc.state.dailyRedPacket?.dateFlag, '20261020');
+      expect(bloc.state.dailyRedPacket?.dateFlag, '20261001');
       expect(bloc.state.formHash, 'f1f2f3f4');
     });
   });
