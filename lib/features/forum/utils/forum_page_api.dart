@@ -45,9 +45,11 @@ Map<String, dynamic>? forumApiAnswerOf(Object? data) {
 ///   [StickThread], the rest as [NormalThread] ([NormalThread.fromApi]); `subforums` as [Forum] ([Forum.fromApi]).
 /// * The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
 ///   permission (`havePermission` false, the message text as the denied message, as the page's `#messagetext p`).
-/// * `page` / `pages` give the pagination; `types.items` the type filter with the page's "everything" entry first
-///   (none at all when the forum has no types: the page shows no type row then, and the app no filter bar);
-///   `filters.*` the fixed menus of the page, each with its "everything" entry first.
+/// * `page` / `pages` give the pagination; `types.items` the type filter with the page's "everything" entry first,
+///   only when the forum lists its types (`types.listable` 1): the page shows no type row otherwise, nor when the
+///   forum has no types, and the app no filter bar then; `filters.*` the menus of the page in its order and names,
+///   each with its "everything" entry first (`specialtype` only lists the special threads the forum allows, which can
+///   be none: the entry alone then).
 /// * `forum.allow_poll` with the answer's `uid` is the poll offer (a guest, `uid` 0, is never offered one).
 ForumPageData forumPageFromApi(Map<String, dynamic> json, String fid) {
   if (json['ok'] != 1) {
@@ -98,34 +100,28 @@ ForumPageData forumPageFromApi(Map<String, dynamic> json, String fid) {
   final currentPage = json['page'] is num ? _int(json['page']) : null;
   final totalPages = json['pages'] is num ? _int(json['pages']) : null;
 
-  final typeItems = _list(types['items']);
+  final typeItems = _int(types['listable']) == 1 ? _list(types['items']) : const <Map<String, dynamic>>[];
   final filterTypeList = typeItems.isEmpty
       ? const <FilterType>[]
       : [
           const FilterType(name: _allTypes, typeID: null),
           ...typeItems.map((e) => FilterType(name: _text(e['name']), typeID: '${_int(e['id'])}')),
         ];
-  final specialTypes = _list(filters['specialtype']);
-  final filterSpecialTypeList = specialTypes.isEmpty
-      ? const <FilterSpecialType>[]
-      : [
-          const FilterSpecialType(name: _allSpecialTypes, specialType: null),
-          ...specialTypes.map((e) => FilterSpecialType(name: _text(e['name']), specialType: _text(e['value']))),
-        ];
-  final orders = _list(filters['orderby']);
-  final filterOrderList = orders.isEmpty
-      ? const <FilterOrder>[]
-      : [
-          const FilterOrder(name: _defaultOrder, orderBy: null),
-          ...orders.map((e) => FilterOrder(name: _text(e['name']), orderBy: _text(e['value']))),
-        ];
-  final datelines = _list(filters['dateline']);
-  final filterDatelineList = datelines.isEmpty
-      ? const <FilterDateline>[]
-      : [
-          const FilterDateline(name: _allDatelines, dateline: null),
-          ...datelines.map((e) => FilterDateline(name: _text(e['name']), dateline: '${_int(e['value'])}')),
-        ];
+  // The menus the page always has, each with its "everything" entry (alone when the forum allows no special thread).
+  final filterSpecialTypeList = [
+    const FilterSpecialType(name: _allSpecialTypes, specialType: null),
+    ..._list(
+      filters['specialtype'],
+    ).map((e) => FilterSpecialType(name: _text(e['name']), specialType: _text(e['value']))),
+  ];
+  final filterOrderList = [
+    const FilterOrder(name: _defaultOrder, orderBy: null),
+    ..._list(filters['orderby']).map((e) => FilterOrder(name: _text(e['name']), orderBy: _text(e['value']))),
+  ];
+  final filterDatelineList = [
+    const FilterDateline(name: _allDatelines, dateline: null),
+    ..._list(filters['dateline']).map((e) => FilterDateline(name: _text(e['name']), dateline: '${_int(e['value'])}')),
+  ];
 
   final uid = _int(json['uid']);
 

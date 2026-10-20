@@ -169,23 +169,35 @@ void main() {
 
       // No types: no type filter at all, as the page shows no type row.
       expect(page.filterTypeList, isEmpty);
-      // The fixed menus, each with the page's "everything" entry first.
-      expect(page.filterSpecialTypeList.map((e) => e.name), ['全部主题', '投票', '商品', '悬赏', '活动', '辩论']);
-      expect(page.filterSpecialTypeList.map((e) => e.specialType), [
-        null,
-        'poll',
-        'trade',
-        'reward',
-        'activity',
-        'debate',
-      ]);
-      expect(page.filterOrderList.map((e) => e.name), ['默认排序', '最后发表', '发帖时间', '回复/查看', '查看', '热度']);
-      expect(page.filterOrderList.map((e) => e.orderBy), [null, 'lastpost', 'dateline', 'replies', 'views', 'heats']);
-      expect(page.filterDatelineList.map((e) => e.name), ['全部时间', '一天', '两天', '一周', '一个月', '三个月']);
-      expect(page.filterDatelineList.map((e) => e.dateline), [null, '86400', '172800', '604800', '2592000', '7948800']);
+      // The menus of the page, in its order and names, each with the page's "everything" entry first.
+      final filters = _json('forum_v2_fid2.json')['filters'] as Map<String, dynamic>;
+      List<String> names(String menu) => (filters[menu] as List).map((e) => (e as Map)['name'] as String).toList();
+      List<String> values(String menu) => (filters[menu] as List).map((e) => '${(e as Map)['value']}').toList();
+      expect(page.filterSpecialTypeList.map((e) => e.name), ['全部主题', ...names('specialtype')]);
+      expect(page.filterSpecialTypeList.map((e) => e.specialType), [null, ...values('specialtype')]);
+      expect(page.filterSpecialTypeList.length, greaterThan(1), reason: 'the forum allows polls');
+      expect(page.filterOrderList.map((e) => e.name), ['默认排序', ...names('orderby')]);
+      expect(page.filterOrderList.map((e) => e.orderBy), [null, ...values('orderby')]);
+      expect(
+        page.filterOrderList.map((e) => e.orderBy),
+        containsAll(['lastpost', 'dateline', 'replies', 'views', 'heats']),
+      );
+      expect(page.filterDatelineList.map((e) => e.name), ['全部时间', ...names('dateline')]);
+      expect(page.filterDatelineList.map((e) => e.dateline), [null, ...values('dateline')]);
+      expect(page.filterDatelineList.map((e) => e.dateline), contains('86400'));
       for (final filter in [...page.filterSpecialTypeList, ...page.filterOrderList, ...page.filterDatelineList]) {
         expect(filter.filterName, isIn(['specialtype', 'orderby', 'dateline']));
       }
+    });
+
+    test('a forum that allows no special thread: the menu is its "everything" entry only', () {
+      final json = _json('forum_v2_fid13.json');
+      expect((json['filters'] as Map<String, dynamic>)['specialtype'], isEmpty);
+      final page = forumPageFromApi(json, '13');
+      expect(page.filterSpecialTypeList.map((e) => e.name), ['全部主题']);
+      expect(page.filterSpecialTypeList.single.specialType, isNull);
+      expect(page.filterOrderList.first.name, '默认排序');
+      expect(page.filterOrderList.length, greaterThan(1));
     });
 
     test('page 2 of 3, and the only page of a forum', () {
@@ -202,15 +214,29 @@ void main() {
       expect(only.canLoadMore, isFalse);
     });
 
-    test('the thread types of the forum are the type filter, with "全部" first', () {
-      final page = forumPageFromApi(_json('forum_v2_fid13.json'), '13');
+    test('the thread types are the type filter, with "全部" first, only when the forum lists them (listable)', () {
+      // fid 13 has three types but does not list them: the page shows no type row, the app no filter bar.
+      final json = _json('forum_v2_fid13.json');
+      final types = json['types'] as Map<String, dynamic>;
+      expect(types['listable'], 0);
+      expect(types['items'], hasLength(3));
+      expect(forumPageFromApi(json, '13').filterTypeList, isEmpty);
+
+      types['listable'] = 1;
+      final page = forumPageFromApi(json, '13');
       expect(page.filterTypeList.map((e) => e.name), ['全部', '年度分享', '版主公告', '其他']);
       expect(page.filterTypeList.map((e) => e.typeID), [null, '3', '4', '5']);
       expect(page.filterTypeList.map((e) => e.filterName).toSet(), {'typeid'});
 
+      // Listed, but no types at all: no filter either.
+      final none = _json('forum_v2_fid2.json');
+      (none['types'] as Map<String, dynamic>)['listable'] = 1;
+      expect(forumPageFromApi(none, '2').filterTypeList, isEmpty);
+
       // A type filter with nothing in it: the lists stay, nothing listed.
       final filtered = forumPageFromApi(_json('forum_v2_fid13_type3.json'), '13');
-      expect(filtered.filterTypeList.map((e) => e.name), page.filterTypeList.map((e) => e.name));
+      expect(filtered.filterTypeList, isEmpty, reason: 'listable 0 there as well');
+      expect(filtered.filterOrderList, isNotEmpty);
       expect(filtered.normalThreadList, isEmpty);
       expect(filtered.stickThreadList, isEmpty);
       expect(filtered.havePermission, isTrue);
@@ -332,12 +358,16 @@ void main() {
       expect(_thread('forum_v2_fid2.json', 9199841).stateSet, contains(ThreadStateModel.pinnedInSubreddit));
     });
 
-    test('closed, and a moved thread (closed on the page)', () {
+    test('closed, and a moved thread: the row of its target, closed, as the page links it', () {
       final closed = _thread('forum_v2_fid2.json', 9199835);
       expect(closed.stateSet, {ThreadStateModel.closed});
+      expect(closed.threadID, '9199835');
       final moved = _thread('forum_v2_fid2.json', 9199834);
       expect(_row('forum_v2_fid2.json', 9199834)['moved'], 9199849);
       expect(moved.stateSet, contains(ThreadStateModel.closed));
+      expect(moved.threadID, '9199849', reason: 'the target, as the page path reads it from the title link');
+      expect(moved.url, '$baseUrl/forum.php?mod=viewthread&tid=9199849');
+      expect(moved.title, 'OLF 舊網域連結測試', reason: "the pointer row's own subject");
       final open = _thread('forum_v2_fid2.json', 9199849);
       expect(open.stateSet, isNot(contains(ThreadStateModel.closed)));
     });
@@ -432,6 +462,9 @@ void main() {
     });
 
     test('an anonymous author and last replier', () {
+      final row = _row('forum_v2_fid25.json', 9199069);
+      expect(row['anonymous'], 1);
+      expect(row['authorid'], 0);
       final t = _thread('forum_v2_fid25.json', 9199069);
       expect(t.author.name, '匿名');
       expect(t.author.uid, isNull);
@@ -441,9 +474,23 @@ void main() {
       expect(t.latestReplyAuthor.uid, isNull);
       expect(t.latestReplyAuthor.url, '');
 
+      // `anonymous` is the flag: a row flagged so is anonymous whatever else it carries.
+      final flagged = NormalThread.fromApi(
+        _row('forum_v2_fid2.json', 9199849)..['anonymous'] = 1,
+        fid: 2,
+        typePrefix: 0,
+      );
+      expect(flagged.author.name, '匿名');
+      expect(flagged.author.uid, isNull);
+      expect(flagged.author.url, '');
+      expect(flagged.author.avatarUrl, isNull);
+
       // The forum gives no id for a last replier it cannot look up: a name without a uid.
-      final row = _row('forum_v2_fid2.json', 9199849)..['lastposterid'] = 0;
-      final unknown = NormalThread.fromApi(row, fid: 2, typePrefix: 0);
+      final unknown = NormalThread.fromApi(
+        _row('forum_v2_fid2.json', 9199849)..['lastposterid'] = 0,
+        fid: 2,
+        typePrefix: 0,
+      );
       expect(unknown.latestReplyAuthor.name, 'ag_admin');
       expect(unknown.latestReplyAuthor.uid, isNull);
       expect(unknown.latestReplyAuthor.url, '$baseUrl/home.php?mod=space&username=ag_admin');
@@ -561,7 +608,7 @@ void main() {
       expect(page.title, 'COS・攝影');
       expect(page.stickThreadList.map((e) => e.threadID), ['9199849'], reason: 'the global sticky thread');
       expect(page.normalThreadList, hasLength(2));
-      expect(page.filterTypeList, hasLength(4));
+      expect(page.filterTypeList, isEmpty, reason: 'the forum does not list its types');
     });
 
     test('the message of plugin 2.0.0, without a document', () async {

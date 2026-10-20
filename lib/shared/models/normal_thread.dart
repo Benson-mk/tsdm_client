@@ -242,9 +242,12 @@ class NormalThread with NormalThreadMappable {
   /// * Times (`dateline`, `lastpost`) are the forum's unix seconds, stored as the real instant and shown in the
   ///   device's zone. The web page path reads the forum's wall clock text as the device's local time (an old bug
   ///   kept there), so the two differ by the zone difference, and by the minute the page rounds to.
+  /// * A moved thread (`moved` is the tid of the thread it was moved to) is the row of its target, as the page links
+  ///   the row's title to the target: its id and url are the target's, and it is closed.
   /// * The author is a link to the member by uid, with the avatar built from the uid as [fromTBody] does. An
-  ///   anonymous thread (the forum gives no name, `authorid` 0 by the spec) has no uid, no avatar and no link, and is
-  ///   named as the page names it; an anonymous or deleted last replier the same (`lastposterid` 0).
+  ///   anonymous thread (`anonymous` 1; the forum gives no name and `authorid` 0 then, each of which counts as well)
+  ///   has no uid, no avatar and no link, and is named as the page names it; an anonymous or deleted last replier
+  ///   the same (`lastposterid` 0).
   /// * [typePrefix] is `types.prefix` of the answer: the page prints the type tag `[名稱]` only when the forum shows
   ///   types as a prefix (Discuz forumdisplay builds `typehtml` for prefix 1 or 2 only), so a thread of a forum
   ///   with prefix 0 has no [threadType] either, as on the page.
@@ -254,8 +257,9 @@ class NormalThread with NormalThreadMappable {
   ///   (`special` 1), rewarded (`special` 3), rated up (`rate` > 0), attachment (`attachment` 1 a file, 2 an image:
   ///   both the picture state, as [fromTBody] does), digest (`digest` > 0).
   factory NormalThread.fromApi(Map<String, dynamic> t, {required int fid, required int typePrefix}) {
-    final tid = _apiInt(t['tid']);
-    final authorName = _apiText(t['author']);
+    final moved = _apiInt(t['moved']);
+    final tid = moved > 0 ? moved : _apiInt(t['tid']);
+    final authorName = _apiInt(t['anonymous']) == 1 ? '' : _apiText(t['author']);
     final authorId = _apiInt(t['authorid']);
     final anonymous = authorName.isEmpty || authorId <= 0;
     final author = anonymous
@@ -308,7 +312,7 @@ class NormalThread with NormalThreadMappable {
         1 => ThreadStateModel.pinnedInSubreddit,
         _ => null,
       },
-      if (_apiInt(t['closed']) == 1 || _apiInt(t['moved']) > 0) ThreadStateModel.closed,
+      if (_apiInt(t['closed']) == 1 || moved > 0) ThreadStateModel.closed,
       switch (special) {
         1 => ThreadStateModel.poll,
         3 => ThreadStateModel.rewarded,
