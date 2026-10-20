@@ -7,6 +7,7 @@ import 'package:tsdm_client/features/blocking/models/notice_ignore.dart';
 import 'package:tsdm_client/features/blocking/models/website_blocklist.dart';
 import 'package:tsdm_client/features/blocking/repository/notice_ignore_repository.dart';
 import 'package:tsdm_client/features/blocking/utils/forum_url.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -727,8 +728,9 @@ class WebsiteBlocklistRepository with LoggerMixin {
       case Left(:final value):
         // The request may have reached the forum: never sent again, the list below tells.
         error('website blacklist write failed, result unknown: ${value.runtimeType}');
-      case Right(:final value) when value.data is String:
-        final doc = parseHtmlDocument(unwrapAjax(value.data as String));
+      case Right(:final value) when value.data is String || tsdmAppWriteResultOf(value.data) != null:
+        // The write result of the forum's app API (plugin 2.6.0) is checked as the page it stands for.
+        final doc = tsdmAppWriteResultOf(value.data)?.document ?? parseHtmlDocument(unwrapAjax(value.data as String));
         if (forumPageProblem(doc, expectedUid: uid, requireIdentity: false) case final p?) {
           warning('website blacklist write answered ${p.failure}');
           refused = WebsiteBlocklistError(_failureOf(p.failure), message: _displayMessage(p.message));

@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<script type="text/javascript" reload="1">if(typeof succeedhandle_fastpost=='function') {succeedhandle_fastpost('forum.php?mod=viewthread&tid=9199849&pid=4749&page=1&extra=#pid4749', '非常感谢，回复发布成功，现在将转入主题页，请稍候……[ 点击这里转入主题列表 ]', {'fid':'2','tid':'9199849','pid':'4749','from':'','sechash':''});}</script>]]></root>

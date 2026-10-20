@@ -162,13 +162,19 @@ final class FavoriteRepository with LoggerMixin {
         );
   }
 
-  /// Fetch a favorite dialog (add or delete); the html wrapped in the ajax xml answer.
-  AsyncEither<String> _fetchDialog(String url) => getIt.get<NetClientProvider>().get(url).mapHttp((v) => '${v.data}');
+  /// Fetch a favorite dialog (add or delete): the html wrapped in the ajax xml answer, or the write result of the
+  /// forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]: a `page` with the form, or the forum's notice as a
+  /// `handle`), which the parsers of `parse_favorite.dart` take either way.
+  AsyncEither<Object?> _fetchDialog(String url) =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJsonWrite(url)).mapHttp((v) => v.data);
 
   /// Add thread [tid] to favorites with an optional note [description].
   ///
   /// Two steps like the web page: fetch the dialog for `formhash`, then submit the form. When the thread is already
   /// favorited the forum answers the notice ("抱歉，您已收藏，请勿重复收藏") right in the dialog, without a form.
+  ///
+  /// The forum's app API (plugin 2.6.0) answers the dialog and the form as JSON ([tsdmAppWriteResultOf]); an older
+  /// plugin answers the AJAX fragments, parsed as before.
   AsyncEither<FavoriteAddResult> addFavorite({required String tid, String description = ''}) =>
       _add(FavoriteType.thread, tid, description);
 
@@ -204,7 +210,7 @@ final class FavoriteRepository with LoggerMixin {
               },
             )
             .mapHttp((v) {
-              final result = parseFavoriteAddResult('${v.data}');
+              final result = parseFavoriteAddResult(v.data);
               debug('add favorite ${type.name}=$id: $result');
               return result;
             });
@@ -235,7 +241,7 @@ final class FavoriteRepository with LoggerMixin {
                   },
                 )
                 .mapHttp((v) {
-                  final result = parseFavoriteRemoveResult('${v.data}');
+                  final result = parseFavoriteRemoveResult(v.data);
                   debug('remove favorite favid=$favid: $result');
                   return result;
                 });

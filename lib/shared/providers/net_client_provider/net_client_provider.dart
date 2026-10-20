@@ -13,6 +13,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/map.dart';
 import 'package:tsdm_client/features/points/stream.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -44,6 +45,27 @@ AppException mapException(Object error, StackTrace st) {
   return HttpRequestFailedException(null);
 }
 
+/// The header the forum's own `ajaxget`/`ajaxpost` send with an AJAX request.
+const _ajaxHeader = 'X-Requested-With';
+
+/// [options] with `X-Requested-With: XMLHttpRequest` when [path] is a request the forum is asked as an AJAX one
+/// (`inajax=1` in its query), as the forum's own scripts send it; a header the caller set is kept.
+///
+/// A forum set to verify its AJAX requests (`ajaxvalidate`) takes a GET without the header for a plain page request
+/// and answers the whole page instead of the fragment (a POST is taken as AJAX either way). Set on the request itself
+/// rather than by an interceptor: no extra hop on the event loop for every request.
+Options? _withAjaxHeader(String path, Options? options) {
+  if (Uri.tryParse(path)?.queryParameters['inajax'] != '1') {
+    return options;
+  }
+  final headers = <String, dynamic>{...?options?.headers};
+  if (headers.keys.any((k) => k.toLowerCase() == _ajaxHeader.toLowerCase())) {
+    return options;
+  }
+  headers[_ajaxHeader] = 'XMLHttpRequest';
+  return (options ?? Options()).copyWith(headers: headers);
+}
+
 extension _WithFormExt<T> on Dio {
   AsyncEither<Response<T>> postWithForm(
     String path, {
@@ -55,10 +77,13 @@ extension _WithFormExt<T> on Dio {
       path,
       data: data,
       queryParameters: queryParameters,
-      options: Options(
-        headers: {HttpHeaders.contentTypeHeader: 'application/x-www-form-urlencoded'},
-        followRedirects: singleAttempt ? false : null,
-        extra: singleAttempt ? {singleAttemptHttpRequestKey: true} : null,
+      options: _withAjaxHeader(
+        path,
+        Options(
+          headers: {HttpHeaders.contentTypeHeader: 'application/x-www-form-urlencoded'},
+          followRedirects: singleAttempt ? false : null,
+          extra: singleAttempt ? {singleAttemptHttpRequestKey: true} : null,
+        ),
       ),
     ),
     mapException,
@@ -139,10 +164,12 @@ final class NetClientProvider with LoggerMixin {
 
   /// Make a GET request to [path].
   ///
-  /// [options] apply to this request only, e.g. a `validateStatus` that keeps the body of an error answer.
+  /// [options] apply to this request only, e.g. a `validateStatus` that keeps the body of an error answer. An AJAX
+  /// request (`inajax=1`) carries `X-Requested-With: XMLHttpRequest` as the forum's own scripts send it, unless
+  /// [options] sets the header.
   AsyncEither<Response<dynamic>> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) =>
       AsyncEither.tryCatch(
-        () async => _dio.get<dynamic>(path, queryParameters: queryParameters, options: options),
+        () async => _dio.get<dynamic>(path, queryParameters: queryParameters, options: _withAjaxHeader(path, options)),
         mapException,
       );
 
@@ -206,12 +233,25 @@ final class NetClientProvider with LoggerMixin {
   /// Automatically set `Content-Type` to `application/x-www-form-urlencoded`.
   /// [singleAttempt] prevents transport retries and redirects for non-idempotent
   /// transactions. Its caller must reconcile an ambiguous result through GET.
+  ///
+  /// The form is sent with [tsdmAppJsonWriteQuery] ([withTsdmAppJsonWrite]): the forum's app API (plugin 2.6.0)
+  /// then answers the result as JSON ([tsdmAppWriteResultOf]) instead of the forum's AJAX fragment, message page or
+  /// redirect, which an older plugin (or none) answers as before; the forum handles the form the same either way. A
+  /// form the plugin leaves alone (the login, the plugin's own API) or whose answer is another plugin's JSON (the
+  /// red packet, the `@` search) is posted as it is with [tsdmAppJson] false. The readers of every form posted with
+  /// the parameter take the JSON result first.
   AsyncEither<Response<dynamic>> postForm(
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
     bool singleAttempt = false,
-  }) => _dio.postWithForm(path, data: data, queryParameters: queryParameters, singleAttempt: singleAttempt);
+    bool tsdmAppJson = true,
+  }) => _dio.postWithForm(
+    tsdmAppJson ? withTsdmAppJsonWrite(path) : path,
+    data: data,
+    queryParameters: queryParameters,
+    singleAttempt: singleAttempt,
+  );
 
   /// Post [data] as JSON (`Content-Type: application/json`) to [path].
   ///
@@ -253,24 +293,29 @@ final class NetClientProvider with LoggerMixin {
 
   /// Post a form [data] to url [path] in `Content-Type` multipart/form-data.
   ///
-  /// Automatically set `Content-Type` to `multipart/form-data`.
+  /// Automatically set `Content-Type` to `multipart/form-data`. Sent with [tsdmAppJsonWriteQuery] as [postForm]
+  /// sends a form, unless [tsdmAppJson] is false.
   AsyncEither<Response<dynamic>> postMultipartForm(
     String path, {
     required Map<String, String> data,
     Map<String, String>? header,
+    bool tsdmAppJson = true,
   }) => AsyncEither.tryCatch(
     () async => _dio.post<dynamic>(
-      path,
-      options: Options(
-        headers: <String, String>{
-          HttpHeaders.contentTypeHeader: Headers.multipartFormDataContentType,
-        }.copyWith(header ?? {}),
-        validateStatus: (code) {
-          if (code == 301 || code == 200) {
-            return true;
-          }
-          return false;
-        },
+      tsdmAppJson ? withTsdmAppJsonWrite(path) : path,
+      options: _withAjaxHeader(
+        path,
+        Options(
+          headers: <String, String>{
+            HttpHeaders.contentTypeHeader: Headers.multipartFormDataContentType,
+          }.copyWith(header ?? {}),
+          validateStatus: (code) {
+            if (code == 301 || code == 200) {
+              return true;
+            }
+            return false;
+          },
+        ),
       ),
       // Use plain map for kotlin native http client.
       data: isAndroid ? data : FormData.fromMap(data),

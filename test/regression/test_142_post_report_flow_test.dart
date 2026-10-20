@@ -130,6 +130,8 @@ void main() {
         'inajax': '1',
         'infloat': 'yes',
         'handlekey': 'miscreport$reportPid',
+        // The dialog is read with the write result of the forum's app API (plugin 2.6.0).
+        'tsdmapp': 'json',
       });
     });
 

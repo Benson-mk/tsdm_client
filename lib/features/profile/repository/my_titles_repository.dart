@@ -87,7 +87,8 @@ final class MyTitlesRepository with LoggerMixin {
   /// Submit the switch title request, [id] is the title id, 0 to unset.
   ///
   /// The server responds a "提示信息" page for both success and failure so the result is verified by fetching the titles
-  /// page again and checking the current title.
+  /// page again and checking the current title. With the forum's app API (plugin 2.6.0) the page comes as the write
+  /// result ([tsdmAppWriteResultOf]), whose message is the page's; an older plugin answers the page, read as before.
   AsyncVoidEither _submit(int id) => _getFormHash().flatMap(
     (formHash) => getIt
         .get<NetClientProvider>()
@@ -100,7 +101,16 @@ final class MyTitlesRepository with LoggerMixin {
             'settitlesubmit': 'true',
           },
         )
-        .mapHttp((v) => parseHtmlDocument(v.data as String).querySelector('div#messagetext > p')?.innerText.trim())
+        .mapHttp(
+          (v) => switch (tsdmAppWriteResultOf(v.data)) {
+            final result? when result.kind != TsdmAppWriteKind.page => result.message,
+            final result =>
+              (result?.document ?? parseHtmlDocument(v.data is String ? v.data as String : ''))
+                  .querySelector('div#messagetext > p')
+                  ?.innerText
+                  .trim(),
+          },
+        )
         .flatMap(
           (message) => fetchSecondaryTitles().flatMap((titles) {
             final currentId = titles.firstWhereOrNull((e) => e.activated)?.id ?? 0;

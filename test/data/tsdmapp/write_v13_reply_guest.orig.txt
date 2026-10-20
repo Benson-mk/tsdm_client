@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[抱歉，您尚未登录，没有权限在该版块回帖<script type="text/javascript" reload="1">if(typeof errorhandle_fastpost=='function') {errorhandle_fastpost('抱歉，您尚未登录，没有权限在该版块回帖', {});}</script>]]></root>

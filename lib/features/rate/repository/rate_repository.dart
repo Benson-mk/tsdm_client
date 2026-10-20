@@ -7,6 +7,7 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/rate/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -80,19 +81,34 @@ final class RateRepository with LoggerMixin {
       .toList();
 
   /// Fetch rate info for given [pid].
+  ///
+  /// The window is read with the write result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]): a
+  /// `page` result carries the form in its document, a refusal (not allowed to rate…) is the error hook, a
+  /// `handle` with the forum's message. An older plugin answers the AJAX fragment, parsed as before.
   AsyncEither<RateWindowInfo> fetchInfo({required String pid, required String rateTarget}) => AsyncEither(() async {
-    switch (await getIt.get<NetClientProvider>().get(rateTarget._fillRateTarget()).run()) {
+    switch (await getIt.get<NetClientProvider>().get(withTsdmAppJsonWrite(rateTarget._fillRateTarget())).run()) {
       case Left(:final value):
         return left(value);
       case Right(:final value) when value.statusCode != HttpStatus.ok:
         return left(HttpRequestFailedException(value.statusCode));
       case Right(:final value):
-        final xmlDoc = parseXmlDocument(value.data as String);
-        final htmlBodyData = xmlDoc.documentElement?.nodes.firstOrNull?.text;
-        if (htmlBodyData == null) {
-          return left(RateInfoHtmlBodyNotFound());
+        final result = tsdmAppWriteResultOf(value.data);
+        final uh.Element? divCNode;
+        if (result != null) {
+          if (result.kind != TsdmAppWriteKind.page) {
+            return left(
+              result.message.isNotEmpty ? RateInfoWithErrorException(result.message) : RateInfoInvalidDivCNode(),
+            );
+          }
+          divCNode = result.document.body;
+        } else {
+          final xmlDoc = parseXmlDocument(value.data as String);
+          final htmlBodyData = xmlDoc.documentElement?.nodes.firstOrNull?.text;
+          if (htmlBodyData == null) {
+            return left(RateInfoHtmlBodyNotFound());
+          }
+          divCNode = parseHtmlDocument(htmlBodyData).body;
         }
-        final divCNode = parseHtmlDocument(htmlBodyData).body;
         if (divCNode == null) {
           return left(RateInfoDivCNodeNotFound());
         }
@@ -110,6 +126,11 @@ final class RateRepository with LoggerMixin {
   });
 
   /// Rate with given info [formData].
+  ///
+  /// The forum's app API (plugin 2.6.0) answers the result as JSON ([tsdmAppWriteResultOf]): the success hook
+  /// (`thread_rate_succeed`) is a success, the error hook (`thread_rate_duplicate`, not enough points…), a refusal
+  /// page or the login prompt fail with the forum's message. An older plugin answers the AJAX fragment, read as
+  /// before.
   AsyncVoidEither rate(Map<String, String> formData) => AsyncVoidEither(() async {
     final respEither = await getIt.get<NetClientProvider>().postForm(_rateTarget, data: formData).run();
     if (respEither.isLeft()) {
@@ -120,6 +141,12 @@ final class RateRepository with LoggerMixin {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
+    if (tsdmAppWriteResultOf(resp.data) case final result?) {
+      if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
+        return rightVoid();
+      }
+      return left(RateFailedException(result.message.isNotEmpty ? result.message : result.kind.name));
+    }
     final data = resp.data as String;
     final errorText = _errorTextRe.firstMatch(data)?.namedGroup('error');
     if (errorText != null) {

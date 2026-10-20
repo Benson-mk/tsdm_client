@@ -8,6 +8,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/blocking/models/notice_ignore.dart';
 import 'package:tsdm_client/features/blocking/utils/forum_url.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -660,10 +661,11 @@ class NoticeIgnoreRepository with LoggerMixin {
       case Right(:final value):
         raw = value.data;
     }
-    if (raw is String) {
+    // The write result of the forum's app API (plugin 2.6.0) is checked as the page it stands for.
+    final doc = tsdmAppWriteResultOf(raw)?.document ?? (raw is String ? parseHtmlDocument(unwrapAjax(raw)) : null);
+    if (doc != null) {
       try {
-        final html = unwrapAjax(raw);
-        checkForumPage(parseHtmlDocument(html), expectedUid: uid, requireIdentity: false);
+        checkForumPage(doc, expectedUid: uid, requireIdentity: false);
       } on _PageRejected catch (e) {
         // Explicit refusal from the forum: never reported as success. The list is still reloaded below so the page
         // shows the real state.

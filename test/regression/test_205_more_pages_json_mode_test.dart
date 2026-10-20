@@ -681,7 +681,9 @@ void main() {
       expect(poll.availability, PollAvailability.available);
       await repo.vote(poll, {poll.options.first.id!});
       expect(forum.requests.last.method, 'POST');
-      expect(_asksJson(forum.requests.last), isFalse);
+      // The vote asks the forum's app API for its result (plugin 2.6.0), not for the JSON mode of a page: no nodoc.
+      expect(_asksJson(forum.requests.last), isTrue);
+      expect(forum.requests.last.uri.queryParameters, isNot(contains('nodoc')));
     });
   });
 
@@ -1058,7 +1060,9 @@ void main() {
 
       await const FriendRepository().fetchAddFriendForm('1001').run();
       expect(forum.requests.last.uri.queryParameters, containsPair('inajax', '1'));
-      expect(_asksJson(forum.requests.last), isFalse);
+      // The dialog stays AJAX, read with the write result of the forum's app API (plugin 2.6.0): no nodoc.
+      expect(_asksJson(forum.requests.last), isTrue);
+      expect(forum.requests.last.uri.queryParameters, isNot(contains('nodoc')));
     });
   });
 
@@ -1109,7 +1113,9 @@ void main() {
       expect(a.uri, b.uri);
       expect(a.contentType, b.contentType);
       expect(direct.bodies.last, viaPage.bodies.last);
-      expect(_asksJson(a), isFalse);
+      // The form asks the forum's app API for its result (plugin 2.6.0), not for the JSON mode of a page: no nodoc.
+      expect(_asksJson(a), isTrue);
+      expect(a.uri.queryParameters, isNot(contains('nodoc')));
       expect(Uri.splitQueryString(a.uri.query), containsPair('inajax', '1'));
     });
 

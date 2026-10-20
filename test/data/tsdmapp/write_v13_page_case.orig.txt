@@ -1,0 +1,84 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<div class="tm_c" id="floatlayout_topicadmin">
+<h3 class="flb">
+<em id="return_rate">评分</em>
+<span>
+<a href="javascript:;" class="flbc" onclick="hideWindow('rate')" title="关闭">关闭</a></span>
+</h3>
+<form id="rateform" method="post" autocomplete="off" action="forum.php?mod=misc&amp;action=rate&amp;ratesubmit=yes&amp;infloat=yes" onsubmit="ajaxpost('rateform', 'return_rate', 'return_rate', 'onerror');">
+<input type="hidden" name="formhash" value="f1f2f3f4" />
+<input type="hidden" name="tid" value="9199849" />
+<input type="hidden" name="pid" value="4749" />
+<input type="hidden" name="referer" value="https://www.tsdm39.com/forum.php?mod=viewthread&tid=9199849&page=0#pid4749" />
+<input type="hidden" name="handlekey" value="rate"><div class="c">
+<table cellspacing="0" cellpadding="0" class="dt mbm">
+<tr>
+<th>&nbsp;</th>
+<th width="65">&nbsp;</th>
+<th width="65">评分区间</th>
+<th width="55">今日剩余</th>
+</tr><tr>
+<td> 威望</td>
+<td>
+<input type="text" name="score1" id="score1" class="px z" value="0" style="width: 25px;" />
+<a href="javascript:;" class="dpbtn" onclick="showselect(this, 'score1', 'scoreoption1')">^</a>
+<ul id="scoreoption1" style="display:none"><li>+300</li><li>+260</li><li>+220</li><li>+180</li><li>+140</li><li>+100</li><li>+60</li><li>+20</li><li>-20</li><li>-60</li><li>-100</li></ul>
+</td>
+<td>-100 ~ 300</td><td>1500</td>
+</tr>
+<tr>
+<td> 天使币</td>
+<td>
+<input type="text" name="score2" id="score2" class="px z" value="0" style="width: 25px;" />
+<a href="javascript:;" class="dpbtn" onclick="showselect(this, 'score2', 'scoreoption2')">^</a>
+<ul id="scoreoption2" style="display:none"><li>+150</li><li>+130</li><li>+110</li><li>+90</li><li>+70</li><li>+50</li><li>+30</li><li>+10</li><li>-10</li><li>-30</li><li>-50</li></ul>
+</td>
+<td>-50 ~ 150</td><td>600</td>
+</tr>
+</table>
+
+<div class="tpclg">
+<h4>可选评分理由:</h4>
+<table cellspacing="0" cellpadding="0" class="reason_slct"> 	<tr>
+ 		<td>
+ 			<ul id="reasonselect" class="reasonselect pt"><li>很给力!</li><li>神马都是浮云</li><li>赞一个!</li><li>山寨</li><li>淡定</li></ul>
+ 			<script type="text/javascript" reload="1">
+ 				var reasonSelectOption = $('reasonselect').getElementsByTagName('li');
+ 				if (reasonSelectOption) {
+ 					for (i=0; i<reasonSelectOption.length; i++) {
+ 						reasonSelectOption[i].onmouseover = function() { this.className = 'xi2 cur1'; }
+ 						reasonSelectOption[i].onmouseout = function() { this.className = ''; }
+ 						reasonSelectOption[i].onclick = function() {
+ 							$('reason').value = this.innerHTML;
+ 						}
+ 					}
+ 				}
+ 			</script>
+ 		</td>
+ 	</tr>
+<tr>
+ 	 	<td><input type="text" name="reason" id="reason" class="px" onkeyup="seditor_ctlent(event, '$(\'rateform\').ratesubmit.click()')" /></td>
+</tr>
+</table>
+</div>
+</div>
+<p class="o pns">
+<label for="sendreasonpm"><input type="checkbox" name="sendreasonpm" id="sendreasonpm" class="pc" />通知作者</label>
+<button name="ratesubmit" type="submit" value="true" class="pn pnc"><span>确定</span></button>
+</p>
+</form>
+</div>
+
+
+<script type="text/javascript" reload="1">
+function succeedhandle_rate(locationhref) {
+ajaxget('forum.php?mod=viewthread&tid=9199849&viewpid=4749', 'post_4749', 'post_4749');
+hideWindow('rate');
+}
+loadcss('forum_moderator');
+</script>
+
+]]></root>

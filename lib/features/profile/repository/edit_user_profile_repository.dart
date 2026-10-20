@@ -3,6 +3,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/profile/models/birthday_info.dart';
 import 'package:tsdm_client/features/profile/models/editable_user_profile.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -36,6 +37,11 @@ final class EditUserProfileRepository with LoggerMixin {
       .flatMap(_parseProfilePage);
 
   /// Upload user profile [profile] to server.
+  ///
+  /// The forum answers the editor's frame a `parent.show_success('')` script when the profile was saved, and its
+  /// 提示信息 page otherwise. With the forum's app API (plugin 2.6.0) that comes as the write result
+  /// ([tsdmAppWriteResultOf]): the script as a `page` (a `parent.show_error(` page is not `ok`), the message as a
+  /// `message` with its verdict; an older plugin answers the forum's page, read as before.
   AsyncVoidEither uploadProfile(UserProfile profile) => getIt
       .get<NetClientProvider>()
       .postMultipartForm(
@@ -76,17 +82,27 @@ final class EditUserProfileRepository with LoggerMixin {
           'profilesubmitbtn': 'true',
         },
       )
-      .mapHttp((v) => v.data as String?)
-      .flatMap(
-        (doc) => switch (doc?.contains('show_success') ?? false) {
-          true => .right(null),
-          false => () {
-            error(
-              'failed to upload user profile: '
-              '${parseHtmlDocument(doc ?? '').querySelector('div#messagetext > p')?.innerText}',
-            );
-            return TaskEither<AppException, void>.left(EditUserProfileUploadFailed());
-          }(),
-        },
-      );
+      .mapHttp((v) => v.data)
+      .flatMap((data) {
+        final result = tsdmAppWriteResultOf(data);
+        final bool saved;
+        final String? failure;
+        if (result != null) {
+          saved = result.kind == TsdmAppWriteKind.page
+              ? result.ok && result.documentHtml.contains('show_success')
+              : result.succeeded;
+          failure = result.message.isNotEmpty
+              ? result.message
+              : result.document.querySelector('div#messagetext > p')?.innerText;
+        } else {
+          final doc = data is String ? data : '';
+          saved = doc.contains('show_success');
+          failure = parseHtmlDocument(doc).querySelector('div#messagetext > p')?.innerText;
+        }
+        if (saved) {
+          return TaskEither<AppException, void>.right(null);
+        }
+        error('failed to upload user profile: $failure');
+        return TaskEither<AppException, void>.left(EditUserProfileUploadFailed());
+      });
 }

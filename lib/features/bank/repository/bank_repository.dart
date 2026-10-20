@@ -1,6 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/bank/models/bank_data.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
@@ -16,8 +17,9 @@ class BankRepository {
       Right(:final value) => value.data as String,
       Left(:final value) => throw value,
     },
+    // The write result of the forum's app API (plugin 2.6.0) is read as the page it stands for.
     postForm: (url, body) async => switch (await client.postForm(url, data: body, singleAttempt: true).run()) {
-      Right(:final value) => value.data as String,
+      Right(:final value) => tsdmAppWriteAnswerHtml(value.data),
       Left(:final value) => throw value,
     },
   );

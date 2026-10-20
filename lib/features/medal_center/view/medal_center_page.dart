@@ -54,10 +54,11 @@ class _MedalCenterPageState extends State<MedalCenterPage> {
         // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
         fetchPage: (url) => fetchTsdmAppPageHtml(getIt.get<NetClientProvider>(), url),
         fetchApi: (query) => TsdmAppApi.askWaiting(getIt.get<NetClientProvider>(), 'medals', query),
+        // The write result of the forum's app API (plugin 2.6.0) is read as the page it stands for.
         submitForm: (url, data) async {
           final result = await getIt.get<NetClientProvider>().postForm(url, data: data).run();
           return switch (result) {
-            Right(:final value) => value.data as String,
+            Right(:final value) => tsdmAppWriteAnswerHtml(value.data),
             Left(:final value) => throw value,
           };
         },

@@ -1,0 +1,13 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<h3 class="flb"><em>提示信息</em><span><a href="javascript:;" class="flbc" onclick="hideWindow('favoritethread');" title="关闭">关闭</a></span></h3>
+<div class="c altw">
+<div class="alert_right"><script type="text/javascript" reload="1">if(typeof succeedhandle_favoritethread=='function') {succeedhandle_favoritethread('https://www.tsdm39.com/./', '信息收藏成功 ', {'id':'9199849','favid':'523'});}hideWindow('favoritethread');showDialog('信息收藏成功 ', 'right', null, null, 0, null, null, null, null, 2, null);</script></div>
+</div>
+<p class="o pns">
+<button type="button" class="pn pnc" id="closebtn" onclick="hideWindow('favoritethread');"><strong>确定</strong></button>
+<script type="text/javascript" reload="1">if($('closebtn')) {$('closebtn').focus();}</script>
+</p>
+]]></root>

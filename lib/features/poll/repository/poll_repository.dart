@@ -22,8 +22,9 @@ class PollRepository {
   /// to nobody, which the card would show as a poll to log in for.
   factory PollRepository.network(NetClientProvider client) => PollRepository(
     getPage: (url) => fetchTsdmAppPageHtml(client, url),
+    // The write result of the forum's app API (plugin 2.6.0) is read as the page it stands for.
     postForm: (url, body) async => switch (await client.postForm(url, data: body).run()) {
-      Right(:final value) => value.data as String,
+      Right(:final value) => tsdmAppWriteAnswerHtml(value.data),
       Left(:final value) => throw value,
     },
   );

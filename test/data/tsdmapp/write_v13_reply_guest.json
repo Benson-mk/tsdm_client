@@ -1,0 +1,17 @@
+{
+ "ok": 0,
+ "api": 1,
+ "time": 1792523352,
+ "uid": 0,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "抱歉，您尚未登录，没有权限在该版块回帖",
+ "message_key": "replyperm_login_nopermission",
+ "url": "",
+ "handlekey": "fastpost",
+ "values": {},
+ "login": 0,
+ "alert": "error"
+}

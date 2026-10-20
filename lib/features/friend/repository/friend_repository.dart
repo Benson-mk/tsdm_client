@@ -46,10 +46,19 @@ final class FriendRepository {
 
   /// Load the add-friend form for [uid]; the forum refuses here already when the two are friends, a request is
   /// pending, or [uid] is the current user.
-  AsyncEither<AddFriendFormResult> fetchAddFriendForm(String uid) =>
-      getIt.get<NetClientProvider>().get(addFriendFormUrl(uid)).mapHttp((v) => parseAddFriendForm('${v.data}'));
+  ///
+  /// Read with the write result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]): a `page` with the
+  /// form, or the refusal as a `handle`; an older plugin answers the AJAX fragment, parsed as before.
+  AsyncEither<AddFriendFormResult> fetchAddFriendForm(String uid) => getIt
+      .get<NetClientProvider>()
+      .get(withTsdmAppJsonWrite(addFriendFormUrl(uid)))
+      .mapHttp((v) => parseAddFriendForm(v.data));
 
   /// Send a friend request to [uid] with the [formHash] of its form, an optional [note] and the group [gid].
+  ///
+  /// The forum's app API (plugin 2.6.0) answers the result as JSON ([tsdmAppWriteResultOf]): sent on the success
+  /// hook (`request_has_been_sent`, shown as a note), refused with the forum's message on the error hook
+  /// (`waiting_for_the_other_test`…); an older plugin answers the AJAX fragment, read as before.
   AsyncEither<AddFriendResult> addFriend({
     required String uid,
     required String formHash,
@@ -68,5 +77,5 @@ final class FriendRepository {
           'gid': gid,
         },
       )
-      .mapHttp((v) => parseAddFriendResult('${v.data}'));
+      .mapHttp((v) => parseAddFriendResult(v.data));
 }

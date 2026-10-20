@@ -9,7 +9,9 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_client_prov
 
 /// Repository of the forum's `hongbao` red packet plugin (`plugin.php?id=hongbao:ACTION`).
 ///
-/// Every endpoint answers JSON and needs the login cookie; the thread page anti-theft sign is not involved.
+/// Every endpoint answers JSON and needs the login cookie; the thread page anti-theft sign is not involved. The
+/// forms are posted without the write result of the forum's app API (`tsdmAppJson` false): the plugin's JSON is the
+/// answer, not something to wrap.
 final class RedPacketRepository {
   /// Constructor.
   const RedPacketRepository();
@@ -42,13 +44,13 @@ final class RedPacketRepository {
       _json(getIt.get<NetClientProvider>().get(openUrl(tid))).map(RedPacketOpenResult.fromJson);
 
   /// Claim a share of the packet in thread [tid]; [password] only for 口令 packets.
-  AsyncEither<RedPacketGrabResult> grab({required String tid, required String formHash, String password = ''}) =>
-      _json(
-        getIt.get<NetClientProvider>().postForm(
-          grabUrl,
-          data: {'tid': tid, 'formhash': formHash, 'password': password},
-        ),
-      ).map(RedPacketGrabResult.fromJson);
+  AsyncEither<RedPacketGrabResult> grab({required String tid, required String formHash, String password = ''}) => _json(
+    getIt.get<NetClientProvider>().postForm(
+      grabUrl,
+      data: {'tid': tid, 'formhash': formHash, 'password': password},
+      tsdmAppJson: false,
+    ),
+  ).map(RedPacketGrabResult.fromJson);
 
   /// Ask the claimed shares of the packet in thread [tid].
   AsyncEither<RedPacketRecordsResult> records(String tid) =>
@@ -56,6 +58,6 @@ final class RedPacketRepository {
 
   /// Claim today's daily red packet.
   AsyncEither<DailyRedPacketResult> claimDaily({required String formHash, NetClientProvider? client}) => _json(
-    (client ?? getIt.get<NetClientProvider>()).postForm(dailyUrl, data: {'formhash': formHash}),
+    (client ?? getIt.get<NetClientProvider>()).postForm(dailyUrl, data: {'formhash': formHash}, tsdmAppJson: false),
   ).map(DailyRedPacketResult.fromJson);
 }

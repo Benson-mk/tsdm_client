@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/blocking/repository/notice_ignore_repository.dart'
     show isCloudflareChallengePage, unwrapAjax;
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
@@ -343,6 +344,10 @@ String _fragmentMessage(uh.Document doc) {
 /// or from `report_select` radios when there is no script; neither is ever run nor sent. Any verification or other
 /// field refuses the form so the user falls back to the browser.
 ///
+/// With the forum's app API (plugin 2.6.0) [raw] is its write result ([tsdmAppWriteResultOf]): the dialog as a
+/// `page`, whose document is checked exactly as the fragment is; the forum's refusal (the error hook, a message
+/// page) is the forum's message, the login prompt is not logged in.
+///
 /// Throws [PostReportFailure] only.
 PostReportForm parsePostReportForm(String raw, {required PostReportTarget target}) {
   try {
@@ -355,13 +360,31 @@ PostReportForm parsePostReportForm(String raw, {required PostReportTarget target
 }
 
 PostReportForm _parsePostReportForm(String raw, {required PostReportTarget target}) {
-  if (isCloudflareChallengePage(parseHtmlDocument(raw))) {
-    throw const PostReportFailure(PostReportProblem.challenge);
+  final String html;
+  if (tsdmAppWriteResultOf(raw) case final result?) {
+    if (result.kind != TsdmAppWriteKind.page) {
+      if (result.login) {
+        throw const PostReportFailure(PostReportProblem.notLoggedIn);
+      }
+      final message = plainForumText(result.message);
+      throw PostReportFailure(
+        message.isEmpty ? PostReportProblem.unsupported : PostReportProblem.forumMessage,
+        message: message.isEmpty ? null : message,
+      );
+    }
+    if (isCloudflareChallengePage(result.document)) {
+      throw const PostReportFailure(PostReportProblem.challenge);
+    }
+    html = result.documentHtml;
+  } else {
+    if (isCloudflareChallengePage(parseHtmlDocument(raw))) {
+      throw const PostReportFailure(PostReportProblem.challenge);
+    }
+    if (!raw.contains('<![CDATA[')) {
+      throw const PostReportFailure(PostReportProblem.unsupported);
+    }
+    html = unwrapAjax(raw);
   }
-  if (!raw.contains('<![CDATA[')) {
-    throw const PostReportFailure(PostReportProblem.unsupported);
-  }
-  final html = unwrapAjax(raw);
   final doc = parseHtmlDocument(html);
   if (_hasLoginMarker(doc, html)) {
     throw const PostReportFailure(PostReportProblem.notLoggedIn);
@@ -635,12 +658,36 @@ enum _Arg { nil, number, either }
 /// Success is only `report_succeed`: the callback with `{}` and the `right` dialog of the same text. The callback alone
 /// is an explicit refusal. Anything else (text in comments, strings or plain html, another handle, other statements, a
 /// forward, another dialog mode, a bare 200) is [PostReportUnknown]: the forum may have stored the report.
+///
+/// With the forum's app API (plugin 2.6.0) [raw] is its write result ([tsdmAppWriteResultOf]), read the same way:
+/// the `handle` of this form's handle key is the success when the forum showed it as one (`alert` right, no values:
+/// `report_succeed`) and the explicit refusal otherwise (with the login prompt told apart); anything else is
+/// [PostReportUnknown].
 PostReportOutcome parsePostReportResult(String raw, {required PostReportForm form}) {
   try {
+    if (tsdmAppWriteResultOf(raw) case final result?) {
+      return _parsePostReportResultOf(result, form: form);
+    }
     return _parsePostReportResult(raw, form: form);
   } on Object {
     return const PostReportUnknown();
   }
+}
+
+PostReportOutcome _parsePostReportResultOf(TsdmAppWriteResult result, {required PostReportForm form}) {
+  if (result.kind != TsdmAppWriteKind.handle || result.handleKey != form.target.handleKey) {
+    return const PostReportUnknown();
+  }
+  final text = plainForumText(result.message);
+  if (result.succeeded) {
+    return result.alert == 'right' && result.values.isEmpty && text.isNotEmpty
+        ? PostReportSucceeded(text)
+        : const PostReportUnknown();
+  }
+  if (result.login || result.isError || result.alert.isEmpty) {
+    return PostReportRejected(text, notLoggedIn: result.login);
+  }
+  return const PostReportUnknown();
 }
 
 PostReportOutcome _parsePostReportResult(String raw, {required PostReportForm form}) {

@@ -7,6 +7,7 @@ import 'package:tsdm_client/features/friend/models/add_friend.dart';
 import 'package:tsdm_client/features/friend/models/approve_friend.dart';
 import 'package:tsdm_client/features/friend/utils/approve_friend_link.dart';
 import 'package:tsdm_client/features/friend/utils/parse_approve_friend.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -29,11 +30,16 @@ class ApproveFriendRepository with LoggerMixin {
   NetClientProvider clientFor(UserLoginInfo user) => NetClientProvider.build(userLoginInfo: user);
 
   /// Load the approval form of the friend request of [targetUid].
+  ///
+  /// Read with the write result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]): a `page` with the
+  /// form, or the refusal as a `handle`; an older plugin answers the AJAX fragment, parsed as before.
   Future<Either<ApproveFriendFailure, ApproveFriendFormResult>> fetchForm(
     NetClientProvider client, {
     required int targetUid,
   }) async {
-    final resp = await client.get(approveFriendFormUrl(targetUid), options: pageReadOptions()).run();
+    final resp = await client
+        .get(withTsdmAppJsonWrite(approveFriendFormUrl(targetUid)), options: pageReadOptions())
+        .run();
     switch (resp) {
       case Left(value: IdentityChangedException()):
         return left(ApproveFriendFailure.accountMismatch);
@@ -46,11 +52,11 @@ class ApproveFriendRepository with LoggerMixin {
             : ApproveFriendFailure.network;
         error('approval form answered ${value.statusCode}: $failure');
         return left(failure);
-      case Right(:final value) when value.data is! String:
+      case Right(:final value) when value.data is! String && tsdmAppWriteResultOf(value.data) == null:
         return left(ApproveFriendFailure.unknownForm);
       case Right(:final value):
         try {
-          return right(parseApproveFriendForm(value.data as String, targetUid: targetUid));
+          return right(parseApproveFriendForm(value.data, targetUid: targetUid));
         } on ApproveFriendRejected catch (e) {
           error('approval form rejected: $e');
           return left(e.failure);
@@ -94,7 +100,7 @@ class ApproveFriendRepository with LoggerMixin {
       case Right(:final value):
         raw = value.data;
     }
-    if (raw is! String) {
+    if (raw is! String && tsdmAppWriteResultOf(raw) == null) {
       return left(ApproveFriendFailure.unknownAfterSubmit);
     }
     try {

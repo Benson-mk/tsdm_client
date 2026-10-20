@@ -76,7 +76,12 @@ class PostReportRepository with LoggerMixin {
       Left(:final value) => throw value,
       Right(:final value) => PostReportResponse(
         value.statusCode ?? 0,
-        value.data is String ? value.data as String : '',
+        switch (value.data) {
+          final String text => text,
+          // The write result of the forum's app API dio decoded already (plugin 2.6.0).
+          final Map<dynamic, dynamic> json => jsonEncode(json),
+          _ => '',
+        },
       ),
     },
   );
@@ -191,7 +196,8 @@ class PostReportRepository with LoggerMixin {
   /// A fresh report form of [target] for account [uid].
   ///
   /// First the full thread page proves the account (the ajax dialog has no page header) and that the forum still
-  /// offers this report to it, then the dialog is read like the forum's `showWindow` does. Nothing is sent to the
+  /// offers this report to it, then the dialog is read like the forum's `showWindow` does, with the write result of
+  /// the forum's app API (plugin 2.6.0: a `page` with the form, [parsePostReportForm]). Nothing is sent to the
   /// forum's report handler. Throws [PostReportFailure] only.
   Future<PostReportForm> prepare(PostReportTarget target, {required int uid}) async {
     if (uid <= 0 || uid != target.viewerUid) {
@@ -206,7 +212,7 @@ class PostReportRepository with LoggerMixin {
         'handlekey': target.handleKey,
       },
     );
-    final raw = await _read(url, ajax: true);
+    final raw = await _read(Uri.parse(withTsdmAppJsonWrite(url.toString())), ajax: true);
     return parsePostReportForm(raw, target: target);
   }
 

@@ -1,0 +1,17 @@
+{
+ "ok": 0,
+ "api": 1,
+ "time": 1792523417,
+ "uid": 70,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "抱歉，您不能对同一个帖子重复评分",
+ "message_key": "thread_rate_duplicate",
+ "url": "",
+ "handlekey": "rate",
+ "values": {},
+ "login": 0,
+ "alert": "error"
+}

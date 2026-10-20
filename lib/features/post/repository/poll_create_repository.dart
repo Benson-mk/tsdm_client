@@ -241,11 +241,17 @@ final class PollCreateRepository with LoggerMixin {
     if ([301, 302, 303].contains(response.statusCode)) {
       return _verify(threadTidOf(response.headers.value('location')));
     }
-    if (response.statusCode != 200 || response.data is! String) {
+    // The write result of the forum's app API (plugin 2.6.0): the redirect the forum would have answered is verified
+    // by its target, a message or a page is read as the forum's page.
+    final apiResult = response.statusCode == 200 ? tsdmAppWriteResultOf(response.data) : null;
+    if (apiResult != null && apiResult.kind == TsdmAppWriteKind.redirect) {
+      return _verify(apiResult.login ? null : threadTidOf(apiResult.url));
+    }
+    if (response.statusCode != 200 || (apiResult == null && response.data is! String)) {
       return const PollCreateResult(PollCreateOutcome.unconfirmed);
     }
 
-    final document = parseHtmlDocument(response.data as String);
+    final document = apiResult?.document ?? parseHtmlDocument(response.data as String);
     final message = document.querySelector('#messagetext');
     if (message != null) {
       final text = (message.querySelector('p') ?? message).innerText.trim();

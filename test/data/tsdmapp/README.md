@@ -29,6 +29,17 @@ every request so the tests can pin them:
 `forum_v2_fid2.json`, `thread_v3_plain.json`, `profile_v4_self.json`, `index_v5_member.json`, `search_v6_results.json`,
 `guide_v7_new.json`, `mythread_v9_thread.json`, `favorite_v8_thread.json`, `friend_v10_me.json`, `pm_v11_view.json` and
 `credit_v12_log.json` carry a deliberate garbage `document`: the tests prove the structured
-path never reads it. `forum_v2_fid29_pending.json` is hand-written (the pending-application
+path never reads it.
+
+`write_v13_*.json` (the results of writes, `type: result`, `schema: 13`, plugin 2.6.0: a reply stored, refused by the
+flood control, by a guest, by a thread gone (a message page) and stored without AJAX (a redirect); a rate taken and
+refused, the rate form (a page); a favorite added, added again, removed, and the success page; a friend request sent
+and sent again; a report; a private message; the profile saved (a page with the frame script); the check-in plugin's
+window, today and again) are the plugin's answers of the same requests, scrubbed the same way (`formhash` →
+`f1f2f3f4`; the post, favorite and record ids as sampled). Beside each one, `write_v13_*.orig.txt` is what the forum
+answered the very same request without the parameter (the status line, the content type and `Location`, a blank
+line, the body), so the tests prove the reader of a result and the parser of the forum's own answer give the same
+outcome; `write_v13_formhash_bad.orig.txt` is the forum's "System Error" page of a bad form hash (never JSON).
+`write_v13_reply_ok.json` carries a deliberate garbage `document`: a `handle` never reads one. `forum_v2_fid29_pending.json` is hand-written (the pending-application
 message). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
 (and the same rows in `profile_html`), `checkin.last` (and the check-in row), the IP ports. Everything else must not be edited by hand; change the plugin or the tool instead.

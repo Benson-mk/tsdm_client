@@ -138,8 +138,11 @@ Future<CheckinResult> _postCheckin(
     return _requestFailed(checkInRespEither.unwrapErr());
   }
   final checkInResp = checkInRespEither.unwrap();
-  final checkInRespData = checkInResp.data as String;
-  final checkInResult = parseCheckinResponseMessage(checkInRespData);
+  // The forum's app API (plugin 2.6.0) answers the check-in plugin's float window as a `page` result, the forum's
+  // own message (not logged in…) as a `handle` or `message`; an older plugin answers the fragment. Both are read by
+  // the same parser.
+  final checkInRespData = checkInResp.data is String ? checkInResp.data as String : '${checkInResp.data ?? ''}';
+  final checkInResult = parseCheckinResponseMessage(checkInResp.data);
 
   // Return results.
   if (checkInResult == null) {

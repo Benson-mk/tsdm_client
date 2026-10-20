@@ -204,8 +204,9 @@ void main() {
 
       expect(adapter.requests.map((r) => r.method), ['GET', 'POST', 'GET', 'GET', 'GET']);
       expect(adapter.requests.where((r) => r.method == 'GET').every((r) => r.data == null), isTrue);
-      // The fresh GET in JSON mode, the same page without it to get the challenge, the page with the sign.
-      expect(adapter.requests.map((r) => r.uri.queryParameters['tsdmapp']), ['json', null, 'json', null, null]);
+      // The fresh GET in JSON mode, the vote asking for its result (plugin 2.6.0), the same page without it to get
+      // the challenge, the page with the sign.
+      expect(adapter.requests.map((r) => r.uri.queryParameters['tsdmapp']), ['json', 'json', 'json', null, null]);
       expect(adapter.requests.last.uri.queryParameters['_dsign'], isNotEmpty);
       expect(cubit.state.submissionUnconfirmed, !confirmed);
       expect(cubit.state.poll!.availability, confirmed ? PollAvailability.voted : PollAvailability.available);

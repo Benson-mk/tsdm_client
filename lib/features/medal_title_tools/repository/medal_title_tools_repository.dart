@@ -58,9 +58,10 @@ class MedalTitleToolsRepository {
       Right(:final value) => value.data is String ? jsonDecode(value.data as String) : value.data,
       Left(:final value) => throw value,
     },
-    // One attempt: a write is never sent twice.
+    // One attempt: a write is never sent twice. The write result of the forum's app API (plugin 2.6.0) is read as
+    // the page it stands for (the plugins' 提示信息).
     post: (url, data) async => switch (await client.postForm(url, data: data, singleAttempt: true).run()) {
-      Right(:final value) => '${value.data}',
+      Right(:final value) => tsdmAppWriteAnswerHtml(value.data),
       Left(:final value) => throw value,
     },
   );

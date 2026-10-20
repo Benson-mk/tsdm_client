@@ -5,6 +5,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/purchase/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -35,15 +36,25 @@ final class PurchaseRepository with LoggerMixin {
   ///   </table>
   /// </form>
   /// ```
-  static Either<AppException, PurchaseConfirmInfo> _parsePurchaseDialog(String data, {required String tid}) {
-    String? htmlData;
-    try {
-      htmlData = parseXmlDocument(data).documentElement?.nodes.firstOrNull?.text;
-    } on Exception catch (_) {
-      // Not xml, maybe a plain html document.
-      htmlData = null;
+  ///
+  /// With the forum's app API (plugin 2.6.0) [data] is its write result ([tsdmAppWriteResultOf]): the dialog as a
+  /// `page`, the forum's refusal (bought already, not logged in…) as a `handle` or `message` without a form.
+  static Either<AppException, PurchaseConfirmInfo> _parsePurchaseDialog(Object? data, {required String tid}) {
+    final result = tsdmAppWriteResultOf(data);
+    if (result != null && result.kind != TsdmAppWriteKind.page) {
+      return left(PurchaseInfoInvalidNoticeException());
     }
-    final doc = parseHtmlDocument(htmlData ?? data);
+    final text = data is String ? data : '${data ?? ''}';
+    String? htmlData;
+    if (result == null) {
+      try {
+        htmlData = parseXmlDocument(text).documentElement?.nodes.firstOrNull?.text;
+      } on Exception catch (_) {
+        // Not xml, maybe a plain html document.
+        htmlData = null;
+      }
+    }
+    final doc = result?.document ?? parseHtmlDocument(htmlData ?? text);
     final formNode = doc.querySelector('form#payform') ?? doc.querySelector('form');
     if (formNode == null) {
       final errorText = doc.querySelector('div.alert_error')?.innerText.trim();
@@ -115,7 +126,10 @@ final class PurchaseRepository with LoggerMixin {
   /// MUST call this function before purchase.
   AsyncEither<PurchaseConfirmInfo> fetchPurchaseConfirmInfo({required String tid, required String pid}) =>
       AsyncEither(() async {
-        final respEither = await getIt.get<NetClientProvider>().get(formatPurchaseDialogUrl(tid, pid)).run();
+        final respEither = await getIt
+            .get<NetClientProvider>()
+            .get(withTsdmAppJsonWrite(formatPurchaseDialogUrl(tid, pid)))
+            .run();
         if (respEither.isLeft()) {
           return left(respEither.unwrapErr());
         }
@@ -125,7 +139,7 @@ final class PurchaseRepository with LoggerMixin {
           error('fetch purchase dialog failed: code${resp.statusCode}');
           return left(HttpRequestFailedException(resp.statusCode));
         }
-        final result = _parsePurchaseDialog(resp.data as String, tid: tid);
+        final result = _parsePurchaseDialog(resp.data, tid: tid);
         if (result.isLeft()) {
           error('parse purchase dialog failed: ${result.unwrapErr()}');
         }
@@ -133,6 +147,10 @@ final class PurchaseRepository with LoggerMixin {
       });
 
   /// Purchase with given parameters.
+  ///
+  /// The forum's app API (plugin 2.6.0) answers the result as JSON ([tsdmAppWriteResultOf]): the success hook
+  /// (`thread_pay_succeed`, "购买成功") is the success, anything else failed; an older plugin answers the AJAX
+  /// fragment, read as before.
   AsyncVoidEither purchase({
     required String formHash,
     required String referer,
@@ -150,7 +168,13 @@ final class PurchaseRepository with LoggerMixin {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
-    if (!(resp.data as String).contains('购买成功')) {
+    if (tsdmAppWriteResultOf(resp.data) case final result?) {
+      final bought =
+          (result.kind == TsdmAppWriteKind.handle && result.succeeded) ||
+          (result.kind != TsdmAppWriteKind.page && result.message.contains('购买成功'));
+      return bought ? rightVoid() : left(PurchaseActionFailedException());
+    }
+    if (!(resp.data is String && (resp.data as String).contains('购买成功'))) {
       return left(PurchaseActionFailedException());
     }
     return rightVoid();

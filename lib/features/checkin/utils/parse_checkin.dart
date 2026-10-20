@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
@@ -51,7 +52,8 @@ bool? parseCheckinDeskStatus(uh.Document document) {
   return null;
 }
 
-/// Parse the message text in the checkin ajax response [data].
+/// Parse the message text in the checkin ajax response [answer] (the body as text, or the JSON object of the write
+/// result of the forum's app API, plugin 2.6.0).
 ///
 /// The response is an xml document wrapping html:
 ///
@@ -66,22 +68,23 @@ bool? parseCheckinDeskStatus(uh.Document document) {
 /// Fallback to the line heuristic (first line containing `</div>`) if not parsed.
 ///
 /// Marked as public for testing.
-String? parseCheckinResponseMessage(String data) {
+String? parseCheckinResponseMessage(Object? answer) {
+  if (tsdmAppWriteResultOf(answer) case final result?) {
+    // The write result of the forum's app API (plugin 2.6.0): the check-in plugin's float window as a `page` (read
+    // as the fragment is), the forum's own message (not logged in…) as its text.
+    if (result.kind != TsdmAppWriteKind.page) {
+      return result.message.isEmpty ? null : result.message;
+    }
+    final fromPage = _checkinMessageOf(result.document);
+    return fromPage == null || fromPage.isEmpty ? null : fromPage;
+  }
+  final data = answer is String ? answer : '${answer ?? ''}';
   String? fromXml;
   try {
     final xmlDoc = parseXmlDocument(data);
     final htmlData = xmlDoc.documentElement?.nodes.firstOrNull?.text;
     if (htmlData != null) {
-      final htmlDoc = parseHtmlDocument(htmlData);
-      fromXml =
-          htmlDoc.querySelector('div.c')?.innerText.trim() ??
-          htmlDoc.querySelector('div#messagetext')?.innerText.trim() ??
-          htmlDoc.querySelector('div.alert_error, div.alert_right, div.alert_info')?.innerText.trim();
-      if (fromXml == null || fromXml.isEmpty) {
-        // Bare message followed by a script, e.g. "您需要先登录才能继续本操作<script>…</script>" when the session expired.
-        htmlDoc.querySelectorAll('script').forEach((e) => e.remove());
-        fromXml = htmlDoc.body?.innerText.trim();
-      }
+      fromXml = _checkinMessageOf(parseHtmlDocument(htmlData));
     }
   } on Exception catch (_) {
     // Not xml, use fallback below.
@@ -90,4 +93,18 @@ String? parseCheckinResponseMessage(String data) {
     return fromXml;
   }
   return data.split('\n').firstWhereOrNull((e) => e.contains('</div>'))?.replaceFirst('</div>', '').trim();
+}
+
+/// The message of the check-in answer fragment [htmlDoc]: the float window's `div.c`, a message box, or the bare
+/// text before the script (e.g. "您需要先登录才能继续本操作<script>…</script>" when the session expired).
+String? _checkinMessageOf(uh.HtmlDocument htmlDoc) {
+  final text =
+      htmlDoc.querySelector('div.c')?.innerText.trim() ??
+      htmlDoc.querySelector('div#messagetext')?.innerText.trim() ??
+      htmlDoc.querySelector('div.alert_error, div.alert_right, div.alert_info')?.innerText.trim();
+  if (text != null && text.isNotEmpty) {
+    return text;
+  }
+  htmlDoc.querySelectorAll('script').forEach((e) => e.remove());
+  return htmlDoc.body?.innerText.trim();
 }
