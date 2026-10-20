@@ -282,15 +282,19 @@ class _CardLayout extends StatelessWidget {
     final Widget leading;
     final Widget name;
     if (author != null) {
+      // An anonymous author (the forum's app API lists anonymous threads, named "匿名" without a page) has no url:
+      // nothing to open, so no tap at all, instead of the "open in app" page for the forum root an empty url
+      // would resolve to.
+      final canOpenAuthor = !disableTap && author!.url.isNotEmpty;
       Future<void> openAuthor() async => context.dispatchAsUrl(author!.url);
       leading = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: disableTap ? null : openAuthor,
+        onTap: canOpenAuthor ? openAuthor : null,
         child: _buildAvatar(context),
       );
       name = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: disableTap ? null : openAuthor,
+        onTap: canOpenAuthor ? openAuthor : null,
         child: SingleLineText(author!.name, style: nameStyle),
       );
     } else {

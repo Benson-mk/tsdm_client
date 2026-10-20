@@ -31,6 +31,11 @@ extension DispatchUrl<T> on BuildContext {
     Map<String, String>? extraQueryParameters,
   }) async {
     talker.debug('dispatch url: $url');
+    if (url.isEmpty) {
+      // Nothing to open: `Uri.tryParse('')` is a relative url that would resolve to the forum root.
+      talker.error('failed to dispatch empty url');
+      return null;
+    }
     final u = Uri.tryParse(url);
     if (u == null) {
       // Do nothing if is invalid url.

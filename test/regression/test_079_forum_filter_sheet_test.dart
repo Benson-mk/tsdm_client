@@ -34,7 +34,6 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/themes/app_themes.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 String _data(String name) => File('test/data/$name').readAsStringSync();
@@ -61,13 +60,13 @@ class _SlowForumRepository implements ForumRepository {
   int calls = 0;
 
   @override
-  AsyncEither<uh.Document> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
+  AsyncEither<ForumPageData> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
       AsyncEither(() async {
         calls += 1;
         if (calls > 1) {
           await Future<void>.delayed(const Duration(seconds: 2));
         }
-        return right(parseHtmlDocument(html));
+        return right(parseForumPage(parseHtmlDocument(html), fid));
       });
 
   @override

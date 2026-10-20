@@ -26,6 +26,10 @@ import 'package:universal_html/parsing.dart';
 /// "new" prompts cleared), now that the notification fetch reads the lists from here instead of those pages. It is
 /// sent with [post]; its `notify` answer carries the form hash for it ([notifyCarriesLists]) and the clock the notices
 /// are marked read as of ([notifyListsUnreadNotice]).
+///
+/// Plugin 2.0.0 answers the forum page in the JSON mode with every field the app reads as structured data
+/// (`schema: 2`): the app builds the page from them and never parses the `document` of such an answer
+/// (`forumPageFromApi`); an older plugin's answer, without `schema`, is parsed from its `document` as before.
 abstract final class TsdmAppApi {
   /// Url of an action.
   static String url(String action, [Map<String, String> query = const {}]) => Uri.parse(
@@ -370,6 +374,15 @@ bool tsdmAppAnswerWithoutContent(Object? data) {
   }
   return parseHtmlDocument(json['document'] as String).querySelector('div#postlist, div[id^="post_"]') == null;
 }
+
+/// The JSON object of a forum page answer [data], null when it is a web page (or not a JSON object).
+///
+/// For the callers that read the structured fields of an answer instead of its `document` (the forum page since
+/// plugin 2.0.0, `schema: 2`: `forumApiAnswerOf`).
+Map<String, dynamic>? tsdmAppAnswerJson(Object? data) => switch (_tsdmAppAnswerJson(data)) {
+  final Map<String, dynamic> json => json,
+  _ => null,
+};
 
 /// The JSON object of a forum page answer [data], null when it is a web page.
 Map<dynamic, dynamic>? _tsdmAppAnswerJson(Object? data) {

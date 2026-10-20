@@ -24,6 +24,7 @@ import 'package:tsdm_client/features/forum/bloc/forum_bloc.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_group_bloc.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
+import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/forum/utils/group.dart';
 import 'package:tsdm_client/features/forum/view/forum_group_page.dart';
 import 'package:tsdm_client/features/forum/view/forum_page.dart';
@@ -316,12 +317,12 @@ final class _BoardsRepository implements ForumRepository {
   String _board() => _uid() == _bob.uid ? 'Bob board' : 'Alice board';
 
   @override
-  AsyncEither<uh.Document> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
+  AsyncEither<ForumPageData> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
       AsyncEither(() async {
         forumLoads.add(filterState);
         final board = _board();
         await gate?.future;
-        return right(parseHtmlDocument(_subForumsPage(board)));
+        return right(parseForumPage(parseHtmlDocument(_subForumsPage(board)), fid));
       });
 
   @override

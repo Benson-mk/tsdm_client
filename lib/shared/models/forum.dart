@@ -24,6 +24,52 @@ final class Forum with ForumMappable {
     this.latestThreadUserUrl,
   });
 
+  /// Build a [Forum] from a subforum [s] of a structured forum page answer of the forum's app API (plugin 2.0.0,
+  /// `schema: 2`, see `forumPageFromApi`), the expanded layout the forum page lists its subforums in.
+  ///
+  /// * The url is the forum's page, or the address a redirect forum points to (`redirect`, empty otherwise).
+  /// * `todayposts` 0 is no count, as the page prints no `<em>` then.
+  /// * `lastpost` (null when the forum has no thread) gives the latest thread: its redirect url to the last post, its
+  ///   whole subject (the page cuts it to 30 bytes, not imitated), its time (the forum's unix seconds, the real
+  ///   instant) and its author with the member's url by username.
+  /// * `subforums` are the forum's own subforums (the page's "子版块: a, b" row), null when there are none as the page
+  ///   has no row then; [subThreadList] is never given.
+  factory Forum.fromApi(Map<String, dynamic> s) {
+    final fid = _apiInt(s['fid']);
+    final redirect = _apiText(s['redirect']);
+    final lastPost = s['lastpost'] is Map<String, dynamic> ? s['lastpost'] as Map<String, dynamic> : null;
+    final lastPostAuthor = lastPost == null ? null : _apiText(lastPost['author']);
+    final latestThreadTime = lastPost == null ? null : _apiTime(lastPost['dateline']);
+    final todayCount = _apiInt(s['todayposts']);
+    final subForumList = s['subforums'] is List
+        ? (s['subforums'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((e) => (_apiText(e['name']), '$baseUrl/forum.php?mod=forumdisplay&fid=${_apiInt(e['fid'])}'))
+              .toList()
+        : const <(String, String)>[];
+
+    return Forum(
+      forumID: fid,
+      url: redirect.isNotEmpty ? redirect : '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+      name: _apiText(s['name']),
+      iconUrl: _apiText(s['icon']),
+      threadCount: _apiInt(s['threads']),
+      replyCount: _apiInt(s['posts']),
+      threadTodayCount: todayCount > 0 ? todayCount : null,
+      latestThreadTime: latestThreadTime,
+      latestThreadTimeText: latestThreadTime?.yyyyMMDDHHMM(),
+      latestThreadUrl: lastPost == null
+          ? null
+          : '$baseUrl/forum.php?mod=redirect&tid=${_apiInt(lastPost['tid'])}&goto=lastpost',
+      latestThreadTitle: lastPost == null ? null : _apiText(lastPost['subject']),
+      latestThreadUserName: lastPostAuthor,
+      latestThreadUserUrl: lastPostAuthor == null || lastPostAuthor.isEmpty
+          ? null
+          : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPostAuthor)}',
+      subForumList: subForumList.isEmpty ? null : subForumList,
+    );
+  }
+
   /// Forum id.
   final int forumID;
 

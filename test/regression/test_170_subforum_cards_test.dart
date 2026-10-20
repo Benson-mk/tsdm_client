@@ -12,6 +12,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
+import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/forum/utils/group.dart';
 import 'package:tsdm_client/features/forum/view/forum_group_page.dart';
 import 'package:tsdm_client/features/forum/view/forum_page.dart';
@@ -36,7 +37,6 @@ import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_r
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/card/forum_card.dart';
 import 'package:tsdm_client/widgets/network_indicator_image.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// preview109 feedback: the sub forums tab of a forum and the forum group page (`gid`) still used the shared 960px
@@ -97,8 +97,8 @@ final class _FakeForumRepository implements ForumRepository {
   final List<String> Function() names;
 
   @override
-  AsyncEither<uh.Document> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
-      AsyncEither(() async => right(parseHtmlDocument(_forumPage(names()))));
+  AsyncEither<ForumPageData> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
+      AsyncEither(() async => right(parseForumPage(parseHtmlDocument(_forumPage(names())), fid)));
 
   @override
   AsyncEither<ForumGroup?> fetchForumGroup(String gid) =>

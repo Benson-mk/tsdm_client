@@ -38,7 +38,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
         .match((e) {
           handle(e);
           emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
-        }, (v) async => emit(await _parseFromDocument(v, event.pageNumber)))
+        }, (v) async => emit(_mergePage(v, event.pageNumber)))
         .run();
   }
 
@@ -49,7 +49,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
       handle(e);
       error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
       emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
-    }, (v) async => emit(await _parseFromDocument(v, 1))).run();
+    }, (v) async => emit(_mergePage(v, 1))).run();
   }
 
   Future<void> _onForumJumpPageRequested(ForumJumpPageRequested event, ForumEmitter emit) async {
@@ -60,7 +60,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
           handle(e);
           error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
           emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
-        }, (v) async => emit(await _parseFromDocument(v, event.pageNumber)))
+        }, (v) async => emit(_mergePage(v, event.pageNumber)))
         .run();
   }
 
@@ -80,12 +80,12 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
       handle(e);
       error('failed to load forum page: fid=${state.fid}, pageNumber=1 : $e');
       emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
-    }, (v) async => emit(await _parseFromDocument(v, 1))).run();
+    }, (v) async => emit(_mergePage(v, 1))).run();
   }
 
-  Future<ForumState> _parseFromDocument(uh.Document document, int pageNumber) async {
-    final page = parseForumPage(document, state.fid);
-
+  /// The state with [page] (the page [pageNumber] the repository built, from the web page or the forum's app API)
+  /// merged in.
+  ForumState _mergePage(ForumPageData page, int pageNumber) {
     final allNormalThread = [...state.normalThreadList, ...page.normalThreadList];
 
     var producedState = state.copyWith(
