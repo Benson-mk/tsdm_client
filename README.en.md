@@ -16,15 +16,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.38.1 (2026-10-17)
+## Latest update: 1.39.0 (2026-10-20)
 
-- Fixed conversations missing from the private message list (#193): ones you last wrote in or already read on the web now show up; pull to refresh fetches the list directly, and sending a message in the app updates it.
-- 1.38.0: With a larger system font, cards in posts (spoilers, quotes, code, red packets, reviews, …) scale once instead of twice and no longer overflow; tables in posts wrap to the screen when they can instead of scrolling sideways.
-- Poll cards use the poll already loaded with the thread page (two fewer requests per thread); the points pages go through the forum's app API (plugin 1.7.0).
-- A blank answer from the API shows "load failed" with retry on every page instead of an empty list or a login prompt.
-- Android build number 141, installs over earlier releases and test builds.
+- Security fix: the summaries on private and broadcast message cards were rendered as web content, so a sender could plant an off-site image in them with a special spelling; they are shown as plain text now (conversations stored by older versions display correctly too).
+- The notification page no longer piles up (#196): opening it from the bell or the menu of a thread or forum page returns to the one already open.
+- Fixed the unread marker of the private message and broadcast message pages: conversations already read on the web, and old broadcast messages read long ago, no longer count as unread.
+- With the forum's API plugin 1.9.0 the notification sync reads notices and conversations from the API instead of the web pages; nothing changes with an older plugin.
+- Android build number 142, installs over earlier releases and test builds.
 
-[Download 1.38.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.38.1) · [Full changelog](./CHANGELOG.md)
+[Download 1.39.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.39.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
