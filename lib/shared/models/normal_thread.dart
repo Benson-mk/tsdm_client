@@ -232,6 +232,113 @@ class NormalThread with NormalThreadMappable {
     required this.isRecentThread,
   });
 
+  /// Build a [NormalThread] from a thread row [t] of a structured forum page answer of the forum's app API (plugin
+  /// 2.0.0, `schema: 2`, see `forumPageFromApi`) of forum [fid].
+  ///
+  /// The row carries what the forum computed for that request, taken as it is: the sticky level (`displayorder`),
+  /// the title highlight expanded (`style`), `istoday` (the page's `span.xi1` on the publish time), `new` and
+  /// `weeknew` (which depend on the visit cookie of the request); nothing is derived again here.
+  ///
+  /// * Times (`dateline`, `lastpost`) are the forum's unix seconds, stored as the real instant and shown in the
+  ///   device's zone. The web page path reads the forum's wall clock text as the device's local time (an old bug
+  ///   kept there), so the two differ by the zone difference, and by the minute the page rounds to.
+  /// * The author is a link to the member by uid, with the avatar built from the uid as [fromTBody] does. An
+  ///   anonymous thread (the forum gives no name, `authorid` 0 by the spec) has no uid, no avatar and no link, and is
+  ///   named as the page names it; an anonymous or deleted last replier the same (`lastposterid` 0).
+  /// * [typePrefix] is `types.prefix` of the answer: the page prints the type tag `[名稱]` only when the forum shows
+  ///   types as a prefix (Discuz forumdisplay builds `typehtml` for prefix 1 or 2 only), so a thread of a forum
+  ///   with prefix 0 has no [threadType] either, as on the page.
+  /// * `price` is the price of a thread for sale only: a reward thread (`special` 3) carries its reward there, which
+  ///   the page prints as "悬赏" and the app does not read. `readperm` is the privilege.
+  /// * States: the sticky level, closed (`closed` 1, or a moved thread: `moved` is the tid it points to), poll
+  ///   (`special` 1), rewarded (`special` 3), rated up (`rate` > 0), attachment (`attachment` 1 a file, 2 an image:
+  ///   both the picture state, as [fromTBody] does), digest (`digest` > 0).
+  factory NormalThread.fromApi(Map<String, dynamic> t, {required int fid, required int typePrefix}) {
+    final tid = _apiInt(t['tid']);
+    final authorName = _apiText(t['author']);
+    final authorId = _apiInt(t['authorid']);
+    final anonymous = authorName.isEmpty || authorId <= 0;
+    final author = anonymous
+        ? User(
+            name: authorName.isEmpty ? _anonymousName : authorName,
+            url: authorName.isEmpty ? '' : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(authorName)}',
+          )
+        : User(
+            name: authorName,
+            url: '$baseUrl/home.php?mod=space&uid=$authorId',
+            uid: '$authorId',
+            avatarUrl: avatarUrlOfUid('$authorId'),
+          );
+
+    final lastPoster = _apiText(t['lastposter']);
+    final lastPosterId = _apiInt(t['lastposterid']);
+    final latestReplyAuthor = User(
+      name: lastPoster.isEmpty ? _anonymousName : lastPoster,
+      url: lastPoster.isEmpty ? '' : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPoster)}',
+      uid: lastPosterId > 0 ? '$lastPosterId' : null,
+    );
+
+    final typeId = _apiInt(t['typeid']);
+    final typeName = _apiText(t['typename']);
+    final threadType = typePrefix != 0 && typeId > 0 && typeName.isNotEmpty
+        ? ThreadType(name: typeName, url: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid&filter=typeid&typeid=$typeId')
+        : null;
+
+    final special = _apiInt(t['special']);
+    final price = _apiInt(t['price']);
+    final readPerm = _apiInt(t['readperm']);
+
+    CssTypes? css;
+    if (t['style'] case final Map<String, dynamic> style) {
+      final color = _apiText(style['color']);
+      final bgColor = _apiText(style['bgcolor']);
+      css = parseCssString(
+        [
+          if (color.isNotEmpty) 'color:$color',
+          if (_apiInt(style['bold']) == 1) 'font-weight:bold',
+          if (bgColor.isNotEmpty) 'background-color:$bgColor',
+        ].join(';'),
+      );
+    }
+
+    final stateSet = <ThreadStateModel?>{
+      switch (_apiInt(t['displayorder'])) {
+        3 => ThreadStateModel.pinnedGlobally,
+        2 => ThreadStateModel.pinnedInType,
+        1 => ThreadStateModel.pinnedInSubreddit,
+        _ => null,
+      },
+      if (_apiInt(t['closed']) == 1 || _apiInt(t['moved']) > 0) ThreadStateModel.closed,
+      switch (special) {
+        1 => ThreadStateModel.poll,
+        3 => ThreadStateModel.rewarded,
+        _ => null,
+      },
+      if (_apiInt(t['rate']) > 0) ThreadStateModel.upVoted,
+      if (_apiInt(t['attachment']) >= 1) ThreadStateModel.pictureAttached,
+      if (_apiInt(t['digest']) > 0) ThreadStateModel.digested,
+    }.nonNulls.toSet();
+
+    return NormalThread(
+      title: _apiText(t['subject']),
+      url: '$baseUrl/forum.php?mod=viewthread&tid=$tid',
+      threadID: '$tid',
+      author: author,
+      publishDate: _apiTime(t['dateline']),
+      latestReplyAuthor: latestReplyAuthor,
+      latestReplyTime: _apiTime(t['lastpost']),
+      iconUrl: '',
+      threadType: threadType,
+      replyCount: _apiInt(t['replies']),
+      viewCount: _apiInt(t['views']),
+      price: price > 0 && special != 3 ? price : null,
+      privilege: readPerm > 0 ? readPerm : null,
+      css: css,
+      stateSet: stateSet,
+      isRecentThread: _apiInt(t['istoday']) == 1,
+    );
+  }
+
   /// Thread title.
   final String title;
 
@@ -477,4 +584,23 @@ class NormalThread with NormalThreadMappable {
       isRecentThread: isRecentThread,
     );
   }
+}
+
+/// The name the forum shows for an anonymous author or replier (`{lang anonymous}`).
+const _anonymousName = '匿名';
+
+/// An integer field of an API answer: 0 when missing or not a number.
+int _apiInt(Object? value) => switch (value) {
+  final num n => n.toInt(),
+  final String s => int.tryParse(s) ?? 0,
+  _ => 0,
+};
+
+/// A text field of an API answer: empty when missing.
+String _apiText(Object? value) => value is String ? value : '';
+
+/// A time field of an API answer (unix seconds of the forum), the real instant; null when missing or 0.
+DateTime? _apiTime(Object? value) {
+  final seconds = _apiInt(value);
+  return seconds > 0 ? DateTime.fromMillisecondsSinceEpoch(seconds * 1000) : null;
 }

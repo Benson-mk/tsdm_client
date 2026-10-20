@@ -5,35 +5,50 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
+import 'package:tsdm_client/features/forum/utils/forum_page_api.dart';
+import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/forum/utils/group.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
-import 'package:universal_html/html.dart' as uh;
 
 /// Repository of building a forum.
 class ForumRepository {
-  /// Fetch the html document of given [fid] at page [pageNumber].
+  /// Fetch the page of forum [fid] at page [pageNumber] with [filterState] applied.
   ///
-  AsyncEither<uh.Document> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
-      AsyncEither(() async {
-        final fetchUrl = _formatForumUrl(fid, pageNumber, filterState);
-        final netClient = getIt.get<NetClientProvider>();
-        // JSON mode of the forum's app API when the forum has it, the web page otherwise (see TsdmAppApi).
-        final respEither = await netClient
-            .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, 'tsdmapp': 'json'}))
-            .run();
-        if (respEither.isLeft()) {
-          return left(respEither.unwrapErr());
-        }
-        final resp = respEither.unwrap();
-        // An answer without a page is a failed request, not a forum without threads (see tsdmAppAnswerWithoutPage).
-        if (resp.statusCode != HttpStatus.ok || tsdmAppAnswerWithoutPage(resp.data)) {
-          return left(HttpRequestFailedException(resp.statusCode));
-        }
-        return right(tsdmAppPageDocument(resp.data));
-      });
+  /// The page is asked in the JSON mode of the forum's app API. An answer of plugin 2.0.0 or later carries the page as
+  /// structured fields (`schema: 2`) and the page is built from them ([forumPageFromApi]), its `document` never read.
+  /// Any other answer (a web page from a forum without the plugin, an older plugin's answer, whose `document` holds
+  /// the blocks of the page) is parsed as the web page ([parseForumPage]).
+  AsyncEither<ForumPageData> fetchForum({
+    required String fid,
+    required FilterState filterState,
+    int pageNumber = 1,
+  }) => AsyncEither(() async {
+    final fetchUrl = _formatForumUrl(fid, pageNumber, filterState);
+    final netClient = getIt.get<NetClientProvider>();
+    // JSON mode of the forum's app API when the forum has it, the web page otherwise (see TsdmAppApi).
+    final respEither = await netClient
+        .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, 'tsdmapp': 'json'}))
+        .run();
+    if (respEither.isLeft()) {
+      return left(respEither.unwrapErr());
+    }
+    final resp = respEither.unwrap();
+    if (resp.statusCode != HttpStatus.ok) {
+      return left(HttpRequestFailedException(resp.statusCode));
+    }
+    final api = forumApiAnswerOf(resp.data);
+    if (api != null) {
+      return right(forumPageFromApi(api, fid));
+    }
+    // An answer without a page is a failed request, not a forum without threads (see tsdmAppAnswerWithoutPage).
+    if (tsdmAppAnswerWithoutPage(resp.data)) {
+      return left(HttpRequestFailedException(resp.statusCode));
+    }
+    return right(parseForumPage(tsdmAppPageDocument(resp.data), fid));
+  });
 
   Uri _formatForumUrl(String fid, int pageNumber, FilterState filterState) {
     final queryMap = {

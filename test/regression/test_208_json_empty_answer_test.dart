@@ -42,6 +42,7 @@ import 'package:tsdm_client/features/favorite/models/models.dart';
 import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
+import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/friend/repository/friend_repository.dart';
 import 'package:tsdm_client/features/homepage/repository/guide_index_repository.dart';
 import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repository.dart';
@@ -187,6 +188,14 @@ String _docView(uh.Document d) => [
   d.querySelectorAll('li').length,
 ].join('|');
 
+/// The forum page the way the tests compare it: the forum message, the login prompt, the poll offer and the rows.
+String _forumView(ForumPageData page) => [
+  page.permissionDeniedMessage?.text?.trim() ?? '-',
+  page.needLogin,
+  page.pollOfferUid,
+  page.normalThreadList.length + page.stickThreadList.length,
+].join('|');
+
 /// [task] as a state: `failure` for any failure the request or the answer gave, `message` for the forum's own refusal
 /// (the search shows it as it is), else [view] of what it gave.
 Future<String> _state<T>(AsyncEither<T> task, String Function(T value) view) async => switch (await task.run()) {
@@ -220,7 +229,7 @@ final List<_Caller> _callers = [
     name: 'forum page',
     run: (_) => _state(
       ForumRepository().fetchForum(fid: '2', filterState: const FilterState()),
-      _docView,
+      _forumView,
     ),
     pages: true,
   ),

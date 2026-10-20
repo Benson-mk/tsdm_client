@@ -132,7 +132,7 @@ void main() {
     });
 
     test('ask for the normal thread table and get its rows', () async {
-      final document = (await ForumRepository().fetchForum(fid: '73', filterState: const FilterState()).run()).unwrap();
+      final page = (await ForumRepository().fetchForum(fid: '73', filterState: const FilterState()).run()).unwrap();
 
       final uri = adapter.requests.single;
       expect(uri.host, baseHost);
@@ -147,7 +147,7 @@ void main() {
         'tsdmapp': 'json',
         'mobile': 'no',
       });
-      expect(parseForumPage(document, '73').normalThreadList.map((e) => e.threadID), ['1000003', '1000002']);
+      expect(page.normalThreadList.map((e) => e.threadID), ['1000003', '1000002']);
       expect(_pictureModeWarnings(), isEmpty);
     });
 
