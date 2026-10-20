@@ -100,7 +100,7 @@ void main() {
   test('withTsdmAppJson keeps the query', () {
     expect(
       withTsdmAppJson('https://x/forum.php?mod=viewthread&tid=1'),
-      'https://x/forum.php?mod=viewthread&tid=1&tsdmapp=json',
+      'https://x/forum.php?mod=viewthread&tid=1&tsdmapp=json&nodoc=1',
     );
   });
 

@@ -102,11 +102,17 @@ void main() {
       expect(form.reasons, hasLength(5));
       expect(forum.posts, isEmpty);
       expect(forum.gets, hasLength(2));
-      // The floor page is asked in the JSON mode of the forum's app API (test_215); the web page comes back without
-      // the plugin and is read as before.
+      // The floor page is asked in the JSON mode of the forum's app API (test_215), lean (`nodoc=1`, test_217); the
+      // web page comes back without the plugin and is read as before.
       expect(forum.gets[0].$1, Uri.parse(withTsdmAppJson(reportTarget.floorUrl.toString())));
+      expect(forum.gets[0].$1.queryParameters, containsPair('tsdmapp', 'json'));
+      expect(forum.gets[0].$1.queryParameters, containsPair('nodoc', '1'));
       expect(
-        forum.gets[0].$1.replace(queryParameters: {...forum.gets[0].$1.queryParameters}..remove('tsdmapp')),
+        forum.gets[0].$1.replace(
+          queryParameters: {...forum.gets[0].$1.queryParameters}
+            ..remove('tsdmapp')
+            ..remove('nodoc'),
+        ),
         reportTarget.floorUrl,
       );
       expect(forum.gets[0].$2, isFalse);

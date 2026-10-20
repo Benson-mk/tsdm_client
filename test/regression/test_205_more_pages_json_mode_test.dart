@@ -372,13 +372,14 @@ void main() {
   });
 
   group('withTsdmAppJson', () {
-    test('adds the parameter to the query, or starts one', () {
+    // Since test_217 the JSON mode asks for a lean answer as well (`nodoc=1`, plugin 2.3.0).
+    test('adds the parameters to the query, or starts one', () {
       expect(
         withTsdmAppJson('$baseUrl/home.php?mod=space&do=notice'),
-        '$baseUrl/home.php?mod=space&do=notice&tsdmapp=json',
+        '$baseUrl/home.php?mod=space&do=notice&tsdmapp=json&nodoc=1',
       );
-      expect(withTsdmAppJson('$baseUrl/forum.php'), '$baseUrl/forum.php?tsdmapp=json');
-      expect(withTsdmAppJson('$baseUrl/forum.php?'), '$baseUrl/forum.php?tsdmapp=json');
+      expect(withTsdmAppJson('$baseUrl/forum.php'), '$baseUrl/forum.php?tsdmapp=json&nodoc=1');
+      expect(withTsdmAppJson('$baseUrl/forum.php?'), '$baseUrl/forum.php?tsdmapp=json&nodoc=1');
     });
 
     test('before the fragment, which is never sent: the chat history url ends with #last', () {
@@ -386,13 +387,14 @@ void main() {
         final url = withTsdmAppJson(formatChatFullHistoryUrl('1001', page: page));
         expect(
           url,
-          '$baseUrl/home.php?mod=space&do=pm&subop=view&touid=1001${page == null ? '' : '&page=$page'}&tsdmapp=json#last',
+          '$baseUrl/home.php?mod=space&do=pm&subop=view&touid=1001${page == null ? '' : '&page=$page'}'
+          '&tsdmapp=json&nodoc=1#last',
         );
         final uri = Uri.parse(url);
         expect(uri.queryParameters['tsdmapp'], 'json');
         expect(uri.fragment, 'last');
       }
-      expect(withTsdmAppJson('$baseUrl/forum.php#top'), '$baseUrl/forum.php?tsdmapp=json#top');
+      expect(withTsdmAppJson('$baseUrl/forum.php#top'), '$baseUrl/forum.php?tsdmapp=json&nodoc=1#top');
     });
 
     test('an AJAX url is left as it is', () {
@@ -841,7 +843,12 @@ void main() {
       final sign = AntitheftDecoder.decode(_read('antitheft/$tid.html'))!.dsign;
       expect(forum.requests.map((e) => e.method), ['GET', 'GET', 'GET']);
       expect(forum.requests.map(_asksJson), [true, false, false]);
-      expect(forum.requests[1].uri.queryParameters, Map.of(forum.requests[0].uri.queryParameters)..remove('tsdmapp'));
+      expect(
+        forum.requests[1].uri.queryParameters,
+        Map.of(forum.requests[0].uri.queryParameters)
+          ..remove('tsdmapp')
+          ..remove('nodoc'),
+      );
       expect(forum.requests.map((e) => e.uri.queryParameters[AntitheftDecoder.dsignKey]), [null, null, sign]);
     }
 

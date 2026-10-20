@@ -30,7 +30,7 @@ class ForumRepository {
     final netClient = getIt.get<NetClientProvider>();
     // JSON mode of the forum's app API when the forum has it, the web page otherwise (see TsdmAppApi).
     final respEither = await netClient
-        .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, 'tsdmapp': 'json'}))
+        .getUri(fetchUrl.replace(queryParameters: {...fetchUrl.queryParameters, ...tsdmAppJsonQueryParameters}))
         .run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());

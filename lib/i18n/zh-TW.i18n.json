@@ -455,6 +455,12 @@
     "advancedSection": {
       "title": "高級",
       "useProxy": "啟用代理",
+      "forumApi": {
+        "title": "論壇介面",
+        "detected": "外掛 ${seen} · 應用預期 ${expected}",
+        "notDetected": "未偵測到 · 應用預期 ${expected}",
+        "olderNote": "部分頁面將按網頁解析"
+      },
       "proxySettings": {
         "title": "代理設定",
         "host": "位址",
