@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<script type="text/javascript" reload="1">if(typeof succeedhandle_a_friend_37=='function') {succeedhandle_a_friend_37('https://www.tsdm39.com/./', '好友请求已发送，请等待对方验证', {});}hideWindow('a_friend_37');showDialog('好友请求已发送，请等待对方验证', 'notice', null, null, 0, null, null, null, null, 2, null);</script>]]></root>

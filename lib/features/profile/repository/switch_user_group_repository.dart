@@ -1,5 +1,6 @@
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -28,6 +29,10 @@ final class SwitchUserGroupRepository with LoggerMixin {
       getIt.get<NetClientProvider>().get(_infoPageUrl).mapHttp((v) => parseHtmlDocument(v.data as String));
 
   /// Submit the switch user group request to server.
+  ///
+  /// The forum's app API (plugin 2.6.0) answers the result as JSON ([tsdmAppWriteResultOf]): the success hook is
+  /// the success, the error hook, a refusal page or the login prompt fail with the forum's message; an older plugin
+  /// answers the AJAX fragment, read as before.
   AsyncVoidEither submitSwitchRequest(int gid, String formHash) => getIt
       .get<NetClientProvider>()
       .postForm(
@@ -41,8 +46,15 @@ final class SwitchUserGroupRepository with LoggerMixin {
           'formhash': formHash,
         },
       )
-      .mapHttp((resp) => resp.data as String)
-      .flatMap((respData) {
+      .mapHttp((resp) => resp.data)
+      .flatMap((data) {
+        if (tsdmAppWriteResultOf(data) case final result?) {
+          if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
+            return AsyncEither.right(());
+          }
+          return AsyncEither.left(SwitchUserGroupFailed(result.reason.isEmpty ? 'unknown error' : result.reason));
+        }
+        final respData = tsdmAppAnswerText(data);
         // If succeeded.
         if (respData.contains('succeedhandle_$_handleKey') || respData.contains('succeedhandle_group')) {
           return AsyncEither.right(());

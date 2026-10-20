@@ -24,8 +24,9 @@ class TitleShopRepository {
     // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
     // An answer without a page (an empty body) fails the read, it is not a shop page served to a guest.
     getPage: (url) => fetchTsdmAppPageHtml(client, url),
+    // The write result of the forum's app API (plugin 2.6.0) is read as the page it stands for (the 提示信息).
     postForm: (url, body) async => switch (await client.postForm(url, data: body, singleAttempt: true).run()) {
-      Right(:final value) => value.data as String,
+      Right(:final value) => tsdmAppWriteAnswerHtml(value.data),
       Left(:final value) => throw value,
     },
     askApi: (query) => TsdmAppApi.askWaiting(client, 'titleshop', query),

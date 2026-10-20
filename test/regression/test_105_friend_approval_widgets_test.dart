@@ -297,6 +297,8 @@ void main() {
         'op': 'add',
         'uid': '1000',
         'inajax': '1',
+        // The form asks the forum's app API for its result (plugin 2.6.0).
+        'tsdmapp': 'json',
       });
       expect(post.data, {
         'referer': 'https://www.tsdm39.com/forum.php',

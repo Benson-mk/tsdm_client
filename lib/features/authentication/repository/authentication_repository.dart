@@ -207,8 +207,9 @@ class AuthenticationRepository with LoggerMixin {
     // Inject cookie provider.
     final netClient = _clientFactory(cookie);
 
+    // The login (`member.php`) is not a write the forum's app API answers for: sent as it is.
     final respEither = await netClient
-        .postForm(_buildLoginUrl(hash.loginHash), data: credential.toFormData(hash))
+        .postForm(_buildLoginUrl(hash.loginHash), data: credential.toFormData(hash), tsdmAppJson: false)
         .run();
     // Every login attempt requires a new form hash.
     _loginCookie = null;

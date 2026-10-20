@@ -115,7 +115,14 @@ void main() {
       expect(forum.posts, hasLength(1));
       expect(forum.posts.single.form, {'formhash': blocklistToken, 'blockuseradd': blocklistAddFlag, 'buid': '2003'});
       expect(forum.posts.single.uri.queryParametersAll['mobile'], ['no']);
-      expect(Map.of(forum.posts.single.uri.queryParameters)..remove('mobile'), websiteBlocklistQuery);
+      // The form asks the forum's app API for its result (`tsdmapp=json`, plugin 2.6.0) beside the desktop layout.
+      expect(forum.posts.single.uri.queryParameters['tsdmapp'], 'json');
+      expect(
+        Map.of(forum.posts.single.uri.queryParameters)
+          ..remove('mobile')
+          ..remove('tsdmapp'),
+        websiteBlocklistQuery,
+      );
       expect(forum.gets.map((uri) => uri.queryParameters['bu_q']), ['2003', null]);
     });
 
@@ -127,7 +134,14 @@ void main() {
       expect(result.list!.contains(2001), isTrue);
       expect(forum.posts, hasLength(1));
       expect(forum.posts.single.form, {'formhash': blocklistToken, 'blockuseradd': blocklistAddFlag, 'buid': '2003'});
-      expect(Map.of(forum.posts.single.uri.queryParameters)..remove('mobile'), websiteBlocklistQuery);
+      // The form asks the forum's app API for its result (`tsdmapp=json`, plugin 2.6.0) beside the desktop layout.
+      expect(forum.posts.single.uri.queryParameters['tsdmapp'], 'json');
+      expect(
+        Map.of(forum.posts.single.uri.queryParameters)
+          ..remove('mobile')
+          ..remove('tsdmapp'),
+        websiteBlocklistQuery,
+      );
       expect(result.sent, isTrue);
       // Fresh lookup before, list after.
       expect(forum.gets.map((e) => e.queryParameters['bu_q']), ['2003', null]);
@@ -246,7 +260,14 @@ void main() {
         'buid': '2001',
       });
       expect(forum.posts.single.uri.queryParametersAll['mobile'], ['no']);
-      expect(Map.of(forum.posts.single.uri.queryParameters)..remove('mobile'), websiteBlocklistQuery);
+      // The form asks the forum's app API for its result (`tsdmapp=json`, plugin 2.6.0) beside the desktop layout.
+      expect(forum.posts.single.uri.queryParameters['tsdmapp'], 'json');
+      expect(
+        Map.of(forum.posts.single.uri.queryParameters)
+          ..remove('mobile')
+          ..remove('tsdmapp'),
+        websiteBlocklistQuery,
+      );
       expect(forum.gets, hasLength(2));
       expect(forum.gets.every((uri) => !uri.queryParameters.containsKey('bu_q')), isTrue);
     });

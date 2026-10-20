@@ -121,8 +121,10 @@ final class MentionRepository with LoggerMixin {
   static const atplusUrl = '$baseUrl/plugin.php?id=atplus:search';
 
   /// Ask the `atplus` plugin with the form [data]; the decoded JSON, or null when the plugin did not answer with it.
+  ///
+  /// Posted without the write result of the forum's app API (`tsdmAppJson` false): the plugin's JSON is the answer.
   Future<Object?> _atplus(Map<String, String> data) async {
-    switch (await getIt.get<NetClientProvider>().postForm(atplusUrl, data: data).run()) {
+    switch (await getIt.get<NetClientProvider>().postForm(atplusUrl, data: data, tsdmAppJson: false).run()) {
       case Left(:final value):
         debug('mention: atplus did not answer: $value');
         return null;

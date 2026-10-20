@@ -1,0 +1,24 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792523352,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "非常感谢，回复发布成功，现在将转入主题页，请稍候……[ 点击这里转入主题列表 ]",
+ "message_key": "post_reply_succeed",
+ "url": "forum.php?mod=viewthread&tid=9199849&pid=4750&page=1&extra=#pid4750",
+ "handlekey": "fastpost",
+ "values": {
+  "fid": "2",
+  "tid": "9199849",
+  "pid": "4750",
+  "from": "",
+  "sechash": ""
+ },
+ "login": 0,
+ "alert": "right",
+ "document": "<div id=\"messagetext\" class=\"alert_error\"><p>garbage: never read for a handle</p></div>"
+}

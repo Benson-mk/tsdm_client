@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -41,6 +42,12 @@ import 'package:universal_html/parsing.dart';
 /// conversation (`schema: 11`) and the credit log (`schema: 12`) the same way (`favoriteApiAnswerOf`,
 /// `friendApiAnswerOf`, `chatApiAnswerOf`, `creditApiAnswerOf`), each with a shape of its own; the forum's own
 /// message of such a plugin tells the login prompt apart ([tsdmAppMessageAsksLogin]).
+///
+/// Plugin 2.6.0 answers the result of a write (a posted form, an AJAX dialog read for one) as one JSON object when the
+/// request carries [tsdmAppJsonWriteQuery] (`type: result`, `schema: 13`, [tsdmAppWriteResultOf]): the handler call
+/// of an AJAX `showmessage`, the 提示信息 page, a redirect or a page, classified ([TsdmAppWriteKind]). Every form the app
+/// posts carries it ([NetClientProvider.postForm]); the readers of the results try it first and parse the forum's own
+/// answer as before when there is none.
 ///
 /// Plugin 2.3.0 answers a page asked with `nodoc=1` ([tsdmAppNodocQuery], sent with every JSON mode request) without
 /// the `document` and `head` blocks when the answer carries the page as structured fields (`schema`) or is the forum's
@@ -189,7 +196,8 @@ abstract final class TsdmAppApi {
     if (knownUnavailable) {
       return null;
     }
-    switch (await client.postForm(url(action), data: form, singleAttempt: true).run()) {
+    // The plugin's own API answers JSON as it is: never asked for a write result.
+    switch (await client.postForm(url(action), data: form, singleAttempt: true, tsdmAppJson: false).run()) {
       case Left(:final value):
         talker.debug('tsdmapp api $action (post) failed: $value');
         return null;
@@ -229,7 +237,7 @@ abstract final class TsdmAppApi {
 /// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
 /// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
 /// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
-const expectedTsdmAppVersion = '2.5.0';
+const expectedTsdmAppVersion = '2.6.0';
 
 /// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
 /// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].
@@ -426,7 +434,8 @@ const tsdmAppNodocQuery = 'nodoc=1';
 const tsdmAppJsonQueryParameters = {'tsdmapp': 'json', 'nodoc': '1'};
 
 /// Add [tsdmAppJsonQuery] and [tsdmAppNodocQuery] to [url]; an AJAX url (`inajax=1`, answered as an XML fragment) is
-/// left as it is, as is one already in the JSON mode.
+/// left as it is, as is one already in the JSON mode. For a write (a form target, an AJAX dialog read for one) see
+/// [withTsdmAppJsonWrite].
 ///
 /// The parameters go before a `#fragment`, which is never sent to the server: the chat history url ends with `#last`
 /// and so was always answered the web page (roadmap item 3).
@@ -470,9 +479,36 @@ uh.Document tsdmAppPageDocument(Object? data) {
   final head = json['head'] is String && (json['head'] as String).isNotEmpty
       ? json['head'] as String
       : (tid is int ? '<link href="forum.php?mod=viewthread&amp;tid=$tid" />' : '');
-  // The blocks sit inside `div#wp.wp` on the web page and some parsers match through it.
-  return parseHtmlDocument(
-    '<html><head>$head</head><body><div id="wp" class="wp">${json['document']}</div></body></html>',
+  return parseHtmlDocument(_tsdmAppPageHtml(head, '${json['document']}'));
+}
+
+/// The html of a page the JSON mode cut into [blocks], with [head]: the blocks sit inside `div#wp.wp` on the web page
+/// and some parsers match through it.
+String _tsdmAppPageHtml(String head, String blocks) =>
+    '<html><head>$head</head><body><div id="wp" class="wp">$blocks</div></body></html>';
+
+/// The head script naming the account [uid] a page was served to (`discuz_uid`), none for a guest.
+String _tsdmAppUidScript(Object? uid) =>
+    uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
+
+/// The html of the 提示信息 page the forum prints for a message [text] (plain text) shown as [alertClass]
+/// (`alert_right`, `alert_error`, `alert_info`), served to [uid]: the message in `div#messagetext > p`, the link to go
+/// on to [url] (`p.alert_btnleft > a`, none when empty) and `div#messagelogin` when the forum asks to [login].
+String _tsdmAppMessagePageHtml({
+  required Object? uid,
+  required String text,
+  required String alertClass,
+  required bool login,
+  String url = '',
+}) {
+  final escaped = htmlEscape.convert(text);
+  final link = url.isEmpty ? '' : '<p class="alert_btnleft"><a href="${htmlEscape.convert(url)}">$escaped</a></p>';
+  return _tsdmAppPageHtml(
+    _tsdmAppUidScript(uid),
+    '<div id="ct" class="wp cl"> '
+    '${login ? '<div id="messagelogin"></div> ' : ''}'
+    '<div id="messagetext" class="$alertClass"><p>$escaped</p>$link</div> '
+    '</div>',
   );
 }
 
@@ -483,16 +519,14 @@ uh.Document tsdmAppPageDocument(Object? data) {
 /// script the 2.2.x `head` carried. The parsers of the pages read from their blocks tell the message, the prompt and
 /// the account from these, as they did.
 uh.Document tsdmAppMessageDocument(Map<dynamic, dynamic> json) {
-  final message = json['message'];
   final login = json['login'] == 1;
-  final uid = json['uid'];
-  final head = uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
-  final text = htmlEscape.convert(message is String ? message : '');
   return parseHtmlDocument(
-    '<html><head>$head</head><body><div id="wp" class="wp"><div id="ct" class="wp cl"> '
-    '${login ? '<div id="messagelogin"></div> ' : ''}'
-    '<div id="messagetext" class="${login ? 'alert_info' : 'alert_error'}"><p>$text</p></div> '
-    '</div></div></body></html>',
+    _tsdmAppMessagePageHtml(
+      uid: json['uid'],
+      text: tsdmAppText(json['message']),
+      alertClass: login ? 'alert_info' : 'alert_error',
+      login: login,
+    ),
   );
 }
 
@@ -760,3 +794,193 @@ Future<Object?> fetchTsdmAppPageAnswer(NetClientProvider client, String url) asy
       Right(:final value) => value.data,
       Left(:final value) => throw value,
     };
+
+/// Query parameter asking the plugin for the result of a write as JSON (plugin 2.6.0, `type: result`, `schema: 13`):
+/// a posted form, or a GET the forum answers as an AJAX fragment (`inajax=1`, `infloat=yes`: the dialogs of the
+/// favorites, the rate and report forms, the quick reply window…).
+///
+/// The forum handles the request exactly as without it (the form hash, the permissions, the flood control, the other
+/// plugins: the plugin writes nothing and changes no field) and the plugin turns what the forum answered (the
+/// `succeedhandle_KEY`/`errorhandle_KEY` script of an AJAX `showmessage`, the 提示信息 page, a redirect, a whole page
+/// or fragment) into one JSON object ([tsdmAppWriteResultOf]), HTTP 200 whatever the forum's own status was. An
+/// older plugin (or none) ignores the parameter and the forum's answer comes back as it always did: every reader
+/// tries the JSON result first and parses that answer as before when there is none. Sent with every form the app
+/// posts ([NetClientProvider.postForm]) but the login, the uploads and the plugin's own API, which the plugin leaves
+/// alone anyway. [tsdmAppNodocQuery] means nothing for a write (only a `page` carries a `document`, never left out)
+/// and is not sent.
+const String tsdmAppJsonWriteQuery = tsdmAppJsonQuery;
+
+/// Add [tsdmAppJsonWriteQuery] to [url], a form target or an AJAX dialog the app reads for a write, unless it is
+/// there already. Unlike [withTsdmAppJson] an `inajax=1` url is not left alone, and `nodoc=1` is not added.
+///
+/// The parameter goes before a `#fragment`, which is never sent to the server.
+String withTsdmAppJsonWrite(String url) {
+  final hash = url.indexOf('#');
+  final base = hash < 0 ? url : url.substring(0, hash);
+  if (base.contains(tsdmAppJsonQuery)) {
+    return url;
+  }
+  final separator = !base.contains('?') ? '?' : (base.endsWith('?') || base.endsWith('&') ? '' : '&');
+  return '$base$separator$tsdmAppJsonWriteQuery${hash < 0 ? '' : url.substring(hash)}';
+}
+
+/// What the forum answered a write with, as the plugin classified it (plugin 2.6.0, in this order).
+enum TsdmAppWriteKind {
+  /// The forum called the handler of an AJAX form: `succeedhandle_KEY('url', 'message', {values})` or
+  /// `errorhandle_KEY('message', {values})`. [TsdmAppWriteResult.handleKey] names the form, [TsdmAppWriteResult.values]
+  /// are the handler's object (`pid`, `tid` of a reply, `favid` of a favorite…), [TsdmAppWriteResult.ok] is 1 for the
+  /// success handler and for the error handler shown as a success (`alert` right: the report's `report_succeed`).
+  handle,
+
+  /// The forum printed its 提示信息 page (`div#messagetext`): a refusal (`alert` error, `ok` 0), a success or a note
+  /// with a link to go on to ([TsdmAppWriteResult.url]), or the login prompt ([TsdmAppWriteResult.login], `ok` 0).
+  message,
+
+  /// The forum redirected (`Location`, or the AJAX `window.location.href` branch): [TsdmAppWriteResult.url] is the
+  /// target, `ok` 1 unless it is the login page.
+  redirect,
+
+  /// Anything else: a whole page or a fragment (the rate and report forms, the check-in plugin's own float window,
+  /// the `parent.show_success('')` of the profile editor…), cut as the JSON mode cuts a page and carried in
+  /// [TsdmAppWriteResult.document]. `ok` is 1 unless the forum's own status was an error (400 and up) or the page is
+  /// a `parent.show_error(`: the reader decides from the document.
+  page,
+}
+
+/// The result of a write the forum answered through the plugin (plugin 2.6.0, `type: result`, `schema: 13`), see
+/// [tsdmAppJsonWriteQuery] and [tsdmAppWriteResultOf].
+///
+/// A reader decides from [kind] with [messageKey], [alert] and [login], and [url] or [values], never from [ok] alone:
+/// the forum's verdicts are not uniform (a `page` is always `ok`; an error handler may be a success).
+final class TsdmAppWriteResult {
+  TsdmAppWriteResult._(this.json, this.kind);
+
+  /// The answer as it came.
+  final Map<String, dynamic> json;
+
+  /// What the forum answered with.
+  final TsdmAppWriteKind kind;
+
+  /// The plugin's verdict: 1 for a success handler, an error handler shown as a success, a message page that is not
+  /// a refusal nor the login prompt, a redirect that is not to the login page, and a page the forum answered with a
+  /// status below 400 that is not a `parent.show_error(`.
+  bool get ok => json['ok'] == 1;
+
+  /// The forum's verdict on a [TsdmAppWriteKind.handle], [TsdmAppWriteKind.message] or [TsdmAppWriteKind.redirect]:
+  /// [ok] and not the login prompt. A [TsdmAppWriteKind.page] has next to none (see [ok]): read [document].
+  bool get succeeded => ok && !login;
+
+  /// The forum asks to log in: the message page carries the login box, or the redirect goes to the login page.
+  bool get login => json['login'] == 1;
+
+  /// The account the request was handled for, 0 for a guest.
+  int get uid => tsdmAppInt(json['uid']);
+
+  /// The form hash of the session.
+  String get formHash => tsdmAppText(json['formhash']);
+
+  /// The forum's message, plain text; empty when there is none (a redirect, a page).
+  String get message => tsdmAppText(json['message']);
+
+  /// What to tell the user about this result: the forum's [message], or, when there is none and the forum asks to
+  /// log in, the app's own "log in first"; empty otherwise (each reader then says what it said without the result).
+  /// Never the name of the [kind] or any other field of the answer.
+  String get reason => message.isNotEmpty ? message : (login ? t.general.needLogin : '');
+
+  /// The Discuz! language key the message was shown with (`post_reply_succeed`, `post_flood_ctrl`,
+  /// `favorite_do_success`, `request_has_been_sent`…), only when the forum's language packs have it; empty when the
+  /// forum gave plain text (a page, a third-party plugin's own words).
+  String get messageKey => tsdmAppText(json['message_key']);
+
+  /// Where the forum goes on to: the success handler's url, the link of a message page, the redirect target. Empty
+  /// when there is none.
+  String get url => tsdmAppText(json['url']);
+
+  /// The `handlekey` of a [TsdmAppWriteKind.handle] (`fastpost`, `rate`, `favoritethread`…), empty otherwise.
+  String get handleKey => tsdmAppText(json['handlekey']);
+
+  /// The handler's object of a [TsdmAppWriteKind.handle], every value as text; empty otherwise.
+  Map<String, String> get values => switch (json['values']) {
+    final Map<dynamic, dynamic> map => {for (final e in map.entries) '${e.key}': '${e.value ?? ''}'},
+    _ => const {},
+  };
+
+  /// How the forum showed the message: `right` (a success), `error` (a refusal), `info` (a note) or empty (a
+  /// redirect, a page).
+  String get alert => tsdmAppText(json['alert']);
+
+  /// The message was shown as a refusal.
+  bool get isError => alert == 'error';
+
+  /// The page or fragment of a [TsdmAppWriteKind.page] as the plugin cut it, empty for the other kinds (a `document`
+  /// of another kind, which the plugin never gives, is never read).
+  String get documentHtml => kind == TsdmAppWriteKind.page ? tsdmAppText(json['document']) : '';
+
+  /// The head of a whole page of a [TsdmAppWriteKind.page], empty otherwise.
+  String get head => kind == TsdmAppWriteKind.page ? tsdmAppText(json['head']) : '';
+
+  /// The answer as the page the forum would have printed, parsed once on first use: a [TsdmAppWriteKind.page] as the
+  /// JSON mode rebuilds a page from its blocks ([tsdmAppPageDocument], the blocks inside `div#wp`); every other kind
+  /// as the 提示信息 page of its message, with the class Discuz! gives it (`alert_right`, `alert_error`, `alert_info`),
+  /// the link to go on to (`p.alert_btnleft > a`), the login box (`div#messagelogin`) when the forum asks to log in,
+  /// and the `discuz_uid` of the account in the head. The readers that parsed the forum's page keep reading it.
+  late final uh.HtmlDocument document = parseHtmlDocument(html);
+
+  /// The html [document] is parsed from, for the readers that hand a page around as text.
+  late final String html = _html();
+
+  String _html() {
+    if (kind == TsdmAppWriteKind.page) {
+      return _tsdmAppPageHtml('${_tsdmAppUidScript(uid)}$head', documentHtml);
+    }
+    final alertClass = switch (alert) {
+      'right' => 'alert_right',
+      'error' => 'alert_error',
+      'info' => 'alert_info',
+      _ => login ? 'alert_info' : (kind == TsdmAppWriteKind.message || !ok ? 'alert_error' : 'alert_right'),
+    };
+    return _tsdmAppMessagePageHtml(uid: uid, text: message, alertClass: alertClass, login: login, url: url);
+  }
+
+  @override
+  String toString() =>
+      'TsdmAppWriteResult(kind: ${kind.name}, ok: $ok, key: $messageKey, alert: $alert, login: $login, '
+      'handlekey: $handleKey, url: $url, message: $message)';
+}
+
+/// The result of a write in the answer [data] (the body dio decoded: a JSON object, or text), null for anything
+/// else: the forum's own answer (the AJAX XML fragment, a page, a redirect followed to a page) of a forum without the
+/// plugin or with an older one, or of plugin 2.6.0 when its classifier failed (the forum's answer then comes back
+/// untouched: every reader keeps its parser of it), a JSON answer that is not a result (`type` other than `result`,
+/// an unknown `kind`), and text that is not JSON.
+///
+/// A result is taken as it is, whatever its `schema`: fields are only ever added.
+TsdmAppWriteResult? tsdmAppWriteResultOf(Object? data) {
+  final json = tsdmAppAnswerJson(data);
+  if (json == null || json['type'] != 'result') {
+    return null;
+  }
+  final kind = switch (json['kind']) {
+    'handle' => TsdmAppWriteKind.handle,
+    'message' => TsdmAppWriteKind.message,
+    'redirect' => TsdmAppWriteKind.redirect,
+    'page' => TsdmAppWriteKind.page,
+    _ => null,
+  };
+  return kind == null ? null : TsdmAppWriteResult._(json, kind);
+}
+
+/// The html of the answer [data] to a write, for the readers that take the answer as text and read the forum's page
+/// from it (the 提示信息 of a plugin's form, the catalogue a search posted for): the result's page
+/// ([TsdmAppWriteResult.html]) when the plugin answered one, the text as it came otherwise.
+String tsdmAppWriteAnswerHtml(Object? data) => tsdmAppWriteResultOf(data)?.html ?? tsdmAppAnswerText(data);
+
+/// The body [data] of an answer as text, the way the readers of the forum's own answers take it: text as it is,
+/// nothing as empty, a JSON value dio decoded (an answer that is not a write result) encoded back. Never the
+/// `toString()` of a decoded object.
+String tsdmAppAnswerText(Object? data) => switch (data) {
+  null => '',
+  final String text => text,
+  final Map<dynamic, dynamic> _ || final List<dynamic> _ => jsonEncode(data),
+  _ => '$data',
+};

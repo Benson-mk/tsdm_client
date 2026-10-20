@@ -142,6 +142,7 @@
     "retry": "Retry",
     "noPermission": "No permission to view this content",
     "needLoginToSeeThisPage": "Need to login to see this page",
+    "needLogin": "Please log in first",
     "pleaseWait": "Please wait",
     "loadFailedAndRetry": "Load failed, retrying",
     "noData": "No Data",
@@ -927,6 +928,7 @@
       "note": "Note (optional)",
       "group": "Group",
       "send": "Send request",
+      "sent": "Friend request sent",
       "failed": "The friend request could not be sent"
     },
     "approveFriend": {

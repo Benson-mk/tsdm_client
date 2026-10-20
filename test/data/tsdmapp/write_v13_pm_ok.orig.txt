@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<script type="text/javascript" reload="1">if(typeof succeedhandle_pmsend=='function') {succeedhandle_pmsend('home.php?mod=space&do=pm&subop=view&touid=38', '操作成功 ', {'pmid':'507325'});}</script>]]></root>

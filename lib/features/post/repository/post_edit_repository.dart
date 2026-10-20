@@ -110,12 +110,14 @@ final class PostEditRepository with LoggerMixin {
     }
     final target = parseSubmissionResult(response, expectedTid: expectedTid);
     if (target != null) return right(target);
-    if (response.data is String) {
-      final document = parseHtmlDocument(response.data as String);
-      final message = document.querySelector('#messagetext');
-      if (message != null && !message.classes.contains('alert_right')) {
-        return left(PostEditFailedToUploadResult(message.querySelector('p')?.innerText ?? ''));
-      }
+    // The forum's refusal: its 提示信息 page, or the write result of the forum's app API (plugin 2.6.0,
+    // [tsdmAppWriteResultOf]) read as that page.
+    final document =
+        tsdmAppWriteResultOf(response.data)?.document ??
+        (response.data is String ? parseHtmlDocument(response.data as String) : null);
+    final message = document?.querySelector('#messagetext');
+    if (message != null && !message.classes.contains('alert_right')) {
+      return left(PostEditFailedToUploadResult(message.querySelector('p')?.innerText ?? ''));
     }
     return left(ThreadPublishLocationNotFoundException());
   });

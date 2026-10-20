@@ -115,7 +115,8 @@ final class RateBloc extends Bloc<RateEvent, RateState> with LoggerMixin {
           state.copyWith(
             status: RateStatus.rateFailed,
             failedReason: switch (value) {
-              RateFailedException(:final reason) => reason,
+              // A refusal without a reason (the app API's result without a message) shows the page's own text.
+              RateFailedException(:final reason) when reason.isNotEmpty => reason,
               _ => null,
             },
           ),

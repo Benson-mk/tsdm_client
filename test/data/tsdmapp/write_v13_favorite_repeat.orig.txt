@@ -1,0 +1,13 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<h3 class="flb"><em>提示信息</em><span><a href="javascript:;" class="flbc" onclick="hideWindow('favoritethread');" title="关闭">关闭</a></span></h3>
+<div class="c altw">
+<div class="alert_error">抱歉，您已收藏，请勿重复收藏<script type="text/javascript" reload="1">if(typeof errorhandle_favoritethread=='function') {errorhandle_favoritethread('抱歉，您已收藏，请勿重复收藏', {});}</script></div>
+</div>
+<p class="o pns">
+<button type="button" class="pn pnc" id="closebtn" onclick="hideWindow('favoritethread');"><strong>确定</strong></button>
+<script type="text/javascript" reload="1">if($('closebtn')) {$('closebtn').focus();}</script>
+</p>
+]]></root>

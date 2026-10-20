@@ -1,0 +1,17 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792523353,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "好友请求已发送，请等待对方验证",
+ "message_key": "request_has_been_sent",
+ "url": "https://www.tsdm39.com/./",
+ "handlekey": "a_friend_38",
+ "values": {},
+ "login": 0,
+ "alert": "info"
+}

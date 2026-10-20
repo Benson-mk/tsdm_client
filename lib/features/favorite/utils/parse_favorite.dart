@@ -1,5 +1,6 @@
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/favorite/models/models.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
@@ -206,8 +207,16 @@ FavoriteForum? _parseForumItem(uh.Element li) {
 
 /// Parse the hidden `formhash` and `referer` of a favorite dialog (add or delete), null when there is no form, e.g.
 /// the record does not exist anymore.
-FavoriteFormParameters? parseFavoriteForm(String body) {
-  final document = parseHtmlDocument(_unwrapCdata(body));
+///
+/// [body] is the forum's AJAX answer (html wrapped in xml), or the write result of the forum's app API (plugin
+/// 2.6.0, [tsdmAppWriteResultOf]): a `page` holds the form in its document, any other kind (the notice of a record
+/// already there or gone, the login prompt) has no form.
+FavoriteFormParameters? parseFavoriteForm(Object? body) {
+  final result = tsdmAppWriteResultOf(body);
+  if (result != null && result.kind != TsdmAppWriteKind.page) {
+    return null;
+  }
+  final document = result?.document ?? parseHtmlDocument(_unwrapCdata(tsdmAppAnswerText(body)));
   final formHash = document.querySelector('input[name="formhash"]')?.attributes['value'];
   if (formHash == null || formHash.isEmpty) {
     return null;
@@ -215,28 +224,55 @@ FavoriteFormParameters? parseFavoriteForm(String body) {
   return (formHash: formHash, referer: document.querySelector('input[name="referer"]')?.attributes['value'] ?? '');
 }
 
-/// Parse the answer of the add-favorite form.
-FavoriteAddResult parseFavoriteAddResult(String body) {
-  if (_succeeded(body)) {
-    return FavoriteAdded(_favidRe.firstMatch(body)?.group(1));
+/// Parse the answer of the add-favorite form (or of the dialog, when the forum answered the notice there).
+///
+/// [body] is the forum's AJAX answer, or the write result of the forum's app API (plugin 2.6.0,
+/// [tsdmAppWriteResultOf]): added on the success hook (`favorite_do_success`, the `favid` among the values), already
+/// there on the `favorite_repeat` refusal, refused with the forum's message otherwise (a `page`, which the forum
+/// never answers a favorite with, by its text).
+FavoriteAddResult parseFavoriteAddResult(Object? body) {
+  if (tsdmAppWriteResultOf(body) case final result?) {
+    if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
+      return FavoriteAdded(result.values['favid']);
+    }
+    if (result.messageKey == 'favorite_repeat' || result.message.contains('已收藏')) {
+      return const FavoriteAlreadyExists();
+    }
+    return FavoriteAddFailed(result.reason.isNotEmpty ? result.reason : _plainText(result.documentHtml));
   }
-  final message = _errorMessage(body);
+  final text = tsdmAppAnswerText(body);
+  if (_succeeded(text)) {
+    return FavoriteAdded(_favidRe.firstMatch(text)?.group(1));
+  }
+  final message = _errorMessage(text);
   if (message != null) {
     return message.contains('已收藏') ? const FavoriteAlreadyExists() : FavoriteAddFailed(message);
   }
-  return FavoriteAddFailed(_plainText(body));
+  return FavoriteAddFailed(_plainText(text));
 }
 
-/// Parse the answer of the delete-favorite form.
+/// Parse the answer of the delete-favorite form (or of the dialog, when the forum answered the notice there).
 ///
-/// "抱歉，您指定的收藏不存在" counts as removed: the record is gone either way.
-FavoriteRemoveResult parseFavoriteRemoveResult(String body) {
-  if (_succeeded(body)) {
+/// "抱歉，您指定的收藏不存在" (`favorite_nonexistence`) counts as removed: the record is gone either way. [body] as
+/// for [parseFavoriteAddResult].
+FavoriteRemoveResult parseFavoriteRemoveResult(Object? body) {
+  if (tsdmAppWriteResultOf(body) case final result?) {
+    if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
+      return const FavoriteRemoveResult(removed: true);
+    }
+    final message = result.reason.isNotEmpty ? result.reason : _plainText(result.documentHtml);
+    return FavoriteRemoveResult(
+      removed: result.messageKey == 'favorite_nonexistence' || result.message.contains('不存在'),
+      message: message,
+    );
+  }
+  final text = tsdmAppAnswerText(body);
+  if (_succeeded(text)) {
     return const FavoriteRemoveResult(removed: true);
   }
-  final message = _errorMessage(body);
+  final message = _errorMessage(text);
   if (message != null) {
     return FavoriteRemoveResult(removed: message.contains('不存在'), message: message);
   }
-  return FavoriteRemoveResult(removed: false, message: _plainText(body));
+  return FavoriteRemoveResult(removed: false, message: _plainText(text));
 }

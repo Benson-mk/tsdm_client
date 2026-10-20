@@ -106,11 +106,18 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
       await _askWebPage(response, handler);
       return;
     }
-    if (data is! String || !_isForumHost(options.uri) || !AntitheftDecoder.isChallenge(data)) {
+    final isRead = const {'GET', 'HEAD'}.contains(options.method.toUpperCase());
+    // The result of a write the plugin answered as JSON (plugin 2.6.0) may carry the challenge as its page: the
+    // forum never redirects such a request, so this is not expected, but a wrapped challenge is not a result either.
+    final challengeHtml = switch (data) {
+      final String html => AntitheftDecoder.isChallenge(html) ? html : null,
+      _ => isRead ? null : _wrappedChallenge(data),
+    };
+    if (challengeHtml == null || !_isForumHost(options.uri)) {
       handler.next(response);
       return;
     }
-    if (!const {'GET', 'HEAD'}.contains(options.method.toUpperCase())) {
+    if (!isRead) {
       // A challenge may be the final page after a successful POST redirect. Copying that request would resend its
       // form body, so mutating requests are never replayed. Report an error instead of handing the challenge html to
       // the caller as if it were the result; confirmation is left to the caller's own fresh GET (e.g. PollCubit).
@@ -133,7 +140,7 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
       return;
     }
 
-    final challenge = AntitheftDecoder.decode(data);
+    final challenge = AntitheftDecoder.decode(challengeHtml);
     if (challenge == null) {
       error('antitheft: failed to decode challenge from ${options.uri}');
       handler.next(response);
@@ -173,6 +180,16 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
     } on DioException catch (e) {
       handler.reject(e);
     }
+  }
+
+  /// The challenge html carried as the page of a write result (plugin 2.6.0, [tsdmAppWriteResultOf]) in [data],
+  /// null when [data] is no such result or its page is not the challenge.
+  static String? _wrappedChallenge(Object? data) {
+    final result = tsdmAppWriteResultOf(data);
+    if (result == null || result.kind != TsdmAppWriteKind.page) {
+      return null;
+    }
+    return AntitheftDecoder.isChallenge(result.documentHtml) ? result.documentHtml : null;
   }
 
   /// Ask the page of [response] again without the JSON mode (see [hidesChallenge]), once.

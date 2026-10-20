@@ -422,6 +422,8 @@ void main() {
         'infloat': 'yes',
         'handlekey': 'afr_1000',
         'inajax': '1',
+        // Read with the write result of the forum's app API (plugin 2.6.0).
+        'tsdmapp': 'json',
       });
 
       final result = await repository.approve(_client(forum), form: form, gid: '3');
@@ -433,7 +435,14 @@ void main() {
       final post = forum.posts.single;
       expect(post.uri.origin, 'https://www.tsdm39.com');
       expect(post.uri.path, '/home.php');
-      expect(_query(post.uri), {'mod': 'spacecp', 'ac': 'friend', 'op': 'add', 'uid': '1000', 'inajax': '1'});
+      expect(_query(post.uri), {
+        'mod': 'spacecp',
+        'ac': 'friend',
+        'op': 'add',
+        'uid': '1000',
+        'inajax': '1',
+        'tsdmapp': 'json',
+      });
       expect(post.contentType, startsWith('application/x-www-form-urlencoded'));
       expect(post.data, {
         'referer': 'https://www.tsdm39.com/forum.php',

@@ -1,0 +1,17 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792523353,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "举报成功",
+ "message_key": "report_succeed",
+ "url": "",
+ "handlekey": "miscreport",
+ "values": {},
+ "login": 0,
+ "alert": "right"
+}

@@ -142,6 +142,7 @@
     "retry": "重試",
     "noPermission": "沒有權限查看該內容",
     "needLoginToSeeThisPage": "登入後才能存取此頁面",
+    "needLogin": "請先登入",
     "pleaseWait": "請稍候",
     "loadFailedAndRetry": "載入失敗，正在重試",
     "noData": "沒有資料",
@@ -927,6 +928,7 @@
       "note": "附言（可選）",
       "group": "分組",
       "send": "送出請求",
+      "sent": "好友請求已送出",
       "failed": "好友請求送出失敗"
     },
     "approveFriend": {

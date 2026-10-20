@@ -1,0 +1,17 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792523417,
+ "uid": 70,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "handle",
+ "message": "感谢您的参与，现在将转入评分前页面",
+ "message_key": "thread_rate_succeed",
+ "url": "https://www.tsdm39.com/./forum.php?mod=viewthread&tid=9199849",
+ "handlekey": "rate",
+ "values": {},
+ "login": 0,
+ "alert": "right"
+}

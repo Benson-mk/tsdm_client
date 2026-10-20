@@ -200,7 +200,8 @@ final class _PollForum implements HttpClientAdapter {
     }
     if (options.method == 'POST') {
       expect(options.uri.queryParameters['action'], 'votepoll', reason: 'the only form posted here is the vote');
-      expect(options.uri.queryParameters['tsdmapp'], isNull, reason: 'a form is posted as before');
+      // A form asks the forum's app API for its result (plugin 2.6.0); the vote itself is posted as before.
+      expect(options.uri.queryParameters['tsdmapp'], 'json', reason: 'a form asks for its result');
       voted.add(uid);
       return ResponseBody.fromString(
         '<html><body>Accepted</body></html>',
@@ -1417,7 +1418,9 @@ void main() {
       await repo.submit(savings.form!, BankOperation.deposit, '10', 'synthetic-password');
       expect([for (final r in forum.requests) r.method], ['GET', 'GET', 'GET', 'GET', 'POST']);
       for (final r in forum.requests) {
-        expect(r.uri.queryParameters['tsdmapp'], isNull, reason: '${r.method} ${r.uri}');
+        // The pages are read as web pages; the form asks the forum's app API for its result (plugin 2.6.0), which
+        // an older plugin ignores: the bank's own page comes back as before.
+        expect(r.uri.queryParameters['tsdmapp'], r.method == 'POST' ? 'json' : isNull, reason: '${r.method} ${r.uri}');
       }
     });
   });

@@ -4,12 +4,17 @@
 /// The forum serves the approval form (`add2submit`, radio groups) instead of the add-friend form (`addsubmit`, a
 /// group select and a note) when the member asked to be our friend. Anything that is not exactly that form fails
 /// closed: a formhash alone, another form or a form sending elsewhere is never posted.
+///
+/// With the forum's app API (plugin 2.6.0) the answers are its write results ([tsdmAppWriteResultOf]): the form as a
+/// `page` (its document, checked as the fragment is), a refusal as a `handle` with the forum's message, the result
+/// as the `handle` of the form's own handle key.
 library;
 
 import 'package:tsdm_client/features/blocking/repository/notice_ignore_repository.dart'
     show canonicalForumOperationUrl, isCloudflareChallengePage, unwrapAjax;
 import 'package:tsdm_client/features/friend/models/add_friend.dart';
 import 'package:tsdm_client/features/friend/models/approve_friend.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
@@ -57,12 +62,16 @@ Never _rejectPage(String raw) {
   throw const ApproveFriendRejected(ApproveFriendFailure.unknownForm, 'not an ajax answer');
 }
 
-/// The approval form of the request of [targetUid], or the forum's refusal.
+/// The approval form of the request of [targetUid], or the forum's refusal, in [raw]: the forum's AJAX answer, or
+/// the app API's write result.
 ///
 /// Throws [ApproveFriendRejected] for everything else.
-ApproveFriendFormResult parseApproveFriendForm(String raw, {required int targetUid}) {
+ApproveFriendFormResult parseApproveFriendForm(Object? raw, {required int targetUid}) {
   try {
-    return _parseApproveFriendForm(raw, targetUid: targetUid);
+    if (tsdmAppWriteResultOf(raw) case final result?) {
+      return _parseApproveFriendFormResult(result, targetUid: targetUid);
+    }
+    return _parseApproveFriendForm(raw is String ? raw : '', targetUid: targetUid);
   } on ApproveFriendRejected {
     rethrow;
   } on Object catch (e) {
@@ -70,11 +79,33 @@ ApproveFriendFormResult parseApproveFriendForm(String raw, {required int targetU
   }
 }
 
+/// [parseApproveFriendForm] of the app API's write result [result]: the form of a `page` is checked as the fragment
+/// is; the forum's refusal (the error hook, a refusal page) is a [ApproveFriendRefused] with its message, the login
+/// prompt is not logged in, anything else is unknown.
+ApproveFriendFormResult _parseApproveFriendFormResult(TsdmAppWriteResult result, {required int targetUid}) {
+  if (result.kind == TsdmAppWriteKind.page) {
+    if (isCloudflareChallengePage(result.document)) {
+      throw const ApproveFriendRejected(ApproveFriendFailure.challenge, 'cloudflare challenge');
+    }
+    return _parseApproveFriendPayload(result.documentHtml, targetUid: targetUid);
+  }
+  if (result.login) {
+    throw const ApproveFriendRejected(ApproveFriendFailure.notLoggedIn, 'login prompt');
+  }
+  if (!result.succeeded && result.reason.trim().isNotEmpty) {
+    return ApproveFriendRefused(result.reason.trim());
+  }
+  throw const ApproveFriendRejected(ApproveFriendFailure.unknownForm, 'no form and no message');
+}
+
 ApproveFriendFormResult _parseApproveFriendForm(String raw, {required int targetUid}) {
   if (!_isAjax(raw)) {
     _rejectPage(raw);
   }
-  final payload = unwrapAjax(raw);
+  return _parseApproveFriendPayload(unwrapAjax(raw), targetUid: targetUid);
+}
+
+ApproveFriendFormResult _parseApproveFriendPayload(String payload, {required int targetUid}) {
   final doc = parseHtmlDocument(payload);
   final forms = doc.querySelectorAll('form');
   if (forms.isEmpty) {
@@ -208,12 +239,47 @@ String _labelOf(uh.Element form, uh.Element input) {
 final _succeedRe = RegExp(r"succeedhandle_(\w+)\('[^']*',\s*'([^']*)'(?:,\s*\{([^}]*)\})?");
 final _valueUidRe = RegExp(r"'uid'\s*:\s*'(\d+)'");
 
-/// The forum's answer to a posted approval sent with [handleKey] for [targetUid].
+/// The forum's answer to a posted approval sent with [handleKey] for [targetUid], in [raw]: the forum's AJAX answer,
+/// or the app API's write result.
 ///
 /// Only the success callback of that very handle key (and, when it names one, of that member) is a success. An
 /// explicit refusal is a failed [AddFriendResult] with the forum's message. Throws [ApproveFriendRejected] for anything
 /// else: a challenge, the login page, a page that is not an ajax answer or an answer that is not understood.
-AddFriendResult parseApproveFriendResult(String raw, {required String handleKey, required int targetUid}) {
+AddFriendResult parseApproveFriendResult(Object? raw, {required String handleKey, required int targetUid}) {
+  if (tsdmAppWriteResultOf(raw) case final result?) {
+    return _parseApproveFriendResultOf(result, handleKey: handleKey, targetUid: targetUid);
+  }
+  return _parseApproveFriendResult(raw is String ? raw : '', handleKey: handleKey, targetUid: targetUid);
+}
+
+/// [parseApproveFriendResult] of the app API's write result [result]: the success hook of [handleKey] (a `handle`
+/// the forum took as a success, its `uid` value, when there is one, naming [targetUid]) is the success; the error
+/// hook, a refusal page or the login prompt is the forum's refusal; anything else is not understood.
+AddFriendResult _parseApproveFriendResultOf(
+  TsdmAppWriteResult result, {
+  required String handleKey,
+  required int targetUid,
+}) {
+  if (result.kind == TsdmAppWriteKind.handle && result.handleKey == handleKey && result.succeeded) {
+    final uid = result.values['uid'];
+    if (uid != null && uid != '$targetUid') {
+      throw const ApproveFriendRejected(ApproveFriendFailure.unknownAfterSubmit, 'success for another member');
+    }
+    return AddFriendResult(success: true, message: result.message.trim());
+  }
+  if (result.login) {
+    throw const ApproveFriendRejected(ApproveFriendFailure.notLoggedIn, 'login prompt');
+  }
+  if (result.kind != TsdmAppWriteKind.page && !result.succeeded && result.reason.trim().isNotEmpty) {
+    return AddFriendResult(success: false, message: result.reason.replaceAll(_spaceRe, ' ').trim());
+  }
+  if (result.kind == TsdmAppWriteKind.page && isCloudflareChallengePage(result.document)) {
+    throw const ApproveFriendRejected(ApproveFriendFailure.challenge, 'cloudflare challenge');
+  }
+  throw const ApproveFriendRejected(ApproveFriendFailure.unknownAfterSubmit, 'answer not understood');
+}
+
+AddFriendResult _parseApproveFriendResult(String raw, {required String handleKey, required int targetUid}) {
   if (!_isAjax(raw)) {
     try {
       _rejectPage(raw);

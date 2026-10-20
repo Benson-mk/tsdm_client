@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[<script type="text/javascript" reload="1">if(typeof succeedhandle_favoritethread=='function') {succeedhandle_favoritethread('home.php?mod=space&uid=35&do=favorite&view=me&type=thread&quickforward=1', '操作成功 ', {'favid':'521','id':'9199845'});}hideWindow('favoritethread');showDialog('操作成功 ', 'right', null, function () { window.location.href ='home.php?mod=space&uid=35&do=favorite&view=me&type=thread&quickforward=1'; }, 0, null, null, null, null, 2, 3);</script>]]></root>

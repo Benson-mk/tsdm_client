@@ -1,0 +1,5 @@
+HTTP 200
+Content-Type: text/xml; charset=utf-8
+
+<?xml version="1.0" encoding="utf-8"?>
+<root><![CDATA[抱歉，您不能对同一个帖子重复评分<script type="text/javascript" reload="1">if(typeof errorhandle_rate=='function') {errorhandle_rate('抱歉，您不能对同一个帖子重复评分', {});}</script>]]></root>

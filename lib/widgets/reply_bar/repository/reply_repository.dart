@@ -7,6 +7,7 @@ import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/editor/utils/mention.dart';
 import 'package:tsdm_client/features/notification/utils/personal_message_sent.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -51,12 +52,37 @@ final class ReplyRepository with LoggerMixin {
 
   /// Where a stored reply landed, from the forward url inside the success hook
   /// (`forum.php?mod=viewthread&tid=…&pid=<new post>&page=<page>…`). Parts the server did not tell are null.
-  static PostedReply postedReplyOf(String data) {
-    final url = _succeedHandleRe.firstMatch(data)?.group(1) ?? '';
-    return (
-      pid: RegExp(r'[?&]pid=(\d+)').firstMatch(url)?.group(1),
-      page: int.tryParse(RegExp(r'[?&]page=(\d+)').firstMatch(url)?.group(1) ?? ''),
-    );
+  static PostedReply postedReplyOf(String data) => postedReplyOfUrl(_succeedHandleRe.firstMatch(data)?.group(1) ?? '');
+
+  /// Where a stored reply landed, from the forward [url] the forum goes on to (the success hook's, or the `url` of
+  /// the app API's result). Parts the url does not tell are null.
+  static PostedReply postedReplyOfUrl(String url) => (
+    pid: RegExp(r'[?&]pid=(\d+)').firstMatch(url)?.group(1),
+    page: int.tryParse(RegExp(r'[?&]page=(\d+)').firstMatch(url)?.group(1) ?? ''),
+  );
+
+  /// The reply result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]) in the answer [data], null when
+  /// the forum answered itself.
+  ///
+  /// Stored when the forum called the success hook (`handle`, `post_reply_succeed` or the "needs moderation" one),
+  /// went on to the thread (`redirect`, a form the forum did not take as AJAX) or printed the success page
+  /// (`message` with `alert_right`), as [_isReplyStored] tells from the forum's own answer; anything else (the
+  /// error hook, a refusal page, the login prompt, a page) is rejected with the forum's message, or the text of the
+  /// page when the result carries no message.
+  static ({bool stored, String? reason, String url})? _replyResultOf(Object? data) {
+    final result = tsdmAppWriteResultOf(data);
+    if (result == null) {
+      return null;
+    }
+    final stored = switch (result.kind) {
+      TsdmAppWriteKind.handle || TsdmAppWriteKind.redirect => result.succeeded,
+      TsdmAppWriteKind.message =>
+        result.succeeded &&
+            (result.alert == 'right' || result.message.contains('回复发布成功') || result.message.contains('回复需要审核')),
+      TsdmAppWriteKind.page => false,
+    };
+    final reason = result.reason.isNotEmpty ? result.reason : _serverMessage(result.html);
+    return (stored: stored, reason: stored ? null : reason, url: result.url);
   }
 
   /// Human readable reason from a Discuz! inajax `showmessage()` response, if any.
@@ -68,7 +94,8 @@ final class ReplyRepository with LoggerMixin {
     String? htmlData;
     try {
       htmlData = parseXmlDocument(data).documentElement?.nodes.firstOrNull?.text;
-    } on Exception catch (_) {
+    } on Object catch (_) {
+      // Not the AJAX fragment: a whole page (the xml parser throws a state error on one, not an exception).
       htmlData = null;
     }
     final doc = parseHtmlDocument(htmlData ?? data);
@@ -77,9 +104,6 @@ final class ReplyRepository with LoggerMixin {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  /// Response body as text no matter how Dio decoded it.
-  static String _bodyText(Object? data) => data is String ? data : (data?.toString() ?? '');
-
   /// Reply to a post.
   AsyncEither<PostedReply> replyToPost({
     required ReplyParameters replyParameters,
@@ -87,7 +111,7 @@ final class ReplyRepository with LoggerMixin {
     required String replyMessage,
   }) => AsyncEither(() async {
     final netClient = getIt.get<NetClientProvider>();
-    final replyWindowUrl = '${replyAction.prependHost()}$replyPostWindowSuffix';
+    final replyWindowUrl = withTsdmAppJsonWrite('${replyAction.prependHost()}$replyPostWindowSuffix');
     final respEither = await netClient.get(replyWindowUrl).run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
@@ -112,14 +136,19 @@ final class ReplyRepository with LoggerMixin {
     // * reppost
     //
     // Note that `replyuid` is NOT in the form on Discuz X5, it is only a query parameter in the reply action url.
-    final rawData = replyWindowResp.data as String;
+    // The forum's app API (plugin 2.6.0) answers the window as a `page` result with the form in its document; the
+    // forum refuses in the window (not logged in…) with the error hook, which has no form either.
+    final windowResult = tsdmAppWriteResultOf(replyWindowResp.data);
+    final rawData = windowResult?.html ?? tsdmAppAnswerText(replyWindowResp.data);
     String? htmlData;
-    try {
-      htmlData = parseXmlDocument(rawData).documentElement?.nodes.firstOrNull?.text;
-    } on Exception catch (_) {
-      htmlData = null;
+    if (windowResult == null) {
+      try {
+        htmlData = parseXmlDocument(rawData).documentElement?.nodes.firstOrNull?.text;
+      } on Object catch (_) {
+        htmlData = null;
+      }
     }
-    final replyWindowDoc = parseHtmlDocument(htmlData ?? rawData);
+    final replyWindowDoc = windowResult?.document ?? parseHtmlDocument(htmlData ?? rawData);
     String? inputValue(String name) => replyWindowDoc.querySelector('input[name="$name"]')?.attributes['value'];
     final formHash = inputValue('formhash');
     final handleKey = inputValue('handlekey');
@@ -132,7 +161,9 @@ final class ReplyRepository with LoggerMixin {
     final useSig = inputValue('usesig');
     final subject = inputValue('subject');
     if (formHash == null || handleKey == null || repPid == null || repPost == null) {
-      final errorText = replyWindowDoc.querySelector('div.alert_error')?.innerText.trim();
+      final errorText = windowResult != null && windowResult.reason.isNotEmpty
+          ? windowResult.reason
+          : replyWindowDoc.querySelector('div.alert_error')?.innerText.trim();
       error(
         'failed to fetch reply to post parameters: formHash=$formHash, '
         'handleKey=$handleKey, noticeAuthor=$noticeAuthor, error=$errorText',
@@ -170,7 +201,15 @@ final class ReplyRepository with LoggerMixin {
     }
 
     final resp2 = respEither2.unwrap();
-    final data2 = _bodyText(resp2.data);
+    if (_replyResultOf(resp2.data) case final result?) {
+      if (!result.stored) {
+        error('reply to post rejected by server: ${result.reason}');
+        return left(ReplyToPostResultFailedException(result.reason));
+      }
+      info('reply to post stored (app api)');
+      return right(postedReplyOfUrl(result.url));
+    }
+    final data2 = tsdmAppAnswerText(resp2.data);
     if (!_isReplyStored(data2)) {
       final reason = _serverMessage(data2);
       error('reply to post rejected by server: $reason');
@@ -213,7 +252,15 @@ final class ReplyRepository with LoggerMixin {
         if (resp.statusCode != HttpStatus.ok) {
           return left(HttpRequestFailedException(resp.statusCode));
         }
-        final data = _bodyText(resp.data);
+        if (_replyResultOf(resp.data) case final result?) {
+          if (!result.stored) {
+            error('reply to thread rejected by server: ${result.reason}');
+            return left(ReplyToThreadResultFailedException(result.reason));
+          }
+          info('reply to thread stored (app api)');
+          return right(postedReplyOfUrl(result.url));
+        }
+        final data = tsdmAppAnswerText(resp.data);
         if (!_isReplyStored(data)) {
           final reason = _serverMessage(data);
           error('reply to thread rejected by server: $reason');
@@ -240,7 +287,10 @@ final class ReplyRepository with LoggerMixin {
       throw HttpRequestFailedException(resp.statusCode);
     }
 
-    final data = resp.data as String;
+    if (_messageResultOf(resp.data) case final result?) {
+      return result;
+    }
+    final data = tsdmAppAnswerText(resp.data);
 
     if (data.contains('succeedhandle_pmsend')) {
       // Success.
@@ -278,7 +328,10 @@ final class ReplyRepository with LoggerMixin {
       throw HttpRequestFailedException(resp.statusCode);
     }
 
-    final data = resp.data as String;
+    if (_messageResultOf(resp.data) case final result?) {
+      return result;
+    }
+    final data = tsdmAppAnswerText(resp.data);
 
     if (data.contains('succeedhandle_pmsend')) {
       // Success.
@@ -292,6 +345,21 @@ final class ReplyRepository with LoggerMixin {
 
     return rightVoid();
   });
+
+  /// The outcome of a sent private message told by the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]) in
+  /// the answer [data], null when the forum answered itself: sent when the forum called the success hook
+  /// (`succeedhandle_pmsend`, `handle` with `do_success`), failed with the forum's message on the error hook or a
+  /// refusal page. As with the forum's own answer, an answer that is neither (a page) counts as sent.
+  static Either<AppException, void>? _messageResultOf(Object? data) {
+    final result = tsdmAppWriteResultOf(data);
+    if (result == null) {
+      return null;
+    }
+    if (result.kind == TsdmAppWriteKind.page || result.succeeded) {
+      return rightVoid();
+    }
+    return left(ReplyPersonalMessageFailedException(result.reason.isEmpty ? 'unknown error' : result.reason));
+  }
 
   /// Run the private message [send] and tell [PersonalMessageSent] when the forum accepted it: the conversation list
   /// of the account that sent is refreshed for it (GitHub #193).
