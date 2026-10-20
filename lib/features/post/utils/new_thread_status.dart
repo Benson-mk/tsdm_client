@@ -73,6 +73,32 @@ NewThreadHeaderStatus classifyNewThreadHeader(uh.Document document, String tid) 
   return status;
 }
 
+/// [classifyNewThreadHeader] from the structured answer [json] of the forum's app API (`threadApiAnswerOf`): the
+/// thread must be [tid] (another thread, or the forum's message, is unknown); `thread.draft` is the draft; the
+/// `displayorder` of the thread tells moderating (-2) from visible (0), any other order (ignored, recycled, stuck)
+/// is unknown, never visible.
+///
+/// The answer does not tell whether the thread is hidden below the report threshold (the header's `hiderecover`
+/// marker): a thread just created has no report yet.
+NewThreadHeaderStatus classifyNewThreadApi(Map<String, dynamic> json, String tid) {
+  if (json['ok'] != 1 || json['thread'] is! Map<String, dynamic>) return NewThreadHeaderStatus.unknown;
+  final thread = json['thread'] as Map<String, dynamic>;
+  if ('${_int(thread['tid'])}' != tid) return NewThreadHeaderStatus.unknown;
+  if (_int(thread['draft']) == 1) return NewThreadHeaderStatus.draft;
+  return switch (_int(thread['displayorder'])) {
+    -2 => NewThreadHeaderStatus.moderating,
+    0 => NewThreadHeaderStatus.visible,
+    _ => NewThreadHeaderStatus.unknown,
+  };
+}
+
+/// A number of the answer, as the plugin prints it (a number, or a string of digits); 0 when it is neither.
+int _int(Object? value) => switch (value) {
+  final num n => n.toInt(),
+  final String s => int.tryParse(s) ?? 0,
+  _ => 0,
+};
+
 /// Tid of a same-origin `viewthread` link or rewritten thread url, if valid.
 String? threadTidOf(String? url) {
   final uri = draftForumUri(url);

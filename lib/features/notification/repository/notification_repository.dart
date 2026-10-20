@@ -1,5 +1,6 @@
 import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
 
+import 'package:dio/dio.dart' show Response;
 import 'package:fpdart/fpdart.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:tsdm_client/constants/url.dart';
@@ -7,6 +8,8 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -17,6 +20,34 @@ import 'package:universal_html/html.dart' as uh;
 /// One fetch of every notification kind, with the forum's clock when it was answered and the lower bound (seconds)
 /// the fetch used, after the clamp to the last three days: `window`.
 typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int window});
+
+/// The thread page a notice points to ([NotificationRepository.fetchNoticeThread]): built from the structured answer
+/// of the forum's app API (plugin 2.1.0, `schema: 3`), or the document of any other answer, parsed by the reader as
+/// before.
+sealed class NoticeThreadPage {
+  const NoticeThreadPage();
+}
+
+/// The page built from the structured answer ([threadPageFromApi]); its page number is the page's own.
+final class NoticeThreadPageBuilt extends NoticeThreadPage {
+  /// Constructor.
+  const NoticeThreadPageBuilt(this.page);
+
+  /// The page, the floor of the notice among its posts when the forum still shows it.
+  final ThreadPageInfo page;
+}
+
+/// The document of the answer (the web page, an older plugin's answer), with the page number the forum redirected to.
+final class NoticeThreadPageDocument extends NoticeThreadPage {
+  /// Constructor.
+  const NoticeThreadPageDocument(this.document, this.page);
+
+  /// The document.
+  final uh.Document document;
+
+  /// The `page` of the url the forum redirected to, null when it named none.
+  final String? page;
+}
 
 /// Repository of notification.
 ///
@@ -94,6 +125,35 @@ final class NotificationRepository with LoggerMixin {
       )),
     },
   );
+
+  /// Fetch the thread page a notice points to ([url], the `findpost` redirect of the notice), see [NoticeThreadPage].
+  ///
+  /// Asked as [fetchDocument] asks it. An answer of plugin 2.1.0 or later carries the page as structured fields
+  /// (`schema: 3`, or the forum's message with `login`): the page is built from them, its `document` never read
+  /// ([threadApiAnswerOf]); any other answer is given as its document with the page number of the redirect, for the
+  /// reader to parse as before.
+  AsyncEither<NoticeThreadPage> fetchNoticeThread(String url) => AsyncEither(() async {
+    final Response<dynamic> resp;
+    switch (await getIt.get<NetClientProvider>().get(jsonModeDetailUrl(url)).run()) {
+      case Left(:final value):
+        return left(value);
+      case Right(:final value):
+        resp = value;
+    }
+    if (resp.statusCode != HttpStatus.ok) {
+      return left(HttpRequestFailedException(resp.statusCode));
+    }
+    final api = threadApiAnswerOf(resp.data);
+    if (api != null) {
+      return right(NoticeThreadPageBuilt(threadPageFromApi(api, 1)));
+    }
+    if (tsdmAppAnswerWithoutPage(resp.data)) {
+      return left(HttpRequestFailedException(resp.statusCode));
+    }
+    return right(
+      NoticeThreadPageDocument(tsdmAppPageDocument(resp.data), resp.realUri.tryGetQueryParameters()?['page']),
+    );
+  });
 
   /// [url] of a notice or broadcast message detail, in the JSON mode of the forum's app API when the plugin answers
   /// that page: forum thread pages and their `findpost` redirect, and the private message pages (`home.php`

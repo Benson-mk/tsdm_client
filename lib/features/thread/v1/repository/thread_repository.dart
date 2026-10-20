@@ -13,6 +13,10 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_client_prov
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
+/// The first page of a thread asked to learn who started it ([ThreadRepository.fetchThreadFirstPage]): the page, and
+/// whether its first floor names no user (an anonymous or guest post: nobody on a block list can be its author).
+typedef ThreadFirstPage = ({ThreadPageInfo page, bool firstFloorNamesNoUser});
+
 /// Repository of thread page of the app.
 class ThreadRepository {
   String? _threadUrl;
@@ -107,6 +111,42 @@ class ThreadRepository {
             return left(HttpRequestFailedException(HttpStatus.ok));
           }
           return right(parseThreadDocument(tsdmAppPageDocument(data), pageFallback ?? pageNumber));
+        }),
+      );
+
+  /// Fetch the first page of thread [tid], oldest floor first, to learn who started it (the thread page does, when the
+  /// thread was opened on a later page and the current account blocks somebody).
+  ///
+  /// The page is [fetchThreadPage]'s: built from a structured answer, parsed from the document otherwise. The first
+  /// floor is on it whatever the thread's own order is; it names no user when it is an anonymous or guest post
+  /// (`firstFloorNamesNoUser`): built, such a floor is in the list without a uid; parsed, the post parser skips it
+  /// and the page is asked.
+  AsyncEither<ThreadFirstPage> fetchThreadFirstPage({required String tid}) =>
+      _fetchAnswer(
+        tid: tid,
+        pid: null,
+        pageNumber: 1,
+        onlyVisibleUid: null,
+        reverseOrder: false,
+        exactOrder: null,
+      ).flatMap(
+        (data) => AsyncEither(() async {
+          final api = threadApiAnswerOf(data);
+          if (api != null) {
+            final page = threadPageFromApi(api, 1);
+            return right((
+              page: page,
+              firstFloorNamesNoUser: page.postList.any((e) => e.postFloor == 1 && e.author.uid == null),
+            ));
+          }
+          if (tsdmAppAnswerWithoutPage(data)) {
+            return left(HttpRequestFailedException(HttpStatus.ok));
+          }
+          final document = tsdmAppPageDocument(data);
+          return right((
+            page: parseThreadDocument(document, 1),
+            firstFloorNamesNoUser: firstFloorNamesNoUser(document),
+          ));
         }),
       );
 
