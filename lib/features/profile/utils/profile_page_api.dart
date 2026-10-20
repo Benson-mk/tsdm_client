@@ -68,9 +68,10 @@ final class ProfileApiPage extends ProfilePage {
 }
 
 /// The structured profile page answer in [data]: a JSON answer of the forum's app API that carries every field the
-/// app reads (plugin 2.2.0, `schema` 4 or later), or the forum's own message of such a plugin (please log in, no such
-/// user, no permission: `ok` 0, `error: message`, with `login` telling a guest apart). Null when the answer has to be
-/// read from its `document` as before: a web page, an older plugin's answer (no `schema`, no `login`), a failed build.
+/// app reads (plugin 2.2.0, `type: profile` with `schema` 4 or later), or the forum's own message of such a plugin
+/// (please log in, no such user, no permission: `ok` 0, `error: message`, with `login` telling a guest apart). Null
+/// when the answer has to be read from its `document` as before: a web page, another page's answer, an older plugin's
+/// answer (no `schema`, no `login`), a failed build.
 ///
 /// The page is then built by [profileFromApi]; the `document` of the answer, when there is one, is never parsed.
 Map<String, dynamic>? profileApiAnswerOf(Object? data) {
@@ -81,7 +82,7 @@ Map<String, dynamic>? profileApiAnswerOf(Object? data) {
   final schema = json['schema'];
   final structured = schema is num && schema >= 4;
   if (json['ok'] == 1) {
-    return structured ? json : null;
+    return structured && json['type'] == 'profile' ? json : null;
   }
   if (json['ok'] == 0 && json['error'] == 'message' && (structured || json['login'] is int)) {
     return json;
@@ -146,10 +147,15 @@ uh.Document profileHtmlDocumentOf(Map<String, dynamic> json) => parseHtmlDocumen
 /// * `groups.admin` and `groups.member` are the two group rows: the model keeps the html fragment of the row, composed
 ///   here as the page prints it (the colored name linked to the group, the group icon when it has one), so the group
 ///   section reads it as before;
-/// * `activity` gives the online hours (`N 小时`), the times as real instants (unix seconds, null when 0), the IPs
-///   (empty when the viewer may not see them: null, as a page without the rows) and the time zone text;
-/// * `stats.credits` and `stats.extcredits` are the statistics rows, matched by title as the page's rows are, the
-///   unknown ones as the special attributes in the forum's order.
+/// * `activity` gives the online hours (`N 小时`, null when 0: the page hides the row), the four times as the forum's
+///   wall clock (`timeoffset` hours from the unix seconds, null when 0) in naive [DateTime]s, exactly what the old
+///   parser reads from the page, so that the page shows the same as the web (and as the check-in line) whatever the
+///   device's zone: the page prints them as absolute times, and reading them as the real instants they are is deferred
+///   until the whole app's time handling is fixed; the IPs (empty when the viewer may not see them: null, as a page
+///   without the rows) and the time zone text;
+/// * `stats.credits` and `stats.extcredits` are the statistics rows, matched by title as the page's rows are, each
+///   value with its unit as the page prints it (`5 枚`), the unknown ones as the special attributes in the forum's
+///   order.
 ///
 /// The forum's message (`ok` 0): the login prompt of a guest (`login` 1) is [ProfileNeedLoginException], any other
 /// (no such user, no permission) [ServerRespondedErrorException] with the message, as the page's `#messagetext p`.
@@ -274,7 +280,9 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
   String? specialAttrName2;
   for (final row in _list(stats['extcredits'])) {
     final title = _text(row['title']).trim();
-    final value = _number(row['value']);
+    final unit = _text(row['unit']).trim();
+    final number = _number(row['value']);
+    final value = number == null ? null : (unit.isEmpty ? number : '$number $unit');
     switch (title) {
       case '威望':
         famous = value;
@@ -336,13 +344,13 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
       checkinTodayStatus: checkinTodayStatus,
       moderatorGroup: moderatorGroup,
       userGroup: userGroup,
-      onlineTime: '${_int(activity['oltime'])} 小时',
-      registerTime: _time(activity['regdate']),
-      lastVisitTime: _time(activity['lastvisit']),
-      lastActiveTime: _time(activity['lastactivity']),
+      onlineTime: _int(activity['oltime']) > 0 ? '${_int(activity['oltime'])} 小时' : null,
+      registerTime: _wallClock(activity['regdate'], timeOffset),
+      lastVisitTime: _wallClock(activity['lastvisit'], timeOffset),
+      lastActiveTime: _wallClock(activity['lastactivity'], timeOffset),
       registerIP: registerIP.isEmpty ? null : registerIP,
       lastVisitIP: lastVisitIP.isEmpty ? null : lastVisitIP,
-      lastPostTime: _time(activity['lastpost']),
+      lastPostTime: _wallClock(activity['lastpost'], timeOffset),
       timezone: timezone.isEmpty ? null : timezone,
       credits: _number(stats['credits']),
       famous: famous,
@@ -374,15 +382,14 @@ String _groupFragment(Map<String, dynamic> group) {
 String _escape(String text) =>
     text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
-/// A time of the answer (unix seconds of the forum), the real instant; null when missing or 0.
-DateTime? _time(Object? value) {
-  final seconds = _int(value);
-  return seconds > 0 ? DateTime.fromMillisecondsSinceEpoch(seconds * 1000) : null;
-}
-
-/// A time of the answer as the forum prints it, `yyyy-MM-dd HH:mm` in the forum's time (`timeoffset` hours); null
-/// when missing or 0.
-String? _forumTime(Object? value, num timeOffset) {
+/// The forum's wall clock of a time of the answer (unix seconds, `timeoffset` hours), to the minute as the page
+/// prints it, as a naive [DateTime] (the device's zone, the forum's clock values): what the old parser reads from the
+/// page. Null when missing or 0.
+///
+/// Not the real instant: the page shows these as absolute times (`yyyyMMDDHHMM`), so the instant would differ from
+/// the web page and from the check-in line on a device outside the forum's zone. Reading them as instants waits for
+/// the app's time handling as a whole.
+DateTime? _wallClock(Object? value, num timeOffset) {
   final seconds = _int(value);
   if (seconds <= 0) {
     return null;
@@ -391,16 +398,26 @@ String? _forumTime(Object? value, num timeOffset) {
     seconds * 1000,
     isUtc: true,
   ).add(Duration(milliseconds: (timeOffset * 3600 * 1000).round()));
+  return DateTime(t.year, t.month, t.day, t.hour, t.minute);
+}
+
+/// A time of the answer as the forum prints it, `yyyy-MM-dd HH:mm` in the forum's time ([_wallClock]); null when
+/// missing or 0.
+String? _forumTime(Object? value, num timeOffset) {
+  final t = _wallClock(value, timeOffset);
+  if (t == null) {
+    return null;
+  }
   String two(int n) => n.toString().padLeft(2, '0');
   return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
 }
 
-/// A number of the answer as the page prints it (`5`, `-7694`, `1.5`), empty when missing.
-String _number(Object? value) => switch (value) {
+/// A number of the answer as the page prints it (`5`, `-7694`, `1.5`), null when missing.
+String? _number(Object? value) => switch (value) {
   final int n => '$n',
   final double d => d == d.truncateToDouble() ? '${d.toInt()}' : '$d',
-  final String s => s.trim(),
-  _ => '',
+  final String s when s.trim().isNotEmpty => s.trim(),
+  _ => null,
 };
 
 int _int(Object? value) => switch (value) {

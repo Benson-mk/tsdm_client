@@ -46,6 +46,10 @@ import 'package:universal_html/parsing.dart';
 
 const _dir = 'test/data/tsdmapp';
 
+/// The QQ image the forum prints in the QQ row, and a title badge image of the title plugin.
+const _qqImage = '<img src="static/image/common/qq.gif" />';
+const _badgeImage = '<img src="data/attachment/title/1.png" />';
+
 String _raw(String name) => File('$_dir/$name').readAsStringSync();
 
 Map<String, dynamic> _json(String name) => jsonDecode(_raw(name)) as Map<String, dynamic>;
@@ -53,8 +57,11 @@ Map<String, dynamic> _json(String name) => jsonDecode(_raw(name)) as Map<String,
 /// The profile built from the structured answer [name].
 UserProfile _profile(String name) => profileFromApi(_json('profile_v4_$name.json')).getOrElse((e) => throw e);
 
-/// The real instant [seconds] of the forum's clock.
-DateTime _at(int seconds) => DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+/// The forum's wall clock (timeoffset 8) of [seconds], as the page prints it and the old parser keeps it.
+DateTime _at(int seconds) {
+  final t = DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true).add(const Duration(hours: 8));
+  return DateTime(t.year, t.month, t.day, t.hour, t.minute);
+}
 
 /// A forum answering every request with [body] served as [contentType].
 final class _Forum implements HttpClientAdapter {
@@ -134,6 +141,8 @@ void main() {
         reason: 'a message of an older plugin (no login) is parsed from its document',
       );
       expect(profileApiAnswerOf('{"ok":1,"type":"profile","schema":3,"user":{}}'), isNull, reason: 'a lower schema');
+      expect(profileApiAnswerOf('{"ok":1,"type":"thread","schema":4,"user":{}}'), isNull, reason: 'another page');
+      expect(profileApiAnswerOf('{"ok":1,"schema":4,"user":{}}'), isNull, reason: 'no type');
       expect(profileApiAnswerOf('{"ok":1,"type":"profile","schema":5,"user":{}}'), isNotNull, reason: 'a later one');
       expect(profileApiAnswerOf('{"ok":0,"error":"message","message":"x","schema":4}'), isNotNull);
       expect(profileApiAnswerOf('[1,2]'), isNull);
@@ -211,8 +220,10 @@ void main() {
       expect(doc.children.lastOrNull?.imageUrl(), isNull, reason: 'no icon: no image, the section stays hidden');
     });
 
-    test('the activity: real instants, the IPs of the own page, the time zone text', () {
+    test("the activity: the forum's wall clock as the page prints it, the IPs of the own page, the time zone", () {
       expect(p.onlineTime, '28 小时');
+      expect(p.registerTime, DateTime(2026, 9, 4, 1, 19));
+      expect(p.lastVisitTime, DateTime(2026, 10, 20, 20, 20));
       expect(p.registerTime, _at(1788455940));
       expect(p.lastVisitTime, _at(1792498800));
       expect(p.lastActiveTime, _at(1792498820));
@@ -370,14 +381,11 @@ void main() {
         expect(groupName(api.userGroup), groupName(web.userGroup));
         expect(groupImage(api.userGroup), groupImage(web.userGroup));
         expect(api.onlineTime, web.onlineTime);
-        // The page prints the forum's wall clock (timeoffset 8), which the old parser keeps as a naive time; the
-        // answer gives the instant.
-        DateTime? wall(DateTime? t) => t?.toUtc().add(const Duration(hours: 8));
-        String? naive(DateTime? t) => t == null ? null : '${t.year}-${t.month}-${t.day} ${t.hour}:${t.minute}';
-        expect(naive(wall(api.registerTime)), naive(web.registerTime));
-        expect(naive(wall(api.lastVisitTime)), naive(web.lastVisitTime));
-        expect(naive(wall(api.lastActiveTime)), naive(web.lastActiveTime));
-        expect(naive(wall(api.lastPostTime)), naive(web.lastPostTime));
+        // The forum's wall clock (timeoffset 8) as the page prints it, the naive time the old parser keeps.
+        expect(api.registerTime, web.registerTime);
+        expect(api.lastVisitTime, web.lastVisitTime);
+        expect(api.lastActiveTime, web.lastActiveTime);
+        expect(api.lastPostTime, web.lastPostTime);
         expect(api.registerIP, web.registerIP);
         expect(api.lastVisitIP, web.lastVisitIP);
         expect(api.timezone, web.timezone);
@@ -410,8 +418,7 @@ void main() {
           {
             'id': 'x6',
             'title': 'QQ',
-            'value':
-                '<a href="//wpa.qq.com/msgrd?v=3&amp;uin=123456&amp;site=qq&amp;menu=yes"><img src="static/image/common/qq.gif" /></a>',
+            'value': '<a href="//wpa.qq.com/msgrd?v=3&amp;uin=123456&amp;site=qq&amp;menu=yes">$_qqImage</a>',
           },
           {'id': 'x7', 'title': '生日', 'value': '10 月 11 日'},
         ];
@@ -554,21 +561,23 @@ void main() {
       expect(member.querySelector('a')?.attributes['href'], '$baseUrl/home.php?mod=spacecp&ac=usergroup&gid=10');
     });
 
-    test('unknown extended credits are the special attributes, in order; decimals as printed', () {
+    test('unknown extended credits are the special attributes, in order; decimals and units as printed', () {
       final json = self()
         ..['stats'] = {
           ...self()['stats'] as Map<String, dynamic>,
           'credits': 12,
           'extcredits': [
-            {'id': 1, 'title': '威望', 'unit': '', 'value': 1},
+            {'id': 1, 'title': '威望', 'unit': '枚', 'value': 1},
             {'id': 7, 'title': '活跃', 'unit': '', 'value': 3.5},
             {'id': 8, 'title': '贡献:', 'unit': '', 'value': 7},
             {'id': 10, 'title': '已用空间', 'unit': '', 'value': 0},
+            {'id': 11, 'title': '精灵', 'unit': '', 'value': null},
           ],
         };
       final p = _right(profileFromApi(json));
       expect(p.credits, '12');
-      expect(p.famous, '1');
+      expect(p.famous, '1 枚');
+      expect(p.spirit, isNull, reason: 'no value: no row');
       expect(p.coins, isNull);
       expect(p.specialAttrName, '活跃');
       expect(p.specialAttr, '3.5');
@@ -591,7 +600,7 @@ void main() {
           'timezone_text': '',
         };
       final p = _right(profileFromApi(json));
-      expect(p.onlineTime, '0 小时');
+      expect(p.onlineTime, isNull, reason: 'the page hides the row at 0');
       expect(p.registerTime, _at(1788455940));
       expect(p.lastVisitTime, isNull);
       expect(p.lastActiveTime, isNull);
@@ -621,7 +630,8 @@ void main() {
       expect(p.mangedForums, isNull);
       expect(p.userGroup, isNull);
       expect(p.checkinLevel, isNull);
-      expect(p.credits, '');
+      expect(p.credits, isNull);
+      expect(p.onlineTime, isNull);
       expect(parseFriendsInfo(p.friendsCount).count, '0');
     });
   });
@@ -651,8 +661,7 @@ void main() {
     test('the title badge of the owner', () {
       final json = _json('profile_v4_self.json');
       expect(secondaryTitleUrlOf(ProfileApiPage(json)), isNull, reason: 'the test forum has no title plugin');
-      const badge =
-          '<div class="tsdmtitle-badges"><div class="tsdmtitle-title"><img src="data/attachment/title/1.png" /></div></div>';
+      const badge = '<div class="tsdmtitle-badges"><div class="tsdmtitle-title">$_badgeImage</div></div>';
       final withBadge = {
         ...json,
         'profile_html': '$badge${json['profile_html']}',
@@ -820,9 +829,12 @@ void main() {
       expect(repo.hasCache(), isFalse);
     });
 
-    test('the guest message means the session expired', () async {
+    test('the guest message means the session expired, and is not cached as the page of the account', () async {
       final (repo, _) = _repository(_raw('profile_v4_guest.json'));
       expect((await repo.fetchAvatarUrl(force: true).run()).getLeft().toNullable(), isA<ProfileNeedLoginException>());
+      expect(repo.hasCache(), isFalse);
+      expect(_right(await repo.fetchProfile().run()), isA<ProfileApiPage>());
+      expect(repo.hasCache(), isFalse, reason: 'a message is not the profile');
     });
   });
 }

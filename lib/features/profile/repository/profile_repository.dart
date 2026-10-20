@@ -9,9 +9,6 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_client_prov
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/parsing.dart';
 
-// Re-export the avatar parser for users of the profile page document (e.g. homepage bloc).
-export 'package:tsdm_client/features/profile/utils/parse_profile.dart' show parseProfileAvatarUrl;
-
 /// Repository to get profile page.
 final class ProfileRepository with LoggerMixin {
   static const _editAvatarPage = '$baseUrl/home.php?mod=spacecp&ac=avatar';
@@ -103,8 +100,11 @@ final class ProfileRepository with LoggerMixin {
         } else {
           page = ProfileWebPage(tsdmAppPageDocument(value.data));
         }
-        // Not when the account changed while the page was on its way: it belongs to the previous one.
-        if (loggedUid != null && getIt.get<SettingsRepository>().currentSettings.loginUid == loggedUid) {
+        // Not when the account changed while the page was on its way: it belongs to the previous one. Nor the forum's
+        // message (please log in, no such user): it is not the profile of the account.
+        if (loggedUid != null &&
+            !(page is ProfileApiPage && page.json['ok'] != 1) &&
+            getIt.get<SettingsRepository>().currentSettings.loginUid == loggedUid) {
           _loggedUserPage = page;
           _loggedUserUid = loggedUid;
         }
