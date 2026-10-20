@@ -422,8 +422,11 @@ void main() {
       _read('chat_history_bare_url_x5.html'),
       'pm',
       () async => _right(await const ChatRepository().fetchChatHistory('1001').run()),
-      (doc) {
-        final info = parseChatHistory(doc);
+      (answer) {
+        // The web page, and the answers of these plugins (no schema), are the document parsed as before (since
+        // test_220 the repository hands the structured answer of plugin 2.5.0 over as a TsdmAppStructuredPage).
+        expect(answer, isA<TsdmAppWebPage>());
+        final info = parseChatHistory((answer as TsdmAppWebPage).document);
         return info == null
             ? null
             : {

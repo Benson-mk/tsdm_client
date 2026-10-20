@@ -1,6 +1,7 @@
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/friend/models/add_friend.dart';
+import 'package:tsdm_client/features/friend/utils/friend_page_api.dart';
 import 'package:tsdm_client/features/friend/utils/parse_add_friend.dart';
 import 'package:tsdm_client/features/friend/utils/parse_friend.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
@@ -21,10 +22,20 @@ final class FriendRepository {
   /// Fetch and parse one page of a friends list.
   ///
   /// Asked in the JSON mode of the forum's app API, which answers the friends pages (`do=friend`) since plugin 1.6.0
-  /// (roadmap item 3); an older plugin answers the web page, which parses the same. The `@` candidates read the own
-  /// list through here too when the `atplus` plugin is not there.
-  AsyncEither<FriendListPage> fetchPage(String url) =>
-      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage(parseFriendListPage);
+  /// (roadmap item 3). Plugin 2.5.0 answers them as structured fields (`schema: 10`, [friendApiAnswerOf]), built by
+  /// [friendListPageFromApi]; an older plugin answers the web page (as does the privacy page of another member's
+  /// list, which the plugin never answers as fields), which parses the same. The `@` candidates read the own list
+  /// through here too when the `atplus` plugin is not there.
+  AsyncEither<FriendListPage> fetchPage(String url) => getIt
+      .get<NetClientProvider>()
+      .get(withTsdmAppJson(url))
+      .mapHttpPageAnswer(friendApiAnswerOf)
+      .map(
+        (answer) => switch (answer) {
+          TsdmAppStructuredPage(:final json) => friendListPageFromApi(json, url),
+          TsdmAppWebPage(:final document) => parseFriendListPage(document),
+        },
+      );
 
   /// The add-friend form for [uid], as the forum's popup loads it.
   static String addFriendFormUrl(String uid) =>

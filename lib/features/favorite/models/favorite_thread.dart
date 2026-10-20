@@ -15,6 +15,27 @@ final class FavoriteThread extends FavoriteItem with FavoriteThreadMappable {
     super.description,
   });
 
+  /// The record of a row [row] of the structured favorites answer (plugin 2.5.0, `schema: 8`, `items[]`): the record
+  /// id (`favid`), the thread (`id`, `idtype` tid), its title (plain text), the url the forum built, the time the
+  /// record was added (`dateline`, shown as the forum's wall clock with [timeOffset], `timeoffset` of the answer, as
+  /// the page prints it) and the note. Null for a row that is not a thread, or names no record or thread, as the
+  /// page parser skips a row without the record id or the thread link.
+  static FavoriteThread? fromApi(Map<String, dynamic> row, {required num timeOffset}) {
+    final favid = tsdmAppInt(row['favid']);
+    final tid = tsdmAppInt(row['id']);
+    if (favid <= 0 || tid <= 0 || !_favoriteRowIsKind(row, 'thread', 'tid')) {
+      return null;
+    }
+    return FavoriteThread(
+      favid: '$favid',
+      tid: '$tid',
+      title: tsdmAppText(row['title']).trim(),
+      url: _favoriteRowUrl(row, 'forum.php?mod=viewthread&tid=$tid'),
+      time: tsdmAppWallClockTime(row['dateline'], timeOffset),
+      description: _favoriteRowDescription(row),
+    );
+  }
+
   /// Thread id.
   final String tid;
 

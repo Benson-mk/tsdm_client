@@ -1356,7 +1356,11 @@ void main() {
         'credit',
         (client) => withClient(client, () => PointsRepository().fetchChangelogPage(parameter).run()),
         (page) {
-          final document = page.getOrElse((e) => fail('$e'));
+          // The web page, and the answer of plugin 1.7.0 (no schema), are the document parsed as before (since
+          // test_220 the repository hands the structured answer of plugin 2.5.0 over as a TsdmAppStructuredPage).
+          final answer = page.getOrElse((e) => fail('$e'));
+          expect(answer, isA<TsdmAppWebPage>());
+          final document = (answer as TsdmAppWebPage).document;
           return [
             buildChangeListFromTable(document.querySelector('table.dt')!).map(_change).toList(),
             document.currentPage(),

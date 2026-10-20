@@ -63,6 +63,65 @@ class PointsChange with PointsChangeMappable {
   /// Datetime of this change.
   final DateTime time;
 
+  /// The change of a row [row] of the structured credit log answer (plugin 2.5.0, `schema: 12`, `logs[]`): the
+  /// operation as the page prints it in its first column (`operation`) and the link of that column (`filter_url`,
+  /// empty for a record without a code, which the page prints without a link), the changed credits (`changes[]`:
+  /// the title of each, and the signed value as the page prints it, "+2", read from the printed `text` "天使币 +2";
+  /// the cleared credits of a reset read "清零"), whether the credits grew or shrank (`type`: income, expense; a mixed
+  /// change goes by its first credit, as the page parser goes by the first printed value), the detail column (plain
+  /// text, wrapped as the cell the page parser kept) and its link (`url`), the time (`dateline`, shown as the forum's
+  /// wall clock with [timeOffset], `timeoffset` of the answer, as the page prints it). Null for a row without an
+  /// operation or a time, as the page parser skips such a row.
+  static PointsChange? fromApi(Map<String, dynamic> row, {required num timeOffset}) {
+    final operation = tsdmAppText(row['operation']).trim();
+    final time = tsdmAppWallClockTime(row['dateline'], timeOffset);
+    if (operation.isEmpty || time == null) {
+      talker.error('failed to build PointsChange: operation=$operation, dateline=${row['dateline']}');
+      return null;
+    }
+    final changes = tsdmAppList(row['changes']);
+    final changeMap = <String, String>{};
+    for (final change in changes) {
+      final title = tsdmAppText(change['title']).trim();
+      if (title.isEmpty) {
+        continue;
+      }
+      changeMap[title] = _signedChangeOf(change, title);
+    }
+    final firstValue = changes.isEmpty ? 0 : tsdmAppInt(changes.first['value']);
+    final pointsChangeType = switch (tsdmAppText(row['type'])) {
+      'income' => PointsChangeType.more,
+      'expense' => PointsChangeType.less,
+      _ when firstValue > 0 => PointsChangeType.more,
+      _ when firstValue < 0 => PointsChangeType.less,
+      _ => PointsChangeType.unlimited,
+    };
+    final url = tsdmAppText(row['url']).trim();
+    return PointsChange(
+      operation: operation,
+      operationFilterUrl: tsdmAppText(row['filter_url']).trim(),
+      pointsChangeType: pointsChangeType,
+      changeMap: changeMap,
+      detail: '<td>${const HtmlEscape(HtmlEscapeMode.element).convert(tsdmAppText(row['detail']).trim())}</td>',
+      redirectUrl: url.isEmpty ? null : url.prependHost(),
+      time: time,
+    );
+  }
+
+  /// The signed value of a changed credit [change] titled [title] as the page prints it after the title ("+2",
+  /// "-5", "清零"): the printed `text` without the title, else built from `value`.
+  static String _signedChangeOf(Map<String, dynamic> change, String title) {
+    final text = tsdmAppText(change['text']).trim();
+    if (text.startsWith(title)) {
+      final rest = text.substring(title.length).trim();
+      if (rest.isNotEmpty) {
+        return rest;
+      }
+    }
+    final value = tsdmAppInt(change['value']);
+    return value > 0 ? '+$value' : '$value';
+  }
+
   /// [PointsChange] is expected to exists inside a <table class="dt">.
   ///
   /// In that table, each <tr> (except the table header) can be converted to an

@@ -219,6 +219,15 @@ String _docView(uh.Document d) => [
   d.querySelectorAll('li').length,
 ].join('|');
 
+/// [_docView] of a page answer the repository hands over as the document to parse, or as the structured answer of
+/// the forum's app API (plugin 2.5.0, test_220): these cases serve no structured page, only the forum's lean message
+/// (`login` tells it apart since plugin 2.2.0), which the reader takes from its fields and the view shows as the
+/// page the message rebuilds to, the way the web page of the message is viewed.
+String _answerView(TsdmAppPageAnswer answer) => switch (answer) {
+  TsdmAppWebPage(:final document) => _docView(document),
+  TsdmAppStructuredPage(:final json) => _docView(tsdmAppMessageDocument(json)),
+};
+
 /// The forum page the way the tests compare it: the forum message, the login prompt, the poll offer and the rows.
 String _forumView(ForumPageData page) => [
   page.permissionDeniedMessage?.text?.trim() ?? '-',
@@ -300,7 +309,7 @@ final List<_Caller> _callers = [
   ),
   (
     name: 'chat history',
-    run: (_) => _state(const ChatRepository().fetchChatHistory('1001'), _docView),
+    run: (_) => _state(const ChatRepository().fetchChatHistory('1001'), _answerView),
     pages: true,
   ),
   (
@@ -350,7 +359,7 @@ final List<_Caller> _callers = [
   ),
   (
     name: 'points changelog',
-    run: (_) => _state(PointsRepository().fetchChangelogPage(const ChangelogParameter.empty()), _docView),
+    run: (_) => _state(PointsRepository().fetchChangelogPage(const ChangelogParameter.empty()), _answerView),
     pages: true,
   ),
   (

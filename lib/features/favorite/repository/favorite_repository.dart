@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/favorite/models/models.dart';
+import 'package:tsdm_client/features/favorite/utils/favorite_page_api.dart';
 import 'package:tsdm_client/features/favorite/utils/parse_favorite.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
@@ -115,20 +116,51 @@ final class FavoriteRepository with LoggerMixin {
   void forgetItem({required int uid, required FavoriteItem item}) => _known[item.type]?[uid]?.remove(item.targetId);
 
   /// Fetch and parse one page of the thread favorites list.
-  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) =>
-      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage(parseFavoriteListPage);
-
-  /// Fetch and parse one page of the forum favorites list.
-  AsyncEither<FavoriteListPage<FavoriteForum>> fetchForumListPage([String? url]) => getIt
+  ///
+  /// Asked in the JSON mode of the forum's app API, which answers the favorites pages (`do=favorite`) since plugin
+  /// 1.6.0. Plugin 2.5.0 answers them as structured fields (`schema: 8`, [favoriteApiAnswerOf]), built by
+  /// [favoriteThreadsFromApi]; an older plugin answers the web page, which parses as before.
+  AsyncEither<FavoriteListPage<FavoriteThread>> fetchListPage([String url = listUrl]) => getIt
       .get<NetClientProvider>()
-      .get(withTsdmAppJson(url ?? listUrlOf(FavoriteType.forum)))
-      .mapHttpPage(parseFavoriteForumListPage);
+      .get(withTsdmAppJson(url))
+      .mapHttpPageAnswer(favoriteApiAnswerOf)
+      .map(
+        (answer) => switch (answer) {
+          TsdmAppStructuredPage(:final json) => favoriteThreadsFromApi(json, url),
+          TsdmAppWebPage(:final document) => parseFavoriteListPage(document),
+        },
+      );
 
-  /// Fetch and parse one page of the favorites list of [type]; the first page when [url] is null.
-  AsyncEither<FavoriteListPage<FavoriteItem>> fetchListPageOf(FavoriteType type, [String? url]) => getIt
-      .get<NetClientProvider>()
-      .get(withTsdmAppJson(url ?? listUrlOf(type)))
-      .mapHttpPage((document) => parseFavoriteListPageOfType(document, type));
+  /// Fetch and parse one page of the forum favorites list, as [fetchListPage] fetches the threads.
+  AsyncEither<FavoriteListPage<FavoriteForum>> fetchForumListPage([String? url]) {
+    final pageUrl = url ?? listUrlOf(FavoriteType.forum);
+    return getIt
+        .get<NetClientProvider>()
+        .get(withTsdmAppJson(pageUrl))
+        .mapHttpPageAnswer(favoriteApiAnswerOf)
+        .map(
+          (answer) => switch (answer) {
+            TsdmAppStructuredPage(:final json) => favoriteForumsFromApi(json, pageUrl),
+            TsdmAppWebPage(:final document) => parseFavoriteForumListPage(document),
+          },
+        );
+  }
+
+  /// Fetch and parse one page of the favorites list of [type]; the first page when [url] is null. As
+  /// [fetchListPage] fetches the threads.
+  AsyncEither<FavoriteListPage<FavoriteItem>> fetchListPageOf(FavoriteType type, [String? url]) {
+    final pageUrl = url ?? listUrlOf(type);
+    return getIt
+        .get<NetClientProvider>()
+        .get(withTsdmAppJson(pageUrl))
+        .mapHttpPageAnswer(favoriteApiAnswerOf)
+        .map(
+          (answer) => switch (answer) {
+            TsdmAppStructuredPage(:final json) => favoriteListPageOfTypeFromApi(json, type, pageUrl),
+            TsdmAppWebPage(:final document) => parseFavoriteListPageOfType(document, type),
+          },
+        );
+  }
 
   /// Fetch a favorite dialog (add or delete); the html wrapped in the ajax xml answer.
   AsyncEither<String> _fetchDialog(String url) => getIt.get<NetClientProvider>().get(url).mapHttp((v) => '${v.data}');

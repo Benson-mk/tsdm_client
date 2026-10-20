@@ -15,6 +15,24 @@ final class FavoriteForum extends FavoriteItem with FavoriteForumMappable {
     super.description,
   });
 
+  /// The record of a row [row] of the structured favorites answer (plugin 2.5.0, `schema: 8`, `items[]`), as
+  /// [FavoriteThread.fromApi] reads a thread row: null for a row that is not a forum, or names no record or forum.
+  static FavoriteForum? fromApi(Map<String, dynamic> row, {required num timeOffset}) {
+    final favid = tsdmAppInt(row['favid']);
+    final fid = tsdmAppInt(row['id']);
+    if (favid <= 0 || fid <= 0 || !_favoriteRowIsKind(row, 'forum', 'fid')) {
+      return null;
+    }
+    return FavoriteForum(
+      favid: '$favid',
+      fid: '$fid',
+      title: tsdmAppText(row['title']).trim(),
+      url: _favoriteRowUrl(row, 'forum.php?mod=forumdisplay&fid=$fid'),
+      time: tsdmAppWallClockTime(row['dateline'], timeOffset),
+      description: _favoriteRowDescription(row),
+    );
+  }
+
   /// Forum id.
   final String fid;
 
