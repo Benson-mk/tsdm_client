@@ -8,7 +8,8 @@
 /// of such an answer tries the result first and parses the forum's own answer as before when there is none: an older
 /// plugin, no plugin, or plugin 2.6.0 answering the forum's own output when its classifier failed. The fixtures
 /// `write_v13_*.json` are the plugin's real answers; `write_v13_*.orig.txt` what the forum answered the same request
-/// without the parameter: for every switched reader both give the same outcome.
+/// without the parameter: for every switched reader both give the same outcome, except the two answers the forum's
+/// own output cannot tell (a favorite and a reply posted without AJAX, which the app never does), pinned as they are.
 ///
 /// The forum is asked its AJAX requests (`inajax=1`) with `X-Requested-With: XMLHttpRequest`, as its own scripts do:
 /// a forum verifying them (`ajaxvalidate`) answers a GET without the header the whole page.
@@ -26,6 +27,8 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/blocking/models/notice_ignore.dart';
 import 'package:tsdm_client/features/blocking/repository/notice_ignore_repository.dart';
+import 'package:tsdm_client/features/checkin/models/models.dart';
+import 'package:tsdm_client/features/checkin/utils/do_checkin.dart';
 import 'package:tsdm_client/features/checkin/utils/parse_checkin.dart';
 import 'package:tsdm_client/features/favorite/repository/favorite_repository.dart';
 import 'package:tsdm_client/features/favorite/utils/parse_favorite.dart';
@@ -46,6 +49,7 @@ import 'package:tsdm_client/features/profile/repository/switch_user_group_reposi
 import 'package:tsdm_client/features/purchase/repository/purchase_repository.dart';
 import 'package:tsdm_client/features/rate/repository/rate_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -302,6 +306,26 @@ void main() {
       expect(login.succeeded, isFalse);
       expect(login.document.querySelector('div#messagelogin'), isNotNull);
       expect(login.document.querySelector('div#messagetext.alert_info > p')?.innerText.trim(), '请先登录');
+    });
+
+    test('the reason to show: the message of the forum, the "log in first" of the app, or nothing; never a field', () {
+      expect(tsdmAppWriteResultOf(_json('reply_dup'))!.reason, '抱歉，您两次发表间隔少于 15 秒，请稍候再发表');
+      final login = tsdmAppWriteResultOf({..._json('reply_msg_error'), 'message': '', 'login': 1, 'alert': 'info'})!;
+      expect(login.reason, t.general.needLogin);
+      expect(login.reason, isNotEmpty);
+      // With a message the forum's words win, login or not.
+      expect(tsdmAppWriteResultOf({..._json('reply_msg_error'), 'login': 1})!.reason, startsWith('抱歉'));
+      for (final name in ['reply_redirect', 'page_case', 'profile_msg', 'checkin']) {
+        expect(tsdmAppWriteResultOf(_json(name))!.reason, isEmpty, reason: name);
+      }
+    });
+
+    test('tsdmAppAnswerText: text as it is, nothing as empty, JSON encoded back, never toString', () {
+      expect(tsdmAppAnswerText('<root/>'), '<root/>');
+      expect(tsdmAppAnswerText(null), isEmpty);
+      expect(tsdmAppAnswerText({'ok': 1, 'a': 'b'}), '{"ok":1,"a":"b"}');
+      expect(tsdmAppAnswerText([1, 2]), '[1,2]');
+      expect(tsdmAppAnswerText(_json('reply_ok')), isNot(startsWith('{ok:')));
     });
 
     test('a redirect: the target, the key of the forward', () {
@@ -640,6 +664,43 @@ void main() {
         await getIt.unregister<NetClientProvider>();
       }
     });
+    test(
+      'without a message: no reason (the page says its own), the login prompt, a page read as the fragment',
+      () async {
+        const formData = {'formhash': 'f1f2f3f4', 'tid': '9199849', 'pid': '4743', 'score2': '10'};
+        Future<Either<AppException, void>> rate(Map<String, dynamic> answer) async {
+          _use(_Forum.always(_api(answer)));
+          final result = await RateRepository().rate(formData).run();
+          await getIt.unregister<NetClientProvider>();
+          return result;
+        }
+
+        final bare = _handle('rate_dup', {'message': '', 'message_key': ''});
+        expect(_left(await rate(bare)), isA<RateFailedException>().having((e) => e.reason, 'reason', isEmpty));
+        expect(
+          _left(await rate({...bare, 'login': 1})),
+          isA<RateFailedException>().having((e) => e.reason, 'reason', t.general.needLogin),
+        );
+        // A page is read as the forum's fragment would be: a refusal in it, or a success.
+        _right(await rate(_page('<root><![CDATA[<div class="c">ok</div>]]></root>')));
+        expect(
+          _left(await rate(_page(_errorAjax('rate', '抱歉，您的天使币不足，无法评分')))),
+          isA<RateFailedException>().having((e) => e.reason, 'reason', '抱歉，您的天使币不足，无法评分'),
+        );
+        expect(
+          _left(await rate({..._page('<root><![CDATA[<div></div>]]></root>'), 'ok': 0})),
+          isA<RateFailedException>(),
+        );
+        // The window refused without a message: the form is not understood, as before.
+        _use(_Forum.always(_api(bare)));
+        expect(
+          _left(
+            await RateRepository().fetchInfo(pid: '4743', rateTarget: '$baseUrl/forum.php?mod=misc&action=rate').run(),
+          ),
+          isA<RateInfoInvalidDivCNode>(),
+        );
+      },
+    );
   });
 
   group('E. the favorites', () {
@@ -655,6 +716,12 @@ void main() {
       );
       expect(parseFavoriteAddResult(_json('favorite_repeat')), isA<FavoriteAlreadyExists>());
       expect(parseFavoriteAddResult(_orig('favorite_repeat').body), isA<FavoriteAlreadyExists>());
+      // Intentionally different: the same favorite posted without `inajax` is answered the forum's whole 提示信息
+      // page. The forum's own answer has no hook there, so the old parser can only report the page's text as a
+      // failure; the app API's result tells the success (`message`, alert right) without the favid (no hook values).
+      // The app always posts the favorite with `inajax=1`, so this answer does not reach it.
+      expect(parseFavoriteAddResult(_json('favorite_msg')), isA<FavoriteAdded>().having((e) => e.favid, 'favid', null));
+      expect(parseFavoriteAddResult(_orig('favorite_msg').body), isA<FavoriteAddFailed>());
       final refused = _handle('favorite_repeat', {'message': '抱歉，您没有权限收藏', 'message_key': ''});
       expect(
         parseFavoriteAddResult(refused),
@@ -721,6 +788,26 @@ void main() {
         final result = parseAddFriendResult(answer);
         expect(result.success, isFalse);
         expect(result.message, '正在等待验证');
+      }
+    });
+
+    test("a result without a message: the forum's page text or the app's own words, never the kind", () {
+      final bare = {'message': '', 'message_key': '', 'url': ''};
+      final sent = parseAddFriendResult(_handle('friend_add', bare));
+      expect(sent.success, isTrue);
+      expect(sent.message, t.friendPage.addFriend.sent);
+      final refused = parseAddFriendResult(_handle('friend_again', bare));
+      expect(refused.success, isFalse);
+      expect(refused.message, t.friendPage.addFriend.failed);
+      expect(parseAddFriendResult({..._json('reply_redirect'), 'ok': 0}).message, t.friendPage.addFriend.failed);
+      expect(parseAddFriendResult(_handle('friend_again', {...bare, 'login': 1})).message, t.general.needLogin);
+      final window = parseAddFriendForm(_handle('friend_again', bare));
+      expect(window, isA<AddFriendRefused>().having((e) => e.message, 'message', t.friendPage.addFriend.failed));
+      // A page without a form and without text: the app's words, not the decoded answer.
+      final empty = parseAddFriendForm(_page('<root><![CDATA[<div></div>]]></root>'));
+      expect(empty, isA<AddFriendRefused>().having((e) => e.message, 'message', t.friendPage.addFriend.failed));
+      for (final result in [sent, refused]) {
+        expect(result.message, isNot(anyOf('handle', 'message', 'redirect', 'page')));
       }
     });
 
@@ -862,6 +949,14 @@ void main() {
         parsePostReportResult(jsonEncode(stored), form: form),
         isA<PostReportSucceeded>().having((e) => e.message, 'message', '举报成功'),
       );
+      // The real answers of the sampled report, with the handle key of this form (the sample was sent with
+      // `miscreport`): the same success either way.
+      final origSuccess = _orig('report_ok').body.replaceAll('miscreport', handle);
+      expect(origSuccess, contains("errorhandle_$handle('举报成功 ', {})"));
+      expect(
+        parsePostReportResult(origSuccess, form: form),
+        isA<PostReportSucceeded>().having((e) => e.message, 'message', '举报成功'),
+      );
       expect(
         parsePostReportResult(successAjax(text: '举报成功 '), form: form),
         isA<PostReportSucceeded>().having((e) => e.message, 'message', '举报成功'),
@@ -921,6 +1016,50 @@ void main() {
       expect(parseCheckinResponseMessage(_json('checkin_again')), '您今日已经签到，请明天再来！');
       expect(parseCheckinResponseMessage(_handle('reply_guest', {'message': '您需要先登录才能继续本操作'})), '您需要先登录才能继续本操作');
       expect(parseCheckinResponseMessage(_errorAjax('qwindow', '您需要先登录才能继续本操作')), '您需要先登录才能继续本操作');
+    });
+
+    test('a whole page (not the AJAX fragment) is read, not thrown on', () {
+      // The xml parser throws a state error (not an exception) on a whole html page.
+      expect(() => parseXmlDocument(_orig('reply_msg_error').body), throwsStateError);
+      expect(() => parseCheckinResponseMessage(_orig('reply_msg_error').body), returnsNormally);
+      expect(() => parseCheckinResponseMessage(_orig('favorite_msg').body), returnsNormally);
+    });
+
+    /// A forum whose check-in API says the check-in is open (with the form hash) and answers the post with [post].
+    _Forum checkinForum(_Answer post) => _Forum((r) {
+      if (r.uri.queryParameters['id'] == 'tsdmapp:api') {
+        return _api({
+          'ok': 1,
+          'api': 1,
+          'time': 1792523400,
+          'installed': 1,
+          'checked_today': 0,
+          'can_checkin': 1,
+          'window': {'enabled': 1, 'start_hour': 1, 'end_hour': 23, 'open_now': 1},
+          'day_start': 1792512000,
+          'last_time': 0,
+          'days': 3,
+          'month_days': 1,
+          'formhash': 'f1f2f3f4',
+        });
+      }
+      return post;
+    });
+
+    test('doCheckin: the result of the post, either way; a result no reader knows is told as text', () async {
+      Future<CheckinResult> run(_Answer post) =>
+          doCheckin(_client(checkinForum(post)), CheckinFeeling.happy, 'hi').run();
+      expect(await run(_api(_json('checkin'))), isA<CheckinResultSuccess>());
+      expect(await run(_web(_orig('checkin'))), isA<CheckinResultSuccess>());
+      expect(await run(_api(_json('checkin_again'))), isA<CheckinResultAlreadyChecked>());
+      expect(await run(_web(_orig('checkin_again'))), isA<CheckinResultAlreadyChecked>());
+      // The login prompt of the app API is the expired session.
+      final login = {..._json('reply_msg_error'), 'message': '', 'login': 1, 'alert': 'info'};
+      expect(await run(_api(login)), isA<CheckinResultNotAuthorized>());
+      // A page without the window's text: the text of the page, never the decoded answer.
+      final empty = await run(_api({..._json('checkin'), 'document': '<script>hideWindow("qwindow");</script>'}));
+      expect(empty, isA<CheckinResultOtherError>().having((e) => e.message, 'message', isNot(contains('{'))));
+      expect((empty as CheckinResultOtherError).message, isNot(contains('kind')));
     });
   });
 
@@ -1153,6 +1292,14 @@ void main() {
         expect(_ajaxHeader(forum.requests.single), isTrue);
         await getIt.unregister<NetClientProvider>();
       }
+      // A whole page instead of the dialog (the xml parser throws a state error on it) is read, not thrown on: the
+      // page's first form (the search box) is no purchase form, as before for a page.
+      _use(_Forum.always(_web(_orig('reply_msg_error'))));
+      expect(
+        _left(await PurchaseRepository().fetchPurchaseConfirmInfo(tid: '9199849', pid: '4743').run()),
+        isA<PurchaseInfoIncompleteException>(),
+      );
+      await getIt.unregister<NetClientProvider>();
       _use(_Forum.always(_api(_handle('rate_dup', {'handlekey': 'pay', 'message': '抱歉，您已经购买过了'}))));
       expect(
         _left(await PurchaseRepository().fetchPurchaseConfirmInfo(tid: '9199849', pid: '4743').run()),

@@ -142,6 +142,7 @@
     "retry": "重试",
     "noPermission": "没有权限查看该内容",
     "needLoginToSeeThisPage": "登录后才能访问此页面",
+    "needLogin": "请先登录",
     "pleaseWait": "请稍候",
     "loadFailedAndRetry": "加载失败，正在重试",
     "noData": "没有数据",
@@ -927,6 +928,7 @@
       "note": "附言（可选）",
       "group": "分组",
       "send": "发送请求",
+      "sent": "好友请求已发送",
       "failed": "好友请求发送失败"
     },
     "approveFriend": {

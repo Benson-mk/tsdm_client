@@ -52,9 +52,9 @@ final class SwitchUserGroupRepository with LoggerMixin {
           if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
             return AsyncEither.right(());
           }
-          return AsyncEither.left(SwitchUserGroupFailed(result.message.isEmpty ? 'unknown error' : result.message));
+          return AsyncEither.left(SwitchUserGroupFailed(result.reason.isEmpty ? 'unknown error' : result.reason));
         }
-        final respData = data is String ? data : '${data ?? ''}';
+        final respData = tsdmAppAnswerText(data);
         // If succeeded.
         if (respData.contains('succeedhandle_$_handleKey') || respData.contains('succeedhandle_group')) {
           return AsyncEither.right(());

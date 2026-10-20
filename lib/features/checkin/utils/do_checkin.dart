@@ -141,13 +141,22 @@ Future<CheckinResult> _postCheckin(
   // The forum's app API (plugin 2.6.0) answers the check-in plugin's float window as a `page` result, the forum's
   // own message (not logged in…) as a `handle` or `message`; an older plugin answers the fragment. Both are read by
   // the same parser.
-  final checkInRespData = checkInResp.data is String ? checkInResp.data as String : '${checkInResp.data ?? ''}';
+  final apiResult = tsdmAppWriteResultOf(checkInResp.data);
+  if (apiResult != null && apiResult.login) {
+    talker.error('check in failed: not logged in (app api)');
+    return const CheckinResultNotAuthorized();
+  }
   final checkInResult = parseCheckinResponseMessage(checkInResp.data);
 
   // Return results.
   if (checkInResult == null) {
-    talker.error('check in result in null: ${checkInRespData.length} bytes');
-    return CheckinResultOtherError(checkInRespData);
+    // What the answer says, as text: the forum's fragment as it came, or the message (or the page text) of the app
+    // API's result, never the decoded object.
+    final text = apiResult == null
+        ? tsdmAppAnswerText(checkInResp.data)
+        : (apiResult.reason.isNotEmpty ? apiResult.reason : (apiResult.document.body?.text ?? '').trim());
+    talker.error('check in result in null: ${text.length} bytes');
+    return CheckinResultOtherError(text);
   }
 
   final r2 = _checkCheckinResultText(checkInResult);

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -478,9 +479,36 @@ uh.Document tsdmAppPageDocument(Object? data) {
   final head = json['head'] is String && (json['head'] as String).isNotEmpty
       ? json['head'] as String
       : (tid is int ? '<link href="forum.php?mod=viewthread&amp;tid=$tid" />' : '');
-  // The blocks sit inside `div#wp.wp` on the web page and some parsers match through it.
-  return parseHtmlDocument(
-    '<html><head>$head</head><body><div id="wp" class="wp">${json['document']}</div></body></html>',
+  return parseHtmlDocument(_tsdmAppPageHtml(head, '${json['document']}'));
+}
+
+/// The html of a page the JSON mode cut into [blocks], with [head]: the blocks sit inside `div#wp.wp` on the web page
+/// and some parsers match through it.
+String _tsdmAppPageHtml(String head, String blocks) =>
+    '<html><head>$head</head><body><div id="wp" class="wp">$blocks</div></body></html>';
+
+/// The head script naming the account [uid] a page was served to (`discuz_uid`), none for a guest.
+String _tsdmAppUidScript(Object? uid) =>
+    uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
+
+/// The html of the 提示信息 page the forum prints for a message [text] (plain text) shown as [alertClass]
+/// (`alert_right`, `alert_error`, `alert_info`), served to [uid]: the message in `div#messagetext > p`, the link to go
+/// on to [url] (`p.alert_btnleft > a`, none when empty) and `div#messagelogin` when the forum asks to [login].
+String _tsdmAppMessagePageHtml({
+  required Object? uid,
+  required String text,
+  required String alertClass,
+  required bool login,
+  String url = '',
+}) {
+  final escaped = htmlEscape.convert(text);
+  final link = url.isEmpty ? '' : '<p class="alert_btnleft"><a href="${htmlEscape.convert(url)}">$escaped</a></p>';
+  return _tsdmAppPageHtml(
+    _tsdmAppUidScript(uid),
+    '<div id="ct" class="wp cl"> '
+    '${login ? '<div id="messagelogin"></div> ' : ''}'
+    '<div id="messagetext" class="$alertClass"><p>$escaped</p>$link</div> '
+    '</div>',
   );
 }
 
@@ -491,16 +519,14 @@ uh.Document tsdmAppPageDocument(Object? data) {
 /// script the 2.2.x `head` carried. The parsers of the pages read from their blocks tell the message, the prompt and
 /// the account from these, as they did.
 uh.Document tsdmAppMessageDocument(Map<dynamic, dynamic> json) {
-  final message = json['message'];
   final login = json['login'] == 1;
-  final uid = json['uid'];
-  final head = uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
-  final text = htmlEscape.convert(message is String ? message : '');
   return parseHtmlDocument(
-    '<html><head>$head</head><body><div id="wp" class="wp"><div id="ct" class="wp cl"> '
-    '${login ? '<div id="messagelogin"></div> ' : ''}'
-    '<div id="messagetext" class="${login ? 'alert_info' : 'alert_error'}"><p>$text</p></div> '
-    '</div></div></body></html>',
+    _tsdmAppMessagePageHtml(
+      uid: json['uid'],
+      text: tsdmAppText(json['message']),
+      alertClass: login ? 'alert_info' : 'alert_error',
+      login: login,
+    ),
   );
 }
 
@@ -856,6 +882,11 @@ final class TsdmAppWriteResult {
   /// The forum's message, plain text; empty when there is none (a redirect, a page).
   String get message => tsdmAppText(json['message']);
 
+  /// What to tell the user about this result: the forum's [message], or, when there is none and the forum asks to
+  /// log in, the app's own "log in first"; empty otherwise (each reader then says what it said without the result).
+  /// Never the name of the [kind] or any other field of the answer.
+  String get reason => message.isNotEmpty ? message : (login ? t.general.needLogin : '');
+
   /// The Discuz! language key the message was shown with (`post_reply_succeed`, `post_flood_ctrl`,
   /// `favorite_do_success`, `request_has_been_sent`…), only when the forum's language packs have it; empty when the
   /// forum gave plain text (a page, a third-party plugin's own words).
@@ -899,9 +930,8 @@ final class TsdmAppWriteResult {
   late final String html = _html();
 
   String _html() {
-    final uidScript = uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
     if (kind == TsdmAppWriteKind.page) {
-      return '<html><head>$uidScript$head</head><body><div id="wp" class="wp">$documentHtml</div></body></html>';
+      return _tsdmAppPageHtml('${_tsdmAppUidScript(uid)}$head', documentHtml);
     }
     final alertClass = switch (alert) {
       'right' => 'alert_right',
@@ -909,12 +939,7 @@ final class TsdmAppWriteResult {
       'info' => 'alert_info',
       _ => login ? 'alert_info' : (kind == TsdmAppWriteKind.message || !ok ? 'alert_error' : 'alert_right'),
     };
-    final text = htmlEscape.convert(message);
-    final link = url.isEmpty ? '' : '<p class="alert_btnleft"><a href="${htmlEscape.convert(url)}">$text</a></p>';
-    return '<html><head>$uidScript</head><body><div id="wp" class="wp"><div id="ct" class="wp cl"> '
-        '${login ? '<div id="messagelogin"></div> ' : ''}'
-        '<div id="messagetext" class="$alertClass"><p>$text</p>$link</div> '
-        '</div></div></body></html>';
+    return _tsdmAppMessagePageHtml(uid: uid, text: message, alertClass: alertClass, login: login, url: url);
   }
 
   @override
@@ -948,5 +973,14 @@ TsdmAppWriteResult? tsdmAppWriteResultOf(Object? data) {
 /// The html of the answer [data] to a write, for the readers that take the answer as text and read the forum's page
 /// from it (the 提示信息 of a plugin's form, the catalogue a search posted for): the result's page
 /// ([TsdmAppWriteResult.html]) when the plugin answered one, the text as it came otherwise.
-String tsdmAppWriteAnswerHtml(Object? data) =>
-    tsdmAppWriteResultOf(data)?.html ?? (data is String ? data : (data == null ? '' : '$data'));
+String tsdmAppWriteAnswerHtml(Object? data) => tsdmAppWriteResultOf(data)?.html ?? tsdmAppAnswerText(data);
+
+/// The body [data] of an answer as text, the way the readers of the forum's own answers take it: text as it is,
+/// nothing as empty, a JSON value dio decoded (an answer that is not a write result) encoded back. Never the
+/// `toString()` of a decoded object.
+String tsdmAppAnswerText(Object? data) => switch (data) {
+  null => '',
+  final String text => text,
+  final Map<dynamic, dynamic> _ || final List<dynamic> _ => jsonEncode(data),
+  _ => '$data',
+};

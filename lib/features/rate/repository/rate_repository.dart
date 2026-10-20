@@ -97,12 +97,12 @@ final class RateRepository with LoggerMixin {
         if (result != null) {
           if (result.kind != TsdmAppWriteKind.page) {
             return left(
-              result.message.isNotEmpty ? RateInfoWithErrorException(result.message) : RateInfoInvalidDivCNode(),
+              result.reason.isNotEmpty ? RateInfoWithErrorException(result.reason) : RateInfoInvalidDivCNode(),
             );
           }
           divCNode = result.document.body;
         } else {
-          final xmlDoc = parseXmlDocument(value.data as String);
+          final xmlDoc = parseXmlDocument(tsdmAppAnswerText(value.data));
           final htmlBodyData = xmlDoc.documentElement?.nodes.firstOrNull?.text;
           if (htmlBodyData == null) {
             return left(RateInfoHtmlBodyNotFound());
@@ -129,8 +129,9 @@ final class RateRepository with LoggerMixin {
   ///
   /// The forum's app API (plugin 2.6.0) answers the result as JSON ([tsdmAppWriteResultOf]): the success hook
   /// (`thread_rate_succeed`) is a success, the error hook (`thread_rate_duplicate`, not enough points…), a refusal
-  /// page or the login prompt fail with the forum's message. An older plugin answers the AJAX fragment, read as
-  /// before.
+  /// page or the login prompt fail with the forum's message ([TsdmAppWriteResult.reason]; without one the rate page
+  /// says what it says for a refusal without a reason). A `page` is read as the forum's fragment would be. An older
+  /// plugin answers the AJAX fragment, read as before.
   AsyncVoidEither rate(Map<String, String> formData) => AsyncVoidEither(() async {
     final respEither = await getIt.get<NetClientProvider>().postForm(_rateTarget, data: formData).run();
     if (respEither.isLeft()) {
@@ -142,12 +143,20 @@ final class RateRepository with LoggerMixin {
     }
 
     if (tsdmAppWriteResultOf(resp.data) case final result?) {
+      if (result.kind == TsdmAppWriteKind.page && result.ok) {
+        return _rateResultOf(result.documentHtml);
+      }
       if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
         return rightVoid();
       }
-      return left(RateFailedException(result.message.isNotEmpty ? result.message : result.kind.name));
+      return left(RateFailedException(result.reason));
     }
-    final data = resp.data as String;
+    return _rateResultOf(tsdmAppAnswerText(resp.data));
+  });
+
+  /// The rate result of the forum's AJAX answer (or the fragment of a `page` result) [data]: the refusal in an
+  /// `alert_error` box or in the error hook, a success otherwise.
+  Either<AppException, void> _rateResultOf(String data) {
     final errorText = _errorTextRe.firstMatch(data)?.namedGroup('error');
     if (errorText != null) {
       return left(RateFailedException(errorText));
@@ -157,7 +166,7 @@ final class RateRepository with LoggerMixin {
       return left(RateFailedException(errorHandleRateText.replaceAllMapped(RegExp(r'\\(.)'), (m) => m.group(1)!)));
     }
     return rightVoid();
-  });
+  }
 
   /// Fetch all rate log for post specified by [pid] and [tid].
   AsyncEither<List<RateLogItem>> fetchRateLog({required String tid, required String pid}) => getIt

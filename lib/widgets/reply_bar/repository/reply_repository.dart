@@ -81,7 +81,7 @@ final class ReplyRepository with LoggerMixin {
             (result.alert == 'right' || result.message.contains('回复发布成功') || result.message.contains('回复需要审核')),
       TsdmAppWriteKind.page => false,
     };
-    final reason = result.message.isNotEmpty ? result.message : _serverMessage(result.html);
+    final reason = result.reason.isNotEmpty ? result.reason : _serverMessage(result.html);
     return (stored: stored, reason: stored ? null : reason, url: result.url);
   }
 
@@ -103,9 +103,6 @@ final class ReplyRepository with LoggerMixin {
     final text = (doc.querySelector('div.alert_error') ?? doc.querySelector('div#messagetext'))?.innerText.trim();
     return (text == null || text.isEmpty) ? null : text;
   }
-
-  /// Response body as text no matter how Dio decoded it.
-  static String _bodyText(Object? data) => data is String ? data : (data?.toString() ?? '');
 
   /// Reply to a post.
   AsyncEither<PostedReply> replyToPost({
@@ -142,7 +139,7 @@ final class ReplyRepository with LoggerMixin {
     // The forum's app API (plugin 2.6.0) answers the window as a `page` result with the form in its document; the
     // forum refuses in the window (not logged in…) with the error hook, which has no form either.
     final windowResult = tsdmAppWriteResultOf(replyWindowResp.data);
-    final rawData = windowResult?.html ?? _bodyText(replyWindowResp.data);
+    final rawData = windowResult?.html ?? tsdmAppAnswerText(replyWindowResp.data);
     String? htmlData;
     if (windowResult == null) {
       try {
@@ -164,7 +161,9 @@ final class ReplyRepository with LoggerMixin {
     final useSig = inputValue('usesig');
     final subject = inputValue('subject');
     if (formHash == null || handleKey == null || repPid == null || repPost == null) {
-      final errorText = windowResult?.message ?? replyWindowDoc.querySelector('div.alert_error')?.innerText.trim();
+      final errorText = windowResult != null && windowResult.reason.isNotEmpty
+          ? windowResult.reason
+          : replyWindowDoc.querySelector('div.alert_error')?.innerText.trim();
       error(
         'failed to fetch reply to post parameters: formHash=$formHash, '
         'handleKey=$handleKey, noticeAuthor=$noticeAuthor, error=$errorText',
@@ -210,7 +209,7 @@ final class ReplyRepository with LoggerMixin {
       info('reply to post stored (app api)');
       return right(postedReplyOfUrl(result.url));
     }
-    final data2 = _bodyText(resp2.data);
+    final data2 = tsdmAppAnswerText(resp2.data);
     if (!_isReplyStored(data2)) {
       final reason = _serverMessage(data2);
       error('reply to post rejected by server: $reason');
@@ -261,7 +260,7 @@ final class ReplyRepository with LoggerMixin {
           info('reply to thread stored (app api)');
           return right(postedReplyOfUrl(result.url));
         }
-        final data = _bodyText(resp.data);
+        final data = tsdmAppAnswerText(resp.data);
         if (!_isReplyStored(data)) {
           final reason = _serverMessage(data);
           error('reply to thread rejected by server: $reason');
@@ -291,7 +290,7 @@ final class ReplyRepository with LoggerMixin {
     if (_messageResultOf(resp.data) case final result?) {
       return result;
     }
-    final data = _bodyText(resp.data);
+    final data = tsdmAppAnswerText(resp.data);
 
     if (data.contains('succeedhandle_pmsend')) {
       // Success.
@@ -332,7 +331,7 @@ final class ReplyRepository with LoggerMixin {
     if (_messageResultOf(resp.data) case final result?) {
       return result;
     }
-    final data = _bodyText(resp.data);
+    final data = tsdmAppAnswerText(resp.data);
 
     if (data.contains('succeedhandle_pmsend')) {
       // Success.
@@ -359,7 +358,7 @@ final class ReplyRepository with LoggerMixin {
     if (result.kind == TsdmAppWriteKind.page || result.succeeded) {
       return rightVoid();
     }
-    return left(ReplyPersonalMessageFailedException(result.message.isEmpty ? 'unknown error' : result.message));
+    return left(ReplyPersonalMessageFailedException(result.reason.isEmpty ? 'unknown error' : result.reason));
   }
 
   /// Run the private message [send] and tell [PersonalMessageSent] when the forum accepted it: the conversation list

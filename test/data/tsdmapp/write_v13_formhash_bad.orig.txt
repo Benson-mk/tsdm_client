@@ -63,7 +63,7 @@ Content-Type: text/html; charset=utf-8
 </head>
 <body>
 <div id="container">
-<h1>Discuz! System Error</h1><p>Time: 2026-10-20 19:10:17 +0000 IP: www.tsdm39.com BackTraceID: 4208814d3a28e5d42d9da9140c8460a7</p><div class="info"><li>您当前的访问请求当中含有非法字符，已经被系统拒绝</li></div>
+<h1>Discuz! System Error</h1><p>Time: 2026-01-01 00:00:00 +0000</p><div class="info"><li>您当前的访问请求当中含有非法字符，已经被系统拒绝</li></div>
 <div class="info"><p><strong>PHP Debug</strong></p><table cellpadding="5" cellspacing="1" width="100%" class="table"><tr class="bg2"><td width="20">No.</td><td>File</td><td>Code</td></tr>
 <tr class="bg1"><td>1</td><td>forum.php:11</td><td>require(%s)</td></tr>
 <tr class="bg1"><td>2</td><td>index.php:27</td><td>require(%s)</td></tr>
@@ -72,4 +72,4 @@ Content-Type: text/html; charset=utf-8
 <tr class="bg1"><td>5</td><td>source/class/discuz/discuz_application.php:687</td><td>discuz_application->_xss_check()</td></tr>
 <tr class="bg1"><td>6</td><td>source/class/discuz/discuz_application.php:429</td><td>system_error(%s)</td></tr>
 <tr class="bg1"><td>7</td><td>source/function/function_core.php:24</td><td>discuz_error::system_error(%s, false, true, true)</td></tr></table></div>
-<div class="info"><p><strong>System Info</strong></p><table cellpadding="2" cellspacing="1" width="100%" class="table"><tr class="bg2"><td width="50">Version</td><td>X5.0.2.Open Release 20260710</td></tr><tr class="bg2"><td width="50">OS</td><td>Linux / Linux DESKTOP-MLHRHHK 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64</td></tr><tr class="bg2"><td width="50">PHP</td><td>8.5.4 apache2handler on Apache/2.4.66 (Ubuntu)</td></tr><tr class="bg2"><td width="50">MySQL</td><td>8.4.11-0ubuntu0.26.04.1</td></tr></table></div><div class="help">建议您尝试刷新页面、关闭所有浏览器窗口重新进行操作<br />如果无法解决，请凭完整截图通过 <a href="https://www.dismall.com/" target="_blank">Discuz! 官方论坛</a> 寻求帮助、或者在官方 Git 仓库 <a href="https://gitee.com/discuz/DiscuzX/issues" target="_blank">提交 Issue</a> 给我们</div><div class="help">本站已经将此出错信息详细记录，并可在管理中心“操作日志>系统错误”中搜索 BackTraceID 快速定位<br /><a href="http://www.tsdm39.com">www.tsdm39.com</a></div></div></body></html>
+<div class="info"><p><strong>System Info</strong></p><p>(removed)</p></div><div class="help">建议您尝试刷新页面、关闭所有浏览器窗口重新进行操作<br />如果无法解决，请凭完整截图通过 <a href="https://www.dismall.com/" target="_blank">Discuz! 官方论坛</a> 寻求帮助、或者在官方 Git 仓库 <a href="https://gitee.com/discuz/DiscuzX/issues" target="_blank">提交 Issue</a> 给我们</div><div class="help">(removed)</div></div></body></html>

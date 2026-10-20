@@ -88,14 +88,19 @@ final class EditUserProfileRepository with LoggerMixin {
         final bool saved;
         final String? failure;
         if (result != null) {
-          saved = result.kind == TsdmAppWriteKind.page
-              ? result.ok && result.documentHtml.contains('show_success')
-              : result.succeeded;
-          failure = result.message.isNotEmpty
-              ? result.message
+          // As without the plugin: the editor's frame is answered `parent.show_success('')` when the profile was
+          // saved (a `page`; a `parent.show_error(` page is not `ok`). A 提示信息 page counts only when the forum
+          // shows it as a success (`alert_right`): the hook of an AJAX form, a redirect or a note is no proof.
+          saved = switch (result.kind) {
+            TsdmAppWriteKind.page => result.ok && result.documentHtml.contains('show_success'),
+            TsdmAppWriteKind.message => result.succeeded && result.alert == 'right',
+            TsdmAppWriteKind.handle || TsdmAppWriteKind.redirect => false,
+          };
+          failure = result.reason.isNotEmpty
+              ? result.reason
               : result.document.querySelector('div#messagetext > p')?.innerText;
         } else {
-          final doc = data is String ? data : '';
+          final doc = tsdmAppAnswerText(data);
           saved = doc.contains('show_success');
           failure = parseHtmlDocument(doc).querySelector('div#messagetext > p')?.innerText;
         }

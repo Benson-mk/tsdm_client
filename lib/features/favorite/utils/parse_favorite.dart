@@ -205,9 +205,6 @@ FavoriteForum? _parseForumItem(uh.Element li) {
   );
 }
 
-/// The body of a dialog or form answer [body] as text, for the forum's own answers.
-String _text(Object? body) => body is String ? body : '${body ?? ''}';
-
 /// Parse the hidden `formhash` and `referer` of a favorite dialog (add or delete), null when there is no form, e.g.
 /// the record does not exist anymore.
 ///
@@ -219,7 +216,7 @@ FavoriteFormParameters? parseFavoriteForm(Object? body) {
   if (result != null && result.kind != TsdmAppWriteKind.page) {
     return null;
   }
-  final document = result?.document ?? parseHtmlDocument(_unwrapCdata(_text(body)));
+  final document = result?.document ?? parseHtmlDocument(_unwrapCdata(tsdmAppAnswerText(body)));
   final formHash = document.querySelector('input[name="formhash"]')?.attributes['value'];
   if (formHash == null || formHash.isEmpty) {
     return null;
@@ -241,9 +238,9 @@ FavoriteAddResult parseFavoriteAddResult(Object? body) {
     if (result.messageKey == 'favorite_repeat' || result.message.contains('已收藏')) {
       return const FavoriteAlreadyExists();
     }
-    return FavoriteAddFailed(result.message.isNotEmpty ? result.message : _plainText(result.documentHtml));
+    return FavoriteAddFailed(result.reason.isNotEmpty ? result.reason : _plainText(result.documentHtml));
   }
-  final text = _text(body);
+  final text = tsdmAppAnswerText(body);
   if (_succeeded(text)) {
     return FavoriteAdded(_favidRe.firstMatch(text)?.group(1));
   }
@@ -263,13 +260,13 @@ FavoriteRemoveResult parseFavoriteRemoveResult(Object? body) {
     if (result.kind != TsdmAppWriteKind.page && result.succeeded) {
       return const FavoriteRemoveResult(removed: true);
     }
-    final message = result.message.isNotEmpty ? result.message : _plainText(result.documentHtml);
+    final message = result.reason.isNotEmpty ? result.reason : _plainText(result.documentHtml);
     return FavoriteRemoveResult(
       removed: result.messageKey == 'favorite_nonexistence' || result.message.contains('不存在'),
       message: message,
     );
   }
-  final text = _text(body);
+  final text = tsdmAppAnswerText(body);
   if (_succeeded(text)) {
     return const FavoriteRemoveResult(removed: true);
   }

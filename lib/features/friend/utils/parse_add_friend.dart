@@ -9,6 +9,7 @@ library;
 
 import 'package:tsdm_client/features/friend/models/add_friend.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
@@ -20,16 +21,20 @@ final RegExp _tagRe = RegExp('<[^>]+>');
 
 String _payload(String xml) => _cdataRe.firstMatch(xml)?.group(1) ?? xml;
 
-String _text(Object? answer) => answer is String ? answer : '${answer ?? ''}';
+/// The visible text of the html [payload], whitespace collapsed.
+String _plainText(String payload) => payload.replaceAll(_tagRe, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// The add-friend form, or the forum's refusal, in [answer]: the forum's AJAX answer or the app API's write result.
+///
+/// A refusal of the app API names the forum's message ([TsdmAppWriteResult.reason]), or the text of its page, or
+/// the app's "could not be sent": never a field of the answer.
 AddFriendFormResult parseAddFriendForm(Object? answer) {
   final result = tsdmAppWriteResultOf(answer);
   if (result != null && result.kind != TsdmAppWriteKind.page) {
     // The forum refused in the window (friends already, a request pending, the member himself, not logged in).
-    return AddFriendRefused(result.message.isNotEmpty ? result.message : result.kind.name);
+    return AddFriendRefused(result.reason.isNotEmpty ? result.reason : t.friendPage.addFriend.failed);
   }
-  final xml = _text(answer);
+  final xml = tsdmAppAnswerText(answer);
   final payload = result?.documentHtml ?? _payload(xml);
   if (result == null) {
     final refused = _errorRe.firstMatch(payload)?.group(1);
@@ -37,7 +42,11 @@ AddFriendFormResult parseAddFriendForm(Object? answer) {
       return AddFriendRefused(refused);
     }
   }
-  return _parseAddFriendForm(result?.document ?? parseHtmlDocument(payload), payload: payload, raw: xml);
+  return _parseAddFriendForm(
+    result?.document ?? parseHtmlDocument(payload),
+    payload: payload,
+    raw: result == null ? xml : t.friendPage.addFriend.failed,
+  );
 }
 
 AddFriendFormResult _parseAddFriendForm(uh.Document document, {required String payload, required String raw}) {
@@ -61,7 +70,7 @@ AddFriendFormResult _parseAddFriendForm(uh.Document document, {required String p
   }
   if (formHash.isEmpty) {
     // Neither a refusal nor a form: report whatever text there is.
-    final text = payload.replaceAll(_tagRe, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final text = _plainText(payload);
     return AddFriendRefused(text.isEmpty ? raw : text);
   }
   return AddFriendForm(
@@ -76,17 +85,19 @@ AddFriendFormResult _parseAddFriendForm(uh.Document document, {required String p
 /// The forum's answer to a submitted add-friend (or approve) form, in [answer]: the forum's AJAX answer or the app
 /// API's write result (sent when the forum's verdict is a success, whether shown as a success or a note: the request
 /// `request_has_been_sent` is a note; refused with the forum's message otherwise).
+///
+/// The message of an app API result is the forum's ([TsdmAppWriteResult.reason]), or the text of its page, or the
+/// app's "request sent" / "could not be sent": never a field of the answer.
 AddFriendResult parseAddFriendResult(Object? answer) {
   if (tsdmAppWriteResultOf(answer) case final result?) {
-    final message = result.message.isNotEmpty
-        ? result.message
-        : result.documentHtml.replaceAll(_tagRe, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final success = result.kind != TsdmAppWriteKind.page && result.succeeded;
+    final message = result.reason.isNotEmpty ? result.reason : _plainText(result.documentHtml);
     return AddFriendResult(
-      success: result.kind != TsdmAppWriteKind.page && result.succeeded,
-      message: message.isEmpty ? result.kind.name : message,
+      success: success,
+      message: message.isNotEmpty ? message : (success ? t.friendPage.addFriend.sent : t.friendPage.addFriend.failed),
     );
   }
-  final xml = _text(answer);
+  final xml = tsdmAppAnswerText(answer);
   final payload = _payload(xml);
   final succeeded = _succeedRe.firstMatch(payload)?.group(1);
   if (succeeded != null && succeeded.isNotEmpty) {
@@ -100,6 +111,6 @@ AddFriendResult parseAddFriendResult(Object? answer) {
   if (dialog != null) {
     return AddFriendResult(success: dialog.group(2) != 'alert', message: dialog.group(1)!);
   }
-  final text = payload.replaceAll(_tagRe, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  final text = _plainText(payload);
   return AddFriendResult(success: false, message: text.isEmpty ? xml : text);
 }

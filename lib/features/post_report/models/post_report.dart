@@ -366,7 +366,7 @@ PostReportForm _parsePostReportForm(String raw, {required PostReportTarget targe
       if (result.login) {
         throw const PostReportFailure(PostReportProblem.notLoggedIn);
       }
-      final message = plainForumText(result.message);
+      final message = plainForumText(result.reason);
       throw PostReportFailure(
         message.isEmpty ? PostReportProblem.unsupported : PostReportProblem.forumMessage,
         message: message.isEmpty ? null : message,

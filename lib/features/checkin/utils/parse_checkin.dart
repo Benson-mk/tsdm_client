@@ -78,7 +78,7 @@ String? parseCheckinResponseMessage(Object? answer) {
     final fromPage = _checkinMessageOf(result.document);
     return fromPage == null || fromPage.isEmpty ? null : fromPage;
   }
-  final data = answer is String ? answer : '${answer ?? ''}';
+  final data = tsdmAppAnswerText(answer);
   String? fromXml;
   try {
     final xmlDoc = parseXmlDocument(data);
@@ -86,8 +86,8 @@ String? parseCheckinResponseMessage(Object? answer) {
     if (htmlData != null) {
       fromXml = _checkinMessageOf(parseHtmlDocument(htmlData));
     }
-  } on Exception catch (_) {
-    // Not xml, use fallback below.
+  } on Object catch (_) {
+    // Not xml (the xml parser throws a state error on a whole page), use fallback below.
   }
   if (fromXml != null && fromXml.isNotEmpty) {
     return fromXml;

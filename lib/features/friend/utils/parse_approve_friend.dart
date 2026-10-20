@@ -92,8 +92,8 @@ ApproveFriendFormResult _parseApproveFriendFormResult(TsdmAppWriteResult result,
   if (result.login) {
     throw const ApproveFriendRejected(ApproveFriendFailure.notLoggedIn, 'login prompt');
   }
-  if (!result.succeeded && result.message.trim().isNotEmpty) {
-    return ApproveFriendRefused(result.message.trim());
+  if (!result.succeeded && result.reason.trim().isNotEmpty) {
+    return ApproveFriendRefused(result.reason.trim());
   }
   throw const ApproveFriendRejected(ApproveFriendFailure.unknownForm, 'no form and no message');
 }
@@ -270,8 +270,8 @@ AddFriendResult _parseApproveFriendResultOf(
   if (result.login) {
     throw const ApproveFriendRejected(ApproveFriendFailure.notLoggedIn, 'login prompt');
   }
-  if (result.kind != TsdmAppWriteKind.page && !result.succeeded && result.message.trim().isNotEmpty) {
-    return AddFriendResult(success: false, message: result.message.replaceAll(_spaceRe, ' ').trim());
+  if (result.kind != TsdmAppWriteKind.page && !result.succeeded && result.reason.trim().isNotEmpty) {
+    return AddFriendResult(success: false, message: result.reason.replaceAll(_spaceRe, ' ').trim());
   }
   if (result.kind == TsdmAppWriteKind.page && isCloudflareChallengePage(result.document)) {
     throw const ApproveFriendRejected(ApproveFriendFailure.challenge, 'cloudflare challenge');

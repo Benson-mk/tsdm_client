@@ -103,9 +103,9 @@ final class MyTitlesRepository with LoggerMixin {
         )
         .mapHttp(
           (v) => switch (tsdmAppWriteResultOf(v.data)) {
-            final result? when result.kind != TsdmAppWriteKind.page => result.message,
+            final result? when result.kind != TsdmAppWriteKind.page => result.reason.isEmpty ? null : result.reason,
             final result =>
-              (result?.document ?? parseHtmlDocument(v.data is String ? v.data as String : ''))
+              (result?.document ?? parseHtmlDocument(tsdmAppAnswerText(v.data)))
                   .querySelector('div#messagetext > p')
                   ?.innerText
                   .trim(),

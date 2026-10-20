@@ -44,13 +44,13 @@ final class PurchaseRepository with LoggerMixin {
     if (result != null && result.kind != TsdmAppWriteKind.page) {
       return left(PurchaseInfoInvalidNoticeException());
     }
-    final text = data is String ? data : '${data ?? ''}';
+    final text = tsdmAppAnswerText(data);
     String? htmlData;
     if (result == null) {
       try {
         htmlData = parseXmlDocument(text).documentElement?.nodes.firstOrNull?.text;
-      } on Exception catch (_) {
-        // Not xml, maybe a plain html document.
+      } on Object catch (_) {
+        // Not xml, maybe a plain html document (the xml parser throws a state error on a whole page).
         htmlData = null;
       }
     }
