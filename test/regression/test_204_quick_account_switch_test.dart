@@ -42,6 +42,7 @@ import 'package:tsdm_client/features/notification/repository/notification_info_r
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
+import 'package:tsdm_client/features/profile/utils/profile_page_api.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
@@ -1002,7 +1003,7 @@ void main() {
       final repo = ProfileRepository();
       expect((await repo.fetchProfile().run()).isRight(), isTrue);
       expect(repo.hasCache(), isTrue);
-      expect(repo.getCache()!.querySelector('#ct')?.text, contains('profile of 1000'));
+      expect((repo.getCache()! as ProfileWebPage).document.querySelector('#ct')?.text, contains('profile of 1000'));
       expect((await repo.fetchProfile().run()).isRight(), isTrue);
       expect(profiles.uids, ['1000'], reason: 'served from the cache');
 
@@ -1011,9 +1012,12 @@ void main() {
       expect(repo.getCache(), isNull);
 
       final bob = await repo.fetchProfile().run();
-      expect(bob.getRight().toNullable()!.querySelector('#ct')?.text, contains('profile of 1001'));
+      expect(
+        (bob.getRight().toNullable()! as ProfileWebPage).document.querySelector('#ct')?.text,
+        contains('profile of 1001'),
+      );
       expect(profiles.uids, ['1000', '1001']);
-      expect(repo.getCache()!.querySelector('#ct')?.text, contains('profile of 1001'));
+      expect((repo.getCache()! as ProfileWebPage).document.querySelector('#ct')?.text, contains('profile of 1001'));
     });
 
     test('removing the account in use drops it too', () async {
@@ -1038,7 +1042,10 @@ void main() {
 
       profiles.gate = null;
       final bob = await repo.fetchProfile().run();
-      expect(bob.getRight().toNullable()!.querySelector('#ct')?.text, contains('profile of 1001'));
+      expect(
+        (bob.getRight().toNullable()! as ProfileWebPage).document.querySelector('#ct')?.text,
+        contains('profile of 1001'),
+      );
     });
   });
 

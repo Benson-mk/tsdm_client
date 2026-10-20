@@ -10,10 +10,40 @@ part 'profile_medal.mapper.dart';
 @MappableClass()
 final class ProfileMedal with ProfileMedalMappable {
   /// Constructor.
-  const ProfileMedal({required this.name, required this.image, required this.alter, required this.description});
+  const ProfileMedal({
+    required this.name,
+    required this.image,
+    required this.alter,
+    required this.description,
+    this.id,
+  });
+
+  /// Build from a row of `medals` in the structured profile answer of the forum's app API (plugin 2.2.0,
+  /// `schema: 4`, see `profileFromApi`): the forum's own medal, with the medal name as the alternative text, as the
+  /// page prints it.
+  ///
+  /// The medal id is kept as the opaque string the answer gives (the forum's medal ids are not always numeric).
+  factory ProfileMedal.fromApi(Map<String, dynamic> row) {
+    final name = row['name'] is String ? row['name'] as String : '';
+    return ProfileMedal(
+      name: name,
+      image: row['image'] is String ? row['image'] as String : '',
+      alter: name,
+      description: row['description'] is String ? row['description'] as String : '',
+      id: switch (row['id']) {
+        final String s => s,
+        final num n => '${n.toInt()}',
+        _ => null,
+      },
+    );
+  }
 
   /// Medal name.
   final String name;
+
+  /// The forum's id of the medal, as the structured answer names it (opaque: not always numeric); null when read from
+  /// the web page, which does not name it.
+  final String? id;
 
   /// Image url.
   final String image;

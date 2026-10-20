@@ -29,12 +29,6 @@ part 'homepage_bloc.mapper.dart';
 part 'homepage_event.dart';
 part 'homepage_state.dart';
 
-/// Extension on [uh.Document] to extract user info.
-extension ExtractProfileAvatar on uh.Document {
-  /// Extract the user avatar url from the profile page.
-  String? extractAvatar() => parseProfileAvatarUrl(this);
-}
-
 /// Bloc for the homepage of the app.
 class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   /// Constructor.
@@ -50,7 +44,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
              ? _parseStateFromDocument(
                  forumHomeRepository.getCache()!,
                  authenticationRepository.currentUser?.username,
-                 avatarUrl: profileRepository.getCache()?.extractAvatar(),
+                 avatarUrl: profileRepository.getCache()?.avatarUrl,
                )
              : const HomepageState(),
        ) {
@@ -314,7 +308,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
           emit(state.copyWith(status: HomepageStatus.failure));
           return;
         }
-        final avatarUrl = d2.unwrap().extractAvatar();
+        final avatarUrl = d2.unwrap().avatarUrl;
         // Parse data and change state.
         final s = _parseStateFromDocument(value, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
         emit(s);
