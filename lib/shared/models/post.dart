@@ -83,7 +83,8 @@ class Post with PostMappable {
   ///   form of the first floor of a poll thread (with [viewerUid], the account the answer was served to);
   /// * the actions the forum allows this account (`can.*` 1) with their urls (`urls.*`): reply, rate, edit, and the
   ///   report of the floor for [viewerUid] in thread [tid] of forum [fid];
-  /// * the red packet of the floor, when its block `div#ts_packet` is in the content.
+  /// * the red packet of the floor from `packet_html` (its `div#ts_packet`, which sits beside the content on the web
+  ///   page, so it is not in `body_html`; empty when the floor has none): its url, and whether it is all taken.
   ///
   /// [page] is the page the floor was asked on; [draft] whether the thread is a draft (its first floor is then the
   /// draft, as on the web page, when it can be edited).
@@ -149,11 +150,12 @@ class Post with PostMappable {
 
     final pollHtml = _apiText(p['poll_html']);
     final bodyHtml = _apiText(p['body_html']);
-    // The red packet block sits beside the content on the web page (`div.pct > div#ts_packet`); it is only read here
-    // when the forum put it inside the content.
-    final packetNode = bodyHtml.contains('ts_packet')
-        ? parseHtmlDocument('<div class="pcb">$bodyHtml</div>').querySelector('div#ts_packet > a')
-        : null;
+    // The red packet block sits beside the content on the web page (`div.pct > div#ts_packet`, not in `body_html`):
+    // the answer cuts it out as `packet_html`, read with the selectors of the web page.
+    final packetHtml = _apiText(p['packet_html']);
+    final packetNode = packetHtml.isEmpty
+        ? null
+        : parseHtmlDocument('<div class="pct">$packetHtml</div>').querySelector('div#ts_packet > a');
     final shareUrl = _apiText(p['share_url']);
 
     return Post(

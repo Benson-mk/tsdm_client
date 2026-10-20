@@ -175,7 +175,7 @@ void main() {
       expect(page.threadType, isNull, reason: 'typeid 0');
       expect(page.isDraft, isFalse);
       expect(page.latestModAct, isNull, reason: 'modact empty');
-      expect(page.viewCount, 102);
+      expect(page.viewCount, 106);
       expect(page.replyCount, 8);
 
       // The breadcrumbs from the group down to the forum, the thread not among them, linked as the page links them.
@@ -189,8 +189,8 @@ void main() {
       final reply = page.replyParameters!;
       expect(reply.fid, '2');
       expect(reply.tid, '9199345');
-      expect(reply.postTime, '1792483336');
-      expect(reply.formHash, '412e9965');
+      expect(reply.postTime, '1792484154');
+      expect(reply.formHash, 'e8f00e4d');
       expect(reply.subject, '');
 
       // The medal menus of the page, one per menu.
@@ -590,6 +590,42 @@ void main() {
       );
     });
 
+    test('the red packet of a floor, from packet_html', () {
+      final base = _floor('thread_v3_plain.json', 3938);
+      expect(base['packet_html'], '', reason: 'no packet on the test forum');
+      expect(_post('thread_v3_plain.json', 3938).packetUrl, isNull);
+      expect(_post('thread_v3_plain.json', 3938).packetAllTaken, isFalse);
+
+      Post withPacket(String image) => Post.fromApi(
+        {
+          ...base,
+          'packet_html':
+              '<div id="ts_packet"><a href="plugin.php?id=tsdm_packet:packet&amp;pid=3938" onclick="showWindow(\'packet\', this.href)"> '
+              '<img src="$image" /></a></div>',
+        },
+        tid: '9199345',
+        fid: 2,
+        viewerUid: 35,
+        page: 1,
+      );
+      final open = withPacket('static/image/post/rp-1.svg');
+      expect(open.packetUrl, '$baseUrl/plugin.php?id=tsdm_packet:packet&pid=3938');
+      expect(open.packetAllTaken, isFalse);
+      final taken = withPacket('static/image/post/rp-2.svg');
+      expect(taken.packetUrl, '$baseUrl/plugin.php?id=tsdm_packet:packet&pid=3938');
+      expect(taken.packetAllTaken, isTrue);
+      // The block is never looked for in the content.
+      final inBody = Post.fromApi(
+        {...base, 'body_html': '<div id="ts_packet"><a href="x"><img src="static/image/post/rp-2.svg" /></a></div>'},
+        tid: '9199345',
+        fid: 2,
+        viewerUid: 35,
+        page: 1,
+      );
+      expect(inBody.packetUrl, isNull);
+      expect(inBody.packetAllTaken, isFalse);
+    });
+
     test('the author column is read with the selectors of the web page', () {
       // The same thread, read from the web page of the old fixture: the author column tells the same.
       final web = parseThreadDocument(parseHtmlDocument(_raw('thread_plain.html')), 1);
@@ -614,7 +650,7 @@ void main() {
       expect(page.tid, '9199345');
       expect(page.postList.map((e) => e.postID), contains('3954'));
       expect(page.postList.map((e) => e.postID), isNot(contains('1')), reason: 'the garbage document');
-      expect(page.replyParameters?.formHash, '412e9965');
+      expect(page.replyParameters?.formHash, 'e8f00e4d');
     });
 
     test('the message of the plugin: the login prompt', () async {
