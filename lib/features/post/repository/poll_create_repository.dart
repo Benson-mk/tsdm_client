@@ -5,6 +5,8 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/post/models/poll_create.dart';
 import 'package:tsdm_client/features/post/utils/new_thread_status.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/parsing.dart';
@@ -267,16 +269,31 @@ final class PollCreateRepository with LoggerMixin {
   }
 
   /// GET the new thread as its author; a redirect or message link alone never proves publication.
+  ///
+  /// The thread page is asked in the JSON mode of the forum's app API. A structured answer (plugin 2.1.0,
+  /// `schema: 3`) tells the account it was served to and the thread's state ([classifyNewThreadApi]); any other
+  /// answer is the page, read as before: the account from its `discuz_uid`, the state from the header
+  /// ([classifyNewThreadHeader]).
   Future<PollCreateResult> _verify(String? tid) async {
     if (tid == null) return const PollCreateResult(PollCreateOutcome.unconfirmed);
     if (!isCurrent) return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
-    final result = await _get('$baseUrl/forum.php?mod=viewthread&tid=$tid');
+    final result = await _get(withTsdmAppJson('$baseUrl/forum.php?mod=viewthread&tid=$tid'));
     if (!isCurrent) return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
     return result.match((_) => PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid), (response) {
-      if (response.statusCode != 200 || response.data is! String) {
+      if (response.statusCode != 200) {
         return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
       }
-      final document = parseHtmlDocument(response.data as String);
+      final api = threadApiAnswerOf(response.data);
+      if (api != null) {
+        if (threadApiViewerUid(api) != _ownerUid) {
+          return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
+        }
+        return _classify(tid, classifyNewThreadApi(api, tid));
+      }
+      if (tsdmAppAnswerWithoutPage(response.data)) {
+        return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
+      }
+      final document = tsdmAppPageDocument(response.data);
       if (parseLoggedUidFromDocument(document) != _ownerUid) {
         return PollCreateResult(PollCreateOutcome.unconfirmed, tid: tid);
       }

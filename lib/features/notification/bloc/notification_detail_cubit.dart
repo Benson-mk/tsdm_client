@@ -1,4 +1,5 @@
 import 'package:bloc/bloc.dart';
+import 'package:collection/collection.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
@@ -29,10 +30,14 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
   ///
   /// Usually the [url] is a thread page and the logic below is trying to get
   /// the corresponding post in thread.
+  ///
+  /// The page built from the structured answer of the forum's app API gives the floor, the reply form and whether
+  /// the thread is closed as its fields ([_fromBuiltPage]); the document of any other answer is parsed as before
+  /// ([_fromDocument]).
   Future<void> fetchDetail(String url) async {
     emit(state.copyWith(status: NotificationDetailStatus.loading));
     await _notificationRepository
-        .fetchDocument(url)
+        .fetchNoticeThread(url)
         .match(
           (e) {
             handle(e);
@@ -41,21 +46,10 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
             emit(state.copyWith(status: NotificationDetailStatus.failed));
           },
           (v) {
-            final (document, page) = v;
-
-            final threadClosed = isThreadClosedForReply(document);
-
             final match = _pidRe.firstMatch(url);
             final pid = match?.namedGroup('pid');
             if (pid == null) {
               error('pid not found in url: $url');
-              emit(state.copyWith(status: NotificationDetailStatus.failed));
-              return;
-            }
-
-            final postNode = document.querySelector('div#post_$pid');
-            if (postNode == null) {
-              error('failed to build reply page: post node not found for pid $pid');
               emit(state.copyWith(status: NotificationDetailStatus.failed));
               return;
             }
@@ -67,31 +61,78 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
               emit(state.copyWith(status: NotificationDetailStatus.failed));
               return;
             }
-            // Report links are only kept when the page is the thread the notice points to (#127).
-            final postData = Post.fromPostNode(
-              postNode,
-              document.currentPage() ?? 1,
-              reportContext: postReportPageContextOf(document, expectedTid: tid),
-              viewerUid: parseLoggedUidFromDocument(document),
-            );
-            final replyParameters = _parseParameters(document, tid);
-            if (isClosed) {
-              return;
+            switch (v) {
+              case NoticeThreadPageBuilt(:final page):
+                _fromBuiltPage(page, tid: tid, pid: pid);
+              case NoticeThreadPageDocument(:final document, :final page):
+                _fromDocument(document, page, tid: tid, pid: pid);
             }
-            emit(
-              state.copyWith(
-                status: NotificationDetailStatus.success,
-                post: postData,
-                replyParameters: replyParameters,
-                tid: tid,
-                pid: pid,
-                page: page,
-                threadClosed: threadClosed,
-              ),
-            );
           },
         )
         .run();
+  }
+
+  /// The floor [pid] of the page [page] built from the structured answer, of the thread [tid] the notice points to.
+  ///
+  /// The report target of the floor is only kept when the page is that thread (#127), as the document path keeps the
+  /// report links; the reply form is the page's, none when the forum printed none.
+  void _fromBuiltPage(ThreadPageInfo page, {required String tid, required String pid}) {
+    final post = page.postList.firstWhereOrNull((e) => e.postID == pid);
+    if (post == null) {
+      error('failed to build reply page: post not found for pid $pid');
+      emit(state.copyWith(status: NotificationDetailStatus.failed));
+      return;
+    }
+    final postData = page.tid == tid ? post : post.copyWith(reportTarget: null);
+    if (isClosed) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        status: NotificationDetailStatus.success,
+        post: postData,
+        replyParameters: page.replyParameters,
+        tid: tid,
+        pid: pid,
+        page: '${page.currentPage}',
+        threadClosed: page.threadClosed,
+      ),
+    );
+  }
+
+  /// The floor [pid] of the thread page [document], parsed as the web page, of the thread [tid] the notice points
+  /// to; [page] is the page number the forum redirected to.
+  void _fromDocument(uh.Document document, String? page, {required String tid, required String pid}) {
+    final threadClosed = isThreadClosedForReply(document);
+
+    final postNode = document.querySelector('div#post_$pid');
+    if (postNode == null) {
+      error('failed to build reply page: post node not found for pid $pid');
+      emit(state.copyWith(status: NotificationDetailStatus.failed));
+      return;
+    }
+    // Report links are only kept when the page is the thread the notice points to (#127).
+    final postData = Post.fromPostNode(
+      postNode,
+      document.currentPage() ?? 1,
+      reportContext: postReportPageContextOf(document, expectedTid: tid),
+      viewerUid: parseLoggedUidFromDocument(document),
+    );
+    final replyParameters = _parseParameters(document, tid);
+    if (isClosed) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        status: NotificationDetailStatus.success,
+        post: postData,
+        replyParameters: replyParameters,
+        tid: tid,
+        pid: pid,
+        page: page,
+        threadClosed: threadClosed,
+      ),
+    );
   }
 
   ReplyParameters? _parseParameters(uh.Document document, String tid) {

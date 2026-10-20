@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
 
+import 'package:collection/collection.dart';
 import 'package:dio/dio.dart' show Options;
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
@@ -7,6 +9,8 @@ import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dar
 import 'package:tsdm_client/features/blocking/repository/notice_ignore_repository.dart' show isCloudflareChallengePage;
 import 'package:tsdm_client/features/post_report/models/post_report.dart';
 import 'package:tsdm_client/features/post_report/utils/report_page_context.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -20,7 +24,8 @@ final class PostReportResponse {
   /// Http status.
   final int statusCode;
 
-  /// Text body, empty when there was none.
+  /// Text body, empty when there was none; a JSON answer of the forum's app API (the thread page asked in the JSON
+  /// mode) as its JSON text.
   final String body;
 
   /// Cloudflare marked the answer as a challenge (`cf-mitigated: challenge`).
@@ -57,7 +62,12 @@ class PostReportRepository with LoggerMixin {
         Left(:final value) => throw value,
         Right(:final value) => PostReportResponse(
           value.statusCode ?? 0,
-          value.data is String ? value.data as String : '',
+          switch (value.data) {
+            final String text => text,
+            // The JSON answer dio decoded already (the thread page in the JSON mode).
+            final Map<dynamic, dynamic> json => jsonEncode(json),
+            _ => '',
+          },
           challenge: value.headers.value('cf-mitigated')?.toLowerCase() == 'challenge',
         ),
       };
@@ -104,9 +114,19 @@ class PostReportRepository with LoggerMixin {
   }
 
   /// Check on a fresh full thread page that [uid] is still served and still offered the report of [target].
+  ///
+  /// The page is asked in the JSON mode of the forum's app API. A structured answer (plugin 2.1.0, `schema: 3`) is
+  /// checked on its fields ([_verifyFloorBuilt]) when it names the account it was served to (`uid`: every thread
+  /// answer, and the forum's message since plugin 2.2.0); any other answer is the page, read as before. The message of
+  /// plugin 2.1.0 names no account, and the account is what tells a change from a refusal: its document is read.
   Future<void> _verifyFloor(PostReportTarget target, int uid) async {
-    final raw = await _read(target.floorUrl, ajax: false);
-    final doc = parseHtmlDocument(raw);
+    final raw = await _read(Uri.parse(withTsdmAppJson(target.floorUrl.toString())), ajax: false);
+    final api = threadApiAnswerOf(raw);
+    if (api != null && api.containsKey('uid')) {
+      _verifyFloorBuilt(target, uid, api);
+      return;
+    }
+    final doc = tsdmAppPageDocument(raw);
     if (isCloudflareChallengePage(doc)) {
       throw const PostReportFailure(PostReportProblem.challenge);
     }
@@ -134,6 +154,36 @@ class PostReportRepository with LoggerMixin {
     }
     final fresh = Post.fromPostNode(postNode, doc.currentPage() ?? 1, reportContext: context)?.reportTarget;
     if (fresh != target) {
+      throw const PostReportFailure(PostReportProblem.noPermission);
+    }
+  }
+
+  /// [_verifyFloor] on the page built from the structured answer [api], which names the account it was served to:
+  /// a guest (the login prompt, or the thread served to one) is not logged in, another account is a change, as the
+  /// page's `discuz_uid` tells first on the document path; then the forum's message (no such thread, no permission),
+  /// the floor among the posts, the thread and forum of [target], and the same report still offered ([Post.fromApi]
+  /// builds the target from `can.report`).
+  void _verifyFloorBuilt(PostReportTarget target, int uid, Map<String, dynamic> api) {
+    final pageUid = threadApiViewerUid(api);
+    if (pageUid == null) {
+      throw const PostReportFailure(PostReportProblem.notLoggedIn);
+    }
+    if (pageUid != uid) {
+      throw const PostReportFailure(PostReportProblem.accountChanged);
+    }
+    final page = threadPageFromApi(api, 1);
+    if (!page.havePermission) {
+      final message = page.permissionDeniedMessage?.innerText.trim();
+      if (message != null && message.isNotEmpty) {
+        throw PostReportFailure(PostReportProblem.forumMessage, message: plainForumText(message));
+      }
+      throw const PostReportFailure(PostReportProblem.noPermission);
+    }
+    final post = page.postList.firstWhereOrNull((e) => e.postID == '${target.pid}');
+    if (post == null) {
+      throw const PostReportFailure(PostReportProblem.noPermission);
+    }
+    if (page.tid != '${target.tid}' || page.fid != target.fid || post.reportTarget != target) {
       throw const PostReportFailure(PostReportProblem.noPermission);
     }
   }

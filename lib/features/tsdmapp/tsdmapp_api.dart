@@ -438,10 +438,18 @@ extension TsdmAppPageHttpExt on AsyncEither<Response<dynamic>> {
 /// for an answer without a page ([tsdmAppAnswerWithoutPage]): an empty string would be read as a page without the
 /// account, a list or a form, and not as the failure it is.
 Future<String> fetchTsdmAppPageHtml(NetClientProvider client, String url) async =>
+    tsdmAppPageHtml(await fetchTsdmAppPageAnswer(client, url));
+
+/// The answer of the forum page [url] asked of [client] in the JSON mode ([withTsdmAppJson]), as the forum gave it:
+/// the web page, or the JSON answer (for the callers that read its structured fields when it has them, and its
+/// page otherwise, [tsdmAppPageHtml]). An answer that carries the page as structured fields (`schema`) is a page
+/// whether or not it carries the blocks too; otherwise throws as [fetchTsdmAppPageHtml] throws.
+Future<Object?> fetchTsdmAppPageAnswer(NetClientProvider client, String url) async =>
     switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) when tsdmAppAnswerJson(value.data)?['schema'] is num => value.data,
       Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
         value.statusCode,
       ),
-      Right(:final value) => tsdmAppPageHtml(value.data),
+      Right(:final value) => value.data,
       Left(:final value) => throw value,
     };

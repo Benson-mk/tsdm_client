@@ -28,7 +28,6 @@ import 'package:tsdm_client/features/settings/repositories/settings_repository.d
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/utils/dialog.dart';
-import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/utils/replied_thread_seed.dart';
 import 'package:tsdm_client/features/thread/v1/utils/share_thread_action.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/post_list.dart';
@@ -53,7 +52,6 @@ import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 import 'package:tsdm_client/widgets/reply_bar/reply_bar.dart';
 import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
-import 'package:universal_html/html.dart' as uh;
 
 /// Page to show thread.
 class ThreadPage extends StatefulWidget {
@@ -135,16 +133,6 @@ class ThreadPage extends StatefulWidget {
 
   @override
   State<ThreadPage> createState() => _ThreadPageState();
-}
-
-/// The first floor on the thread page [document] names no user: an anonymous or guest post, whose author has no user
-/// link (the post parser skips such floors). Nobody on a block list can be its author. Links in the post body are
-/// not looked at; a page without a first floor is not such a thread.
-bool _firstFloorNamesNoUser(uh.Document document) {
-  final first = document
-      .querySelectorAll('div#postlist div[id^="post_"]')
-      .firstWhereOrNull((e) => e.querySelector('div.pi strong em')?.text?.trim() == '1');
-  return first != null && first.querySelector('td.pls a[href*="uid="], div.authi a[href*="uid="]') == null;
 }
 
 /// Upper bound of the combined text scale (global text scale times thread content scale) applied to floors.
@@ -281,13 +269,13 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       try {
         // A separate repository: the page's own one remembers the url of the page shown. Oldest first, so the first
         // floor is on the first page whatever the thread's own order is.
-        final result = await ThreadRepository().fetchThread(tid: tid, reverseOrder: false).run();
-        result.match((e) => error('failed to learn the author of thread $tid: $e'), (doc) {
-          final page = parseThreadDocument(doc, 1);
+        final result = await ThreadRepository().fetchThreadFirstPage(tid: tid).run();
+        result.match((e) => error('failed to learn the author of thread $tid: $e'), (v) {
+          final page = v.page;
           final first = page.postList.firstWhereOrNull((e) => e.postFloor == 1);
           ThreadAuthorCache.record(tid, first?.author.uid);
           author = ThreadAuthorCache.authorOf(tid);
-          unattributable = author == null && page.havePermission && !page.needLogin && _firstFloorNamesNoUser(doc);
+          unattributable = author == null && page.havePermission && !page.needLogin && v.firstFloorNamesNoUser;
           if (author == null && !unattributable) {
             error('first page of thread $tid does not name its author');
           }

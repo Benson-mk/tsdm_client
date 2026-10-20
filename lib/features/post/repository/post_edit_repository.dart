@@ -7,6 +7,8 @@ import 'package:tsdm_client/features/editor/utils/mention.dart';
 import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post/utils/draft_marker.dart';
 import 'package:tsdm_client/features/post/utils/submission_result.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -48,8 +50,27 @@ final class PostEditRepository with LoggerMixin {
   bool belongsTo(int? uid) => isCurrent && uid == _ownerUid;
 
   /// A successful POST may instead enter moderation; verify the draft marker through GET.
-  Future<bool> confirmsDraft(String url) async =>
-      (await fetchData(url).run()).match((_) => false, isDraftThreadDocument);
+  ///
+  /// The thread page [url] is asked in the JSON mode of the forum's app API. A structured answer (plugin 2.1.0,
+  /// `schema: 3`) tells the account it was served to and whether the thread is a draft (`thread.draft`); any other
+  /// answer is the page, read as before: the account from its `discuz_uid`, the draft from the marker beside the
+  /// title ([isDraftThreadDocument]).
+  Future<bool> confirmsDraft(String url) async {
+    if (!isCurrent) return false;
+    final result = await _get(withTsdmAppJson(url));
+    if (!isCurrent) return false;
+    return result.match((_) => false, (response) {
+      if (response.statusCode != 200) return false;
+      final api = threadApiAnswerOf(response.data);
+      if (api != null) {
+        return threadApiViewerUid(api) == _ownerUid && threadPageFromApi(api, 1).isDraft;
+      }
+      if (tsdmAppAnswerWithoutPage(response.data)) return false;
+      final document = tsdmAppPageDocument(response.data);
+      if (parseLoggedUidFromDocument(document) != _ownerUid) return false;
+      return isDraftThreadDocument(document);
+    });
+  }
 
   static const _postSubmitTarget = '$baseUrl/forum.php?mod=post&action=edit&extra=&editsubmit=yes';
 
