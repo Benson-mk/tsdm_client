@@ -28,6 +28,7 @@ import 'package:fpdart/fpdart.dart' hide State;
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
@@ -383,6 +384,52 @@ void main() {
     });
   });
 
+  group("E. the forum's message answered without its blocks", () {
+    test('tsdmAppPageDocument rebuilds the 提示信息 page the parsers read: text, prompt, class, account', () {
+      final denied = {'ok': 0, 'error': 'message', 'message': '抱歉，<b>您</b>没有权限', 'login': 0, 'uid': 35};
+      for (final data in [denied, jsonEncode(denied)]) {
+        final doc = tsdmAppPageDocument(data);
+        expect(doc.querySelector('div#messagetext > p')?.text, '抱歉，<b>您</b>没有权限', reason: 'escaped, not html');
+        expect(doc.querySelector('div#messagetext')?.classes, contains('alert_error'));
+        expect(doc.querySelector('div#messagelogin'), isNull);
+        expect(parseLoggedUidFromDocument(doc), 35, reason: 'the discuz_uid of the 2.2.x head');
+        expect(doc.querySelector('div#wp.wp div#ct'), isNotNull);
+      }
+      final login = {'ok': 0, 'error': 'message', 'message': '您需要先登录才能继续本操作', 'login': 1, 'uid': 0};
+      final doc = tsdmAppPageDocument(login);
+      expect(doc.querySelector('div#messagetext > p')?.text, '您需要先登录才能继续本操作');
+      expect(doc.querySelector('div#messagetext')?.classes, contains('alert_info'));
+      expect(doc.querySelector('div#messagelogin'), isNotNull);
+      expect(parseLoggedUidFromDocument(doc), isNull, reason: 'a guest');
+      expect(doc.querySelector('form#lsform'), isNull, reason: 'the 2.2.x blocks had no header either');
+      // Only the message: a structured answer without blocks is no page to rebuild, an answer with blocks is its blocks.
+      expect(tsdmAppPageDocument(_json('thread_v3_plain_guest.json')).querySelector('div#messagetext'), isNull);
+      expect(tsdmAppPageDocument({...login, 'document': '<p id="given">x</p>'}).querySelector('p#given'), isNotNull);
+      expect(tsdmAppPageHtml(login), contains('messagelogin'));
+    });
+
+    test('fetchThread: the message as the page, a lean structured answer a failure, its blocks when given', () async {
+      final lean = _Forum.always(_api(_raw('thread_v3_plain_guest.json')));
+      _use(lean);
+      final structured = await ThreadRepository().fetchThread(tid: '9199345').run();
+      expect(structured.getLeft().toNullable(), isA<HttpRequestFailedException>(), reason: 'nothing to parse');
+      expect(lean.requests, hasLength(1), reason: 'not the challenge: no web page asked');
+      await getIt.unregister<NetClientProvider>();
+
+      _use(_Forum.always(_api(_raw('thread_v3_plain.json'))));
+      final withBlocks = _right(await ThreadRepository().fetchThread(tid: '9199345').run());
+      expect(withBlocks.querySelector('div#wp'), isNotNull, reason: 'the garbage document the fixture keeps');
+      await getIt.unregister<NetClientProvider>();
+
+      final denied = _Forum.always(_api(_raw('thread_v3_denied_guest.json')));
+      _use(denied);
+      final message = _right(await ThreadRepository().fetchThread(tid: '9199345').run());
+      expect(message.querySelector('div#messagelogin'), isNotNull);
+      expect(message.querySelector('div#messagetext > p')?.text, isNotEmpty);
+      expect(denied.requests, hasLength(1));
+    });
+  });
+
   group('I. the plugin version', () {
     test('expected version, and the order of versions', () {
       expect(expectedTsdmAppVersion, '2.3.0');
@@ -412,6 +459,23 @@ void main() {
       expect(TsdmAppPluginInfo.fromAnswer({'ok': 1, 'version': 7}), isNull);
       expect(info, TsdmAppPluginInfo.fromAnswer(_status('2.3.0', nodoc: true)));
       expect(info, isNot(older));
+    });
+
+    test('what a same-version answer leaves out stays known: api, nodoc', () async {
+      final answers = <String, Object>{};
+      final client = _client(_Forum((o) => _api(answers[o.uri.queryParameters['action']]!)));
+      answers['status'] = _status('2.3.0', nodoc: true);
+      expect(await TsdmAppApi.ask(client, 'status'), isNotNull);
+      answers['notify'] = {'ok': 1, 'version': '2.3.0', 'time': 1792000000, 'uid': 35, 'notices': <Object?>[]};
+      expect(await TsdmAppApi.ask(client, 'notify', {'since': '0'}), isNotNull);
+      expect(TsdmAppApi.pluginInfo.value, const TsdmAppPluginInfo(version: '2.3.0', api: 1, nodoc: true));
+      // Another version: what it leaves out is not known of it.
+      answers['notify'] = {'ok': 1, 'version': '2.4.0', 'time': 1792000000, 'uid': 35, 'notices': <Object?>[]};
+      expect(await TsdmAppApi.ask(client, 'notify', {'since': '0'}), isNotNull);
+      expect(TsdmAppApi.pluginInfo.value, const TsdmAppPluginInfo(version: '2.4.0', api: null, nodoc: false));
+      answers['status'] = {..._status('2.4.0', nodoc: true), 'api': 2};
+      expect(await TsdmAppApi.ask(client, 'status'), isNotNull);
+      expect(TsdmAppApi.pluginInfo.value, const TsdmAppPluginInfo(version: '2.4.0', api: 2, nodoc: true));
     });
 
     test(

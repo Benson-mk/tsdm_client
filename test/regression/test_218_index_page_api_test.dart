@@ -371,7 +371,9 @@ void main() {
         'forum.php?gid=5',
       ]);
       expect(groups.where((e) => e.isFavorites), isEmpty);
-      expect(groups.every((e) => e.moderators.isEmpty), isTrue, reason: 'the answer names no group moderators');
+      // The 分区版主 row (GitHub #22): the names the answer lists (plugin 2.4.0), none for the other groups.
+      expect(groups.first.moderators, ['ag_admin', 'ag_mod']);
+      expect(groups.skip(1).every((e) => e.moderators.isEmpty), isTrue);
       expect(groups.map((e) => e.forumList.length), [3, 2, 3, 3, 3]);
 
       final checkin = groups[0].forumList[1];
@@ -446,6 +448,23 @@ void main() {
       expect(groups.where((e) => e.isFavorites), isEmpty);
     });
 
+    test('the moderators of a plugin before 2.4.0 (no field), and a field that is not a list of names', () {
+      final json = _member({'favorite_forums': <Object?>[]});
+      final categories = (json['categories'] as List).cast<Map<String, dynamic>>();
+      categories[0].remove('moderators');
+      categories[1]['moderators'] = [
+        '',
+        7,
+        {'name': 'x'},
+        'ag_mod',
+      ];
+      categories[2]['moderators'] = null;
+      final groups = forumGroupsFromApi(json);
+      expect(groups[0].moderators, isEmpty);
+      expect(groups[1].moderators, ['ag_mod']);
+      expect(groups[2].moderators, isEmpty);
+    });
+
     test('the subforums the forum lists', () {
       final json = _json('index_v5_member.json');
       final categories = (json['categories'] as List).cast<Map<String, dynamic>>();
@@ -462,6 +481,18 @@ void main() {
         ('子版一', '$baseUrl/forum.php?mod=forumdisplay&fid=101'),
         ('子版二', '$baseUrl/forum.php?mod=forumdisplay&fid=102'),
       ]);
+
+      // A favorite subforum: listed in the panel by its id and name, as the page lists it.
+      json['favorite_forums'] = [102, 6];
+      final panel = forumGroupsFromApi(json).first;
+      expect(panel.isFavorites, isTrue);
+      expect(panel.forumList.map((e) => e.forumID), [102, 6]);
+      final sub = panel.forumList.first;
+      expect(sub.name, '子版二');
+      expect(sub.url, '$baseUrl/forum.php?mod=forumdisplay&fid=102');
+      expect(sub.threadCount, 0);
+      expect(sub.latestThreadUrl, isNull);
+      expect(sub.isExpanded, isFalse);
     });
   });
 
@@ -799,6 +830,10 @@ void main() {
       expect(ForumHomeWebPage(without).dailyVisitUri, isNull);
       expect(ForumHomeWebPage(withScript).dailyVisitUri?.queryParameters['rand'], '9', reason: 'scanned as before');
       expect(ForumHomeWebPage(withScript, checknewpm: own).dailyVisitUri?.queryParameters['rand'], '7');
+      // Named but not the forum's own: the scripts of the page are scanned as before.
+      const bad = 'https://evil.example/home.php?mod=spacecp&ac=pm&op=checknewpm';
+      expect(ForumHomeWebPage(withScript, checknewpm: bad).dailyVisitUri?.queryParameters['rand'], '9');
+      expect(ForumHomeWebPage(without, checknewpm: bad).dailyVisitUri, isNull);
     });
 
     test(
@@ -834,6 +869,11 @@ void main() {
       final end = html.indexOf('</table>', html.indexOf('id="Kahrpba_show"')) + '</table>'.length;
       final table = html.substring(start, end);
       final fromPage = HomepageBloc.parsePinnedThreadGroups(parseHtmlDocument(html));
+      expect(
+        parsePinnedThreadGroupsFromDocument(parseHtmlDocument(html)).map((e) => e.title),
+        fromPage.map((e) => e.title),
+        reason: 'the page parser lives with the API helpers now, the bloc forwards to it',
+      );
       expect(fromPage.map((e) => e.title), _tabs, reason: 'the fixture holds every tab');
 
       final groups = pinnedThreadGroupsFromApi(_member({'blocks': <Object?>[], 'blocks_html': table}));

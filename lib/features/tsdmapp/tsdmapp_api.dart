@@ -64,15 +64,21 @@ abstract final class TsdmAppApi {
 
   /// Keep what an answer [json] of an action tells about the plugin ([pluginInfo]): an answer without a `version`
   /// (an older action's, or a message such as `login`) tells nothing and changes nothing. Only `status` names
-  /// `nodoc`: what it said of the version holds through the `notify` answers of the same version.
+  /// `nodoc`, and not every answer names `api`: what is known of the version holds through the answers of the same
+  /// version that leave them out.
   static void _notePluginInfo(Map<String, dynamic> json) {
     var info = TsdmAppPluginInfo.fromAnswer(json);
     if (info == null) {
       return;
     }
     final known = pluginInfo.value;
-    if (!json.containsKey('nodoc') && known != null && known.nodoc && known.version == info.version) {
-      info = TsdmAppPluginInfo(version: info.version, api: info.api, nodoc: true);
+    if (known != null && known.version == info.version) {
+      // The same plugin: what an answer does not name (`api`, `nodoc`) stays as known.
+      info = TsdmAppPluginInfo(
+        version: info.version,
+        api: info.api ?? known.api,
+        nodoc: json.containsKey('nodoc') ? info.nodoc : known.nodoc,
+      );
     }
     if (info != known) {
       pluginInfo.value = info;
@@ -396,11 +402,13 @@ const tsdmAppJsonQuery = 'tsdmapp=json';
 /// on every page asked in the JSON mode.
 ///
 /// A page the plugin answers as structured fields (`schema`: the forum page, the thread page, the profile, the
-/// homepage) and the forum's own message (`error: message`) then come without the `document` and `head` blocks, which
-/// the app never reads of such an answer; the pages the app still parses from their blocks (the private messages,
-/// the favorites, the search…) and the `unknown` answers (the antitheft challenge, the thread cache a guest is
-/// served) keep them. An older plugin ignores the parameter and answers the blocks as before. See
-/// [tsdmAppAnswerHasStructuredPage] for what the app takes for a page without them.
+/// homepage) then comes without the `document` and `head` blocks, which the app never reads of such an answer. The
+/// forum's own message (`error: message`, with `message`, `login` and `uid`) comes without them too, whatever the
+/// page: the pages built from fields read the message from them, and for the pages the app still parses from their
+/// blocks (the private messages, the favorites, the search…) [tsdmAppPageDocument] rebuilds the message page the
+/// forum would have printed, so their parsers read it as before. The `unknown` answers (the antitheft challenge,
+/// the thread cache a guest is served) keep their blocks. An older plugin ignores the parameter and answers the
+/// blocks as before. See [tsdmAppAnswerHasStructuredPage] for what the app takes for a page without them.
 const tsdmAppNodocQuery = 'nodoc=1';
 
 /// The query of the JSON mode as parameters ([tsdmAppJsonQuery] and [tsdmAppNodocQuery]), for a page whose url is
@@ -424,6 +432,10 @@ String withTsdmAppJson(String url) {
 
 /// The document to parse from a forum page answer [data]: the web page itself, or the page rebuilt from the blocks of
 /// a JSON answer. A thread answer also gets the `<link>` to the thread the thread parser reads the tid from.
+///
+/// The forum's message answered without its blocks (`error: message` asked with [tsdmAppNodocQuery], plugin 2.3.0)
+/// is rebuilt as the 提示信息 page the forum prints and the 2.2.x plugin cut ([tsdmAppMessageDocument]): the parsers
+/// that read the message and the login prompt from the page keep reading them.
 uh.Document tsdmAppPageDocument(Object? data) {
   final Object? json;
   if (data is Map<String, dynamic>) {
@@ -437,6 +449,9 @@ uh.Document tsdmAppPageDocument(Object? data) {
   } else {
     return parseHtmlDocument(data is String ? data : '');
   }
+  if (json is Map<String, dynamic> && json['document'] is! String && json['ok'] == 0 && json['error'] == 'message') {
+    return tsdmAppMessageDocument(json);
+  }
   if (json is! Map<String, dynamic> || json['document'] is! String) {
     return parseHtmlDocument(data is String ? data : '');
   }
@@ -448,6 +463,26 @@ uh.Document tsdmAppPageDocument(Object? data) {
   // The blocks sit inside `div#wp.wp` on the web page and some parsers match through it.
   return parseHtmlDocument(
     '<html><head>$head</head><body><div id="wp" class="wp">${json['document']}</div></body></html>',
+  );
+}
+
+/// The 提示信息 page of the forum's message answer [json] (`ok` 0, `error: message`), as the forum prints it and the
+/// 2.2.x plugin answered it in `document` and `head`: the message in `div#messagetext > p` (`alert_info` for the
+/// login prompt, `alert_error` for a refusal, as Discuz! classes them), `div#messagelogin` when the forum asks to log
+/// in (`login` 1), and the `discuz_uid` of the account the page was served to (`uid`, none for a guest) in the head
+/// script the 2.2.x `head` carried. The parsers of the pages read from their blocks tell the message, the prompt and
+/// the account from these, as they did.
+uh.Document tsdmAppMessageDocument(Map<dynamic, dynamic> json) {
+  final message = json['message'];
+  final login = json['login'] == 1;
+  final uid = json['uid'];
+  final head = uid is int && uid > 0 ? "<script type=\"text/javascript\">var discuz_uid = '$uid';</script>" : '';
+  final text = htmlEscape.convert(message is String ? message : '');
+  return parseHtmlDocument(
+    '<html><head>$head</head><body><div id="wp" class="wp"><div id="ct" class="wp cl"> '
+    '${login ? '<div id="messagelogin"></div> ' : ''}'
+    '<div id="messagetext" class="${login ? 'alert_info' : 'alert_error'}"><p>$text</p></div> '
+    '</div></div></body></html>',
   );
 }
 

@@ -91,6 +91,10 @@
      },
      "subforums": []
     }
+   ],
+   "moderators": [
+    "ag_admin",
+    "ag_mod"
    ]
   },
   {
@@ -125,7 +129,8 @@
      },
      "subforums": []
     }
-   ]
+   ],
+   "moderators": []
   },
   {
    "fid": 3,
@@ -182,7 +187,8 @@
      },
      "subforums": []
     }
-   ]
+   ],
+   "moderators": []
   },
   {
    "fid": 4,
@@ -239,7 +245,8 @@
      },
      "subforums": []
     }
-   ]
+   ],
+   "moderators": []
   },
   {
    "fid": 5,
@@ -296,7 +303,8 @@
      },
      "subforums": []
     }
-   ]
+   ],
+   "moderators": []
   }
  ],
  "favorite_forums": [

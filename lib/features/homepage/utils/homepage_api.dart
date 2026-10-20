@@ -1,5 +1,6 @@
+import 'package:collection/collection.dart';
+import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
-import 'package:tsdm_client/features/homepage/bloc/homepage_bloc.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
 import 'package:tsdm_client/features/red_packet/models/models.dart';
 import 'package:tsdm_client/features/red_packet/repository/daily_rewards_repository.dart' as rewards;
@@ -61,11 +62,9 @@ final class ForumHomeWebPage extends ForumHomePage {
   @override
   String? get formHash => parseFormHash(document);
 
+  /// The request the answer names when it is the forum's own, else the one the page's scripts hold, if any.
   @override
-  Uri? get dailyVisitUri => switch (checknewpm) {
-    final String source when source.isNotEmpty => rewards.dailyVisitUriOfSource(source),
-    _ => rewards.dailyVisitUri(document),
-  };
+  Uri? get dailyVisitUri => rewards.dailyVisitUriOfSource(checknewpm ?? '') ?? rewards.dailyVisitUri(document);
 }
 
 /// The structured answer of the forum's app API ([indexApiAnswerOf]): the homepage, or the forum's message.
@@ -103,7 +102,7 @@ final class ForumHomeApiPage extends ForumHomePage {
 /// with `login` telling a guest apart). Null when the answer has to be read from its `document` as before: a web
 /// page, another page's answer, an older plugin's answer (`type: index` without `schema`), a failed build.
 ///
-/// The page is then built by [homepageStateFromApi] and [forumGroupsFromApi]; the `document` of the answer, when
+/// The page is then built by `homepageStateFromApi` and [forumGroupsFromApi]; the `document` of the answer, when
 /// there is one, is never parsed.
 Map<String, dynamic>? indexApiAnswerOf(Object? data) {
   final json = tsdmAppAnswerJson(data);
@@ -149,80 +148,64 @@ DailyRedPacketConfig? dailyRedPacketFromApi(Map<String, dynamic> json) {
       : null;
 }
 
-/// Build the homepage state from a structured answer [json] of the forum's app API ([indexApiAnswerOf]), for the
-/// account [username] the app has (null to take the one the answer names) with the avatar [avatarUrl] the app has
-/// (null to take the one the answer names), as the web page is parsed with them.
-///
-/// The same [HomepageState] the web page gives, from the fields instead of the html:
-///
-/// * `stats` is the status bar (今日, 昨日, 帖子), `links` its links (我的帖子, 最新回复 when the guide is on);
-/// * `user` is the viewer: the account named by the app wins, as it always did; the avatar of the answer is taken
-///   when the app has none;
-/// * `blocks` are the `Kahrpba` tabs in the order the website shows them (the plugin reads the nav: no reordering
-///   here), `id` 5 the rank; a row without a link (a new member who did not report in) is left out as the page
-///   parser leaves it out, and a tab without any row is left out (GitHub #155);
-/// * `slides` is the swiper: every slide with a picture;
-/// * `unread` is the header's notice count and new message mark;
-/// * `red_packet` is today's daily red packet (none for a guest), `formhash` the form hash to claim it with.
-///
-/// The forum's message (`ok` 0): the login prompt (`login` 1) asks to log in; any other message, or the prompt for
-/// an app that has no account, is the failure the web page of it would be parsed as.
-HomepageState homepageStateFromApi(Map<String, dynamic> json, String? username, {String? avatarUrl}) {
-  if (json['ok'] != 1) {
-    return HomepageState(
-      status: username == null || json['login'] == 1 ? HomepageStatus.needLogin : HomepageStatus.failure,
-    );
-  }
-  final user = _map(json['user']);
-  final loggedUsername = username ?? _text(user['username']);
-  final avatar = _text(user['avatar']);
+/// The status bar of a structured homepage answer [json] (`stats`: 今日, 昨日, 帖子), as the web page's `p.chart.z`
+/// is read; empty when the answer has none (a message).
+ForumStatus forumStatusFromApi(Map<String, dynamic> json) {
   final stats = json['stats'];
-  final forumStatus = stats is Map<String, dynamic>
-      ? ForumStatus(
-          todayCount: '${_int(stats['todayposts'])}',
-          yesterdayCount: '${_int(stats['yesterdayposts'])}',
-          threadCount: '${_int(stats['posts'])}',
-        )
-      : const ForumStatus.empty();
+  if (stats is! Map<String, dynamic>) {
+    return const ForumStatus.empty();
+  }
+  return ForumStatus(
+    todayCount: '${_int(stats['todayposts'])}',
+    yesterdayCount: '${_int(stats['yesterdayposts'])}',
+    threadCount: '${_int(stats['posts'])}',
+  );
+}
+
+/// The viewer of a structured homepage answer [json] with the links of its status bar (`user`, `links`: 我的帖子,
+/// 最新回复 when the guide is on), as the web page's header and `div#chart > div.y` are read: the account [username]
+/// the app has wins, as it always did (the answer's name otherwise, empty for a guest); the avatar [avatarUrl] the
+/// app has wins, the answer's is taken when the app has none.
+LoggedUserInfo loggedUserInfoFromApi(Map<String, dynamic> json, {String? username, String? avatarUrl}) {
+  final user = _map(json['user']);
+  final avatar = _text(user['avatar']);
   final links = _list(json['links'])
       .map((e) => (_text(e['title']), _text(e['url'])))
       .where((e) => e.$2.isNotEmpty)
       .map((e) => (e.$1.isEmpty ? 'unknown' : e.$1, e.$2))
       .toList();
-  final unread = _map(json['unread']);
-  return HomepageState(
-    status: loggedUsername.isNotEmpty ? HomepageStatus.success : HomepageStatus.needLogin,
-    forumStatus: forumStatus,
-    loggedUserInfo: LoggedUserInfo(
-      username: loggedUsername,
-      relatedLinkPairList: links,
-      avatarUrl: avatarUrl ?? (avatar.isEmpty ? null : avatar),
-    ),
-    pinnedThreadGroupList: pinnedThreadGroupsFromApi(json),
-    swiperUrlList: _list(json['slides'])
-        .map((e) => SwiperUrl(coverUrl: _text(e['image']), linkUrl: _text(e['url'])))
-        .where((e) => e.coverUrl.isNotEmpty)
-        .toList(),
-    unreadNoticeCount: _int(unread['notice']),
-    hasUnreadMessage: _int(unread['pm']) > 0,
-    // As from the page: the forum only offers the packet to a member.
-    dailyRedPacket: loggedUsername.isEmpty ? null : dailyRedPacketFromApi(json),
-    formHash: ForumHomeApiPage(json).formHash,
+  return LoggedUserInfo(
+    username: username ?? _text(user['username']),
+    relatedLinkPairList: links,
+    avatarUrl: avatarUrl ?? (avatar.isEmpty ? null : avatar),
   );
 }
 
+/// The swiper of a structured homepage answer [json] (`slides`): every slide with a picture, in the order given.
+List<SwiperUrl> swiperUrlsFromApi(Map<String, dynamic> json) => _list(json['slides'])
+    .map((e) => SwiperUrl(coverUrl: _text(e['image']), linkUrl: _text(e['url'])))
+    .where((e) => e.coverUrl.isNotEmpty)
+    .toList();
+
+/// The unread notice count and the new message mark of a structured homepage answer [json] (`unread`), as the web
+/// page's header is read (`buildUnreadInfoStatus`).
+(int unreadNoticeCount, bool hasUnreadMessage) unreadInfoFromApi(Map<String, dynamic> json) {
+  final unread = _map(json['unread']);
+  return (_int(unread['notice']), _int(unread['pm']) > 0);
+}
+
 /// The `Kahrpba` tabs of a structured homepage answer [json] (`blocks`), in the order given, see
-/// [homepageStateFromApi]; empty for a guest (the forum prints the block to members only) and on a forum without
+/// `homepageStateFromApi`; empty for a guest (the forum prints the block to members only) and on a forum without
 /// the plugin.
 ///
 /// A `Kahrpba` template the plugin cannot read (an older one, on the production forum) gives no `blocks` and the
 /// whole `table#Kahrpba` as `blocks_html` instead: the tabs are then parsed from it as from the page
-/// ([HomepageBloc.parsePinnedThreadGroups]), with the reordering and the rank mark of that parser.
+/// ([parsePinnedThreadGroupsFromDocument]), with the reordering and the rank mark of that parser.
 List<PinnedThreadGroup> pinnedThreadGroupsFromApi(Map<String, dynamic> json) {
   final blocks = _list(json['blocks']);
   final blocksHtml = _text(json['blocks_html']);
   if (blocks.isEmpty && blocksHtml.trim().isNotEmpty) {
-    return HomepageBloc.parsePinnedThreadGroups(parseHtmlDocument('<html><body>$blocksHtml</body></html>'));
+    return parsePinnedThreadGroupsFromDocument(parseHtmlDocument('<html><body>$blocksHtml</body></html>'));
   }
   final groups = <PinnedThreadGroup>[];
   for (final block in blocks) {
@@ -259,19 +242,144 @@ PinnedThread? _pinnedThreadOf(Map<String, dynamic> row) {
   );
 }
 
+/// For the following structure, filter and combine thread and its author.
+///
+/// <div class="Kahrpba_threads">
+///   <a href="thread_url">
+///     thread_title
+///   </a>
+///   <a href="author_url">
+///     <em>author_name</em>
+///   </a>
+///
+/// Filter out thread_url, thread_title, author_url and author_name.
+///
+/// Where [element] is <div class="Kahrpba_threads"> node.
+PinnedThread? _pinnedThreadOfElement(uh.Element element) {
+  final allNode = element.querySelectorAll('a').toList();
+  // The "见习天使" (new members) tab lists one link per row, to the new member's space: "欢迎NAME加入~" (GitHub #155).
+  // The member is both the row and its "author", so the tile shows the avatar and name and opens the profile.
+  if (allNode.length == 1) {
+    final url = allNode.single.attributes['href'];
+    final text = allNode.single.firstEndDeepText()?.trim();
+    if (url == null || text == null || text.isEmpty || !url.contains('mod=space')) {
+      talker.info('skip pinned row with one link that is not a user space');
+      return null;
+    }
+    final name = RegExp('^欢迎(.+?)加入').firstMatch(text)?.group(1)?.trim();
+    return PinnedThread(
+      threadUrl: url,
+      threadTitle: text,
+      authorUrl: url,
+      authorName: name == null || name.isEmpty ? text : name,
+    );
+  }
+  // There should be two <a> in children.
+  if (allNode.length != 2) {
+    talker.info(
+      'skip build thread author pair: '
+      'node count is ${allNode.length}',
+    );
+    return null;
+  }
+
+  final threadUrl = allNode[0].attributes['href'];
+  if (threadUrl == null) {
+    talker.info('skip incomplete thread author pair: thread url not found');
+    return null;
+  }
+
+  final threadTitle = allNode[0].firstEndDeepText();
+  if (threadTitle == null) {
+    talker.info('skip incomplete thread author pair: thread title not found');
+    return null;
+  }
+
+  final authorUrl = allNode[1].attributes['href'];
+  if (authorUrl == null) {
+    talker.info('skip incomplete thread author pair: author url not found');
+    return null;
+  }
+
+  final authorName = allNode[1].firstEndDeepText();
+  if (authorName == null) {
+    talker.info('skip incomplete thread author pair: author name not found');
+    return null;
+  }
+
+  return PinnedThread(threadUrl: threadUrl, threadTitle: threadTitle, authorUrl: authorUrl, authorName: authorName);
+}
+
+/// The tabs of the homepage block of the `Kahrpba` plugin (最新活动, 见习天使, ..., 发帖排行) read from the web page
+/// [document] (or the `blocks_html` of a structured answer), in the order the website shows them; tabs without any
+/// row the app can show are left out (GitHub #155).
+List<PinnedThreadGroup> parsePinnedThreadGroupsFromDocument(uh.Document document) {
+  final pinnedThreadGroupList = <PinnedThreadGroup>[];
+  final navNameList = document
+      .querySelector('td#Kahrpba_nav')
+      ?.children
+      .map((e) => e.firstEndDeepText())
+      .whereType<String>()
+      .toList();
+  final navShowList = document
+      .querySelector('td#Kahrpba_show')
+      ?.children
+      .where((e) => e.id.startsWith('Kahrpba_c'))
+      .whereType<uh.Element>()
+      .toList();
+
+  if (navNameList != null && navShowList != null && navNameList.length == navShowList.length) {
+    if (navNameList.length >= 7) {
+      navNameList
+        ..swap(4, 6)
+        ..swap(5, 6);
+    }
+    final count = navNameList.length;
+    for (var i = 0; i < count; i++) {
+      final threadList = navShowList[i]
+          .querySelectorAll('div.Kahrpba_threads')
+          .map(_pinnedThreadOfElement)
+          .whereType<PinnedThread>()
+          .toList();
+      // Kept even when empty here so the reordering below still finds every tab where it expects it; empty
+      // groups are left out after that.
+      final group = PinnedThreadGroup(title: navNameList[i], threadList: threadList);
+      pinnedThreadGroupList.add(group);
+    }
+
+    // The sort on server side is not as displayed, fix the sort to keep the
+    // same with website appearance.
+    if (pinnedThreadGroupList.length >= 7) {
+      pinnedThreadGroupList
+        ..swap(4, 5)
+        ..swap(5, 6);
+      // The rank is the last tab once reordered; marked before empty tabs are left out and the indices move.
+      pinnedThreadGroupList[6] = pinnedThreadGroupList[6].copyWith(isRank: true);
+    }
+  }
+  // A tab without any row the app can show would be an empty card as tall as the full ones (GitHub #155).
+  pinnedThreadGroupList.removeWhere((e) => e.threadList.isEmpty);
+  return pinnedThreadGroupList;
+}
+
 /// The forum groups of a structured homepage answer [json] for the topics tab, as `buildGroupListFromDocument`
 /// reads them from the web page: the "我收藏的版块" panel first when the viewer has favorite forums
-/// (`favorite_forums`, each looked up among the forums of the categories; one that is not listed there, a subforum
-/// or a forum the viewer may not see, is left out of the panel but still seeded, see [favoriteForumIdsOf]), then
-/// every category (`forum.php?gid=`) with its forums ([Forum.fromApi]: the latest thread, the subforums the forum's
-/// setting lists). The answer names no group moderators.
+/// (`favorite_forums`, each looked up among the forums of the categories, or among their subforums, which the page
+/// lists by name only; one listed nowhere, a forum the viewer may not see, is left out of the panel but still
+/// seeded, see [favoriteForumIdsOf]), then every category (`forum.php?gid=`) with its forums ([Forum.fromApi]: the
+/// latest thread, the subforums the forum's setting lists) and its moderators (`moderators`, the names of the page's
+/// 分区版主 row, plugin 2.4.0; none before).
 List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
-  final groups = _list(json['categories'])
+  final categories = _list(json['categories']);
+  final groups = categories
       .map(
         (c) => ForumGroup(
           name: _text(c['name']),
           url: 'forum.php?gid=${_int(c['fid'])}',
           forumList: _list(c['forums']).map(Forum.fromApi).toList(),
+          moderators: c['moderators'] is List
+              ? (c['moderators'] as List).whereType<String>().where((e) => e.isNotEmpty).toList()
+              : const [],
         ),
       )
       .toList();
@@ -283,10 +391,18 @@ List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
     for (final g in groups)
       for (final f in g.forumList) f.forumID: f,
   };
-  final favorites = favoriteIds.map((fid) => forums[fid]).whereType<Forum>().toList();
+  // A subforum is listed under its forum by id and name only: the panel shows it with those, as the page does.
+  final subforums = {
+    for (final c in categories)
+      for (final f in _list(c['forums']))
+        for (final sub in _list(f['subforums']))
+          if (_int(sub['fid']) > 0) _int(sub['fid']): Forum.fromApi({'fid': _int(sub['fid']), 'name': sub['name']}),
+  };
+  final favorites = favoriteIds.map((fid) => forums[fid] ?? subforums[fid]).whereType<Forum>().toList();
   if (favorites.length != favoriteIds.length) {
     talker.info(
-      'favorite forums not among the categories left out of the panel: ${favoriteIds.where((e) => !forums.containsKey(e))}',
+      'favorite forums not among the categories left out of the panel: '
+      '${favoriteIds.where((e) => !forums.containsKey(e) && !subforums.containsKey(e))}',
     );
   }
   if (favorites.isEmpty) {
