@@ -442,9 +442,11 @@ Future<String> fetchTsdmAppPageHtml(NetClientProvider client, String url) async 
 
 /// The answer of the forum page [url] asked of [client] in the JSON mode ([withTsdmAppJson]), as the forum gave it:
 /// the web page, or the JSON answer (for the callers that read its structured fields when it has them, and its
-/// page otherwise, [tsdmAppPageHtml]). Throws as [fetchTsdmAppPageHtml] throws.
+/// page otherwise, [tsdmAppPageHtml]). An answer that carries the page as structured fields (`schema`) is a page
+/// whether or not it carries the blocks too; otherwise throws as [fetchTsdmAppPageHtml] throws.
 Future<Object?> fetchTsdmAppPageAnswer(NetClientProvider client, String url) async =>
     switch (await client.get(withTsdmAppJson(url)).run()) {
+      Right(:final value) when tsdmAppAnswerJson(value.data)?['schema'] is num => value.data,
       Right(:final value) when tsdmAppAnswerWithoutPage(value.data) => throw HttpRequestFailedException(
         value.statusCode,
       ),

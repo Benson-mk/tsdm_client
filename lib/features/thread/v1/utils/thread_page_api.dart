@@ -10,10 +10,11 @@ import 'package:tsdm_client/widgets/card/post_card/post_medal_menu_info.dart';
 import 'package:universal_html/parsing.dart';
 
 /// The structured thread page answer in [data]: a JSON answer of the forum's app API that carries every field the app
-/// reads (plugin 2.1.0, `schema` 3 or later), or the forum's own message of such a plugin (no permission, please log
-/// in, no such thread: `ok` 0, `error: message`, with `login` telling the two apart). Null when the answer has to be
-/// read from its `document` as before: a web page, an older plugin's answer (no `schema`, no `login`), the antitheft
-/// challenge or the thread cache a guest is served (`error: unknown`), a failed build.
+/// reads (plugin 2.1.0, `schema` 3 or later, `type: thread`: other pages have their own schemas), or the forum's own
+/// message of such a plugin (no permission, please log in, no such thread: `ok` 0, `error: message`, with `login`
+/// telling the two apart). Null when the answer has to be read from its `document` as before: a web page, an older
+/// plugin's answer (no `schema`, no `login`), the antitheft challenge or the thread cache a guest is served
+/// (`error: unknown`), a failed build.
 ///
 /// The page is then built by [threadPageFromApi]; the `document` of the answer, when there is one, is never parsed.
 Map<String, dynamic>? threadApiAnswerOf(Object? data) {
@@ -24,7 +25,7 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
   final schema = json['schema'];
   final structured = schema is num && schema >= 3;
   if (json['ok'] == 1) {
-    return structured ? json : null;
+    return structured && json['type'] == 'thread' ? json : null;
   }
   if (json['ok'] == 0 && json['error'] == 'message' && (structured || json['login'] is int)) {
     return json;

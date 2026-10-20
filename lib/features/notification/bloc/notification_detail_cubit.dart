@@ -53,32 +53,33 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
               emit(state.copyWith(status: NotificationDetailStatus.failed));
               return;
             }
+            // Parse thread id.
+            final tidMatch = _tidRe.firstMatch(url);
+            final tid = tidMatch?.namedGroup('ptid');
+            if (tid == null) {
+              error('failed to build reply page: tid not found');
+              emit(state.copyWith(status: NotificationDetailStatus.failed));
+              return;
+            }
             switch (v) {
               case NoticeThreadPageBuilt(:final page):
-                _fromBuiltPage(url, page, pid);
+                _fromBuiltPage(page, tid: tid, pid: pid);
               case NoticeThreadPageDocument(:final document, :final page):
-                _fromDocument(url, document, page, pid);
+                _fromDocument(document, page, tid: tid, pid: pid);
             }
           },
         )
         .run();
   }
 
-  /// The floor [pid] of the page [page] built from the structured answer.
+  /// The floor [pid] of the page [page] built from the structured answer, of the thread [tid] the notice points to.
   ///
-  /// The report target of the floor is only kept when the page is the thread the notice points to (#127), as the
-  /// document path keeps the report links; the reply form is the page's, none when the forum printed none.
-  void _fromBuiltPage(String url, ThreadPageInfo page, String pid) {
+  /// The report target of the floor is only kept when the page is that thread (#127), as the document path keeps the
+  /// report links; the reply form is the page's, none when the forum printed none.
+  void _fromBuiltPage(ThreadPageInfo page, {required String tid, required String pid}) {
     final post = page.postList.firstWhereOrNull((e) => e.postID == pid);
     if (post == null) {
       error('failed to build reply page: post not found for pid $pid');
-      emit(state.copyWith(status: NotificationDetailStatus.failed));
-      return;
-    }
-    final tidMatch = _tidRe.firstMatch(url);
-    final tid = tidMatch?.namedGroup('ptid');
-    if (tid == null) {
-      error('failed to build reply page: tid not found');
       emit(state.copyWith(status: NotificationDetailStatus.failed));
       return;
     }
@@ -99,22 +100,14 @@ class NotificationDetailCubit extends Cubit<NotificationDetailState> with Logger
     );
   }
 
-  /// The floor [pid] of the thread page [document], parsed as the web page; [page] is the page number the forum
-  /// redirected to.
-  void _fromDocument(String url, uh.Document document, String? page, String pid) {
+  /// The floor [pid] of the thread page [document], parsed as the web page, of the thread [tid] the notice points
+  /// to; [page] is the page number the forum redirected to.
+  void _fromDocument(uh.Document document, String? page, {required String tid, required String pid}) {
     final threadClosed = isThreadClosedForReply(document);
 
     final postNode = document.querySelector('div#post_$pid');
     if (postNode == null) {
       error('failed to build reply page: post node not found for pid $pid');
-      emit(state.copyWith(status: NotificationDetailStatus.failed));
-      return;
-    }
-    // Parse thread id.
-    final tidMatch = _tidRe.firstMatch(url);
-    final tid = tidMatch?.namedGroup('ptid');
-    if (tid == null) {
-      error('failed to build reply page: tid not found');
       emit(state.copyWith(status: NotificationDetailStatus.failed));
       return;
     }

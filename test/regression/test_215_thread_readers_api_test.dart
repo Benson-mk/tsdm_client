@@ -88,7 +88,8 @@ Map<String, dynamic> _plain({
   return json;
 }
 
-/// The forum's message of plugin 2.1.0 to a member without permission (`login` 0): the thread is not shown.
+/// The forum's message of plugin 2.1.0 to a member without permission (`login` 0): the thread is not shown. The
+/// message names no account; plugin 2.2.0 adds the `uid` it was served to ([_messageTo]).
 const Map<String, Object?> _memberMessage = {
   'ok': 0,
   'error': 'message',
@@ -96,6 +97,9 @@ const Map<String, Object?> _memberMessage = {
   'login': 0,
   'schema': 3,
 };
+
+/// The forum's message of plugin 2.2.0, served to [uid] (0: a guest, with the login prompt).
+Map<String, Object?> _messageTo(int uid) => {..._memberMessage, 'login': uid > 0 ? 0 : 1, 'uid': uid};
 
 /// The floor [p] with its `can` fields changed by [can].
 Map<String, dynamic> _can(Map<String, dynamic> p, Map<String, int> can) => {
@@ -216,6 +220,15 @@ void main() {
     getIt.allowReassignment = false;
   });
   setUp(TsdmAppApi.reset);
+
+  group('threadApiAnswerOf', () {
+    test('a thread answer only: the page of another type with its own schema is not one', () {
+      expect(threadApiAnswerOf(_plain()), isNotNull);
+      expect(threadApiAnswerOf({..._plain(), 'type': 'profile', 'schema': 4}), isNull);
+      expect(threadApiAnswerOf({..._plain(), 'type': 'forum', 'schema': 2}), isNull);
+      expect(threadApiAnswerOf(_messageTo(_plainUid)), isNotNull, reason: 'the message, whatever its type');
+    });
+  });
 
   group('threadApiViewerUid', () {
     test('the account the answer was served to, none for a guest or the message', () {
@@ -603,35 +616,67 @@ void main() {
     });
 
     test('built: the answer dio decoded is carried as its JSON text by the network transport', () async {
-      final forum = _Forum.always(_api(_raw('thread_v3_plain.json')));
-      final repo = PostReportRepository.network(_client(forum));
-      // The floor passes on the thread page; the form is then asked, which this forum answers with the thread page
-      // again (not a form: the failure is the form's, never the floor's).
-      try {
-        await repo.prepare(target, uid: _plainUid);
-      } on PostReportFailure catch (e) {
-        expect(e.problem, isNot(PostReportProblem.accountChanged));
-        expect(e.problem, isNot(PostReportProblem.noPermission));
-        expect(e.problem, isNot(PostReportProblem.notLoggedIn));
-      }
-      expect(forum.requests.first.uri.queryParameters, containsPair('tsdmapp', 'json'));
+      // The thread page as the plugin's JSON, the report dialog as the forum's xml fragment.
+      final forum = _Forum(
+        (options) => options.uri.path == '/misc.php' ? _html(form) : _api(_raw('thread_v3_plain.json')),
+      );
+      final prepared = await PostReportRepository.network(_client(forum)).prepare(target, uid: _plainUid);
+      expect(prepared.target, target);
       expect(forum.requests, hasLength(2));
+      expect(forum.requests.first.uri.queryParameters, containsPair('tsdmapp', 'json'));
+      expect(forum.requests.first.uri.queryParameters, containsPair('pid', '$_plainReplyPid'));
       expect(forum.requests.last.uri.path, '/misc.php');
+      // Another account on the same forum: the decoded answer is still read, the uid compared.
+      expect(
+        () => PostReportRepository.network(_client(forum)).prepare(target, uid: 36),
+        throwsA(isA<PostReportFailure>().having((e) => e.problem, 'problem', PostReportProblem.accountChanged)),
+      );
     });
 
     test('built: another account, a guest, the login prompt', () async {
       expect(await fails(jsonEncode(_plain(uid: 36))), PostReportProblem.accountChanged);
       expect(await fails(jsonEncode(_plain(uid: 0))), PostReportProblem.notLoggedIn);
-      expect(await fails(_raw('thread_v3_denied_guest.json')), PostReportProblem.notLoggedIn);
+      expect(await fails(jsonEncode(_messageTo(0))), PostReportProblem.notLoggedIn, reason: 'plugin 2.2.0');
     });
 
-    test('built: the forum message, a floor gone, the report not offered, another thread or forum', () async {
-      expect(await fails(jsonEncode(_memberMessage)), PostReportProblem.forumMessage);
+    test('built: the forum message names its account (plugin 2.2.0): a change first, then the message', () async {
+      expect(await fails(jsonEncode(_messageTo(36))), PostReportProblem.accountChanged);
+      expect(await fails(jsonEncode(_messageTo(_plainUid))), PostReportProblem.forumMessage);
       try {
-        await repository(jsonEncode(_memberMessage)).$1.prepare(target, uid: _plainUid);
+        await repository(jsonEncode(_messageTo(_plainUid))).$1.prepare(target, uid: _plainUid);
+        fail('prepared');
       } on PostReportFailure catch (e) {
+        expect(e.problem, PostReportProblem.forumMessage);
         expect(e.message, _memberMessage['message']);
       }
+    });
+
+    test('the forum message of plugin 2.1.0 names no account: its document is read as before', () async {
+      String withDocument(Map<String, Object?> message, String document) =>
+          jsonEncode({...message, 'document': document});
+      const text = '<div id="messagetext" class="alert_error"><p>抱歉，本帖要求阅读权限高于 20 才能浏览</p></div>';
+      // The member's message: the account from discuz_uid, then the message.
+      expect(
+        await fails(withDocument(_memberMessage, "<script>var discuz_uid = '$_plainUid';</script>$text")),
+        PostReportProblem.forumMessage,
+      );
+      expect(
+        await fails(withDocument(_memberMessage, "<script>var discuz_uid = '36';</script>$text")),
+        PostReportProblem.accountChanged,
+      );
+      // The login prompt of a guest.
+      final guest = {..._memberMessage, 'login': 1};
+      expect(
+        await fails(withDocument(guest, '<div id="messagelogin">$text</div>')),
+        PostReportProblem.notLoggedIn,
+      );
+      // Without its document (the fixtures dropped it) nothing tells the account: not understood, as a page without
+      // one is.
+      expect(await fails(_raw('thread_v3_denied_guest.json')), PostReportProblem.unsupported);
+      expect(await fails(jsonEncode(_memberMessage)), PostReportProblem.unsupported);
+    });
+
+    test('built: a floor gone, the report not offered, another thread or forum', () async {
       expect(
         await fails(jsonEncode(_plain(posts: (p) => {...p, 'pid': p['pid'] == _plainReplyPid ? 1 : p['pid']}))),
         PostReportProblem.noPermission,
@@ -734,6 +779,13 @@ void main() {
       _use(_Forum.always(_api(_plain(thread: {'draft': 1}, posts: editable))));
       final target = await DraftRepository.network(getIt.get<NetClientProvider>()).resolve(entry, _plainUid);
       expect(target.pid, '$_plainFirstPid');
+      // A structured answer is a page without the blocks of the page too (the fixtures dropped them).
+      final noDocument = Map<String, dynamic>.from(_plain(thread: {'draft': 1}, posts: editable))..remove('document');
+      _use(_Forum.always(_apiAsIs(jsonEncode(noDocument))));
+      expect(
+        (await DraftRepository.network(getIt.get<NetClientProvider>()).resolve(entry, _plainUid)).pid,
+        '$_plainFirstPid',
+      );
       _use(_Forum.always(_apiAsIs('{"ok":0,"error":"internal"}')));
       expect(
         () => DraftRepository.network(getIt.get<NetClientProvider>()).resolve(entry, _plainUid),

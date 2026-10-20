@@ -130,17 +130,23 @@ DraftEditTarget draftTargetOfPage(ThreadPageInfo page, DraftEntry entry) {
   if (page.tid != null && page.tid != entry.tid) throw const FormatException('Draft thread changed');
   final postId = firstPost.postID;
   if (!_positive(postId)) throw const FormatException('Draft post missing');
-  final uri = draftForumUri(firstPost.editUrl);
+  if (_isDraftEditLink(firstPost.editUrl, entry, postId)) {
+    return (fid: entry.fid, tid: entry.tid, pid: postId);
+  }
+  throw const FormatException('Draft edit link unavailable');
+}
+
+/// Whether [href] is the forum's edit link of the draft's first post [postId]: `forum.php?mod=post&action=edit` naming
+/// the draft's forum and thread ([entry]) and the post.
+bool _isDraftEditLink(String? href, DraftEntry entry, String postId) {
+  final uri = draftForumUri(href);
   final q = uri?.queryParameters;
-  if (uri?.path == '/forum.php' &&
+  return uri?.path == '/forum.php' &&
       q?['mod'] == 'post' &&
       q?['action'] == 'edit' &&
       q?['tid'] == entry.tid &&
       q?['fid'] == entry.fid &&
-      q?['pid'] == postId) {
-    return (fid: entry.fid, tid: entry.tid, pid: postId);
-  }
-  throw const FormatException('Draft edit link unavailable');
+      q?['pid'] == postId;
 }
 
 /// Recheck draft state before entering the editor; a published/deleted draft is not editable here.
@@ -155,15 +161,8 @@ DraftEditTarget parseDraftTarget(uh.Document document, DraftEntry entry) {
   final postId = firstPost?.id.replaceFirst('post_', '');
   if (!_positive(postId)) throw const FormatException('Draft post missing');
   for (final link in firstPost!.querySelectorAll('a[href]')) {
-    final uri = draftForumUri(link.attributes['href']);
-    final q = uri?.queryParameters;
-    if (uri?.path == '/forum.php' &&
-        q?['mod'] == 'post' &&
-        q?['action'] == 'edit' &&
-        q?['tid'] == entry.tid &&
-        q?['fid'] == entry.fid &&
-        q?['pid'] == postId) {
-      return (fid: entry.fid, tid: entry.tid, pid: postId!);
+    if (_isDraftEditLink(link.attributes['href'], entry, postId!)) {
+      return (fid: entry.fid, tid: entry.tid, pid: postId);
     }
   }
   throw const FormatException('Draft edit link unavailable');

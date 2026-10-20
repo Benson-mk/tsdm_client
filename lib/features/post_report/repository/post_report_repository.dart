@@ -116,11 +116,13 @@ class PostReportRepository with LoggerMixin {
   /// Check on a fresh full thread page that [uid] is still served and still offered the report of [target].
   ///
   /// The page is asked in the JSON mode of the forum's app API. A structured answer (plugin 2.1.0, `schema: 3`) is
-  /// checked on its fields ([_verifyFloorBuilt]); any other answer is the page, read as before.
+  /// checked on its fields ([_verifyFloorBuilt]) when it names the account it was served to (`uid`: every thread
+  /// answer, and the forum's message since plugin 2.2.0); any other answer is the page, read as before. The message of
+  /// plugin 2.1.0 names no account, and the account is what tells a change from a refusal: its document is read.
   Future<void> _verifyFloor(PostReportTarget target, int uid) async {
     final raw = await _read(Uri.parse(withTsdmAppJson(target.floorUrl.toString())), ajax: false);
     final api = threadApiAnswerOf(raw);
-    if (api != null) {
+    if (api != null && api.containsKey('uid')) {
       _verifyFloorBuilt(target, uid, api);
       return;
     }
@@ -156,29 +158,26 @@ class PostReportRepository with LoggerMixin {
     }
   }
 
-  /// [_verifyFloor] on the page built from the structured answer [api]: served to [uid] (the login prompt of a guest
-  /// is not logged in, another account is a change), with the floor among its posts (the forum's message when it
-  /// is not: no such thread, no permission), of the thread and forum of [target], and still offering the same report
-  /// ([Post.fromApi] builds the target from `can.report`).
+  /// [_verifyFloor] on the page built from the structured answer [api], which names the account it was served to:
+  /// a guest (the login prompt, or the thread served to one) is not logged in, another account is a change, as the
+  /// page's `discuz_uid` tells first on the document path; then the forum's message (no such thread, no permission),
+  /// the floor among the posts, the thread and forum of [target], and the same report still offered ([Post.fromApi]
+  /// builds the target from `can.report`).
   void _verifyFloorBuilt(PostReportTarget target, int uid, Map<String, dynamic> api) {
-    final page = threadPageFromApi(api, 1);
-    if (page.needLogin) {
-      throw const PostReportFailure(PostReportProblem.notLoggedIn);
-    }
-    if (!page.havePermission) {
-      // The forum's message names no account: no such thread, no permission to read it.
-      final message = page.permissionDeniedMessage?.innerText.trim();
-      if (message != null && message.isNotEmpty) {
-        throw PostReportFailure(PostReportProblem.forumMessage, message: plainForumText(message));
-      }
-      throw const PostReportFailure(PostReportProblem.noPermission);
-    }
     final pageUid = threadApiViewerUid(api);
     if (pageUid == null) {
       throw const PostReportFailure(PostReportProblem.notLoggedIn);
     }
     if (pageUid != uid) {
       throw const PostReportFailure(PostReportProblem.accountChanged);
+    }
+    final page = threadPageFromApi(api, 1);
+    if (!page.havePermission) {
+      final message = page.permissionDeniedMessage?.innerText.trim();
+      if (message != null && message.isNotEmpty) {
+        throw PostReportFailure(PostReportProblem.forumMessage, message: plainForumText(message));
+      }
+      throw const PostReportFailure(PostReportProblem.noPermission);
     }
     final post = page.postList.firstWhereOrNull((e) => e.postID == '${target.pid}');
     if (post == null) {
