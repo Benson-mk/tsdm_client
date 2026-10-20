@@ -19,6 +19,7 @@ every request so the tests can pin them:
 - `thread.views` → `100`
 - `activity.lastvisit` → `1700000000`, `activity.lastactivity` → `1700000060`, `checkin.last` → `1700000000` (profile page)
 - `searchid` → `1`; the top-level `checknewpm` url's `rand` → `1700000000`; the fixture-made draft thread → tid `9199982`, subject suffix `00000`, times `1700000000`
+- favorites: the fixture-made `favid`s are renumbered from `251` in order; friends: `online`/`lastactivity` → `0`
 - `stats.todayposts` → `100`, `stats.yesterdayposts` → `50`, every forum's `todayposts` → `0`, `red_packet.dateflag` → `20261001` (index page: these change every day)
 - `searchid` → `1`, the `rand` of `checknewpm` → `1700000000` (search results: the forum numbers every search)
 - the 2.5.0 groups (the favorites, the friends, the conversation, the credit log) pin `formhash` and the `rand` of

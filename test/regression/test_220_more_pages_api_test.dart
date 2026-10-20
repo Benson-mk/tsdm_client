@@ -405,7 +405,11 @@ void main() {
       expect(first.groupName, '字幕組', reason: 'the user group, not the recent note');
       expect(first.groupColor, isNull, reason: 'no color set for the group');
       expect(first.nameColor, isNull);
-      expect(first.groupIconUrl, isNull, reason: 'plugin 2.5.0 names no group icon');
+      expect(
+        first.groupIconUrl,
+        'https://www.tsdm39.com/data/attachment/common/tsdmapp_fixture_group.png',
+        reason: 'plugin 2.6.0 names the group icon; the fixture tool gives that group one',
+      );
       expect(first.credits, isNull, reason: 'the own list prints no credits');
       expect(page.items.map((e) => e.uid).take(3), ['37', '38', '39']);
       expect(page.items.map((e) => e.uid), contains('64'));
@@ -680,7 +684,7 @@ void main() {
             ...json['filters'] as Map<String, dynamic>,
             'optype': [
               {'value': '', 'title': '请选择'},
-              ...optype,
+              ...optype.skip(1), // the real answer already starts with the empty choice
             ],
           },
         });
