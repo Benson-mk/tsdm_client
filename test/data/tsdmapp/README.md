@@ -14,6 +14,7 @@ every request so the tests can pin them:
 - `reply.posttime` → `1700000000`
 - `thread.views` → `100`
 - `activity.lastvisit` → `1700000000`, `activity.lastactivity` → `1700000060`, `checkin.last` → `1700000000` (profile page)
+- `searchid` → `1`; the top-level `checknewpm` url's `rand` → `1700000000`; the fixture-made draft thread → tid `9199982`, subject suffix `00000`, times `1700000000`
 - `stats.todayposts` → `100`, `stats.yesterdayposts` → `50`, every forum's `todayposts` → `0`, `red_packet.dateflag` → `20261001` (index page: these change every day)
 - `searchid` → `1`, the `rand` of `checknewpm` → `1700000000` (search results: the forum numbers every search)
 

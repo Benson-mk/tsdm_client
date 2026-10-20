@@ -552,7 +552,7 @@ void main() {
 
       final draft = threads.first;
       expect(draft.threadID, '9199982');
-      expect(draft.title, 'tsdmapp 2.4.0 草稿 06680');
+      expect(draft.title, 'tsdmapp 2.4.0 草稿 00000');
       expect(draft.url, '$baseUrl/forum.php?mod=viewthread&tid=9199982');
       expect(draft.forumName, '📢 公告 & 新手報到');
       expect(draft.forumUrl, '$baseUrl/forum.php?mod=forumdisplay&fid=2');
@@ -561,7 +561,7 @@ void main() {
       expect(draft.latestReplyAuthor?.name, 'ag_low2');
       expect(draft.latestReplyAuthor?.uid, isNull);
       expect(draft.latestReplyAuthor?.url, '$baseUrl/home.php?mod=space&username=ag_low2');
-      expect(draft.latestReplyTime, _at(1792515237));
+      expect(draft.latestReplyTime, _at(1700000000), reason: 'the fixture tool pins the fixture-made draft');
       expect(draft.quotedMessage, isNull);
       expect(draft.stateSet, {ThreadStateModel.draft}, reason: 'displayorder -4: the page marks it 草稿箱');
 
@@ -652,7 +652,7 @@ void main() {
   group('the draft box: draftPageFromApi and DraftRepository.load', () {
     test('the drafts of the account, no first floor needed; the next page', () {
       final page = draftPageFromApi(_json('mythread_v9_draft.json'), page: 1, uid: 35);
-      expect(page.entries.map(_view), ['9199982|2|tsdmapp 2.4.0 草稿 06680|📢 公告 & 新手報到']);
+      expect(page.entries.map(_view), ['9199982|2|tsdmapp 2.4.0 草稿 00000|📢 公告 & 新手報到']);
       expect(page.entries.single.url, '$baseUrl/forum.php?mod=viewthread&tid=9199982');
       expect(page.nextPage, isNull);
       expect(draftPageFromApi(_with('mythread_v9_draft.json', {'has_next': 1}), page: 1, uid: 35).nextPage, 2);
@@ -978,7 +978,7 @@ void main() {
       final forum = _Forum.always(_api(_raw('mythread_v9_draft.json')));
       _use(forum);
       final page = await DraftRepository.network(getIt.get<NetClientProvider>()).load(35);
-      expect(page.entries.map(_view), ['9199982|2|tsdmapp 2.4.0 草稿 06680|📢 公告 & 新手報到']);
+      expect(page.entries.map(_view), ['9199982|2|tsdmapp 2.4.0 草稿 00000|📢 公告 & 新手報到']);
       expect(forum.requests.single.uri.queryParameters, containsPair('filter', 'save'));
       expect(forum.requests.every(_asksLean), isTrue);
       await expectLater(DraftRepository.network(getIt.get<NetClientProvider>()).load(36), throwsFormatException);
