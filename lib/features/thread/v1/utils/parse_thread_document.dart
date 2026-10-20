@@ -118,6 +118,16 @@ bool isThreadClosedForReply(uh.Document document) {
   return !hint.contains('登录');
 }
 
+/// The first floor on the thread page [document] names no user: an anonymous or guest post, whose author has no user
+/// link (the post parser skips such floors). Nobody on a block list can be its author. Links in the post body are
+/// not looked at; a page without a first floor is not such a thread.
+bool firstFloorNamesNoUser(uh.Document document) {
+  final first = document
+      .querySelectorAll('div#postlist div[id^="post_"]')
+      .firstWhereOrNull((e) => e.querySelector('div.pi strong em')?.text?.trim() == '1');
+  return first != null && first.querySelector('td.pls a[href*="uid="], div.authi a[href*="uid="]') == null;
+}
+
 /// Parse thread page info from [document].
 ///
 /// [pageNumber] is the fallback page number when not found in document.

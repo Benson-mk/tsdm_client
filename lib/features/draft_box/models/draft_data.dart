@@ -1,5 +1,7 @@
+import 'package:collection/collection.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/post/utils/draft_marker.dart';
+import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:universal_html/html.dart' as uh;
 
 /// The current account's server-side drafts, not local editor backups.
@@ -115,6 +117,30 @@ DraftPage parseDraftPage(uh.Document document, {required int page, required int 
     next = number;
   }
   return DraftPage(List.unmodifiable(entries), next);
+}
+
+/// [parseDraftTarget] on the thread page [page] built from the structured answer of the forum's app API
+/// (`threadPageFromApi`): the thread must still be a draft (`thread.draft`) and the one of [entry], with its first
+/// floor and the edit link the forum offers on it (`can.edit`, `urls.edit`) naming the draft's forum, thread and
+/// post. Throws [FormatException] as the page parser throws.
+DraftEditTarget draftTargetOfPage(ThreadPageInfo page, DraftEntry entry) {
+  if (!page.isDraft) throw const FormatException('Draft no longer available');
+  final firstPost = page.postList.firstWhereOrNull((e) => e.postFloor == 1);
+  if (firstPost == null) throw const FormatException('Draft first post missing');
+  if (page.tid != null && page.tid != entry.tid) throw const FormatException('Draft thread changed');
+  final postId = firstPost.postID;
+  if (!_positive(postId)) throw const FormatException('Draft post missing');
+  final uri = draftForumUri(firstPost.editUrl);
+  final q = uri?.queryParameters;
+  if (uri?.path == '/forum.php' &&
+      q?['mod'] == 'post' &&
+      q?['action'] == 'edit' &&
+      q?['tid'] == entry.tid &&
+      q?['fid'] == entry.fid &&
+      q?['pid'] == postId) {
+    return (fid: entry.fid, tid: entry.tid, pid: postId);
+  }
+  throw const FormatException('Draft edit link unavailable');
 }
 
 /// Recheck draft state before entering the editor; a published/deleted draft is not editable here.

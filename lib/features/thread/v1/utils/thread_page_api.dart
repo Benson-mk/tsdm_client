@@ -189,6 +189,14 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   );
 }
 
+/// The account a structured answer [json] ([threadApiAnswerOf]) was served to: its `uid`, null for a guest (0) and
+/// for the forum's message, which names none. The readers bound to one account (a draft confirmed, a poll verified,
+/// a report prepared) check it as they check the page's `discuz_uid` on the document path.
+int? threadApiViewerUid(Map<String, dynamic> json) {
+  final uid = _int(json['uid']);
+  return uid > 0 ? uid : null;
+}
+
 int _int(Object? value) => switch (value) {
   final num n => n.toInt(),
   final String s => int.tryParse(s) ?? 0,
