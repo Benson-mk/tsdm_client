@@ -688,10 +688,36 @@ String tsdmAppText(Object? value) => value is String ? value : '';
 
 /// A time field of an API answer [value] (unix seconds of the forum's clock, which the answers give exact), the real
 /// instant; null when missing or 0 (the forum has no time for it).
+///
+/// The rule: a page that shows a time RELATIVE to now (the thread lists: "3 分钟前") takes the real instant, as the
+/// forum computes the same difference. A page that shows an ABSOLUTE time (a favorite's time, a chat message, a
+/// credit change, the profile) takes the forum's wall clock instead, [tsdmAppWallClockTime] with the `timeoffset` of
+/// the answer: the page prints the member's wall clock and the page parsers read that text as a naive [DateTime], so
+/// the structured path shows the same clock whatever the device's zone.
 DateTime? tsdmAppTime(Object? value) {
   final seconds = tsdmAppInt(value);
   return seconds > 0 ? DateTime.fromMillisecondsSinceEpoch(seconds * 1000) : null;
 }
+
+/// The forum's wall clock of a time field of an API answer [value] (unix seconds) for a member whose times the forum
+/// shows with an offset of [timeOffset] hours (`timeoffset` of the answer, [tsdmAppTimeOffset]): a naive [DateTime]
+/// (the device's local zone) holding the clock the web page prints, to the second (the answers give the exact
+/// second; the pages only print the minute). Null when missing or 0. See [tsdmAppTime] for when which applies.
+DateTime? tsdmAppWallClockTime(Object? value, num timeOffset) {
+  final seconds = tsdmAppInt(value);
+  if (seconds <= 0) {
+    return null;
+  }
+  final t = DateTime.fromMillisecondsSinceEpoch(
+    seconds * 1000,
+    isUtc: true,
+  ).add(Duration(milliseconds: (timeOffset * 3600 * 1000).round()));
+  return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
+}
+
+/// The offset (hours) the forum shows the member's times with, `timeoffset` of a page answer [json] (every JSON mode
+/// answer carries it); the forum's own offset (+8) when the answer names none.
+num tsdmAppTimeOffset(Map<String, dynamic> json) => json['timeoffset'] is num ? json['timeoffset'] as num : 8;
 
 /// Whether the forum's message answer [json] (`ok` 0, `error: message`) asks the reader to log in: the forum said so
 /// (`login` 1, plugin 2.2.0), or the message reads as the login prompt, as the parsers of the pages read from their

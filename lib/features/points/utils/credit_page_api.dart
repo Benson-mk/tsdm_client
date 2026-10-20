@@ -37,25 +37,30 @@ typedef PointsChangelogPage = ({
   ChangelogAllParameters allParameters,
 });
 
-/// The label of the choice that filters by no operation, as the forum's query form prints its first option
-/// (`<option value="">请选择操作类型</option>`): the plugin lists the operation codes only, and the app's query form
-/// offers (and starts on) the first choice of the list.
-const creditLogAnyOperationName = '请选择操作类型';
+/// The label of the choice that filters by no operation as the forum's query form prints its first option
+/// (`<option value="">请选择操作类型</option>`), for a plugin that lists the operation codes only (2.5.0): plugin 2.6.0
+/// gives that option first in `filters.optype` (an empty `value`), and the app's query form offers (and starts on) the
+/// first choice of the list.
+const _anyOperationFallbackName = '请选择操作类型';
 
 /// The credit log of a structured answer [json] ([creditApiAnswerOf]): the rows of the page as [PointsChange.fromApi]
 /// builds them (a row without an operation or a time dropped, as the page parser drops a malformed row; the forum
 /// skips a record without any change, so a page may hold fewer than 20), the pagination the forum printed (`page`,
-/// `pages`) and the filters of the query form ([changelogParametersFromApi]). The forum's message (`ok` 0: a guest)
-/// is null, as the message page parsed to (no table on it).
-PointsChangelogPage? pointsChangelogFromApi(Map<String, dynamic> json) {
+/// `pages`; [fallbackPage] when the answer names no page, as the page parser falls back to the page it asked for) and
+/// the filters of the query form ([changelogParametersFromApi]). The forum's message (`ok` 0: a guest) is null, as
+/// the message page parsed to (no table on it).
+PointsChangelogPage? pointsChangelogFromApi(Map<String, dynamic> json, {int fallbackPage = 1}) {
   if (json['ok'] != 1) {
-    talker.error('failed to build points changelog: the forum answered a message: ${json['message']}');
+    talker.info('points changelog: the forum answered a message: ${json['message']}');
     return null;
   }
-  final changes = tsdmAppList(json['logs']).map(PointsChange.fromApi).nonNulls.toList();
+  final timeOffset = tsdmAppTimeOffset(json);
+  final changes = tsdmAppList(
+    json['logs'],
+  ).map((e) => PointsChange.fromApi(e, timeOffset: timeOffset)).nonNulls.toList();
   final page = tsdmAppInt(json['page']);
   final pages = tsdmAppInt(json['pages']);
-  final currentPage = page > 0 ? page : 1;
+  final currentPage = page > 0 ? page : fallbackPage;
   return (
     changes: changes,
     currentPage: currentPage,
@@ -67,31 +72,41 @@ PointsChangelogPage? pointsChangelogFromApi(Map<String, dynamic> json) {
 /// The filters of the query form of a structured answer [json] (`filters`: the credits, `exttype`; the direction,
 /// `income`; the operations, `optype`), the same [ChangelogAllParameters] the web page gives through
 /// `parseAllParameters` (its three `<select>`s): the values and the order of the page, the choice of no operation
-/// first among the operations ([creditLogAnyOperationName], an empty value), as the page's form lists it. Empty
-/// lists for the forum's message, which carries no form (no `filters`).
+/// first among the operations (an empty value: the form's first option as plugin 2.6.0 lists it, named by `name` or
+/// `title`; put there with the label the form prints when the plugin lists the codes only). Empty lists for the
+/// forum's message, which carries no form (no `filters`).
 ChangelogAllParameters changelogParametersFromApi(Map<String, dynamic> json) {
   final filters = tsdmAppMap(json['filters']);
   if (filters.isEmpty) {
     return const ChangelogAllParameters.empty();
   }
+  final operations = tsdmAppList(
+    filters['optype'],
+  ).map((e) => ChangelogOperationType(name: _nameOf(e), operation: _valueOf(e))).toList();
   return ChangelogAllParameters(
     extTypeList: tsdmAppList(
       filters['exttype'],
-    ).map((e) => ChangelogPointsType(name: tsdmAppText(e['name']).trim(), extType: _valueOf(e))).toList(),
+    ).map((e) => ChangelogPointsType(name: _nameOf(e), extType: _valueOf(e))).toList(),
     operationTypeList: [
-      const ChangelogOperationType(name: creditLogAnyOperationName, operation: ''),
-      ...tsdmAppList(
-        filters['optype'],
-      ).map((e) => ChangelogOperationType(name: tsdmAppText(e['name']).trim(), operation: _valueOf(e))),
+      if (operations.isEmpty || operations.first.operation.isNotEmpty)
+        const ChangelogOperationType(name: _anyOperationFallbackName, operation: ''),
+      ...operations,
     ],
     changeTypeList: tsdmAppList(
       filters['income'],
-    ).map((e) => ChangelogChangeType(name: tsdmAppText(e['name']).trim(), changeType: _valueOf(e))).toList(),
+    ).map((e) => ChangelogChangeType(name: _nameOf(e), changeType: _valueOf(e))).toList(),
   );
 }
 
+/// The label of a filter option [option] as the form prints it: `name`, or `title` (the form's first operation option
+/// of plugin 2.6.0 names it so).
+String _nameOf(Map<String, dynamic> option) {
+  final name = tsdmAppText(option['name']).trim();
+  return name.isNotEmpty ? name : tsdmAppText(option['title']).trim();
+}
+
 /// The `value` of a filter option [option] as the query sends it: a number (`exttype`, `income`) or a code
-/// (`optype`).
+/// (`optype`; empty for the choice of no operation).
 String _valueOf(Map<String, dynamic> option) => switch (option['value']) {
   final num n => '${n.toInt()}',
   final String s => s.trim(),

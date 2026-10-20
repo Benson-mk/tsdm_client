@@ -69,11 +69,12 @@ class PointsChange with PointsChangeMappable {
   /// the title of each, and the signed value as the page prints it, "+2", read from the printed `text` "天使币 +2";
   /// the cleared credits of a reset read "清零"), whether the credits grew or shrank (`type`: income, expense; a mixed
   /// change goes by its first credit, as the page parser goes by the first printed value), the detail column (plain
-  /// text, wrapped as the cell the page parser kept) and its link (`url`), the time (`dateline`, exact). Null for a
-  /// row without an operation or a time, as the page parser skips such a row.
-  static PointsChange? fromApi(Map<String, dynamic> row) {
+  /// text, wrapped as the cell the page parser kept) and its link (`url`), the time (`dateline`, shown as the forum's
+  /// wall clock with [timeOffset], `timeoffset` of the answer, as the page prints it). Null for a row without an
+  /// operation or a time, as the page parser skips such a row.
+  static PointsChange? fromApi(Map<String, dynamic> row, {required num timeOffset}) {
     final operation = tsdmAppText(row['operation']).trim();
-    final time = tsdmAppTime(row['dateline']);
+    final time = tsdmAppWallClockTime(row['dateline'], timeOffset);
     if (operation.isEmpty || time == null) {
       talker.error('failed to build PointsChange: operation=$operation, dateline=${row['dateline']}');
       return null;

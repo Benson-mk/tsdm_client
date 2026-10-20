@@ -48,11 +48,12 @@ final class ChatMessage with ChatMessageMappable {
 
   /// The message of a row [row] of the structured conversation answer (plugin 2.5.0, `schema: 11`, `messages[]`):
   /// the author (`fromuid`, `from`: the member's name, which the page prints as "您" for the reader's own messages;
-  /// null when the member is not there any more), the small avatar, the time it was sent (`dateline`, exact) and the
-  /// message as the forum prints it (`message_html`: the html fragment the renderer takes, as the page's `dd.ptm`
-  /// gave it; the plain `message` escaped when the html is missing). Null for a row that names no author, as the
-  /// page parser skips such a row.
-  static ChatMessage? fromApi(Map<String, dynamic> row) {
+  /// null when the member is not there any more), the small avatar, the time it was sent (`dateline`, shown as the
+  /// forum's wall clock with [timeOffset], `timeoffset` of the answer, as the page prints it) and the message as the
+  /// forum prints it (`message_html`: the html fragment the renderer takes, as the page's `dd.ptm` gave it; the plain
+  /// `message` escaped when the html is missing). Null for a row that names no author, as the page parser skips such
+  /// a row.
+  static ChatMessage? fromApi(Map<String, dynamic> row, {required num timeOffset}) {
     final uid = tsdmAppInt(row['fromuid']);
     final author = tsdmAppText(row['from']).trim();
     if (uid <= 0 && author.isEmpty) {
@@ -69,7 +70,7 @@ final class ChatMessage with ChatMessageMappable {
       authorUid: uid > 0 ? '$uid' : null,
       authorAvatarUrl: avatar.isEmpty ? null : avatar.prependHost(),
       message: message,
-      dateTime: tsdmAppTime(row['dateline']),
+      dateTime: tsdmAppWallClockTime(row['dateline'], timeOffset),
     );
   }
 

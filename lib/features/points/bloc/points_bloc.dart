@@ -118,7 +118,7 @@ final class PointsChangelogBloc extends Bloc<PointsChangelogEvent, PointsChangel
   /// fields ([pointsChangelogFromApi]), the web page (or an older plugin's answer) parsed as before
   /// ([_parseDocument]).
   PointsChangelogState _parseAnswer(TsdmAppPageAnswer answer, int pageNumber) => switch (answer) {
-    TsdmAppStructuredPage(:final json) => _parseApi(json),
+    TsdmAppStructuredPage(:final json) => _parseApi(json, pageNumber),
     TsdmAppWebPage(:final document) => _parseDocument(document, pageNumber),
   };
 
@@ -129,9 +129,10 @@ final class PointsChangelogBloc extends Bloc<PointsChangelogEvent, PointsChangel
   };
 
   /// The structured answer [json] into state: failed for the forum's message (a guest), as a page without the
-  /// changelog table is.
-  PointsChangelogState _parseApi(Map<String, dynamic> json) {
-    final page = pointsChangelogFromApi(json);
+  /// changelog table is; [pageNumber] is the page recorded so far, the fallback when the answer names no page (as
+  /// [_parseDocument] falls back).
+  PointsChangelogState _parseApi(Map<String, dynamic> json, int pageNumber) {
+    final page = pointsChangelogFromApi(json, fallbackPage: pageNumber);
     if (page == null) {
       error('points change log not in the answer');
       return state.copyWith(status: PointsStatus.failed);

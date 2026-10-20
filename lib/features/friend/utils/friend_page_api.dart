@@ -55,7 +55,7 @@ FriendListPage friendListPageFromApi(Map<String, dynamic> json, String url) {
   return FriendListPage(
     items: items,
     nextPageUrl: nextPageUrl,
-    totalCount: json['count'] is num ? tsdmAppInt(json['count']) : null,
+    totalCount: tsdmAppInt(json['count']),
     ownerName: ownerName.isEmpty ? null : ownerName,
   );
 }

@@ -56,13 +56,14 @@ FavoriteListPage<FavoriteItem> favoriteListPageOfTypeFromApi(
 FavoriteListPage<T> _listPage<T extends FavoriteItem>(
   Map<String, dynamic> json,
   String url,
-  T? Function(Map<String, dynamic> row) item,
+  T? Function(Map<String, dynamic> row, {required num timeOffset}) item,
 ) {
   if (json['ok'] != 1) {
     talker.info('favorites page: the forum answered a message: ${json['message']}');
     return FavoriteListPage(items: const [], needLogin: tsdmAppMessageAsksLogin(json));
   }
-  final items = tsdmAppList(json['items']).map(item).whereType<T>().toList();
+  final timeOffset = tsdmAppTimeOffset(json);
+  final items = tsdmAppList(json['items']).map((row) => item(row, timeOffset: timeOffset)).nonNulls.toList();
   final page = tsdmAppInt(json['page']);
   final nextPageUrl = tsdmAppInt(json['has_next']) == 1 && page > 0 ? tsdmAppListPageUrl(url, page + 1) : null;
   return FavoriteListPage(items: items, nextPageUrl: nextPageUrl);

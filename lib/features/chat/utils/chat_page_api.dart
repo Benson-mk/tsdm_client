@@ -44,13 +44,16 @@ Map<String, dynamic>? chatApiAnswerOf(Object? data) {
 /// guest, the private messages switched off) is null, as the message page parsed to (no conversation on it).
 ChatHistoryInfo? chatHistoryFromApi(Map<String, dynamic> json) {
   if (json['ok'] != 1) {
-    talker.error('failed to build chat history: the forum answered a message: ${json['message']}');
+    talker.info('chat history: the forum answered a message: ${json['message']}');
     return null;
   }
   final peer = tsdmAppText(json['tousername']).trim();
   final username = peer.isNotEmpty ? peer : tsdmAppText(json['subject']).trim();
   final page = tsdmAppInt(json['page']);
-  final messages = tsdmAppList(json['messages']).map(ChatMessage.fromApi).nonNulls.toList().reversed.toList();
+  final timeOffset = tsdmAppTimeOffset(json);
+  final messages = tsdmAppList(
+    json['messages'],
+  ).map((e) => ChatMessage.fromApi(e, timeOffset: timeOffset)).nonNulls.toList().reversed.toList();
 
   ChatHistorySendTarget? target;
   final reply = json['reply'];

@@ -74,8 +74,12 @@ List<Map<String, dynamic>> _rows(String name, String key) => (_json(name)[key] a
 /// The answer [name] with [changes] applied on top (a copy).
 Map<String, dynamic> _with(String name, Map<String, Object?> changes) => {..._json(name), ...changes};
 
-/// The forum's unix seconds as the instant the app keeps.
-DateTime _at(int seconds) => DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+/// The forum's unix seconds as the forum's wall clock (+8, the `timeoffset` of the fixtures) the app keeps for a
+/// page that shows an absolute time, as the page parsers read the printed clock (`tsdmAppWallClockTime`).
+DateTime _wall(int seconds, {num offset = 8}) {
+  final t = DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true).add(Duration(hours: offset.toInt()));
+  return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
+}
 
 String _page(String name) => File('test/data/$name').readAsStringSync();
 
@@ -289,7 +293,8 @@ void main() {
       expect(first.type, FavoriteType.thread);
       expect(first.title, 'PP驗收偽造帖 1790071175911');
       expect(first.url, '$baseUrl/forum.php?mod=viewthread&tid=9199099');
-      expect(first.time, _at(1790072000), reason: 'the exact time, which the page only shows to the minute');
+      expect(first.time, _wall(1790072000), reason: 'the forum wall clock, to the second (the page shows the minute)');
+      expect(first.time, DateTime(2026, 9, 22, 18, 13, 20), reason: 'as the page prints 2026-9-22 18:13');
       expect(first.description, '最後一則\n三行\n描述', reason: 'the note, its line breaks kept');
 
       final second = page.items[1];
@@ -318,7 +323,7 @@ void main() {
       expect(first.type, FavoriteType.forum);
       expect(first.title, 'COS・攝影');
       expect(first.url, '$baseUrl/forum.php?mod=forumdisplay&fid=13');
-      expect(first.time, _at(1790183600));
+      expect(first.time, _wall(1790183600));
       expect(first.description, isNull);
       expect(forums.items.last.fid, '2');
       expect(forums.nextPageUrl, isNull);
@@ -353,8 +358,14 @@ void main() {
       final page = favoriteThreadsFromApi(_with('favorite_v8_thread.json', {'items': rows}), url);
       expect(page.items.map((e) => e.favid), ['1', '2']);
       expect(page.items.last.url, '$baseUrl/forum.php?mod=viewthread&tid=9199099', reason: 'built from the tid');
-      expect(FavoriteThread.fromApi({...row, 'dateline': 0})!.time, isNull);
-      expect(FavoriteThread.fromApi({...row, 'description': ' '})!.description, isNull);
+      expect(FavoriteThread.fromApi({...row, 'dateline': 0}, timeOffset: 8)!.time, isNull);
+      expect(FavoriteThread.fromApi({...row, 'description': ' '}, timeOffset: 8)!.description, isNull);
+      // The wall clock follows the offset the forum shows the member's times with.
+      expect(FavoriteThread.fromApi(row, timeOffset: 0)!.time, _wall(1790072000, offset: 0));
+      expect(
+        favoriteThreadsFromApi(_with('favorite_v8_thread.json', {'timeoffset': 9}), url).items.first.time,
+        _wall(1790072000, offset: 9),
+      );
       expect(page.nextPageUrl, '$url&page=2', reason: "the paging is the forum's");
     });
 
@@ -394,7 +405,7 @@ void main() {
       expect(first.groupName, '字幕組', reason: 'the user group, not the recent note');
       expect(first.groupColor, isNull, reason: 'no color set for the group');
       expect(first.nameColor, isNull);
-      expect(first.groupIconUrl, isNull, reason: 'the answer names no group icon');
+      expect(first.groupIconUrl, isNull, reason: 'plugin 2.5.0 names no group icon');
       expect(first.credits, isNull, reason: 'the own list prints no credits');
       expect(page.items.map((e) => e.uid).take(3), ['37', '38', '39']);
       expect(page.items.map((e) => e.uid), contains('64'));
@@ -414,7 +425,7 @@ void main() {
       final friend = other.items.single;
       expect(friend.uid, '35');
       expect(friend.username, 'ag_low2');
-      expect(friend.groupName, '低權組');
+      expect(friend.groupName, 'AG低權組');
       expect(friend.credits, '1032', reason: 'the page prints "积分数: 1032" on another member\'s list');
 
       final empty = friendListPageFromApi(_json('friend_v10_empty.json'), FriendRepository.listUrl(uid: '31'));
@@ -434,6 +445,14 @@ void main() {
       expect(Friend.fromApi({...row, 'uid': 0}, ownList: true), isNull);
       expect(Friend.fromApi({...row, 'avatar': ''}, ownList: true)!.avatarUrl, isNull);
       expect(Friend.fromApi({...row, 'grouptitle': ''}, ownList: true)!.groupName, isNull);
+      // The group icon plugin 2.6.0 adds (`groupicon`): absolute, or relative to the forum; none when empty.
+      const icon = '$baseUrl/data/attachment/common/group/x.gif';
+      expect(Friend.fromApi({...row, 'groupicon': icon}, ownList: true)!.groupIconUrl, icon);
+      expect(
+        Friend.fromApi({...row, 'groupicon': 'data/attachment/common/group/x.gif'}, ownList: true)!.groupIconUrl,
+        icon,
+      );
+      expect(Friend.fromApi({...row, 'groupicon': ''}, ownList: true)!.groupIconUrl, isNull);
       expect(Friend.fromApi(row, ownList: false)!.credits, '0', reason: "printed on another member's list");
       final page = friendListPageFromApi(
         _with('friend_v10_me.json', {
@@ -447,6 +466,7 @@ void main() {
       );
       expect(page.items, hasLength(1));
       expect(page.totalCount, 25, reason: "the total is the forum's");
+      expect(friendListPageFromApi(_with('friend_v10_me.json', {'count': null}), url).totalCount, 0);
     });
 
     test('the guest message asks to log in; the friends switched off is the notice the page showed', () {
@@ -482,7 +502,7 @@ void main() {
           reason: 'the forum lists oldest first',
         );
         final newest = info.messages.first;
-        expect(newest.dateTime, _at(1790957118), reason: 'the page parser lists newest first');
+        expect(newest.dateTime, _wall(1790957118), reason: 'the page parser lists newest first; the forum wall clock');
         expect(newest.author, 'ag_low');
         expect(newest.authorUid, '31');
         final oldest = info.messages.last;
@@ -490,7 +510,8 @@ void main() {
         expect(oldest.authorUid, '35');
         expect(oldest.authorAvatarUrl, '$baseUrl/data/avatar/noavatar.svg');
         expect(oldest.message, 'BU 試用：B 私訊 A（1789151263072）');
-        expect(oldest.dateTime, _at(1789151446));
+        expect(oldest.dateTime, _wall(1789151446));
+        expect(oldest.dateTime, DateTime(2026, 9, 12, 2, 30, 46), reason: 'as the page prints 2026-9-12 02:30');
         expect(oldest.dateOnly, isFalse);
 
         final target = info.sendTarget!;
@@ -557,16 +578,24 @@ void main() {
     test('a message without an author is dropped; the plain text escaped when the html is missing; no form without '
         'a hash', () {
       final row = _rows('pm_v11_view.json', 'messages').first;
-      expect(ChatMessage.fromApi({...row, 'fromuid': 0, 'from': ''}), isNull);
-      final gone = ChatMessage.fromApi({...row, 'fromuid': 0, 'from': 'someone'})!;
+      expect(ChatMessage.fromApi({...row, 'fromuid': 0, 'from': ''}, timeOffset: 8), isNull);
+      final gone = ChatMessage.fromApi({...row, 'fromuid': 0, 'from': 'someone'}, timeOffset: 8)!;
       expect(gone.author, 'someone');
       expect(gone.authorUid, isNull);
-      final nameless = ChatMessage.fromApi({...row, 'from': '', 'avatar': ''})!;
+      final nameless = ChatMessage.fromApi({...row, 'from': '', 'avatar': ''}, timeOffset: 8)!;
       expect(nameless.author, isNull, reason: 'a member who is not there any more');
       expect(nameless.authorUid, '35');
       expect(nameless.authorAvatarUrl, isNull);
-      expect(ChatMessage.fromApi({...row, 'message_html': '', 'message': 'a < b\nc'})!.message, 'a &lt; b<br />c');
-      expect(ChatMessage.fromApi({...row, 'dateline': 0})!.dateTime, isNull);
+      expect(
+        ChatMessage.fromApi({...row, 'message_html': '', 'message': 'a < b\nc'}, timeOffset: 8)!.message,
+        'a &lt; b<br />c',
+      );
+      expect(ChatMessage.fromApi({...row, 'dateline': 0}, timeOffset: 8)!.dateTime, isNull);
+      expect(ChatMessage.fromApi(row, timeOffset: 0)!.dateTime, _wall(1789151446, offset: 0));
+      expect(
+        chatHistoryFromApi(_with('pm_v11_view.json', {'timeoffset': 9}))!.messages.last.dateTime,
+        _wall(1789151446, offset: 9),
+      );
 
       final info = chatHistoryFromApi(
         _with('pm_v11_view.json', {
@@ -618,9 +647,10 @@ void main() {
         expect(first.pointsChangeType, PointsChangeType.more);
         expect(first.detail, '<td>每天登录</td>', reason: 'the cell the page parser kept, the text escaped');
         expect(first.redirectUrl, isNull);
-        expect(first.time, _at(1792512427), reason: 'the exact second');
+        expect(first.time, _wall(1792512427), reason: 'the forum wall clock, to the second');
+        expect(first.time, DateTime(2026, 10, 21, 0, 7, 7), reason: 'as the page prints 2026-10-21 00:07:07');
         expect(page.changes[1].detail, '<td>发表回复(fid:10)</td>');
-        expect(page.changes[1].time, _at(1792446315));
+        expect(page.changes[1].time, _wall(1792446315));
 
         final filters = page.allParameters;
         expect(filters.extTypeList.map((e) => e.name), ['不限', '威望', '天使币', '宣传', '腹黑', '天然', '精灵']);
@@ -629,7 +659,7 @@ void main() {
         expect(filters.operationTypeList, hasLength(37));
         expect(
           filters.operationTypeList.first,
-          const ChangelogOperationType(name: creditLogAnyOperationName, operation: ''),
+          const ChangelogOperationType(name: '请选择操作类型', operation: ''),
           reason: "the choice of no operation first, as the page's form lists it and the query form starts on it",
         );
         expect(filters.operationTypeList[1], const ChangelogOperationType(name: '任务奖励', operation: 'TRC'));
@@ -637,8 +667,36 @@ void main() {
         // The web form of the page gives the same first choice.
         final web = parseAllParameters(parseHtmlDocument(_creditLogPage()));
         expect(web.operationTypeList.first.operation, '');
-        expect(web.operationTypeList.first.name, creditLogAnyOperationName);
+        expect(web.operationTypeList.first.name, '请选择操作类型');
         expect(filters.toMap().keys, web.toMap().keys);
+
+        // Plugin 2.6.0 lists the form's first option itself (an empty value, named by `title`): taken as it is, not
+        // doubled; a list that starts with a code gets the label the form prints.
+        final json = _json('credit_v12_log.json');
+        final optype = (json['filters'] as Map<String, dynamic>)['optype'] as List;
+        final listed = changelogParametersFromApi({
+          ...json,
+          'filters': {
+            ...json['filters'] as Map<String, dynamic>,
+            'optype': [
+              {'value': '', 'title': '请选择'},
+              ...optype,
+            ],
+          },
+        });
+        expect(listed.operationTypeList, hasLength(37));
+        expect(listed.operationTypeList.first, const ChangelogOperationType(name: '请选择', operation: ''));
+        expect(listed.operationTypeList[1].operation, 'TRC');
+        final named = changelogParametersFromApi({
+          ...json,
+          'filters': {
+            ...json['filters'] as Map<String, dynamic>,
+            'optype': [
+              {'value': '', 'name': '不限'},
+            ],
+          },
+        });
+        expect(named.operationTypeList, [const ChangelogOperationType(name: '不限', operation: '')]);
       },
     );
 
@@ -648,7 +706,7 @@ void main() {
       expect(p2.currentPage, 2);
       expect(p2.totalPages, 40);
       expect(p2.changes.first.operation, '积分规则');
-      expect(p2.changes.first.time, _at(1792302791));
+      expect(p2.changes.first.time, _wall(1792302791));
       expect(p2.changes.first.detail, '<td>发表主题(fid:14)</td>');
 
       final filtered = pointsChangelogFromApi(_json('credit_v12_log_filter.json'))!;
@@ -662,7 +720,7 @@ void main() {
       expect(first.pointsChangeType, PointsChangeType.more);
       expect(first.redirectUrl, '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=3942');
       expect(first.detail, '<td>[Rulebot multi fixture 20260930-101846] FID2 版規問答測試 被评分获得的积分</td>');
-      expect(first.time, _at(1791601872));
+      expect(first.time, _wall(1791601872));
       final tagged = filtered.changes[1];
       expect(tagged.changeMap, {'精灵': '+9'});
       expect(tagged.detail, contains('RTK驗收帖 &lt;i&gt;&amp;"{_G/config/db/1/dbpw} Re: 039768'));
@@ -683,7 +741,7 @@ void main() {
         ...row,
         'type': 'expense',
         'changes': [change('天使币', -5, '天使币 -5')],
-      })!;
+      }, timeOffset: 8)!;
       expect(expense.pointsChangeType, PointsChangeType.less);
       expect(expense.changeMap, {'天使币': '-5'});
 
@@ -691,7 +749,7 @@ void main() {
         ...row,
         'type': 'mixed',
         'changes': [change('天使币', -5, '天使币 -5'), change('威望', 1, '威望 +1')],
-      })!;
+      }, timeOffset: 8)!;
       expect(mixed.pointsChangeType, PointsChangeType.less, reason: 'by the first credit, as the page parser');
       expect(mixed.changeMap, {'天使币': '-5', '威望': '+1'});
       expect(mixed.changeMapString, '天使币 -5,威望 +1');
@@ -700,11 +758,11 @@ void main() {
           ...row,
           'type': 'mixed',
           'changes': [change('威望', 1, '威望 +1'), change('天使币', -5, '天使币 -5')],
-        })!.pointsChangeType,
+        }, timeOffset: 8)!.pointsChangeType,
         PointsChangeType.more,
       );
       expect(
-        PointsChange.fromApi({...row, 'type': '', 'changes': <Object?>[]})!.pointsChangeType,
+        PointsChange.fromApi({...row, 'type': '', 'changes': <Object?>[]}, timeOffset: 8)!.pointsChangeType,
         PointsChangeType.unlimited,
       );
 
@@ -712,7 +770,7 @@ void main() {
         ...row,
         'type': 'expense',
         'changes': [change('天使币', -675, '天使币清零')],
-      })!;
+      }, timeOffset: 8)!;
       expect(reset.changeMap, {'天使币': '清零'}, reason: 'as the page prints a reset');
       expect(reset.changeMapString, '天使币 清零');
       // Without the printed text: the signed value.
@@ -720,16 +778,22 @@ void main() {
         PointsChange.fromApi({
           ...row,
           'changes': [change('天使币', 3), change('威望', -3)],
-        })!.changeMap,
+        }, timeOffset: 8)!.changeMap,
         {'天使币': '+3', '威望': '-3'},
       );
 
-      final manual = PointsChange.fromApi({...row, 'operation': '手动变更', 'optype': '', 'filter_url': ''})!;
+      final manual = PointsChange.fromApi({
+        ...row,
+        'operation': '手动变更',
+        'optype': '',
+        'filter_url': '',
+      }, timeOffset: 8)!;
       expect(manual.operation, '手动变更');
       expect(manual.operationFilterUrl, isEmpty, reason: 'the page prints no link for a record without a code');
 
-      expect(PointsChange.fromApi({...row, 'operation': ''}), isNull);
-      expect(PointsChange.fromApi({...row, 'dateline': 0}), isNull);
+      expect(PointsChange.fromApi({...row, 'operation': ''}, timeOffset: 8), isNull);
+      expect(PointsChange.fromApi({...row, 'dateline': 0}, timeOffset: 8), isNull);
+      expect(PointsChange.fromApi(row, timeOffset: 0)!.time, _wall(1792512427, offset: 0));
       final page = pointsChangelogFromApi(
         _with('credit_v12_log.json', {
           'logs': [
@@ -742,9 +806,12 @@ void main() {
       )!;
       expect(page.changes, hasLength(1));
       expect(page.totalPages, 40, reason: "the pagination is the forum's");
-      // A page without pages: one page.
+      // A page without pages: one page; without a page, the page asked for (the fallback the page parser has).
       final bare = pointsChangelogFromApi(_with('credit_v12_log.json', {'page': 0, 'pages': 0}))!;
       expect((bare.currentPage, bare.totalPages), (1, 1));
+      final asked = pointsChangelogFromApi(_with('credit_v12_log.json', {'page': 0, 'pages': 0}), fallbackPage: 3)!;
+      expect((asked.currentPage, asked.totalPages), (3, 3));
+      expect(pointsChangelogFromApi(_json('credit_v12_log_p2.json'), fallbackPage: 7)!.currentPage, 2);
     });
 
     test('the guest message is no log, as the message page parsed to; its filters are empty', () {
@@ -989,7 +1056,7 @@ void main() {
       bloc.add(const PointsChangelogLoadMoreRequested(1));
       state = await bloc.stream.firstWhere((s) => s.currentPage == 2);
       expect(state.fullChangelog, hasLength(40));
-      expect(state.fullChangelog[20].time, _at(1792302791));
+      expect(state.fullChangelog[20].time, _wall(1792302791));
       expect(state.totalPages, 40);
       await bloc.close();
       expect(forum.requests, hasLength(3));
