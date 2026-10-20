@@ -251,6 +251,8 @@ class NormalThread with NormalThreadMappable {
   /// * [typePrefix] is `types.prefix` of the answer: the page prints the type tag `[名稱]` only when the forum shows
   ///   types as a prefix (Discuz forumdisplay builds `typehtml` for prefix 1 or 2 only), so a thread of a forum
   ///   with prefix 0 has no [threadType] either, as on the page.
+  /// * The reply count is `replies` + `comments`, the `allreplies` the page prints in its reply column
+  ///   (Discuz forumdisplay: `$thread['allreplies'] = $thread['replies'] + $thread['comments']`).
   /// * `price` is the price of a thread for sale only: a reward thread (`special` 3) carries its reward there, which
   ///   the page prints as "悬赏" and the app does not read. `readperm` is the privilege.
   /// * States: the sticky level, closed (`closed` 1, or a moved thread: `moved` is the tid it points to), poll
@@ -333,7 +335,7 @@ class NormalThread with NormalThreadMappable {
       latestReplyTime: _apiTime(t['lastpost']),
       iconUrl: '',
       threadType: threadType,
-      replyCount: _apiInt(t['replies']),
+      replyCount: _apiInt(t['replies']) + _apiInt(t['comments']),
       viewCount: _apiInt(t['views']),
       price: price > 0 && special != 3 ? price : null,
       privilege: readPerm > 0 ? readPerm : null,

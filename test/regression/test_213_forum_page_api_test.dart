@@ -436,6 +436,19 @@ void main() {
       expect(reward.price, isNull);
     });
 
+    test('the reply count is replies plus comments, as the page prints it', () {
+      expect(_row('forum_v2_fid25.json', 9199033)['comments'], 1);
+      expect(_thread('forum_v2_fid25.json', 9199033).replyCount, 5 + 1);
+      expect(_row('forum_v2_fid25.json', 9199072)['comments'], 2);
+      expect(_thread('forum_v2_fid25.json', 9199072).replyCount, 18 + 2);
+      // No comments: the replies alone.
+      expect(_row('forum_v2_fid2.json', 9199345)['comments'], 0);
+      expect(_thread('forum_v2_fid2.json', 9199345).replyCount, 8);
+      // A moved thread has no replies of its own, only what the plugin gives.
+      final moved = NormalThread.fromApi(_row('forum_v2_fid2.json', 9199834)..['comments'] = 3, fid: 2, typePrefix: 0);
+      expect(moved.replyCount, 0 + 3);
+    });
+
     test('published today', () {
       expect(_thread('forum_v2_fid12.json', 9199945).isRecentThread, isTrue);
       expect(_thread('forum_v2_fid12.json', 9199868).isRecentThread, isFalse);
