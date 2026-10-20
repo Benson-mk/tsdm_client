@@ -286,6 +286,7 @@ final class _HeldThreadRepository extends Fake implements ThreadRepository {
     String? tid,
     String? pid,
     int pageNumber = 1,
+    int? pageFallback,
     String? onlyVisibleUid,
     bool? reverseOrder,
     int? exactOrder,
@@ -296,7 +297,7 @@ final class _HeldThreadRepository extends Fake implements ThreadRepository {
     onlyVisibleUid: onlyVisibleUid,
     reverseOrder: reverseOrder,
     exactOrder: exactOrder,
-  ).map((document) => parseThreadDocument(document, pageNumber));
+  ).map((document) => parseThreadDocument(document, pageFallback ?? pageNumber));
 }
 
 /// A forum without threads whose only sub forum is [board].

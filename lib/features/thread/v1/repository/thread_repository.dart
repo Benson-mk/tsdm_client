@@ -72,7 +72,9 @@ class ThreadRepository {
   /// the page is built from them ([threadPageFromApi]), its `document` never read. Any other answer (a web page from
   /// a forum without the plugin, an older plugin's answer, the antitheft challenge or the thread cache a guest is
   /// served, whose `document` holds the blocks of the page) is parsed as the web page ([parseThreadDocument]), with
-  /// [pageNumber] as the page when the page does not tell.
+  /// [pageFallback] (or [pageNumber]) as the page when the page does not tell: a page without a pager is page 1 of
+  /// 1 whatever page was asked for (the author-only view asks the page the thread was on, the filtered thread may
+  /// have fewer pages). A structured answer always tells its page.
   ///
   /// # Exception
   ///
@@ -81,6 +83,7 @@ class ThreadRepository {
     String? tid,
     String? pid,
     int pageNumber = 1,
+    int? pageFallback,
     String? onlyVisibleUid,
     bool? reverseOrder,
     int? exactOrder,
@@ -103,7 +106,7 @@ class ThreadRepository {
           if (tsdmAppAnswerWithoutPage(data)) {
             return left(HttpRequestFailedException(HttpStatus.ok));
           }
-          return right(parseThreadDocument(tsdmAppPageDocument(data), pageNumber));
+          return right(parseThreadDocument(tsdmAppPageDocument(data), pageFallback ?? pageNumber));
         }),
       );
 

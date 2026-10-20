@@ -37,18 +37,19 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///
 /// The same [ThreadPageInfo] the web page gives through [parseThreadDocument], from the fields instead of the html:
 ///
-/// * `thread` gives the id, the title, the forum, the counts, the soft close (the lock beside the title), the draft
-///   mark, the latest moderation sentence (`modact`, the page's `div.modact`) and the type (`typeid` with
-///   `typename`, the `[type]` beside the title; none when the thread has no type);
+/// * `thread` gives the id (null when the answer does not name it, so the page keeps the thread it asked for), the
+///   title, the forum, the counts, the soft close (the lock beside the title), the draft mark, the latest moderation
+///   sentence (`modact`, the page's `div.modact`) and the type (`typeid` with `typename`, the `[type]` beside the
+///   title; none when the thread has no type);
 /// * `forum.name` is the forum's name, `nav` the breadcrumbs from the group down to the forum of the thread (the
 ///   group linked as `forum.php?gid=`, a forum as `forum.php?mod=forumdisplay&fid=`), the thread itself not among
 ///   them, as the page's breadcrumb parser leaves them;
 /// * `page` / `pages` are the pagination the forum printed (`page` clamped to the last page as the forum does when
 ///   asked past it; the `pages` of the forum's own order, which a reversed or author-only request keeps);
-/// * `reply.allowed` tells a member whether the thread takes a reply (`threadClosed`: the page's closed hint in the
-///   fast reply form); a guest's page is never closed, as the web page tells a guest to log in instead.
-///   `reply.fastpost_allowed` (whether the form has its textarea: a newbie, an account without avatar… have
-///   `allowed` 1 but no textarea) is not read: the page parser keeps the reply parameters of such a form too;
+/// * `reply.allowed` (the thread takes a reply), `reply.fastpost` (the fast reply form is printed) and
+///   `reply.fastpost_allowed` (the form has its textarea: a newbie, an account without avatar… have `allowed` 1 but
+///   no textarea) tell a member whether the thread is closed (`threadClosed`), as the page parser reads the form and
+///   its closed hint; a guest's page is never closed, as the web page tells a guest to log in instead;
 /// * `reply` with the answer's `formhash` is the fast reply form (`replyParameters`), none when the forum prints no
 ///   form (`fastpost` 0);
 /// * `posts` are the floors in the forum's order, hot and sticky replies included ([Post.fromApi]), with the
@@ -93,8 +94,11 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final forum = _map(json['forum']);
   final reply = _map(json['reply']);
   final uid = _int(json['uid']);
-  final tid = '${_int(thread['tid'])}';
-  final fid = _int(thread['fid']);
+  // A thread id the answer does not name (or names badly) is null, so the page keeps the thread it asked for.
+  final tidValue = _int(thread['tid']);
+  final tid = tidValue > 0 ? '$tidValue' : null;
+  final fidValue = _int(thread['fid']);
+  final fid = fidValue > 0 ? fidValue : null;
   final currentPage = json['page'] is num ? _int(json['page']) : pageNumber;
   final totalPages = json['pages'] is num ? _int(json['pages']) : pageNumber;
   final draft = _int(thread['draft']) == 1;
@@ -104,7 +108,17 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   // content) is left out, as the page parser leaves out a floor without an author.
   final postList = _list(json['posts'])
       .where((p) => _int(p['deleted']) != 1)
-      .map((p) => Post.fromApi(p, tid: tid, fid: fid, viewerUid: uid, page: currentPage, pay: pay, draft: draft))
+      .map(
+        (p) => Post.fromApi(
+          p,
+          tid: tid ?? '',
+          fid: fid ?? 0,
+          viewerUid: uid,
+          page: currentPage,
+          pay: pay,
+          draft: draft,
+        ),
+      )
       .toList();
 
   final typeId = _int(thread['typeid']);
@@ -112,7 +126,7 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final threadType = typeId > 0 && typeName.isNotEmpty ? FilterType(name: typeName, typeID: '$typeId') : null;
 
   final formHash = _text(json['formhash']);
-  final replyParameters = _int(reply['fastpost']) == 1 && formHash.isNotEmpty
+  final replyParameters = _int(reply['fastpost']) == 1 && formHash.isNotEmpty && tid != null && fid != null
       ? ReplyParameters(
           fid: '$fid',
           tid: tid,
@@ -157,8 +171,12 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
     permissionDeniedMessage: null,
     needLogin: false,
     threadSoftClosed: _int(thread['soft_closed']) == 1,
-    // A guest is told to log in instead of a closed thread on the web page: not closed until logged in.
-    threadClosed: uid > 0 && _int(reply['allowed']) == 0,
+    // Closed for a member when the forum takes no reply, prints no fast reply form, or a form without its textarea
+    // (a newbie, an account without avatar…), as the page parser reads the form. A guest is told to log in instead
+    // of a closed thread on the web page: not closed until logged in.
+    threadClosed:
+        uid > 0 &&
+        (_int(reply['allowed']) == 0 || _int(reply['fastpost']) == 0 || _int(reply['fastpost_allowed']) == 0),
     postList: postList,
     replyParameters: replyParameters,
     threadType: threadType,

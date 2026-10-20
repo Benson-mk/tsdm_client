@@ -194,6 +194,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
           tid: state.tid,
           pid: state.pid,
           pageNumber: state.currentPage,
+          // Page 1 when the page does not tell its page: the filtered thread may have fewer pages than the one
+          // asked for, and a page without a pager is its only page.
+          pageFallback: 1,
           onlyVisibleUid: event.uid,
           reverseOrder: state.reverseOrder,
           exactOrder: state.exactOrder,
@@ -210,7 +213,6 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
             );
             emit(state.copyWith(status: ThreadStatus.failure, onlyVisibleUid: event.uid));
           },
-          // Use "1" as current page number to prevent page number overflow.
           (v) {
             if (_isCurrent(load)) {
               _stateOf(v).map((v) => emit(v.copyWith(onlyVisibleUid: event.uid))).run();

@@ -76,7 +76,7 @@ class Post with PostMappable {
   /// * the author from `author` / `authorid` / `avatar`, an anonymous floor (`anonymous` 1) named "匿名" without uid,
   ///   link or avatar; `dateline` (unix seconds) as the publish time;
   /// * `position` as the floor number (the forum's -1 of a hot reply gives none), `share_url` as the share link;
-  /// * `lastedit` as the last edit (the name and the time text the page prints);
+  /// * `lastedit` as the last edit (the name and the time text the page prints; none when either is empty);
   /// * the purchase lock of the first floor of a paid thread not yet bought ([pay], `thread.pay`, `need_pay` 1), the
   ///   other locks stay in the content for the renderer, as on the web page;
   /// * `rate` as the rate table (the columns, each record's values and reason, the totals), `poll_html` as the poll
@@ -136,7 +136,14 @@ class Post with PostMappable {
         ? PostReportTarget(pid: pid, tid: int.tryParse(tid) ?? 0, fid: fid, viewerUid: viewerUid)
         : null;
 
-    final lastEdit = p['lastedit'] is Map<String, dynamic> ? _apiMap(p['lastedit']) : null;
+    // The last edit line as the page prints it; none when the plugin could not read the name and the time out of
+    // it (both empty), as the card would print an empty line otherwise. The time is whatever the forum printed
+    // ("2026-10-16 02:02", "昨天 12:00"…), carried as text as the page's is.
+    final lastEditMap = p['lastedit'] is Map<String, dynamic> ? _apiMap(p['lastedit']) : null;
+    final lastEdit =
+        lastEditMap != null && _apiText(lastEditMap['username']).isNotEmpty && _apiText(lastEditMap['time']).isNotEmpty
+        ? lastEditMap
+        : null;
 
     final locked = <Locked>[];
     if (first && pay != null && _apiInt(pay['need_pay']) == 1 && _apiInt(pay['price']) > 0) {

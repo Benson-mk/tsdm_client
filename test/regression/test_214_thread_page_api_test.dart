@@ -239,6 +239,54 @@ void main() {
       expect(page.postList.every((e) => e.rateAction == null), isTrue);
     });
 
+    test('a thread the answer does not name keeps the thread asked for', () {
+      final json = _json('thread_v3_plain.json');
+      final thread = json['thread'] as Map<String, dynamic>;
+      for (final bad in [
+        {...thread}..remove('tid'),
+        {...thread, 'tid': 0},
+        {...thread, 'tid': 'x'},
+      ]) {
+        final page = threadPageFromApi({...json, 'thread': bad}, 1);
+        expect(page.tid, isNull, reason: '$bad');
+        expect(page.replyParameters, isNull, reason: 'no thread to reply to');
+        expect(page.postList, hasLength(9));
+      }
+      final noForum = threadPageFromApi({
+        ...json,
+        'thread': {...thread, 'fid': 0},
+      }, 1);
+      expect(noForum.fid, isNull);
+      expect(noForum.replyParameters, isNull);
+      expect(noForum.postList.every((e) => e.reportTarget == null), isTrue, reason: 'no forum for the report');
+    });
+
+    test('closed for a member when the forum prints no fast reply form, or one without its textarea', () {
+      final json = _json('thread_v3_plain.json');
+      final reply = json['reply'] as Map<String, dynamic>;
+      expect(reply, containsPair('fastpost_allowed', 1));
+      ThreadPageInfo withReply(Map<String, dynamic> r) => threadPageFromApi({
+        ...json,
+        'reply': {...reply, ...r},
+      }, 1);
+      expect(withReply({}).threadClosed, isFalse);
+      expect(withReply({'allowed': 0}).threadClosed, isTrue);
+      expect(withReply({'fastpost': 0}).threadClosed, isTrue);
+      expect(withReply({'fastpost': 0}).replyParameters, isNull);
+      final noTextarea = withReply({'fastpost_allowed': 0});
+      expect(noTextarea.threadClosed, isTrue, reason: 'a newbie: the form without its textarea');
+      expect(noTextarea.replyParameters, isNotNull, reason: 'the hidden fields are there, as the page parser reads');
+      // A guest is told to log in instead.
+      expect(
+        threadPageFromApi({
+          ...json,
+          'uid': 0,
+          'reply': {...reply, 'fastpost_allowed': 0},
+        }, 1).threadClosed,
+        isFalse,
+      );
+    });
+
     test('a moderated thread: the moderation sentence', () {
       final page = _page('thread_v3_moderated.json');
       expect(page.latestModAct, '本主题由 管理团队 于 6\u00a0小时前 打开');
@@ -491,6 +539,30 @@ void main() {
       expect(post.lastEditUsername, 'ag_mid');
       expect(post.lastEditTime, '2026-10-16 02:02');
       expect(post.data, contains('pstatus'), reason: "the content keeps the page's edit line");
+
+      // The time as the forum printed it, whatever its shape; none when the plugin read neither name nor time.
+      Post withEdit(Map<String, dynamic> lastedit) => Post.fromApi(
+        {..._floor('thread_v3_edited.json', 4436), 'lastedit': lastedit},
+        tid: '9199773',
+        fid: 11,
+        viewerUid: 35,
+        page: 1,
+      );
+      final relative = withEdit({'username': 'ag_mid', 'time': '昨天 12:00', 'text': 'x'});
+      expect(relative.lastEditUsername, 'ag_mid');
+      expect(relative.lastEditTime, '昨天 12:00');
+      final seconds = withEdit({'username': 'a b', 'time': '2026-10-16 02:02:33'});
+      expect(seconds.lastEditUsername, 'a b');
+      expect(seconds.lastEditTime, '2026-10-16 02:02:33');
+      for (final unread in [
+        {'username': '', 'time': '', 'text': '本帖最后由 x 编辑'},
+        {'username': 'ag_mid', 'time': ''},
+        {'username': '', 'time': '2026-10-16 02:02'},
+      ]) {
+        final post = withEdit(unread);
+        expect(post.lastEditUsername, isNull, reason: '$unread');
+        expect(post.lastEditTime, isNull, reason: '$unread');
+      }
     });
 
     test('a paid thread not bought: the purchase lock of the first floor', () {
@@ -581,6 +653,19 @@ void main() {
       expect(anonymous.author.avatarUrl, isNull);
       expect(anonymous.reportTarget, isNull);
       expect(anonymous.postFloor, 2);
+      // A moderator is given the real authorid of an anonymous floor: still anonymous, no uid to navigate to.
+      final moderated = Post.fromApi(
+        {...base, 'anonymous': 1, 'author': '', 'avatar': '', 'authorid': 31},
+        tid: '9199345',
+        fid: 2,
+        viewerUid: 32,
+        page: 1,
+      );
+      expect(moderated.author.name, '匿名');
+      expect(moderated.author.uid, isNull);
+      expect(moderated.author.url, '');
+      expect(moderated.author.avatarUrl, isNull);
+      expect(moderated.reportTarget, isNull);
 
       final hot = Post.fromApi({...base, 'position': -1}, tid: '9199345', fid: 2, viewerUid: 35, page: 1);
       expect(hot.postFloor, isNull);
@@ -714,6 +799,38 @@ void main() {
       expect(page.postList.map((e) => e.postID), contains('3954'));
     });
 
+    test(
+      'the old path: a page without a pager is page 1 of 1 whatever page was asked (the author-only view)',
+      () async {
+        final html = _raw('thread_plain.html');
+        expect(parseHtmlDocument(html).querySelector('div.pg'), isNull);
+        final page = _right(
+          await _repository(
+            html,
+            contentType: 'text/html; charset=utf-8',
+          ).fetchThreadPage(tid: '9199345', pageNumber: 5, pageFallback: 1, onlyVisibleUid: '31').run(),
+        );
+        expect(page.currentPage, 1);
+        expect(page.totalPages, 1);
+        // Without the fallback the page asked for stands, as the page jumps read it.
+        final jumped = _right(
+          await _repository(
+            html,
+            contentType: 'text/html; charset=utf-8',
+          ).fetchThreadPage(tid: '9199345', pageNumber: 5).run(),
+        );
+        expect(jumped.currentPage, 5);
+        // The structured answer always tells its page.
+        final api = _right(
+          await _repository(
+            _raw('thread_v3_long_author.json'),
+          ).fetchThreadPage(tid: '1120', pageNumber: 5, pageFallback: 1).run(),
+        );
+        expect(api.currentPage, 1);
+        expect(api.totalPages, 1);
+      },
+    );
+
     test('the web page: parsed as before', () async {
       final page = _right(
         await _repository(
@@ -768,6 +885,12 @@ void main() {
       final raw = File(name).readAsStringSync();
       for (final needle in ['127.0.0.1', 'AgTest', '"password"', '"email"', '"regip"', '"lastip"']) {
         expect(raw, isNot(contains(needle)), reason: '$name $needle');
+      }
+      expect(raw, isNot(matches(RegExp(r'\b\d{1,3}(\.\d{1,3}){3}\b'))), reason: '$name: an IPv4 address');
+      // Plain http only in the test content itself: the empty homepage link Discuz prints (`href="http://"`) and
+      // the example hosts of the test posts; never a real host.
+      for (final m in RegExp(r'http://[^"\x27&<\s\\]*').allMatches(raw)) {
+        expect(m.group(0), matches(RegExp(r'^http://([a-z0-9.-]*\.example(\.com)?(/.*)?)?$')), reason: name);
       }
       final json = jsonDecode(raw) as Map<String, dynamic>;
       expect(json.containsKey('head'), isFalse, reason: name);
