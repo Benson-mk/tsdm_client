@@ -201,8 +201,8 @@ void main() {
 
     test('the check-in block, as the page prints it', () {
       expect(p.checkinDaysCount, 1);
-      expect(p.checkinThisMonthCount, '0');
-      expect(p.checkinRecentTime, '2026-09-25 01:07', reason: "the forum's time (timeoffset 8)");
+      expect(p.checkinThisMonthCount, '1');
+      expect(p.checkinRecentTime, '2023-11-15 06:13', reason: "the forum's time (timeoffset 8); the fixture tool pins the check-in time");
       expect(p.checkinAllCoins, '6');
       expect(p.checkinLastTimeCoin, '6');
       expect(p.checkinLevel, '[LV.1]初来乍到');
@@ -223,13 +223,13 @@ void main() {
     test("the activity: the forum's wall clock as the page prints it, the IPs of the own page, the time zone", () {
       expect(p.onlineTime, '28 小时');
       expect(p.registerTime, DateTime(2026, 9, 4, 1, 19));
-      expect(p.lastVisitTime, DateTime(2026, 10, 20, 20, 20));
+      expect(p.lastVisitTime, DateTime(2023, 11, 15, 6, 13), reason: 'the fixture tool pins the viewer-dependent times');
       expect(p.registerTime, _at(1788455940));
-      expect(p.lastVisitTime, _at(1792498800));
-      expect(p.lastActiveTime, _at(1792498820));
+      expect(p.lastVisitTime, _at(1700000000));
+      expect(p.lastActiveTime, _at(1700000060));
       expect(p.lastPostTime, _at(1792446300));
-      expect(p.registerIP, '1.2.3.4:0 - Invalid');
-      expect(p.lastVisitIP, '1.2.3.4:43622 - Reserved');
+      expect(p.registerIP, '1.2.3.4:1234 - Invalid');
+      expect(p.lastVisitIP, '1.2.3.4:1234 - Reserved');
       expect(p.timezone, '使用系统默认');
     });
 
@@ -292,9 +292,9 @@ void main() {
       expect(p.registerIP, isNull, reason: 'not the viewer: no IP');
       expect(p.lastVisitIP, isNull);
       expect(p.onlineTime, '51 小时');
-      expect(p.lastPostTime, _at(1792472820));
-      expect(p.credits, '1187');
-      expect(p.coins, '825');
+      expect(p.lastPostTime, _at(1792499820));
+      expect(p.credits, '1190');
+      expect(p.coins, '827');
       expect(p.checkinAllCoins, '18');
       expect(parseFriendsInfo(p.friendsCount).count, '0');
     });
@@ -317,7 +317,7 @@ void main() {
       expect(p.natural, '-460');
       expect(p.spirit, '-7');
       expect(p.famous, '342');
-      expect(p.checkinRecentTime, '2026-09-25 01:07');
+      expect(p.checkinRecentTime, '2023-11-15 06:13');
     });
 
     test('a lookup by username: a super moderator', () {
@@ -677,7 +677,7 @@ void main() {
       final web = _right(await buildProfile(profileHtmlDocumentOf(_json('profile_v4_self.json'))).run());
       expect(web.username, 'ag_low2');
       expect(web.profileMedals, hasLength(107));
-      expect(web.checkinRecentTime, '2026-09-25 01:07');
+      expect(web.checkinRecentTime, '2023-11-15 06:13');
     });
   });
 

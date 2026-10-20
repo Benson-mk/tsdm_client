@@ -10,8 +10,9 @@ every request so the tests can pin them:
 - `formhash` → `f1f2f3f4`
 - `reply.posttime` → `1700000000`
 - `thread.views` → `100`
+- `activity.lastvisit` → `1700000000`, `activity.lastactivity` → `1700000060`, `checkin.last` → `1700000000` (profile page)
 
 `forum_v2_fid2.json`, `thread_v3_plain.json` and `profile_v4_self.json` carry a deliberate garbage `document`: the tests
 prove the structured path never reads it. `forum_v2_fid29_pending.json` is hand-written (the pending-application
-message). The `profile_v4_*.json` answers (plugin 2.2.0, 2026-10-20) were scrubbed with the same rules by a script, until
-the tool covers the profile page. Everything else must not be edited by hand; change the plugin or the tool instead.
+message). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
+(and the same rows in `profile_html`), `checkin.last` (and the check-in row), the IP ports. Everything else must not be edited by hand; change the plugin or the tool instead.
