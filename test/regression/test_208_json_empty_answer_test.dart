@@ -54,6 +54,7 @@ import 'package:tsdm_client/features/points/repository/points_repository.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/profile/repository/my_titles_repository.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
+import 'package:tsdm_client/features/profile/utils/profile_page_api.dart';
 import 'package:tsdm_client/features/search/repository/search_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
@@ -274,7 +275,7 @@ final List<_Caller> _callers = [
   ),
   (
     name: 'profile of another user',
-    run: (_) => _state(ProfileRepository().fetchProfile(uid: '1001'), _docView),
+    run: (_) => _state(ProfileRepository().fetchProfile(uid: '1001'), (p) => _docView((p as ProfileWebPage).document)),
     pages: true,
   ),
   (

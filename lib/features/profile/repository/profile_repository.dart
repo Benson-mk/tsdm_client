@@ -1,13 +1,12 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
-import 'package:tsdm_client/features/profile/utils/parse_profile.dart';
+import 'package:tsdm_client/features/profile/utils/profile_page_api.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 // Re-export the avatar parser for users of the profile page document (e.g. homepage bloc).
@@ -18,45 +17,49 @@ final class ProfileRepository with LoggerMixin {
   static const _editAvatarPage = '$baseUrl/home.php?mod=spacecp&ac=avatar';
 
   /// Profile page of the logged user, fetched for the account [_loggedUserUid].
-  uh.Document? _loggedUserDocument;
+  ProfilePage? _loggedUserPage;
 
-  /// Uid of the account [_loggedUserDocument] belongs to.
+  /// Uid of the account [_loggedUserPage] belongs to.
   ///
   /// The repository is app wide and outlives account switches and logouts, so the cache only answers for the account
   /// in use: after a quick account switch the profile page and its unread counts showed the previous account until
   /// the homepage happened to reload it (GitHub #184 follow-up).
   int? _loggedUserUid;
 
-  /// [_loggedUserDocument] when it belongs to the account in use, null otherwise.
-  uh.Document? get _currentCache {
-    final document = _loggedUserDocument;
-    if (document == null) {
+  /// [_loggedUserPage] when it belongs to the account in use, null otherwise.
+  ProfilePage? get _currentCache {
+    final page = _loggedUserPage;
+    if (page == null) {
       return null;
     }
     final uid = getIt.get<SettingsRepository>().currentSettings.loginUid;
-    return uid != 0 && uid == _loggedUserUid ? document : null;
+    return uid != 0 && uid == _loggedUserUid ? page : null;
   }
 
-  /// Check has cached html [_loggedUserDocument] for logged user or not.
+  /// Check has cached page [_loggedUserPage] for logged user or not.
   bool hasCache() => _currentCache != null;
 
-  /// Get the cached [_loggedUserDocument] for logged user.
-  uh.Document? getCache() => _currentCache;
+  /// Get the cached [_loggedUserPage] for logged user.
+  ProfilePage? getCache() => _currentCache;
 
   /// Clear cache as logged out.
   void logout() {
-    _loggedUserDocument = null;
+    _loggedUserPage = null;
     _loggedUserUid = null;
   }
-
-  /// Profile page document cache;
 
   /// Fetch profile page from server.
   ///
   /// * Try to get the profile page of [uid] or [username] if provided.
   /// * Try to get current logged user profile if no parameter provided.
   /// * Return null if not logged in.
-  AsyncEither<uh.Document> fetchProfile({String? username, String? uid, bool force = false}) => AsyncEither(() async {
+  ///
+  /// The page is asked in the JSON mode of the forum's app API. An answer of plugin 2.2.0 or later carries the
+  /// profile as structured fields (`schema: 4`), or is the forum's own message with `login` (please log in, no such
+  /// user): a [ProfileApiPage], built by `profileFromApi`, its `document` never read. Any other answer (a web page
+  /// from a forum without the plugin, an older plugin's answer, whose `document` holds the blocks of the page) is a
+  /// [ProfileWebPage], parsed as the web page (`buildProfile`).
+  AsyncEither<ProfilePage> fetchProfile({String? username, String? uid, bool force = false}) => AsyncEither(() async {
     debug('fetch profile page');
     late final String targetUrl;
     // Uid of the logged user whose profile is fetched, null for another user's profile.
@@ -90,30 +93,35 @@ final class ProfileRepository with LoggerMixin {
     switch (await getIt.get<NetClientProvider>().get(withTsdmAppJson(targetUrl)).run()) {
       case Left(:final value):
         return left(value);
-      case Right(:final value) when tsdmAppAnswerWithoutPage(value.data):
-        // A failed request, not a profile page of a guest (which would read as an expired session).
-        return left(HttpRequestFailedException(value.statusCode));
       case Right(:final value):
-        final document = tsdmAppPageDocument(value.data);
+        final ProfilePage page;
+        if (profileApiAnswerOf(value.data) case final api?) {
+          page = ProfileApiPage(api);
+        } else if (tsdmAppAnswerWithoutPage(value.data)) {
+          // A failed request, not a profile page of a guest (which would read as an expired session).
+          return left(HttpRequestFailedException(value.statusCode));
+        } else {
+          page = ProfileWebPage(tsdmAppPageDocument(value.data));
+        }
         // Not when the account changed while the page was on its way: it belongs to the previous one.
         if (loggedUid != null && getIt.get<SettingsRepository>().currentSettings.loginUid == loggedUid) {
-          _loggedUserDocument = document;
+          _loggedUserPage = page;
           _loggedUserUid = loggedUid;
         }
-        return right(document);
+        return right(page);
     }
   });
 
   /// Fetch user avatar for current user.
   ///
   /// Parsed from the profile page of current logged user.
-  AsyncEither<String> fetchAvatarUrl({bool force = false}) => fetchProfile(force: force).flatMap((doc) {
-    if (!isLoggedInDocument(doc)) {
+  AsyncEither<String> fetchAvatarUrl({bool force = false}) => fetchProfile(force: force).flatMap((page) {
+    if (!page.loggedIn) {
       // Session expired, the server rendered a guest page.
       error('failed to fetch avatar url: not logged in');
       return TaskEither<AppException, String>.left(ProfileNeedLoginException());
     }
-    return switch (parseProfileAvatarUrl(doc)) {
+    return switch (page.avatarUrl) {
       final String url => TaskEither.right(url),
       null => () {
         error('failed to fetch avatar url: avatar not found in profile page');
