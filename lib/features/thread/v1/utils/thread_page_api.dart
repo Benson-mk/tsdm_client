@@ -43,14 +43,17 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 /// * `forum.name` is the forum's name, `nav` the breadcrumbs from the group down to the forum of the thread (the
 ///   group linked as `forum.php?gid=`, a forum as `forum.php?mod=forumdisplay&fid=`), the thread itself not among
 ///   them, as the page's breadcrumb parser leaves them;
-/// * `page` / `pages` are the pagination the forum printed (the `pages` of the forum's own order, which a reversed
-///   or author-only request keeps);
+/// * `page` / `pages` are the pagination the forum printed (`page` clamped to the last page as the forum does when
+///   asked past it; the `pages` of the forum's own order, which a reversed or author-only request keeps);
 /// * `reply.allowed` tells a member whether the thread takes a reply (`threadClosed`: the page's closed hint in the
-///   fast reply form); a guest's page is never closed, as the web page tells a guest to log in instead;
+///   fast reply form); a guest's page is never closed, as the web page tells a guest to log in instead.
+///   `reply.fastpost_allowed` (whether the form has its textarea: a newbie, an account without avatar… have
+///   `allowed` 1 but no textarea) is not read: the page parser keeps the reply parameters of such a form too;
 /// * `reply` with the answer's `formhash` is the fast reply form (`replyParameters`), none when the forum prints no
 ///   form (`fastpost` 0);
 /// * `posts` are the floors in the forum's order, hot and sticky replies included ([Post.fromApi]), with the
-///   answer's `uid` as the account they were served to;
+///   answer's `uid` as the account they were served to; the placeholder of a deleted floor of a rush thread
+///   (`deleted` 1) is left out, as the page parser leaves it out;
 /// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`).
 ///
 /// The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
@@ -97,9 +100,12 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final draft = _int(thread['draft']) == 1;
   final pay = thread['pay'] is Map<String, dynamic> ? _map(thread['pay']) : null;
 
-  final postList = _list(
-    json['posts'],
-  ).map((p) => Post.fromApi(p, tid: tid, fid: fid, viewerUid: uid, page: currentPage, pay: pay, draft: draft)).toList();
+  // The placeholder a rush thread prints for a deleted floor (`deleted` 1: "无效楼层，该帖已经被删除", no author, no
+  // content) is left out, as the page parser leaves out a floor without an author.
+  final postList = _list(json['posts'])
+      .where((p) => _int(p['deleted']) != 1)
+      .map((p) => Post.fromApi(p, tid: tid, fid: fid, viewerUid: uid, page: currentPage, pay: pay, draft: draft))
+      .toList();
 
   final typeId = _int(thread['typeid']);
   final typeName = _text(thread['typename']);

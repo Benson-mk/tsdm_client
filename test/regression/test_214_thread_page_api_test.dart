@@ -134,6 +134,8 @@ void main() {
         'typed',
         'closed',
         'moderated',
+        'rush_deleted',
+        'overpage',
       ]) {
         expect(threadApiAnswerOf(_raw('thread_v3_$name.json')), isNotNull, reason: name);
         expect(_json('thread_v3_$name.json')['schema'], 3, reason: name);
@@ -175,7 +177,7 @@ void main() {
       expect(page.threadType, isNull, reason: 'typeid 0');
       expect(page.isDraft, isFalse);
       expect(page.latestModAct, isNull, reason: 'modact empty');
-      expect(page.viewCount, 106);
+      expect(page.viewCount, 112);
       expect(page.replyCount, 8);
 
       // The breadcrumbs from the group down to the forum, the thread not among them, linked as the page links them.
@@ -189,8 +191,8 @@ void main() {
       final reply = page.replyParameters!;
       expect(reply.fid, '2');
       expect(reply.tid, '9199345');
-      expect(reply.postTime, '1792484154');
-      expect(reply.formHash, 'e8f00e4d');
+      expect(reply.postTime, '1792484637');
+      expect(reply.formHash, 'e331f023');
       expect(reply.subject, '');
 
       // The medal menus of the page, one per menu.
@@ -274,6 +276,44 @@ void main() {
       expect(author.postList.map((e) => e.postID), ['4043']);
       expect(author.postList.single.postFloor, 1, reason: 'the position the forum numbers the filtered list with');
       expect(author.postList.single.author.uid, '31');
+    });
+
+    test('a page past the last one: the forum answers the last page', () {
+      final page = _page('thread_v3_overpage.json', pageNumber: 99);
+      expect(page.currentPage, 31);
+      expect(page.totalPages, 31);
+      expect(page.postList.map((e) => e.postFloor), [301, 302]);
+      expect(page.postList.every((e) => e.page == 31), isTrue);
+    });
+
+    test('a rush thread: the placeholder of a deleted floor is left out, as the page parser leaves it out', () {
+      final json = _json('thread_v3_rush_deleted.json');
+      final deleted = (json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((e) => e['deleted'] == 1);
+      expect(deleted['pid'], 3208);
+      expect(deleted['urls'], isNull);
+      expect(deleted['group'], isNull);
+      final page = _page('thread_v3_rush_deleted.json');
+      expect(page.postList.map((e) => e.postID), ['3206', '3207', '3209']);
+      expect(page.postList.map((e) => e.postFloor), [1, 2, 4]);
+      expect(page.replyCount, 3);
+
+      // Built on its own, the placeholder is an empty floor, nothing thrown on the null fields.
+      final post = Post.fromApi(deleted, tid: '9199091', fid: 6, viewerUid: 35, page: 1);
+      expect(post.postID, '3208');
+      expect(post.postFloor, 3);
+      expect(post.author.uid, isNull);
+      expect(post.author.avatarUrl, isNull);
+      expect(post.publishTime, isNull);
+      expect(post.data, '');
+      expect(post.shareLink, isNull);
+      expect(post.replyAction, isNull);
+      expect(post.rateAction, isNull);
+      expect(post.editUrl, isNull);
+      expect(post.reportTarget, isNull);
+      expect(post.rate, isNull);
+      expect(post.poll, isNull);
+      expect(post.locked, isEmpty);
+      expect(post.signature, isNull);
     });
 
     test('the findpost redirect: the page the floor is on', () {
@@ -476,6 +516,15 @@ void main() {
         pay: const {'price': 5, 'need_pay': 0, 'payers': 3},
       );
       expect(bought.locked, isEmpty);
+      final boughtNoCount = Post.fromApi(
+        _floor('thread_v3_paid.json', 3055),
+        tid: '9199057',
+        fid: 25,
+        viewerUid: 35,
+        page: 1,
+        pay: const {'price': 5, 'need_pay': 0, 'payers': null},
+      );
+      expect(boughtNoCount.locked, isEmpty, reason: 'payers null once bought');
       final reply = Post.fromApi(
         {..._floor('thread_v3_paid.json', 3055), 'first': 0, 'position': 2},
         tid: '9199057',
@@ -650,7 +699,7 @@ void main() {
       expect(page.tid, '9199345');
       expect(page.postList.map((e) => e.postID), contains('3954'));
       expect(page.postList.map((e) => e.postID), isNot(contains('1')), reason: 'the garbage document');
-      expect(page.replyParameters?.formHash, 'e8f00e4d');
+      expect(page.replyParameters?.formHash, 'e331f023');
     });
 
     test('the message of the plugin: the login prompt', () async {
@@ -714,7 +763,7 @@ void main() {
 
   test('the fixtures carry nothing of the test forum', () {
     final names = Directory(_dir).listSync().map((e) => e.path).where((e) => e.contains('thread_v3_')).toList();
-    expect(names, hasLength(17));
+    expect(names, hasLength(19));
     for (final name in names) {
       final raw = File(name).readAsStringSync();
       for (final needle in ['127.0.0.1', 'AgTest', '"password"', '"email"', '"regip"', '"lastip"']) {

@@ -88,6 +88,9 @@ class Post with PostMappable {
   ///
   /// [page] is the page the floor was asked on; [draft] whether the thread is a draft (its first floor is then the
   /// draft, as on the web page, when it can be edited).
+  ///
+  /// The placeholder of a deleted floor of a rush thread (`deleted` 1: no author, `urls` and `group` null, every
+  /// html field empty) builds an empty floor without author, content or action; `threadPageFromApi` leaves it out.
   factory Post.fromApi(
     Map<String, dynamic> p, {
     required String tid,
