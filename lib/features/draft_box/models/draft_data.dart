@@ -119,6 +119,43 @@ DraftPage parseDraftPage(uh.Document document, {required int page, required int 
   return DraftPage(List.unmodifiable(entries), next);
 }
 
+/// [parseDraftPage] on the structured "my threads" answer [json] of the forum's app API (plugin 2.4.0, `schema: 9`,
+/// `myThreadApiAnswerOf`, `ok` 1) asked for page [page] of the draft box of the account [uid].
+///
+/// The answer must be the draft filter of the account's own list (`view=me`, `filter=save`: the page the web path
+/// recognizes by its selected filter link; the list of the account, `owner.uid`), else the list is unavailable;
+/// every row must name a thread, a forum and a subject, else the row is invalid; the next page is the one after
+/// [page] when the forum has one (`has_next`). The rows carry no first floor (`pid` 0): the draft is resolved from
+/// its thread page when opened, as before. Throws [FormatException] as the page parser throws.
+DraftPage draftPageFromApi(Map<String, dynamic> json, {required int page, required int uid}) {
+  final owner = json['owner'];
+  final ownerUid = owner is Map<String, dynamic> ? _apiInt(owner['uid']) : 0;
+  if (json['view'] != 'me' || json['filter'] != 'save' || ownerUid != uid) {
+    throw const FormatException('Draft list unavailable');
+  }
+  final rows = json['threads'];
+  if (rows is! List) throw const FormatException('Unrecognized draft list');
+  final entries = <DraftEntry>[];
+  for (final row in rows) {
+    if (row is! Map<String, dynamic>) throw const FormatException('Invalid draft row');
+    final tid = _apiInt(row['tid']);
+    final fid = _apiInt(row['fid']);
+    final title = row['subject'] is String ? (row['subject'] as String).trim() : '';
+    final forumName = row['forum'] is String ? (row['forum'] as String).trim() : '';
+    if (tid <= 0 || fid <= 0 || title.isEmpty) {
+      throw const FormatException('Invalid draft row');
+    }
+    entries.add(DraftEntry(tid: '$tid', fid: '$fid', title: title, forumName: forumName));
+  }
+  return DraftPage(List.unmodifiable(entries), _apiInt(json['has_next']) == 1 ? page + 1 : null);
+}
+
+int _apiInt(Object? value) => switch (value) {
+  final num n => n.toInt(),
+  final String s => int.tryParse(s) ?? 0,
+  _ => 0,
+};
+
 /// [parseDraftTarget] on the thread page [page] built from the structured answer of the forum's app API
 /// (`threadPageFromApi`): the thread must still be a draft (`thread.draft`) and the one of [entry], with its first
 /// floor and the edit link the forum offers on it (`can.edit`, `urls.edit`) naming the draft's forum, thread and

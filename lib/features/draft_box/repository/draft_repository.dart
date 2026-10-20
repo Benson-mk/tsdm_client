@@ -1,5 +1,6 @@
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/draft_box/models/draft_data.dart';
+import 'package:tsdm_client/features/my_thread/utils/my_thread_page_api.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -17,15 +18,14 @@ class DraftRepository {
   /// plugin 1.6.0, the draft thread since 1.4.0. Both keep the `discuz_uid` the identity check reads; an older plugin
   /// answers the web page. A JSON answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or
   /// an empty body) is a failed request, not a page without the account, which the check would take for an expired
-  /// session. The draft thread of plugin 2.1.0 comes as structured fields (`schema: 3`), read by [resolve].
+  /// session. The draft thread of plugin 2.1.0 comes as structured fields (`schema: 3`), read by [resolve]; the
+  /// draft list of plugin 2.4.0 as well (`schema: 9`), read by [load].
   factory DraftRepository.network(NetClientProvider client) =>
       DraftRepository((url) => fetchTsdmAppPageAnswer(client, url));
 
   /// No POST is performed by this repository. The answer is the web page, or the JSON answer of the forum's app API
   /// (decoded, or as text), see [tsdmAppPageHtml].
   final Future<Object?> Function(String url) getPage;
-
-  Future<uh.Document> _fetch(String url, int uid) async => _checked(await getPage(url), uid);
 
   uh.Document _checked(Object? answer, int uid) {
     final document = parseHtmlDocument(tsdmAppPageHtml(answer));
@@ -36,11 +36,20 @@ class DraftRepository {
   }
 
   /// Fetch a validated page of drafts.
-  Future<DraftPage> load(int uid, {int page = 1}) async => parseDraftPage(
-    await _fetch(draftBoxUrl(page: page), uid),
-    page: page,
-    uid: uid,
-  );
+  ///
+  /// The list built from a structured answer tells the account it was served to and its rows ([draftPageFromApi]);
+  /// any other answer is parsed as before ([parseDraftPage]).
+  Future<DraftPage> load(int uid, {int page = 1}) async {
+    final answer = await getPage(draftBoxUrl(page: page));
+    final api = myThreadApiAnswerOf(answer);
+    if (api != null) {
+      if (uid <= 0 || myThreadApiViewerUid(api) != uid) {
+        throw const FormatException('Draft login expired');
+      }
+      return draftPageFromApi(api, page: page, uid: uid);
+    }
+    return parseDraftPage(_checked(answer, uid), page: page, uid: uid);
+  }
 
   /// Resolve an existing draft through GET only.
   ///

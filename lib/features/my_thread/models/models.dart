@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/instance.dart';

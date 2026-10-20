@@ -5,11 +5,11 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/search/models/models.dart';
+import 'package:tsdm_client/features/search/utils/search_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
-import 'package:universal_html/html.dart' as uh;
 
 /// Query parameters of a new forum search, see [SearchRepository] for the meaning of each one.
 Map<String, String> buildSearchQuery({
@@ -43,6 +43,12 @@ Map<String, String> buildSearchQuery({
 ///   `searchid` is parsed from the page links in the result page.
 /// * Starting a new search too frequently is rejected by server ("搜索过于频繁"), so the search id is cached here and
 ///   reused when only page number changes.
+///
+/// The pages are asked in the JSON mode of the forum's app API (the redirect of a new search to its results carries
+/// it). Plugin 2.4.0 answers the results as structured fields (`schema: 6`, [searchApiAnswerOf]): the results are
+/// built from them ([searchResultFromApi]) and the search id read from the answer; the forum's refusal (too
+/// frequent, expired, no permission) is its message. An older plugin's answer and the web page are parsed as before
+/// ([SearchResult.fromDocument]).
 class SearchRepository with LoggerMixin {
   static const _searchUrl = '$baseUrl/search.php';
 
@@ -60,7 +66,7 @@ class SearchRepository with LoggerMixin {
   /// * [authorName]: Author user name, empty represents any user. Passed along with [uid] whenever known: a bare uid
   ///   found nothing for testers on the forum while the name is what the search form itself sends.
   /// * [pageNumber]: Page number of search result.
-  AsyncEither<uh.Document> searchWithParameters({
+  AsyncEither<SearchResult> searchWithParameters({
     required String keyword,
     required String fid,
     required String uid,
@@ -103,6 +109,26 @@ class SearchRepository with LoggerMixin {
       return left(HttpRequestFailedException(resp.statusCode));
     }
 
+    final api = searchApiAnswerOf(resp.data);
+    if (api != null) {
+      if (api['ok'] != 1) {
+        // The forum's own refusal: "抱歉，您的搜索过于频繁", an expired search, no permission, please log in. A search
+        // without a result is a results page of plugin 2.4.0, never a message; the old rule is kept all the same.
+        final message = api['message'] is String ? (api['message'] as String).trim() : '';
+        if (!message.contains('没有找到')) {
+          error('search failed: $message');
+          return left(ServerRespondedErrorException(message));
+        }
+        return right(const SearchResult(currentPage: 1, totalPages: 1, count: 0, data: []));
+      }
+      final searchId = searchIdOfApi(api);
+      if (searchId != null) {
+        _searchId = searchId;
+        _lastParameters = parameters;
+      }
+      return right(searchResultFromApi(api));
+    }
+
     final document = tsdmAppPageDocument(resp.data);
 
     // Server side error, e.g. "抱歉，您的搜索过于频繁" or "没有找到匹配结果".
@@ -117,6 +143,6 @@ class SearchRepository with LoggerMixin {
       _searchId = searchId;
       _lastParameters = parameters;
     }
-    return right(document);
+    return right(SearchResult.fromDocument(document));
   });
 }

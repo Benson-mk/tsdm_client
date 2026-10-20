@@ -16,6 +16,7 @@ import 'package:tsdm_client/features/latest_thread/repository/latest_thread_repo
 import 'package:tsdm_client/features/latest_thread/view/latest_thread_page.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -27,7 +28,6 @@ import 'package:tsdm_client/shared/providers/storage_provider/models/database/da
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/widgets/card/thread_card/thread_card.dart';
-import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
 /// GitHub #12: the full guide list pages behind the homepage modules (`view=hot|digest|sofa`) open in the existing
@@ -84,9 +84,9 @@ final class _FixtureRepository extends LatestThreadRepository {
   final requested = <String>[];
 
   @override
-  AsyncEither<uh.Document> fetchDocument(String url) {
+  AsyncEither<TsdmAppPageAnswer> fetchPage(String url) {
     requested.add(url);
-    return AsyncEither.of(parseHtmlDocument(_data(name)));
+    return AsyncEither.of(TsdmAppWebPage(parseHtmlDocument(_data(name))));
   }
 }
 
@@ -173,7 +173,7 @@ void main() {
 
     test('accepts the guide urls of every module and of 抢沙发', () async {
       for (final view in ['hot', 'digest', 'new', 'newthread', 'sofa']) {
-        final result = await LatestThreadRepository().fetchDocument(guideUrl(view)).run();
+        final result = await LatestThreadRepository().fetchPage(guideUrl(view)).run();
         expect(result.isRight(), isTrue, reason: '$view: $result');
       }
       // The client appends `mobile=no` to every forum request; the guide view is passed through untouched.
@@ -182,7 +182,7 @@ void main() {
       expect(adapter.requests.map((e) => e.queryParameters['view']), ['hot', 'digest', 'new', 'newthread', 'sofa']);
       // Only forum urls are fetched.
       final foreign = await LatestThreadRepository()
-          .fetchDocument('https://example.com/forum.php?mod=guide&view=hot')
+          .fetchPage('https://example.com/forum.php?mod=guide&view=hot')
           .run();
       expect(foreign.isLeft(), isTrue);
       expect(adapter.requests, hasLength(5));

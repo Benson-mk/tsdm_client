@@ -269,8 +269,8 @@ final List<_Caller> _callers = [
   (
     name: 'my threads',
     run: (_) => _state(
-      MyThreadRepository().fetchDocument('$baseUrl/home.php?mod=space&do=thread&view=me&type=thread'),
-      _docView,
+      MyThreadRepository().fetchPage('$baseUrl/home.php?mod=space&do=thread&view=me&type=thread'),
+      _pageView,
     ),
     pages: true,
   ),
@@ -317,8 +317,8 @@ final List<_Caller> _callers = [
   (
     name: 'newest threads',
     run: (_) => _state(
-      LatestThreadRepository().fetchDocument('$baseUrl/forum.php?mod=guide&view=newthread'),
-      _docView,
+      LatestThreadRepository().fetchPage('$baseUrl/forum.php?mod=guide&view=newthread'),
+      _pageView,
     ),
     pages: true,
   ),
@@ -331,7 +331,7 @@ final List<_Caller> _callers = [
     name: 'search',
     run: (_) => _state(
       SearchRepository().searchWithParameters(keyword: 'x', fid: '0', uid: '0', pageNumber: 1),
-      _docView,
+      (r) => '${r.count}|${r.currentPage}|${r.data?.length}',
     ),
     pages: true,
   ),
@@ -420,6 +420,12 @@ String _homeView(ForumHomePage page) => switch (page) {
 };
 
 /// [_docView] of the forum's message answered as fields: the message, the login prompt, the account served, no rows.
+/// A list page the way the tests compare it: the document as [_docView], a structured answer as [_apiMessageView].
+String _pageView(TsdmAppPageAnswer answer) => switch (answer) {
+  TsdmAppWebPage(:final document) => _docView(document),
+  TsdmAppStructuredPage(:final json) => _apiMessageView(json),
+};
+
 String _apiMessageView(Map<String, dynamic> json) => [
   json['message'] ?? '-',
   json['login'] == 1,

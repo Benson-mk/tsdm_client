@@ -1,15 +1,17 @@
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/my_thread/utils/my_thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
-import 'package:universal_html/html.dart' as uh;
 
 /// Repository of MyThread.
 class MyThreadRepository {
-  /// Fetch html document from [url].
+  /// Fetch the list page [url].
   ///
   /// Asked in the JSON mode of the forum's app API, which answers the "my threads" pages (`do=thread`) since plugin
-  /// 1.6.0 (roadmap item 3); an older plugin answers the web page, which parses the same.
-  AsyncEither<uh.Document> fetchDocument(String url) =>
-      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPage((document) => document);
+  /// 1.6.0 (roadmap item 3). Plugin 2.4.0 answers them as structured fields (`schema: 9`, [myThreadApiAnswerOf]),
+  /// kept as a [TsdmAppStructuredPage] for `myThreadsFromApi`; an older plugin answers the web page
+  /// ([TsdmAppWebPage]), which parses as before.
+  AsyncEither<TsdmAppPageAnswer> fetchPage(String url) =>
+      getIt.get<NetClientProvider>().get(withTsdmAppJson(url)).mapHttpPageAnswer(myThreadApiAnswerOf);
 }

@@ -7,6 +7,8 @@ import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/my_thread/models/models.dart';
 import 'package:tsdm_client/features/my_thread/repository/my_thread_repository.dart';
+import 'package:tsdm_client/features/my_thread/utils/my_thread_page_api.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
@@ -46,13 +48,13 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
       ),
     );
     final data = await Future.wait([
-      _myThreadRepository.fetchDocument(myThreadThreadUrl).run(),
-      _myThreadRepository.fetchDocument(myThreadReplyUrl).run(),
+      _myThreadRepository.fetchPage(myThreadThreadUrl).run(),
+      _myThreadRepository.fetchPage(myThreadReplyUrl).run(),
     ]);
     switch ((data[0], data[1])) {
       case (Right(value: final v1), Right(value: final v2)):
-        final (threadList, threadNextPageUrl) = _parseThreadList(v1);
-        final (replyList, replyNextPageUrl) = _parseReplyList(v2);
+        final (threadList, threadNextPageUrl) = _parseThreadPage(v1, myThreadThreadUrl);
+        final (replyList, replyNextPageUrl) = _parseReplyPage(v2, myThreadReplyUrl);
         emit(
           state.copyWith(
             status: MyThreadStatus.success,
@@ -77,8 +79,9 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
     if (state.nextThreadPageUrl == null) {
       return;
     }
+    final url = state.nextThreadPageUrl!;
     await _myThreadRepository
-        .fetchDocument(state.nextThreadPageUrl!)
+        .fetchPage(url)
         .match(
           (e) {
             handle(e);
@@ -86,7 +89,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
             emit(state.copyWith(status: MyThreadStatus.failed));
           },
           (v) {
-            final (threadList, nextThreadPageUrl) = _parseThreadList(v);
+            final (threadList, nextThreadPageUrl) = _parseThreadPage(v, url);
             emit(
               state.copyWith(
                 status: MyThreadStatus.success,
@@ -105,8 +108,9 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
     if (state.nextReplyPageUrl == null) {
       return;
     }
+    final url = state.nextReplyPageUrl!;
     await _myThreadRepository
-        .fetchDocument(state.nextReplyPageUrl!)
+        .fetchPage(url)
         .match(
           (e) {
             handle(e);
@@ -114,7 +118,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
             emit(state.copyWith(status: MyThreadStatus.failed));
           },
           (v) {
-            final (replyList, nextReplyPageUrl) = _parseReplyList(v);
+            final (replyList, nextReplyPageUrl) = _parseReplyPage(v, url);
             emit(
               state.copyWith(
                 status: MyThreadStatus.success,
@@ -131,7 +135,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
   Future<void> _onMyThreadRefreshThreadRequested(MyThreadRefreshThreadRequested event, MyThreadEmitter emit) async {
     emit(state.copyWith(refreshingThread: true));
     await _myThreadRepository
-        .fetchDocument(myThreadThreadUrl)
+        .fetchPage(myThreadThreadUrl)
         .match(
           (e) {
             handle(e);
@@ -139,7 +143,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
             emit(state.copyWith(status: MyThreadStatus.failed, refreshingThread: false));
           },
           (v) {
-            final (threadList, nextThreadPageUrl) = _parseThreadList(v);
+            final (threadList, nextThreadPageUrl) = _parseThreadPage(v, myThreadThreadUrl);
             emit(
               state.copyWith(
                 status: MyThreadStatus.success,
@@ -157,7 +161,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
   Future<void> _onMyThreadRefreshReplyRequested(MyThreadRefreshReplyRequested event, MyThreadEmitter emit) async {
     emit(state.copyWith(refreshingReply: true));
     await _myThreadRepository
-        .fetchDocument(myThreadReplyUrl)
+        .fetchPage(myThreadReplyUrl)
         .match(
           (e) {
             handle(e);
@@ -165,7 +169,7 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
             emit(state.copyWith(status: MyThreadStatus.failed, refreshingReply: false));
           },
           (v) {
-            final (replyList, nextReplyPageUrl) = _parseReplyList(v);
+            final (replyList, nextReplyPageUrl) = _parseReplyPage(v, myThreadReplyUrl);
             emit(
               state.copyWith(
                 status: MyThreadStatus.success,
@@ -179,6 +183,21 @@ final class MyThreadBloc extends Bloc<MyThreadEvent, MyThreadState> with LoggerM
         )
         .run();
   }
+
+  /// The thread list and the next page url of the thread page [answer] fetched from [url]: the structured answer of
+  /// the forum's app API built from its fields (`myThreadsFromApi`), the web page parsed as before
+  /// ([_parseThreadList]).
+  (List<MyThread>, String? nextPageUrl) _parseThreadPage(TsdmAppPageAnswer answer, String url) => switch (answer) {
+    TsdmAppWebPage(:final document) => _parseThreadList(document),
+    TsdmAppStructuredPage(:final json) => myThreadsFromApi(json, url),
+  };
+
+  /// The reply list and the next page url of the reply page [answer] fetched from [url]: the structured answer
+  /// lists one row per reply already (`myThreadsFromApi`), the web page is parsed as before ([_parseReplyList]).
+  (List<MyThread>, String? nextPageUrl) _parseReplyPage(TsdmAppPageAnswer answer, String url) => switch (answer) {
+    TsdmAppWebPage(:final document) => _parseReplyList(document),
+    TsdmAppStructuredPage(:final json) => myThreadsFromApi(json, url),
+  };
 
   /// Parse thread list and next page url.
   ///

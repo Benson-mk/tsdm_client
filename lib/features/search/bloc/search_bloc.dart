@@ -3,7 +3,6 @@ import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/features/search/models/models.dart';
 import 'package:tsdm_client/features/search/repository/search_repository.dart';
 import 'package:tsdm_client/utils/logger.dart';
-import 'package:universal_html/html.dart' as uh;
 
 part 'search_bloc.mapper.dart';
 
@@ -44,10 +43,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> with LoggerMixin {
             error('failed to search: $e');
             emit(state.copyWith(status: SearchStatus.failed, hasPreviousPage: false, hasNextPage: false));
           },
-          (v) async {
-            final document = v;
-            final searchResult = await _parseSearchResult(document);
-
+          (searchResult) async {
             emit(
               state.copyWith(
                 status: SearchStatus.success,
@@ -81,9 +77,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> with LoggerMixin {
             error('failed to search: $e');
             emit(state.copyWith(status: SearchStatus.failed, hasPreviousPage: false, hasNextPage: false));
           },
-          (v) async {
-            final document = v;
-            final searchResult = await _parseSearchResult(document);
+          (searchResult) async {
             emit(
               state.copyWith(
                 status: SearchStatus.success,
@@ -108,9 +102,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> with LoggerMixin {
             error('failed to search: $e');
             emit(state.copyWith(status: SearchStatus.failed, hasPreviousPage: false, hasNextPage: false));
           },
-          (v) async {
-            final document = v;
-            final searchResult = await _parseSearchResult(document);
+          (searchResult) async {
             emit(
               state.copyWith(
                 status: SearchStatus.success,
@@ -140,9 +132,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> with LoggerMixin {
             error('failed to search: $e');
             emit(state.copyWith(status: SearchStatus.failed, hasPreviousPage: false, hasNextPage: false));
           },
-          (v) async {
-            final document = v;
-            final searchResult = await _parseSearchResult(document);
+          (searchResult) async {
             emit(
               state.copyWith(
                 status: SearchStatus.success,
@@ -156,6 +146,4 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> with LoggerMixin {
         )
         .run();
   }
-
-  Future<SearchResult> _parseSearchResult(uh.Document document) async => SearchResult.fromDocument(document);
 }

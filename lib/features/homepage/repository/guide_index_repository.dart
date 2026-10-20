@@ -1,7 +1,9 @@
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
+import 'package:tsdm_client/features/homepage/utils/guide_index_api.dart';
 import 'package:tsdm_client/features/homepage/utils/parse_guide_index.dart';
+import 'package:tsdm_client/features/latest_thread/utils/guide_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
@@ -17,7 +19,17 @@ class GuideIndexRepository {
   /// answer without a page at all (an empty body) is one.
   ///
   /// Asked in the JSON mode of the forum's app API, which answers the guide pages since plugin 1.6.0 (roadmap item 3):
-  /// the homepage reads this page on every launch. An older plugin answers the web page, which parses the same.
-  AsyncEither<List<GuideModule>> fetchGuideIndex() =>
-      getIt.get<NetClientProvider>().get(withTsdmAppJson(guideIndexUrl)).mapHttpPage(parseGuideIndex);
+  /// the homepage reads this page on every launch. Plugin 2.4.0 answers the page as structured fields (`schema: 7`,
+  /// [guideApiAnswerOf]), from which the modules are built ([guideModulesFromApi]); an older plugin answers the web
+  /// page, which parses as before ([parseGuideIndex]).
+  AsyncEither<List<GuideModule>> fetchGuideIndex() => getIt
+      .get<NetClientProvider>()
+      .get(withTsdmAppJson(guideIndexUrl))
+      .mapHttpPageAnswer(guideApiAnswerOf)
+      .map(
+        (answer) => switch (answer) {
+          TsdmAppWebPage(:final document) => parseGuideIndex(document),
+          TsdmAppStructuredPage(:final json) => guideModulesFromApi(json),
+        },
+      );
 }

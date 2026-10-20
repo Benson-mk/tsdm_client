@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/instance.dart';
@@ -87,6 +88,17 @@ class LatestThread {
   /// </tbody>
   LatestThread.fromTBody(uh.Element element) : _info = _buildFromTBodyNode(element);
 
+  /// Build from a thread row [row] of a structured answer of the forum's app API (plugin 2.4.0): a guide list
+  /// (`schema: 7`, `latestThreadsFromApi`) or the search results of 查看新帖 (`schema: 6`), which share one row shape.
+  ///
+  /// The row is read as [NormalThread.fromApi] reads it (a moved thread is the row of its target, as the page links
+  /// it; an anonymous author has no uid; the times are the forum's unix seconds): the forum from `fid` and `forum`,
+  /// the last replier and time from `lastposter` / `lastpost` (the replier by name only: the list pages name no uid
+  /// for them, as the web page links them by name), the thread's author as [threadAuthor]. A row that is one reply
+  /// (`pid`: the guide's "my replies", a reply of 查看新帖) links the reply (`goto=findpost`) and quotes it
+  /// (`summary`); the excerpt of a search row is quoted the same, as the search layout's was.
+  LatestThread.fromApi(Map<String, dynamic> row) : _info = _buildFromApi(row);
+
   final _LatestThreadInfo? _info;
 
   /// Whether this thread is successfully parsed.
@@ -126,6 +138,26 @@ class LatestThread {
 
   /// Author of the thread (not the latest reply), null when the layout does not tell.
   User? get threadAuthor => _info?.threadAuthor;
+
+  static _LatestThreadInfo _buildFromApi(Map<String, dynamic> row) {
+    final fid = _apiInt(row['fid']);
+    final thread = NormalThread.fromApi(row, fid: fid, typePrefix: 0);
+    final pid = _apiInt(row['pid']);
+    final summary = _apiText(row['summary']);
+    return _LatestThreadInfo(
+      title: thread.title,
+      url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
+      threadID: thread.threadID,
+      forumName: _apiText(row['forum']),
+      forumUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+      replyCount: thread.replyCount,
+      viewCount: thread.viewCount,
+      latestReplyAuthor: thread.latestReplyAuthor,
+      latestReplyTime: thread.latestReplyTime,
+      quotedMessage: summary.isEmpty ? null : summary,
+      threadAuthor: thread.author,
+    );
+  }
 
   static _LatestThreadInfo? _buildFromTBodyNode(uh.Element element) {
     final thread = NormalThread.fromTBody(element);
@@ -234,3 +266,13 @@ failed to parse LatestThread node: {
     );
   }
 }
+
+/// An integer field of an API answer: 0 when missing or not a number.
+int _apiInt(Object? value) => switch (value) {
+  final num n => n.toInt(),
+  final String s => int.tryParse(s) ?? 0,
+  _ => 0,
+};
+
+/// A text field of an API answer: empty when missing.
+String _apiText(Object? value) => value is String ? value : '';
