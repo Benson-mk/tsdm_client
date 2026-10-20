@@ -46,6 +46,33 @@ final class ChatMessage with ChatMessageMappable {
   /// shows no time per message, so the time of day must not be displayed for it.
   final bool dateOnly;
 
+  /// The message of a row [row] of the structured conversation answer (plugin 2.5.0, `schema: 11`, `messages[]`):
+  /// the author (`fromuid`, `from`: the member's name, which the page prints as "您" for the reader's own messages;
+  /// null when the member is not there any more), the small avatar, the time it was sent (`dateline`, exact) and the
+  /// message as the forum prints it (`message_html`: the html fragment the renderer takes, as the page's `dd.ptm`
+  /// gave it; the plain `message` escaped when the html is missing). Null for a row that names no author, as the
+  /// page parser skips such a row.
+  static ChatMessage? fromApi(Map<String, dynamic> row) {
+    final uid = tsdmAppInt(row['fromuid']);
+    final author = tsdmAppText(row['from']).trim();
+    if (uid <= 0 && author.isEmpty) {
+      talker.error('failed to build chat message: author not found in the answer');
+      return null;
+    }
+    final avatar = tsdmAppText(row['avatar']).trim();
+    final html = tsdmAppText(row['message_html']);
+    final message = html.isNotEmpty
+        ? html
+        : const HtmlEscape(HtmlEscapeMode.element).convert(tsdmAppText(row['message'])).replaceAll('\n', '<br />');
+    return ChatMessage(
+      author: author.isEmpty ? null : author,
+      authorUid: uid > 0 ? '$uid' : null,
+      authorAvatarUrl: avatar.isEmpty ? null : avatar.prependHost(),
+      message: message,
+      dateTime: tsdmAppTime(row['dateline']),
+    );
+  }
+
   /// Parse the message html in the content node `dd.ptm` of the chat history page.
   ///
   /// ```html

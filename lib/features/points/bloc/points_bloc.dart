@@ -4,7 +4,9 @@ import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/points/models/models.dart';
 import 'package:tsdm_client/features/points/repository/model/models.dart';
 import 'package:tsdm_client/features/points/repository/points_repository.dart';
+import 'package:tsdm_client/features/points/utils/credit_page_api.dart';
 import 'package:tsdm_client/features/points/utils/parse_points.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
@@ -77,22 +79,14 @@ final class PointsChangelogBloc extends Bloc<PointsChangelogEvent, PointsChangel
     PointsChangelogEmitter emit,
   ) async {
     emit(state.copyWith(status: PointsStatus.loading, fullChangelog: []));
-    await _pointsRepository
-        .fetchChangelogPage(state.parameter.copyWith(pageNumber: 1))
-        .match(
-          (e) {
-            handle(e);
-            error('failed to refresh changelog tab: $e');
-            emit(state.copyWith(status: PointsStatus.failed));
-          },
-          (v) {
-            final document = v;
-            final s = _parseDocument(document, state.currentPage);
-            final allParameters = parseAllParameters(document);
-            emit(s.copyWith(allParameters: allParameters));
-          },
-        )
-        .run();
+    await _pointsRepository.fetchChangelogPage(state.parameter.copyWith(pageNumber: 1)).match(
+      (e) {
+        handle(e);
+        error('failed to refresh changelog tab: $e');
+        emit(state.copyWith(status: PointsStatus.failed));
+      },
+      (v) => emit(_parseAnswer(v, state.currentPage).copyWith(allParameters: _allParametersOf(v))),
+    ).run();
   }
 
   Future<void> _onPointsChangelogLoadMoreRequested(
@@ -103,7 +97,7 @@ final class PointsChangelogBloc extends Bloc<PointsChangelogEvent, PointsChangel
       handle(e);
       error('failed to load more points changelog: $e');
       emit(state.copyWith(status: PointsStatus.failed));
-    }, (v) => emit(_parseDocument(v, event.pageNumber))).run();
+    }, (v) => emit(_parseAnswer(v, event.pageNumber))).run();
   }
 
   Future<void> _onPointsChangelogQueryRequested(
@@ -111,21 +105,43 @@ final class PointsChangelogBloc extends Bloc<PointsChangelogEvent, PointsChangel
     PointsChangelogEmitter emit,
   ) async {
     emit(state.copyWith(status: PointsStatus.loading, fullChangelog: [], parameter: event.parameter));
-    await _pointsRepository
-        .fetchChangelogPage(state.parameter.copyWith(pageNumber: 1))
-        .match(
-          (e) {
-            error('failed to refresh changelog tab: $e');
-            emit(state.copyWith(status: PointsStatus.failed));
-          },
-          (v) {
-            final document = v;
-            final s = _parseDocument(document, state.currentPage);
-            final allParameters = parseAllParameters(document);
-            emit(s.copyWith(allParameters: allParameters));
-          },
-        )
-        .run();
+    await _pointsRepository.fetchChangelogPage(state.parameter.copyWith(pageNumber: 1)).match(
+      (e) {
+        error('failed to refresh changelog tab: $e');
+        emit(state.copyWith(status: PointsStatus.failed));
+      },
+      (v) => emit(_parseAnswer(v, state.currentPage).copyWith(allParameters: _allParametersOf(v))),
+    ).run();
+  }
+
+  /// The page [answer] into state: the structured answer of the forum's app API (plugin 2.5.0) built from its
+  /// fields ([pointsChangelogFromApi]), the web page (or an older plugin's answer) parsed as before
+  /// ([_parseDocument]).
+  PointsChangelogState _parseAnswer(TsdmAppPageAnswer answer, int pageNumber) => switch (answer) {
+    TsdmAppStructuredPage(:final json) => _parseApi(json),
+    TsdmAppWebPage(:final document) => _parseDocument(document, pageNumber),
+  };
+
+  /// The filters of the query form of the page [answer]: of the structured answer, or of the web page as before.
+  ChangelogAllParameters _allParametersOf(TsdmAppPageAnswer answer) => switch (answer) {
+    TsdmAppStructuredPage(:final json) => changelogParametersFromApi(json),
+    TsdmAppWebPage(:final document) => parseAllParameters(document),
+  };
+
+  /// The structured answer [json] into state: failed for the forum's message (a guest), as a page without the
+  /// changelog table is.
+  PointsChangelogState _parseApi(Map<String, dynamic> json) {
+    final page = pointsChangelogFromApi(json);
+    if (page == null) {
+      error('points change log not in the answer');
+      return state.copyWith(status: PointsStatus.failed);
+    }
+    return state.copyWith(
+      status: PointsStatus.success,
+      fullChangelog: [...state.fullChangelog, ...page.changes],
+      currentPage: page.currentPage,
+      totalPages: page.totalPages,
+    );
   }
 
   /// parse [document] into state.

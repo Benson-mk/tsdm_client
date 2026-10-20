@@ -37,6 +37,11 @@ import 'package:universal_html/parsing.dart';
 /// `myThreadApiAnswerOf`); their readers take such an answer as a [TsdmAppStructuredPage] and the web page (or an
 /// older plugin's answer) as a [TsdmAppWebPage] ([TsdmAppPageHttpExt.mapHttpPageAnswer]).
 ///
+/// Plugin 2.5.0 answers the favorites (`schema: 8`), the friends lists (`schema: 10`), a private message
+/// conversation (`schema: 11`) and the credit log (`schema: 12`) the same way (`favoriteApiAnswerOf`,
+/// `friendApiAnswerOf`, `chatApiAnswerOf`, `creditApiAnswerOf`), each with a shape of its own; the forum's own
+/// message of such a plugin tells the login prompt apart ([tsdmAppMessageAsksLogin]).
+///
 /// Plugin 2.3.0 answers a page asked with `nodoc=1` ([tsdmAppNodocQuery], sent with every JSON mode request) without
 /// the `document` and `head` blocks when the answer carries the page as structured fields (`schema`) or is the forum's
 /// message: an answer with a `schema` is a page whether or not it carries the blocks ([tsdmAppAnswerHasStructuredPage]).
@@ -224,7 +229,7 @@ abstract final class TsdmAppApi {
 /// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
 /// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
 /// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
-const expectedTsdmAppVersion = '2.4.0';
+const expectedTsdmAppVersion = '2.5.0';
 
 /// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
 /// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].
@@ -515,7 +520,8 @@ bool tsdmAppAnswerWithoutPage(Object? data) => switch (data) {
 
 /// Whether a JSON answer [json] of a forum page carries the page without its `document`: as structured fields (a
 /// numeric `schema`: the forum page since plugin 2.0.0, the thread page since 2.1.0, the profile since 2.2.0, the
-/// homepage since 2.3.0, the search results, the guide lists and the "my threads" pages since 2.4.0), or as the
+/// homepage since 2.3.0, the search results, the guide lists and the "my threads" pages since 2.4.0, the favorites,
+/// the friends lists, a private message conversation and the credit log since 2.5.0), or as the
 /// forum's own message with `login` telling a guest apart (`ok` 0, `error: message`, plugin 2.2.0). Asked with
 /// [tsdmAppNodocQuery], plugin 2.3.0 leaves the `document` and `head` out of these; the app reads their fields
 /// instead and never misses the blocks.
@@ -616,7 +622,8 @@ extension TsdmAppPageHttpExt on AsyncEither<Response<dynamic>> {
       _page().map((response) => onPage(tsdmAppPageDocument(response.data)));
 
   /// [mapHttpPage] for a page the forum may answer as structured fields: the page's `…ApiAnswerOf`
-  /// (`searchApiAnswerOf`, `guideApiAnswerOf`, `myThreadApiAnswerOf`, [structuredOf]) tells the answers to build
+  /// (`searchApiAnswerOf`, `guideApiAnswerOf`, `myThreadApiAnswerOf`, `favoriteApiAnswerOf`, `friendApiAnswerOf`,
+  /// `chatApiAnswerOf`, `creditApiAnswerOf`, [structuredOf]) tells the answers to build
   /// from their fields ([TsdmAppStructuredPage]), every other page is the document to parse as before
   /// ([TsdmAppWebPage]).
   ///
@@ -633,9 +640,10 @@ extension TsdmAppPageHttpExt on AsyncEither<Response<dynamic>> {
 }
 
 /// A forum page asked in the JSON mode, the way the readers of the list pages (the search results, the guide lists,
-/// the "my threads" pages) take it from their repository: the web page (or an older plugin's answer, whose blocks
-/// are rebuilt as one, [tsdmAppPageDocument]), parsed as it always was, or the structured answer of the forum's app
-/// API (plugin 2.4.0), built from its fields and never from a `document` (which a lean answer, `nodoc=1`, does not
+/// the "my threads" pages; since plugin 2.5.0 the favorites, the friends lists, a private message conversation and
+/// the credit log) take it from their repository: the web page (or an older plugin's answer, whose blocks are
+/// rebuilt as one, [tsdmAppPageDocument]), parsed as it always was, or the structured answer of the forum's app API
+/// (plugin 2.4.0), built from its fields and never from a `document` (which a lean answer, `nodoc=1`, does not
 /// carry). See [TsdmAppPageHttpExt.mapHttpPageAnswer].
 sealed class TsdmAppPageAnswer {
   const TsdmAppPageAnswer();
@@ -677,6 +685,21 @@ int tsdmAppInt(Object? value) => switch (value) {
 
 /// A text field of an API answer [value]: empty when missing.
 String tsdmAppText(Object? value) => value is String ? value : '';
+
+/// A time field of an API answer [value] (unix seconds of the forum's clock, which the answers give exact), the real
+/// instant; null when missing or 0 (the forum has no time for it).
+DateTime? tsdmAppTime(Object? value) {
+  final seconds = tsdmAppInt(value);
+  return seconds > 0 ? DateTime.fromMillisecondsSinceEpoch(seconds * 1000) : null;
+}
+
+/// Whether the forum's message answer [json] (`ok` 0, `error: message`) asks the reader to log in: the forum said so
+/// (`login` 1, plugin 2.2.0), or the message reads as the login prompt, as the parsers of the pages read from their
+/// blocks tell it from `div#messagelogin` and from the wording of the message.
+bool tsdmAppMessageAsksLogin(Map<String, dynamic> json) {
+  final message = tsdmAppText(json['message']);
+  return json['login'] == 1 || message.contains('登录') || message.contains('登入');
+}
 
 /// An object field of an API answer [value]: empty when missing.
 Map<String, dynamic> tsdmAppMap(Object? value) => value is Map<String, dynamic> ? value : const {};

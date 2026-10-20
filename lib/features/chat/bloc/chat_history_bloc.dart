@@ -5,9 +5,10 @@ import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/chat/models/models.dart';
 import 'package:tsdm_client/features/chat/repository/chat_repository.dart';
+import 'package:tsdm_client/features/chat/utils/chat_page_api.dart';
 import 'package:tsdm_client/features/chat/utils/parse_chat.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/utils/logger.dart';
-import 'package:universal_html/html.dart' as uh;
 
 part 'chat_history_bloc.mapper.dart';
 part 'chat_history_event.dart';
@@ -42,8 +43,13 @@ final class ChatHistoryBloc extends Bloc<ChatHistoryEvent, ChatHistoryState> wit
     }, (v) async => _updateState(v, emit, event.page)).run();
   }
 
-  FutureOr<void> _updateState(uh.Document document, _Emit emit, int? page) async {
-    final info = parseChatHistory(document);
+  /// The structured answer of the forum's app API (plugin 2.5.0) built from its fields, the web page (or an older
+  /// plugin's answer) parsed as before.
+  FutureOr<void> _updateState(TsdmAppPageAnswer answer, _Emit emit, int? page) async {
+    final info = switch (answer) {
+      TsdmAppStructuredPage(:final json) => chatHistoryFromApi(json),
+      TsdmAppWebPage(:final document) => parseChatHistory(document),
+    };
     if (info == null) {
       emit(state.copyWith(status: ChatHistoryStatus.failure));
       return;
