@@ -52,6 +52,7 @@ import 'package:tsdm_client/widgets/card/code_card.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/card/spoiler_card.dart';
 import 'package:tsdm_client/widgets/munched_html.dart';
+import 'package:tsdm_client/widgets/network_indicator_image.dart';
 import 'package:tsdm_client/widgets/quoted_text.dart';
 
 const _dir = 'test/data/tsdmapp';
@@ -73,12 +74,23 @@ Map<String, dynamic> _floor(Map<String, dynamic> json, int index) =>
 List<int> _attachIds(String bbcode) =>
     RegExp(r'\[attach\](\d+)\[/attach\]').allMatches(bbcode).map((m) => int.parse(m.group(1)!)).toList();
 
-/// The first floor of `thread_v14_attachments.json` without its `[media]` line, which the app does not draw.
-Post _firstFloorWithoutMedia(String name) {
+/// The first floor of `thread_v14_attachments.json` without its `[media]` line, which the app does not draw, and
+/// with the forum's `spoiler` among the floor's [customtags] (the 2.7.0 samples do not carry the field yet).
+Post _firstFloorWithoutMedia(String name, {List<String>? customtags = const ['spoiler']}) {
   final json = _json(name);
   final floor = _floor(json, 0);
   floor['message'] = (floor['message'] as String).replaceFirst(RegExp(r'\[media=[^\]]*\][^\[]*\[/media\]\r\n'), '');
+  if (customtags != null) {
+    floor['customtags'] = customtags;
+  }
   return _posts(json).first;
+}
+
+/// The floor at [index] of the fixture [name] with [customtags].
+Post _withCustomTags(String name, int index, List<String> customtags) {
+  final json = _json(name);
+  _floor(json, index)['customtags'] = customtags;
+  return _posts(json)[index];
 }
 
 /// The floor of `thread_v14_plain.json` (its html has the message cell) with the bbcode [message] and the switches.
@@ -89,6 +101,7 @@ Post _synthetic(
   int parseurloff = 0,
   List<Map<String, Object?>> attachments = const [],
   Map<String, Object?> codes = const {},
+  List<String>? customtags = const ['spoiler'],
 }) {
   final json = _json('thread_v14_plain.json');
   json['codes'] = {...json['codes'] as Map<String, dynamic>, ...codes};
@@ -99,6 +112,9 @@ Post _synthetic(
     ..['parseurloff'] = parseurloff
     ..['attachments'] = attachments;
   codes.keys.forEach(floor.remove);
+  if (customtags != null) {
+    floor['customtags'] = customtags;
+  }
   return _posts(json).single;
 }
 
@@ -142,7 +158,7 @@ List<BbNode> _withoutImages(List<BbNode> nodes) => [
   for (final node in nodes)
     switch (node) {
       BbSmiley() || BbImage() => null,
-      BbAttachment(:final attachment?) when !attachment.locked && attachment.isImage => null,
+      BbAttachment(:final attachment) when !attachment.locked && attachment.isImage => null,
       BbQuote(:final children) => BbQuote(_withoutImages(children)),
       BbSpoiler(:final title, :final children) => BbSpoiler(title, _withoutImages(children)),
       BbAlign(:final align, :final children) => BbAlign(align, _withoutImages(children)),
@@ -427,11 +443,11 @@ void main() {
 
       final attachments = nodes.whereType<BbAttachment>().toList();
       expect(attachments.map((e) => e.aid), _attachIds(post.messageBbcode!));
-      expect(attachments.map((e) => e.attachment?.filename), ['tsdmapp270_cover.png', 'tsdmapp270_paid.png']);
-      expect(attachments[0].attachment!.locked, isFalse);
-      expect(attachments[0].attachment!.url, endsWith('.png'));
-      expect(attachments[1].attachment!.locked, isTrue, reason: 'not bought: the placeholder, nothing fetched');
-      expect(attachments[1].attachment!.url, isEmpty);
+      expect(attachments.map((e) => e.attachment.filename), ['tsdmapp270_cover.png', 'tsdmapp270_paid.png']);
+      expect(attachments[0].attachment.locked, isFalse);
+      expect(attachments[0].attachment.url, endsWith('.png'));
+      expect(attachments[1].attachment.locked, isTrue, reason: 'not bought: the placeholder, nothing fetched');
+      expect(attachments[1].attachment.url, isEmpty);
 
       expect(_plain(nodes), endsWith('結尾\u3000全形空白與\u00a0 \u00a0 \u00a0 \u00a0 tab'));
       // The order of the blocks, each on its own line.
@@ -443,33 +459,35 @@ void main() {
       expect(render.htmlAfter, isNot(contains('postmessage_')));
     });
 
-    test('[attach]: the listed one, a locked one, one not listed (a placeholder, nothing fetched), once per id', () {
+    test('[attach]: the listed one, a locked one (a placeholder, nothing fetched), once per id; one not listed keeps '
+        'the html', () {
       // The account can not view images: the forum gives them as locked files without url.
       final noImage = _render(_firstFloorWithoutMedia('thread_v14_access_noimage.json'), smilies: _table());
       final shown = noImage.nodes.whereType<BbAttachment>().toList();
-      expect(shown.map((e) => (e.attachment?.filename, e.attachment?.locked, e.attachment?.url)), [
+      expect(shown.map((e) => (e.attachment.filename, e.attachment.locked, e.attachment.url)), [
         ('tsdmapp270_cover.png', true, ''),
         ('tsdmapp270_paid.png', true, ''),
       ]);
 
       // A guest of a forum showing guests thumbnails only.
       final guest = _render(_firstFloorWithoutMedia('thread_v14_guestthumb.json'), smilies: _table());
-      expect(guest.nodes.whereType<BbAttachment>().every((e) => e.attachment!.locked), isTrue);
+      expect(guest.nodes.whereType<BbAttachment>().every((e) => e.attachment.locked), isTrue);
 
-      // A guest without the attachments: none listed.
+      // A guest without the attachments: none listed, the html shows what the forum decided.
       final guestFloor = _firstFloorWithoutMedia('thread_v14_hide_viewer_not_replied.json');
-      final none = _render(guestFloor, smilies: _table());
-      expect(none.nodes.whereType<BbAttachment>().map((e) => e.aid), _attachIds(guestFloor.messageBbcode!));
-      expect(none.nodes.whereType<BbAttachment>().map((e) => e.attachment), [null, null]);
+      expect(guestFloor.attachments, isEmpty);
+      expect(_attachIds(guestFloor.messageBbcode!), isNotEmpty);
+      expect(_fallback(guestFloor, smilies: _table()), 'attach-unlisted');
 
-      // A banned author's floor: its bbcode, no attachment.
-      final banned = _render(_post('thread_v14_banned_digest.json', 1));
-      expect(banned.nodes.whereType<BbAttachment>().single.attachment, isNull);
-      // The notice the forum prints above a floor shown to a moderator stays html.
+      // A banned author's floor: its bbcode, but no attachment listed.
+      expect(_fallback(_post('thread_v14_banned_digest.json', 1)), 'attach-unlisted');
+      // The same for a single-banned floor shown to a moderator; the notice above its message is html anyway.
       final singleFloor = _post('thread_v14_singleban_mod.json', 1);
-      final single = _render(singleFloor);
-      expect(single.htmlBefore, contains('locked'));
-      expect(single.nodes.whereType<BbAttachment>().single.aid, _attachIds(singleFloor.messageBbcode!).single);
+      expect(_fallback(singleFloor), 'attach-unlisted');
+      expect(splitPostBodyHtml(singleFloor.data, singleFloor.postID)!.before, contains('该帖被管理员或版主屏蔽'));
+      final plainSingle = _render(_post('thread_v14_singleban_mod.json', 2));
+      expect(plainSingle.htmlBefore, contains('作者被禁止或删除'));
+      expect(_plain(plainSingle.nodes), matches(RegExp(r'^BANNED_PLAIN_\d+ 非精華主題裡禁止組作者的回覆$')));
 
       final twice = _render(
         _synthetic(
@@ -599,7 +617,13 @@ void main() {
 
   group('C. smilies', () {
     test('turned into the images of the table, as the forum does, when the floor needs them', () {
-      final post = _post('thread_v14_smileys.json', 1);
+      expect(
+        _fallback(_post('thread_v14_smileys.json', 1), smilies: _table()),
+        'custom:spoiler',
+        reason: 'the answer does not say the forum expands [spoiler] here',
+      );
+      final post = _withCustomTags('thread_v14_smileys.json', 1, ['spoiler']);
+      expect(post.customTags, ['spoiler']);
       expect(postBbcodeNeedsSmilies(post), isTrue);
       expect(_fallback(post), 'smilies', reason: 'no table yet: the html');
       final render = _render(post, smilies: _table());
@@ -860,13 +884,12 @@ void main() {
       tester,
     ) async {
       final render = _render(_firstFloorWithoutMedia('thread_v14_attachments.json'), smilies: _table());
-      final unlisted = _render(_post('thread_v14_banned_digest.json', 1));
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
               body: SingleChildScrollView(
-                child: Column(children: [PostBbcodeView(_withoutImages(render.nodes)), PostBbcodeView(unlisted.nodes)]),
+                child: PostBbcodeView(_withoutImages(render.nodes)),
               ),
             ),
           ),
@@ -879,7 +902,10 @@ void main() {
       expect(find.textContaining('•  一', findRichText: true), findsOneWidget);
       expect(find.byIcon(Icons.link), findsOneWidget, reason: 'the [url] link, not the bare one');
       expect(find.textContaining('tsdmapp270_paid.png\n${t.postCard.bbcode.attachmentLocked}'), findsOneWidget);
-      expect(find.text(t.postCard.bbcode.attachmentUnavailable), findsOneWidget);
+      expect(find.textContaining('連結', findRichText: true), findsOneWidget);
+      expect(find.textContaining('https://example.com/auto', findRichText: true), findsOneWidget);
+      expect(find.textContaining('粗體 紅字 大字', findRichText: true), findsOneWidget, reason: 'the spaces kept');
+      expect(find.text('標題'), findsOneWidget, reason: 'the spoiler title on its button');
       expect(tester.takeException(), isNull);
     });
 
@@ -1076,4 +1102,191 @@ void main() {
       expect(decidePostBbcode(shown), isA<PostBbcodeFallback>());
     });
   });
+
+  group('G. what the review found', () {
+    const listed = {
+      'aid': 1,
+      'filename': 'a.png',
+      'isimage': 1,
+      'url': 'https://www.tsdm39.com/data/attachment/forum/a.png',
+      'locked': 0,
+      'inpost': 1,
+    };
+
+    test('a [code] or an [attach] inside an attribute or an [img] keeps the html, nothing is asked for', () {
+      expect(
+        _fallback(_synthetic('[spoiler=[attach]1[/attach]]x[/spoiler]', attachments: [listed])),
+        'placeholder-in-attribute',
+      );
+      expect(
+        _fallback(_synthetic('[url=[attach]1[/attach]]x[/url]', attachments: [listed])),
+        'placeholder-in-attribute',
+      );
+      expect(_fallback(_synthetic('[img][attach]1[/attach][/img]', attachments: [listed])), 'img-url');
+      expect(_fallback(_synthetic('[img][code]x[/code][/img]')), 'img-url');
+      expect(_fallback(_synthetic('[color=[code]red[/code]]x[/color]')), 'placeholder-in-attribute');
+    });
+
+    test("an [img] off the forum's image whitelist keeps the html; without the field nothing changes", () {
+      const whitelist = {
+        'imgwhitelist': {
+          'enabled': 1,
+          'domains': ['example.com', 'img.example.org'],
+        },
+      };
+      String? image(String bbcode, Map<String, Object?> codes) {
+        final decision = decidePostBbcode(_synthetic(bbcode, codes: codes));
+        return switch (decision) {
+          PostBbcodeRender(:final nodes) => (nodes.single as BbImage).url,
+          PostBbcodeFallback(:final reason) => 'fallback $reason',
+        };
+      }
+
+      expect(image('[img]https://example.com/a.png[/img]', whitelist), 'https://example.com/a.png');
+      expect(image('[img]https://i.example.com/a.png[/img]', whitelist), 'https://i.example.com/a.png');
+      expect(image('[img]http://cdn.img.example.org/b.png[/img]', whitelist), 'http://cdn.img.example.org/b.png');
+      expect(image('[img]https://www.tsdm39.com/c.png[/img]', whitelist), 'https://www.tsdm39.com/c.png');
+      expect(image('[img]static/image/x.png[/img]', whitelist), 'https://www.tsdm39.com/static/image/x.png');
+      expect(image('[img]https://evil.org/a.png[/img]', whitelist), 'fallback img-not-whitelisted');
+      expect(image('[img]https://example.org/a.png[/img]', whitelist), 'fallback img-not-whitelisted');
+      final off = {
+        'imgwhitelist': {'enabled': 0, 'domains': <String>[]},
+      };
+      expect(image('[img]https://evil.org/a.png[/img]', off), 'https://evil.org/a.png');
+      expect(image('[img]https://evil.org/a.png[/img]', const {}), 'https://evil.org/a.png');
+      expect(_synthetic('x', codes: whitelist).bbcodeCodes!.imgWhitelist, ['example.com', 'img.example.org']);
+      expect(_synthetic('x').bbcodeCodes!.imgWhitelist, isNull);
+    });
+
+    test('a bracket left open at the end, odd image sizes, empty quotes keep the html', () {
+      expect(_fallback(_synthetic('text [b=xyz')), 'unclosed-bracket');
+      expect(
+        _fallback(_synthetic('[list][*]a [b=x[/list]')),
+        startsWith('literal-tag:'),
+        reason: 'the open bracket swallows the list tail: the list itself is left as text',
+      );
+      expect(_fallback(_synthetic('a [ b')), 'unclosed-bracket');
+      expect(_plain(_render(_synthetic('a [ b ] c')).nodes), 'a [ b ] c', reason: 'closed later: drawn as text');
+      expect(_fallback(_synthetic('[img=12345,1]https://example.com/a.png[/img]')), 'img-size');
+      expect(_fallback(_synthetic('[img=]https://example.com/a.png[/img]')), 'img-size');
+      expect(_fallback(_synthetic('[quote][/quote]')), 'quote-empty');
+      expect(_fallback(_synthetic('[free][/free]')), 'free-empty');
+    });
+
+    test('[url=] goes where the forum sends it: the attribute as written, no bracket in it', () {
+      BbLink link(String bbcode) => _render(_synthetic(bbcode)).nodes.single as BbLink;
+      expect(link('[url= https://a.example/]x[/url]').href, 'https://www.tsdm39.com/ https://a.example/');
+      expect(
+        link('[url=forum.php?mod=viewthread&tid=1]x[/url]').href,
+        'https://www.tsdm39.com/forum.php?mod=viewthread&tid=1',
+      );
+      expect(link('[url=https://a.example/b]x[/url]').href, 'https://a.example/b');
+      expect(_plain(link('[url=https://a.example/b]x[/url]').children), 'x');
+      expect(_fallback(_synthetic('[url=a[b]x[/url]')), 'url-attr');
+    });
+
+    test('[spoiler] only where the answer says the forum expands it', () {
+      expect(_fallback(_synthetic('[spoiler=t]x[/spoiler]', customtags: null)), 'custom:spoiler');
+      expect(_fallback(_synthetic('[spoiler=t]x[/spoiler]', customtags: const ['ruby'])), 'custom:spoiler');
+      final shown = _render(_synthetic('[spoiler=t]x[/spoiler]', customtags: const ['Spoiler']));
+      expect((shown.nodes.single as BbSpoiler).title, 't');
+      expect(_plain((shown.nodes.single as BbSpoiler).children), 'x');
+      expect(_fallback(_synthetic('[ruby]x[/ruby]', customtags: const ['ruby'])), 'tag:ruby', reason: 'not drawn');
+    });
+
+    test('literal floors with an ed2k or attach link keep the html', () {
+      expect(_fallback(_synthetic('see ed2k://|file|a|1|h|/', bbcodeoff: 1)), 'special-url');
+      expect(_fallback(_synthetic('see attach://1.png', bbcodeoff: 1)), 'special-url');
+    });
+
+    test('an old quote header: the back arrow is the jump button of the html renderer', () {
+      const header =
+          '[quote][size=2][color=#999999]Bob 发表于 2020-1-1 12:00[/color] '
+          '[url=forum.php?mod=redirect&goto=findpost&pid=1&ptid=2][img]static/image/common/back.gif[/img][/url][/size]\r\n'
+          'quoted words[/quote]';
+      final quote = _render(_synthetic(header)).nodes.single as BbQuote;
+      final link = _all(quote.children).whereType<BbLink>().single;
+      expect(link.href, 'https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=1&ptid=2');
+      expect((link.children.single as BbImage).url, 'https://www.tsdm39.com/static/image/common/back.gif');
+      expect(_plain(quote.children), 'Bob 发表于 2020-1-1 12:00 \nquoted words');
+    });
+
+    testWidgets('the back arrow renders as the button, not as an image', (tester) async {
+      const header =
+          '[quote][size=2][color=#999999]Bob 发表于 2020-1-1 12:00[/color] '
+          '[url=forum.php?mod=redirect&goto=findpost&pid=1&ptid=2][img]static/image/common/back.gif[/img][/url][/size]\r\n'
+          'quoted words[/quote]';
+      final nodes = _render(_synthetic(header)).nodes;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(home: Scaffold(body: PostBbcodeView(nodes))),
+        ),
+      );
+      await tester.pump();
+      final button = find.widgetWithIcon(IconButton, Icons.navigate_before_outlined);
+      expect(button, findsOneWidget);
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+      expect(tester.widget<IconButton>(button).tooltip, t.workaroundRedirect);
+      expect(find.byType(NetworkIndicatorImage), findsNothing);
+      expect(find.textContaining('quoted words', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('the saved table is read ahead once the renderer is on, never before', () async {
+      final store = _MemoryStore()
+        ..data = jsonEncode({
+          'version': 'v1',
+          'smilies': [
+            {'id': '7', 'code': ':)', 'url': 'https://www.tsdm39.com/a.gif', 'type': 'default'},
+            {'id': 'x', 'code': ':(', 'url': 'https://www.tsdm39.com/b.gif'},
+          ],
+        });
+      var reads = 0;
+      final counting = _CountingStore(store, () => reads++);
+      final on = StreamController<bool>();
+      var fetches = 0;
+      final repo = SmiliesRepository(
+        store: counting,
+        fetch: () async {
+          fetches++;
+          return null;
+        },
+        preloadWhen: on.stream,
+      );
+      addTearDown(() async {
+        repo.dispose();
+        await on.close();
+      });
+      on.add(false);
+      await Future<void>.delayed(Duration.zero);
+      expect(reads, 0, reason: 'the renderer is off: nothing read');
+      on.add(true);
+      await Future<void>.delayed(Duration.zero);
+      await repo.preload();
+      expect(reads, 1);
+      final table = repo.tableFor('v1');
+      expect(table, isNotNull, reason: 'kept before any floor asks: no html first');
+      expect(table!.smilies.map((e) => (e.id, e.code)), [(7, ':)'), (0, ':(')]);
+      on.add(true);
+      await repo.ensure('v1');
+      expect((reads, fetches), (1, 0));
+    });
+  });
+}
+
+/// A [SmiliesStore] counting its reads.
+final class _CountingStore implements SmiliesStore {
+  _CountingStore(this._inner, this._onRead);
+
+  final SmiliesStore _inner;
+  final void Function() _onRead;
+
+  @override
+  Future<String?> read() {
+    _onRead();
+    return _inner.read();
+  }
+
+  @override
+  Future<void> write(String data) => _inner.write(data);
 }

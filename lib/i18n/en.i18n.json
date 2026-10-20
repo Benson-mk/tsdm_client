@@ -1223,8 +1223,7 @@
   "postCard": {
     "contentUnavailable": "This floor's content can not be shown",
     "bbcode": {
-      "attachmentLocked": "Not available to you: to buy, no permission, or log in first",
-      "attachmentUnavailable": "Attachment not shown"
+      "attachmentLocked": "Not available to you: to buy, no permission, or log in first"
     },
     "interactiveHtml": {
       "open": "Interactive content",

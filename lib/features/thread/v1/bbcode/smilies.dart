@@ -57,7 +57,11 @@ final class SmiliesTable {
       }
       smilies.add(
         Smiley(
-          id: (e['id'] as num?)?.toInt() ?? 0,
+          id: switch (e['id']) {
+            final num n => n.toInt(),
+            final String v => int.tryParse(v) ?? 0,
+            _ => 0,
+          },
           code: code,
           url: url.prependHost(),
           type: e['type'] is String ? e['type'] as String : '',
@@ -115,11 +119,16 @@ typedef SmiliesFetcher = Future<Map<String, dynamic>?> Function();
 /// next run) is used while its version is the same; another version fetches the table again, once: a failed or
 /// still different answer is not asked again for that version for [retryAfter], so a page never polls the forum.
 /// Nothing is asked before a floor needs smilies, which only happens with the experimental renderer on.
+///
+/// The saved table is read ahead ([preload]) as soon as the `preloadWhen` stream says the renderer is on (at start, or when the
+/// setting is turned on), so the first thread shown does not draw its floors with smilies as html and then again.
 final class SmiliesRepository with LoggerMixin {
   /// Constructor.
-  SmiliesRepository({required SmiliesStore store, SmiliesFetcher? fetch})
+  SmiliesRepository({required SmiliesStore store, SmiliesFetcher? fetch, Stream<bool>? preloadWhen})
     : _store = store,
-      _fetch = fetch ?? (() => TsdmAppApi.askWaiting(getIt.get<NetClientProvider>(), 'smilies'));
+      _fetch = fetch ?? (() => TsdmAppApi.askWaiting(getIt.get<NetClientProvider>(), 'smilies')) {
+    _preloadSub = preloadWhen?.where((e) => e).take(1).listen((_) => unawaited(preload()));
+  }
 
   final SmiliesStore _store;
   final SmiliesFetcher _fetch;
@@ -132,7 +141,8 @@ final class SmiliesRepository with LoggerMixin {
   /// The table kept now; changes when a saved or fetched table arrives.
   ValueListenable<SmiliesTable?> get table => _table;
 
-  bool _loaded = false;
+  StreamSubscription<bool>? _preloadSub;
+  Future<void>? _loading;
   Future<void>? _pending;
   final _askedAt = <String, DateTime>{};
 
@@ -167,21 +177,25 @@ final class SmiliesRepository with LoggerMixin {
     return table != null && table.version == version ? table : null;
   }
 
+  /// Read the saved table, once; nothing is asked of the forum.
+  Future<void> preload() => _loading ??= _readSaved();
+
+  Future<void> _readSaved() async {
+    try {
+      final saved = await _store.read();
+      final table = saved == null ? null : SmiliesTable.fromJson(_decode(saved));
+      if (table != null && _table.value == null) {
+        _table.value = table;
+      }
+    } on Object catch (e) {
+      error('failed to read the saved smilies table', e);
+    }
+  }
+
   Future<void> _refresh(String version) async {
-    if (!_loaded) {
-      _loaded = true;
-      try {
-        final saved = await _store.read();
-        final table = saved == null ? null : SmiliesTable.fromJson(_decode(saved));
-        if (table != null && _table.value == null) {
-          _table.value = table;
-        }
-      } on Exception catch (e) {
-        error('failed to read the saved smilies table', e);
-      }
-      if (_table.value?.version == version) {
-        return;
-      }
+    await preload();
+    if (_table.value?.version == version) {
+      return;
     }
     final askedAt = _askedAt[version];
     if (askedAt != null && DateTime.now().difference(askedAt) < retryAfter) {
@@ -191,7 +205,7 @@ final class SmiliesRepository with LoggerMixin {
     final Map<String, dynamic>? json;
     try {
       json = await _fetch();
-    } on Exception catch (e) {
+    } on Object catch (e) {
       error('failed to fetch the smilies table', e);
       return;
     }
@@ -203,7 +217,7 @@ final class SmiliesRepository with LoggerMixin {
     _table.value = table;
     try {
       await _store.write(jsonEncode(table.toJson()));
-    } on Exception catch (e) {
+    } on Object catch (e) {
       error('failed to save the smilies table', e);
     }
   }
@@ -219,6 +233,9 @@ final class SmiliesRepository with LoggerMixin {
     }
   }
 
-  /// Release the notifier.
-  void dispose() => _table.dispose();
+  /// Release the notifier and the subscription.
+  void dispose() {
+    unawaited(_preloadSub?.cancel());
+    _table.dispose();
+  }
 }

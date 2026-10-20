@@ -70,6 +70,7 @@ class Post with PostMappable {
     this.attachments = const [],
     this.bbcodeCodes,
     this.smiliesVersion,
+    this.customTags,
   });
 
   /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
@@ -221,6 +222,11 @@ class Post with PostMappable {
       ).whereType<Map<String, dynamic>>().map(PostAttachment.fromApi).whereType<PostAttachment>().toList(),
       bbcodeCodes: PostBbcodeCodes.fromApi(codes, p),
       smiliesVersion: smiliesVersion == null || smiliesVersion.isEmpty ? null : smiliesVersion,
+      customTags: switch (p['customtags']) {
+        final List<dynamic> tags => List.unmodifiable(tags.whereType<String>().map((e) => e.toLowerCase())),
+        final Map<String, dynamic> tags => List.unmodifiable(tags.keys.map((e) => e.toLowerCase())),
+        _ => null,
+      },
     );
   }
 
@@ -340,7 +346,8 @@ class Post with PostMappable {
   final String? messageBbcode;
 
   /// Why [messageBbcode] is withheld (`hide`, `password`, `pay`, `locked`, `banned`, `moderate`, `json`, `html`,
-  /// `bbcodeoff`, `jammer`, `deleted`, `missing`); empty when given, null when the answer has no such field.
+  /// `bbcodeoff`, `jammer`, `imgcontent`, `spoofed`, `deleted`, `missing`); empty when given, null when the answer has
+  /// no such field.
   final String? messageReason;
 
   /// The forum prints [messageBbcode] literally, tags as text (`bbcodeoff` 1).
@@ -361,6 +368,10 @@ class Post with PostMappable {
 
   /// The version of the forum's smilies table the floor was rendered with (`smilies_version`); null when none.
   final String? smiliesVersion;
+
+  /// The site's own bbcode tags the forum expands in this floor (`customtags`, for its author), such as `spoiler`;
+  /// null when the answer does not say (plugin 2.7.0), in which case the app draws none of them.
+  final List<String>? customTags;
 
   /// The forum's app API gives nothing of this floor's content (plugin 2.7.0, `message_reason: spoofed`): the html of
   /// another floor forged this floor's ids on the page, so the floor's own html (content, author column, poll, red

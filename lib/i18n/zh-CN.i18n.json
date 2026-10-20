@@ -1223,8 +1223,7 @@
   "postCard": {
     "contentUnavailable": "此楼内容无法显示",
     "bbcode": {
-      "attachmentLocked": "无法查看：需要购买、权限不足或要先登录",
-      "attachmentUnavailable": "附件无法显示"
+      "attachmentLocked": "无法查看：需要购买、权限不足或要先登录"
     },
     "interactiveHtml": {
       "open": "互动内容",

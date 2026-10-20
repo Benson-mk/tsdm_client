@@ -118,6 +118,7 @@ final class PostBbcodeCodes with PostBbcodeCodesMappable {
     required this.allowMediaCode,
     required this.jammer,
     required this.maxSmilies,
+    this.imgWhitelist,
   });
 
   /// The switches of a floor [post] of an answer whose top level `codes` is [codes]; null when the answer has no
@@ -135,6 +136,17 @@ final class PostBbcodeCodes with PostBbcodeCodesMappable {
       allowMediaCode: flag('allowmediacode'),
       jammer: _apiInt(codes['jammer']) != 0,
       maxSmilies: codes.containsKey('maxsmilies') ? _apiInt(codes['maxsmilies']) : -1,
+      imgWhitelist: _imgWhitelistOf(codes['imgwhitelist']),
+    );
+  }
+
+  /// The domains of `codes.imgwhitelist` (plugin 2.8.0) when it is `enabled`; null when it is not, or not given.
+  static List<String>? _imgWhitelistOf(Object? value) {
+    if (value is! Map<String, dynamic> || _apiInt(value['enabled']) == 0) {
+      return null;
+    }
+    return List.unmodifiable(
+      _apiList(value['domains']).whereType<String>().map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty),
     );
   }
 
@@ -159,4 +171,9 @@ final class PostBbcodeCodes with PostBbcodeCodesMappable {
   /// How many times each smiley code is turned into an image in a floor at most, as the forum's `preg_replace` limit:
   /// 0 or less has no limit (the forum's settings cache turns `maxsmilies` 0 into -1).
   final int maxSmilies;
+
+  /// The image domain whitelist the forum applies to `[img]` (`codes.imgwhitelist`, plugin 2.8.0, when `enabled`):
+  /// an `[img]` on a host not ending with one of these (nor the forum's own) is printed as its url, not as an image.
+  /// Null when the forum does not check, or the answer does not say.
+  final List<String>? imgWhitelist;
 }

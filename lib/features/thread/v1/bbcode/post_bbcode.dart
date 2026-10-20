@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:dart_bbcode_parser/dart_bbcode_parser.dart';
 import 'package:flutter/foundation.dart';
+import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/smilies.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -142,17 +143,16 @@ final class BbImage extends BbNode {
   final int? height;
 }
 
-/// `[attach]aid[/attach]`: the floor's [attachment] with that id, null when the answer does not list it (nothing is
-/// known of it, nothing is fetched).
+/// `[attach]aid[/attach]`: the floor's [attachment] with that id (a locked one is a placeholder, nothing fetched).
 final class BbAttachment extends BbNode {
   /// Constructor.
-  const BbAttachment(this.aid, this.attachment);
+  const BbAttachment(this.attachment);
+
+  /// The attachment.
+  final PostAttachment attachment;
 
   /// The id in the bbcode.
-  final int aid;
-
-  /// The attachment; null when not listed.
-  final PostAttachment? attachment;
+  int get aid => attachment.aid;
 }
 
 /// A link around [children]: `[url]`, or a bare url the forum would link ([auto]).
@@ -277,6 +277,10 @@ const postBbcodeSupportedTags = {
   'hr',
   'align',
 };
+
+/// The tags of [postBbcodeSupportedTags] that are the site's own, not Discuz's: drawn only when the answer says the
+/// forum expands them in the floor ([Post.customTags]).
+const _siteTags = {'spoiler'};
 
 /// Tag names that the forum reads whatever their case: a tag of them not in lower case keeps the floor on its html
 /// (the forum turns some of them only in lower case, others in any case, which the app does not copy).
@@ -447,9 +451,13 @@ const _tab = '\u00a0 \u00a0 \u00a0 \u00a0 ';
 /// * `bbcodeoff` 1: the text as it is, tags as text (no `[attach]` in it);
 /// * every tag is one of [postBbcodeSupportedTags] in lower case, with an attribute the forum takes, balanced,
 ///   not crossed, no `[quote]` or `[spoiler]` in another, no block in a link, no `[*]` outside a list;
-/// * `[img]` only where the forum shows images; `[attach]aid[/attach]` is the floor's attachment of that id (a
-///   locked one, or one not listed, is drawn as a placeholder and nothing is fetched for it), the first of the same
-///   id only, as the forum does; an id written with a leading zero is dropped, as the forum drops it;
+/// * `[img]` only where the forum shows images, on a host of its image whitelist when it has one; `[attach]aid[/attach]`
+///   is the floor's attachment of that id (a locked one is drawn as a placeholder and nothing is fetched for it; an id
+///   the answer does not list keeps the html), the first of the same id only, as the forum does; an id written with a
+///   leading zero is dropped, as the forum drops it;
+/// * `[spoiler]`, the site's own tag, only when the answer says the forum expands it for the floor (`customtags`);
+/// * no attribute nor `[img]` holding a `[code]` or an `[attach]`, no `[` left open at the end, no empty `[quote]` or
+///   `[free]` (the forum prints those as text);
 /// * smiley codes are turned into the table's images, in the table's order, at most `maxsmilies` times each (no
 ///   limit when it is 0 or less, as the forum's settings cache makes it), not in `[code]`, when the forum does it
 ///   (`smileyoff` 0, smilies allowed);
@@ -470,14 +478,16 @@ PostBbcodeDecision decidePostBbcode(Post post, {SmiliesTable? smilies}) {
   if (useSmilies && smilies == null) {
     return const PostBbcodeFallback('smilies');
   }
-  final split = splitPostBodyHtml(post.data, post.postID);
-  if (split == null) {
-    return const PostBbcodeFallback('no-message-cell');
-  }
   try {
+    final split = splitPostBodyHtml(post.data, post.postID);
+    if (split == null) {
+      return const PostBbcodeFallback('no-message-cell');
+    }
     final builder = _Builder(
       attachments: {for (final a in post.attachments) a.aid: a},
       allowImgCode: codes.allowImgCode,
+      imgWhitelist: codes.imgWhitelist,
+      customTags: post.customTags?.toSet(),
     );
     var nodes = post.bbcodeOff || !codes.allowBbcode
         ? builder.literal(message, tagsAllowed: post.bbcodeOff)
@@ -536,10 +546,16 @@ Never _fail(String reason) => throw _Fallback(reason);
 
 /// Turns a floor's bbcode into [BbNode]s.
 final class _Builder {
-  _Builder({required this.attachments, required this.allowImgCode});
+  _Builder({required this.attachments, required this.allowImgCode, this.imgWhitelist, this.customTags});
 
   final Map<int, PostAttachment> attachments;
   final bool allowImgCode;
+
+  /// The forum's image domain whitelist, null when it has none (or the answer does not say).
+  final List<String>? imgWhitelist;
+
+  /// The site's own tags the forum expands in this floor, null when the answer does not say.
+  final Set<String>? customTags;
 
   /// The `[code]` blocks taken out before parsing, by index.
   final _codes = <String>[];
@@ -555,8 +571,13 @@ final class _Builder {
     if (_privateUseRe.hasMatch(message)) {
       _fail('private-use');
     }
-    if (message.toLowerCase().contains('[attach]')) {
+    final lower = message.toLowerCase();
+    if (lower.contains('[attach]')) {
       _fail('attach-in-literal');
+    }
+    if (lower.contains('ed2k://') || lower.contains('attach://')) {
+      // The forum turns these into links (an ed2k file, an attachment) even without bbcode.
+      _fail('special-url');
     }
     if (!tagsAllowed && _tagRe.hasMatch(message)) {
       _fail('bbcode-not-allowed');
@@ -621,7 +642,15 @@ final class _Builder {
       if (!postBbcodeSupportedTags.contains(name)) {
         _fail('tag:$name');
       }
+      if (_siteTags.contains(name) && !(customTags?.contains(name) ?? false)) {
+        // The site's own tag, expanded only when the forum says it does for this floor.
+        _fail('custom:$name');
+      }
       final attr = m.group(3);
+      if (attr != null && _privateUseRe.hasMatch(attr)) {
+        // A `[code]` or an `[attach]` inside an attribute: the forum never expands them there.
+        _fail('placeholder-in-attribute');
+      }
       if (m.group(1)!.isEmpty && name == 'list' && attr != null && !const ['1', 'a', 'A'].contains(attr)) {
         _fail('list:$attr');
       }
@@ -648,6 +677,11 @@ final class _Builder {
   }
 
   List<BbNode> _parse(String source, _Context ctx) {
+    final open = source.lastIndexOf('[');
+    if (open >= 0 && !source.contains(']', open)) {
+      // A `[name=value` left open at the end: the parser drops the value, the forum prints it.
+      _fail('unclosed-bracket');
+    }
     final ast = parseBBCodeTextToTags(source).map((e) => e.toJson()).toList();
     return _convert(ast, source, ctx);
   }
@@ -680,6 +714,10 @@ final class _Builder {
             _fail('$name-unclosed');
           }
           final inner = ast.sublist(i + 1, end);
+          if (inner.isEmpty) {
+            // The forum prints an empty block as text.
+            _fail('$name-empty');
+          }
           if (inner.any((e) => !e.containsKey('text') && (e['name'] == 'spoiler' || e['name'] == 'free'))) {
             _fail('$name-nested');
           }
@@ -721,6 +759,9 @@ final class _Builder {
           }
           if (ctx.inLink) {
             _fail('block-in-url');
+          }
+          if (children.isEmpty) {
+            _fail('quote-empty');
           }
           out.add(BbQuote(_trimNewlines(_convert(children, source, ctx.copyWith(inQuote: true)))));
         case 'align':
@@ -766,9 +807,15 @@ final class _Builder {
           continue;
         }
         final aid = int.parse(id);
+        final attachment = attachments[aid];
+        if (attachment == null) {
+          // Not loaded for this request (no permission, not printed by the web page…): the html shows what the forum
+          // decided for it.
+          _fail('attach-unlisted');
+        }
         // The forum puts an attachment at its first `[attach]` and drops the others of the same id.
         if (_placed.add(aid)) {
-          out.add(BbAttachment(aid, attachments[aid]));
+          out.add(BbAttachment(attachment));
         }
       } else {
         if (ctx.inLink) {
@@ -792,8 +839,25 @@ final class _Builder {
       _fail('img-content');
     }
     var url = text.trim();
-    if (url.isEmpty || url.contains('<') || url.contains('\n') || url.contains('file:') || url.startsWith('data:')) {
+    if (url.isEmpty ||
+        url.contains('<') ||
+        url.contains('\n') ||
+        url.contains('file:') ||
+        url.startsWith('data:') ||
+        _privateUseRe.hasMatch(url)) {
       _fail('img-url');
+    }
+    if (attr != null && !RegExp(r'^\d{1,4},\d{1,4}$').hasMatch(attr)) {
+      _fail('img-size');
+    }
+    final whitelist = imgWhitelist;
+    if (whitelist != null) {
+      // As the forum's `iswhitelist()`: a host ending with a whitelisted domain, or the forum's own host; an url
+      // without host is not checked.
+      final host = Uri.tryParse(url)?.host ?? '';
+      if (host.isNotEmpty && host != baseHost && !whitelist.any(host.endsWith)) {
+        _fail('img-not-whitelisted');
+      }
     }
     if (url.length > 1 && url[1] == ':') {
       _fail('img-url');
@@ -862,16 +926,17 @@ final class _Builder {
 
   /// Where `[url=attr]` goes, as the forum makes it.
   String _href(String attr) {
-    if (attr.contains('"') || attr.contains("'") || attr.contains('\n')) {
+    if (attr.contains('"') || attr.contains("'") || attr.contains('\n') || attr.contains('\r') || attr.contains('[')) {
       _fail('url-attr');
     }
-    final url = attr.trim();
+    // Not trimmed: the forum takes the attribute as it is.
+    final url = attr;
     if (url.toLowerCase().startsWith('www.')) {
       return 'http://$url';
     }
     if (!_urlSchemeRe.hasMatch(url)) {
-      // A link inside the forum.
-      return url.prependHost();
+      // A link inside the forum: the forum puts its own url in front.
+      return '$baseUrl/$url';
     }
     return url;
   }

@@ -2,6 +2,7 @@ import 'package:dart_bbcode_web_colors/dart_bbcode_web_colors.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:tsdm_client/constants/constants.dart';
+import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/int.dart';
 import 'package:tsdm_client/extensions/string.dart';
@@ -226,7 +227,7 @@ final class _SpanBuilder {
             ],
     BbSmiley(:final smiley) => [_image(smiley.url, link: link)],
     BbImage(:final url, :final width, :final height) => [_image(url, width: width, height: height, link: link)],
-    BbAttachment(:final aid, :final attachment) => _attachment(aid, attachment, link: link),
+    BbAttachment(:final attachment) => _attachment(attachment, link: link),
     BbLink(:final href, :final children, :final auto) => _link(href, children, auto: auto),
     BbQuote() || BbCodeBlock() || BbSpoiler() || BbList() || BbAlign() || BbDivider() => [_block(node)],
   };
@@ -353,7 +354,28 @@ final class _SpanBuilder {
     ];
   }
 
-  InlineSpan _image(String url, {int? width, int? height, String? link}) => WidgetSpan(
+  InlineSpan _image(String url, {int? width, int? height, String? link}) {
+    if (tmpImpellerWorkaroundUrls.contains(url)) {
+      // The "back to the quoted floor" arrow of old quotes, the same button the html renderer shows for it.
+      return WidgetSpan(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 24, minWidth: 24, maxHeight: 24, minHeight: 24),
+          child: OverlayTextScale(
+            child: IconButton(
+              icon: Icon(Icons.navigate_before_outlined, color: Theme.of(context).colorScheme.tertiary),
+              constraints: const BoxConstraints(maxWidth: 24, minWidth: 24, maxHeight: 24, minHeight: 24),
+              padding: EdgeInsets.zero,
+              tooltip: context.t.workaroundRedirect,
+              onPressed: link != null ? () async => context.dispatchAsUrl(link) : null,
+            ),
+          ),
+        ),
+      );
+    }
+    return _networkImage(url, width: width, height: height, link: link);
+  }
+
+  InlineSpan _networkImage(String url, {int? width, int? height, String? link}) => WidgetSpan(
     child: GestureDetector(
       onTap: () async => showImageActionBottomSheet(context: context, imageUrl: url, hrefUrl: link),
       child: ConstrainedBox(
@@ -366,11 +388,8 @@ final class _SpanBuilder {
     ),
   );
 
-  List<InlineSpan> _attachment(int aid, PostAttachment? attachment, {String? link}) {
+  List<InlineSpan> _attachment(PostAttachment attachment, {String? link}) {
     final tr = context.t.postCard.bbcode;
-    if (attachment == null) {
-      return [_placeholder(Icons.attachment_outlined, tr.attachmentUnavailable)];
-    }
     if (attachment.locked || (attachment.isImage ? attachment.url : attachment.download).isEmpty) {
       return [_placeholder(Icons.lock_outline, '${attachment.filename}\n${tr.attachmentLocked}')];
     }

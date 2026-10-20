@@ -307,9 +307,14 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
               NotificationSyncAllRepository(storageProvider: getIt(), notificationRepository: context.repo()),
           dispose: (repo) async => repo.dispose(),
         ),
-        // Created on first use: only the experimental app renderer asks it, for a floor showing smilies.
+        // Only the experimental app renderer asks it (for a floor showing smilies); it reads its saved table ahead
+        // once that renderer is on, and nothing before.
         RepositoryProvider<SmiliesRepository>(
-          create: (_) => SmiliesRepository(store: StorageSmiliesStore(getIt.get<StorageProvider>())),
+          lazy: false,
+          create: (_) => SmiliesRepository(
+            store: StorageSmiliesStore(getIt.get<StorageProvider>()),
+            preloadWhen: getIt.get<SettingsRepository>().settings.map((e) => e.enableAppPostRenderer),
+          ),
           dispose: (repo) => repo.dispose(),
         ),
       ],
