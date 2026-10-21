@@ -1,9 +1,11 @@
 /// Author uid of threads, as far as the app has seen them, keyed by tid.
 ///
 /// Filled from sources that name the thread author reliably: the author link of a thread row in a list (forum,
-/// search, latest, homepage) and the first floor of a thread page. A thread opened directly on a later page (a
-/// reply notice, a `findpost` link) does not show its first floor; the author recorded here, or the first page when
-/// nothing is recorded, tells whether the thread belongs to a blocked user. Never filled from usernames.
+/// search, latest, homepage), the first floor of a thread page and the thread's author the forum's app API names with
+/// every thread page (`thread.authorid`). A thread opened directly on a later page (a reply notice, a `findpost`
+/// link) does not show its first floor; the author recorded here, or the first page when nothing is recorded (a web
+/// page, an older plugin, an anonymous thread), tells whether the thread belongs to a blocked user. Never filled from
+/// usernames.
 ///
 /// In memory only and bounded: it is a cache of facts of the forum, not user data, and is the same for every account.
 final class ThreadAuthorCache {

@@ -63,6 +63,7 @@ class PollRepository {
         json['special'],
         formHash: tsdmAppText(json['formhash']),
         viewerUid: servedUid ?? 0,
+        timeOffset: tsdmAppTimeOffset(json),
       );
       if (special is PollSpecial) {
         return forumPollFromSpecial(special, loggedIn: loggedIn);

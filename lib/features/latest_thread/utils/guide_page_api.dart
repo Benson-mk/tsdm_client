@@ -47,9 +47,16 @@ Map<String, dynamic>? latestThreadApiAnswerOf(Object? data) => guideApiAnswerOf(
     return (const [], null);
   }
   final search = json['type'] == 'search';
-  final threads = tsdmAppList(
-    json['threads'],
-  ).where(tsdmAppIsThreadRow).map(search ? LatestThread.fromSearchApi : LatestThread.fromApi).toList();
+  final timeOffset = tsdmAppTimeOffset(json);
+  final reply = !search && json['kind'] == 'reply';
+  final threads = tsdmAppList(json['threads'])
+      .where(tsdmAppIsThreadRow)
+      .map(
+        (e) => search
+            ? LatestThread.fromSearchApi(e, timeOffset: timeOffset)
+            : LatestThread.fromApi(e, timeOffset: timeOffset, reply: reply),
+      )
+      .toList();
   final page = tsdmAppInt(json['page']);
   final hasNext = tsdmAppInt(json['has_next']) == 1 && page > 0;
   final String? nextPageUrl;

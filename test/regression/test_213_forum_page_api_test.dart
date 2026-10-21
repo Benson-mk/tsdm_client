@@ -360,13 +360,15 @@ void main() {
       expect(t.stateSet, {ThreadStateModel.pinnedGlobally});
     });
 
-    test("times are the forum's unix seconds, the real instant", () {
+    test("times: the last reply the real instant, the publish date the forum's wall clock", () {
       final t = _thread('forum_v2_fid2.json', 9199345);
-      expect(t.publishDate, DateTime.fromMillisecondsSinceEpoch(1790763526 * 1000));
+      // Shown as a date: the clock the forum (zone +8) prints, whatever the device's zone.
+      expect(t.publishDate, tsdmAppWallClockTime(1790763526, 8));
+      expect(t.publishDate?.isUtc, isFalse, reason: 'a naive DateTime holding the clock of the page');
+      // Shown relative to now: the real instant.
       expect(t.latestReplyTime, DateTime.fromMillisecondsSinceEpoch(1790957056 * 1000));
       // What the forum (zone +8) prints for it, whatever the device's zone.
       expect(_forumClock(t.latestReplyTime), '2026-10-03 00:04:16');
-      expect(t.publishDate?.isUtc, isFalse, reason: "a local DateTime, shown in the device's zone");
     });
 
     test('the sticky levels', () {

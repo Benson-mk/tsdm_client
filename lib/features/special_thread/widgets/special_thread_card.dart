@@ -20,6 +20,7 @@ import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/cached_image/cached_image_provider.dart';
 import 'package:tsdm_client/widgets/card/poll_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
+import 'package:tsdm_client/widgets/munched_html.dart';
 
 part 'activity_special_card.dart';
 part 'debate_special_card.dart';

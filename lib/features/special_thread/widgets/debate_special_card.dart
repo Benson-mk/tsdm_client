@@ -36,6 +36,10 @@ class _DebateCardState extends State<_DebateCard> with _SpecialActions {
     await _run(request);
   }
 
+  /// A point of the debate: its [html] with the app's html renderer ([MunchedHtml]), else its plain [text].
+  Widget _point(String html, String text) =>
+      html.trim().isNotEmpty ? MunchedHtml(html) : Text(text, style: Theme.of(context).textTheme.bodyMedium);
+
   Widget _side(int stand) {
     final tr = context.t.specialThread.debate;
     final d = widget.debate;
@@ -71,7 +75,9 @@ class _DebateCardState extends State<_DebateCard> with _SpecialActions {
             ],
           ),
           sizedBoxW4H4,
-          Text(affirm ? d.affirmPoint : d.negaPoint, style: textTheme.bodyMedium),
+          // The point as the forum renders it (links, line breaks, formatting), as the content of a floor is shown;
+          // its plain text when the answer gives no html.
+          _point(affirm ? d.affirmPointHtml : d.negaPointHtml, affirm ? d.affirmPoint : d.negaPoint),
           sizedBoxW8H8,
           if (affirm ? d.affirmDebaters : d.negaDebaters case final debaters?)
             Text(
@@ -151,10 +157,33 @@ class _DebateCardState extends State<_DebateCard> with _SpecialActions {
                 0 => null,
                 _ => tr.winnerDraw,
               },
+              // The umpire's point as the forum renders it goes under its label, rendered as the sides' points are;
+              // its plain text in the message when the answer gives no html.
               message: [
-                if (result.umpirePoint.isNotEmpty) '${tr.umpirePoint}: ${result.umpirePoint}',
-                if (result.bestDebater.isNotEmpty) tr.bestDebater(name: result.bestDebater),
+                if (result.umpirePointHtml.trim().isNotEmpty)
+                  '${tr.umpirePoint}:'
+                else if (result.umpirePoint.isNotEmpty)
+                  '${tr.umpirePoint}: ${result.umpirePoint}',
+                if (result.umpirePointHtml.trim().isEmpty && result.bestDebater.isNotEmpty)
+                  tr.bestDebater(name: result.bestDebater),
               ].join('\n'),
+              child: result.umpirePointHtml.trim().isEmpty
+                  ? null
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        MunchedHtml(result.umpirePointHtml),
+                        if (result.bestDebater.isNotEmpty) ...[
+                          sizedBoxW4H4,
+                          Text(
+                            tr.bestDebater(name: result.bestDebater),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSecondaryContainer),
+                          ),
+                        ],
+                      ],
+                    ),
             ),
             sizedBoxW8H8,
           ],

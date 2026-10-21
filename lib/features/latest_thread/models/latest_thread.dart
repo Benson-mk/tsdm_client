@@ -97,8 +97,11 @@ class LatestThread {
   /// the last replier and time from `lastposter` / `lastpost` (the replier by name only: the list pages name no uid
   /// for them, as the web page links them by name), the thread's author as [threadAuthor], as [LatestThread.fromTBody] reads the
   /// guide page. A row that is one reply (`pid`: the guide's "my replies") links the reply (`goto=findpost`) and
-  /// quotes it (`summary`).
-  LatestThread.fromApi(Map<String, dynamic> row) : _info = _buildFromApi(row);
+  /// quotes it (`summary`); a row of the guide's reply list ([reply], the answer's `kind` `reply`) whose reply has no
+  /// text quotes "...", as the page prints it then. The time ([latestReplyTime], shown as a date) is the forum's wall
+  /// clock with [timeOffset] (the answer's `timeoffset`), as the page prints it.
+  LatestThread.fromApi(Map<String, dynamic> row, {num timeOffset = 8, bool reply = false})
+    : _info = _buildFromApi(row, timeOffset: timeOffset, reply: reply);
 
   /// Build from a thread row [row] of the structured search results of 查看新帖 (`search.php?mod=forum&srchfrom=…`,
   /// plugin 2.4.0, `schema: 6`), which share the guide's row shape.
@@ -106,7 +109,8 @@ class LatestThread {
   /// As [LatestThread.fromApi], but the person and the time shown are the thread's author and its publish time (`author`,
   /// `dateline`), as the search layout prints them (`dateline - author`) and [LatestThread.fromLi] reads them; the last replier
   /// and the last reply are not shown there. The excerpt (`summary`) is quoted, as the layout's was.
-  LatestThread.fromSearchApi(Map<String, dynamic> row) : _info = _buildFromApi(row, search: true);
+  LatestThread.fromSearchApi(Map<String, dynamic> row, {num timeOffset = 8})
+    : _info = _buildFromApi(row, search: true, timeOffset: timeOffset);
 
   final _LatestThreadInfo? _info;
 
@@ -148,11 +152,19 @@ class LatestThread {
   /// Author of the thread (not the latest reply), null when the layout does not tell.
   User? get threadAuthor => _info?.threadAuthor;
 
-  static _LatestThreadInfo _buildFromApi(Map<String, dynamic> row, {bool search = false}) {
+  static _LatestThreadInfo _buildFromApi(
+    Map<String, dynamic> row, {
+    required num timeOffset,
+    bool search = false,
+    bool reply = false,
+  }) {
     final fid = tsdmAppInt(row['fid']);
-    final thread = NormalThread.fromApi(row, fid: fid, typePrefix: 0);
+    final thread = NormalThread.fromApi(row, fid: fid, typePrefix: 0, timeOffset: timeOffset);
     final pid = tsdmAppInt(row['pid']);
-    final summary = tsdmAppText(row['summary']);
+    // The guide's reply list prints the reply's text, or "..." when it has none (`guide_list_row`: `$post[message]`
+    // is empty or "0").
+    final text = tsdmAppText(row['summary']);
+    final summary = reply && pid > 0 && (text.isEmpty || text == '0') ? '...' : text;
     return _LatestThreadInfo(
       title: thread.title,
       url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
@@ -162,7 +174,8 @@ class LatestThread {
       replyCount: thread.replyCount,
       viewCount: thread.viewCount,
       latestReplyAuthor: search ? thread.author : thread.latestReplyAuthor,
-      latestReplyTime: search ? thread.publishDate : thread.latestReplyTime,
+      // Shown as a date: the forum's wall clock, as the page prints it.
+      latestReplyTime: search ? thread.publishDate : tsdmAppWallClockTime(row['lastpost'], timeOffset),
       quotedMessage: summary.isEmpty ? null : summary,
       threadAuthor: thread.author,
     );

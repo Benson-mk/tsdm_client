@@ -40,6 +40,7 @@ final class ThreadPageInfo {
     required this.replyCount,
     this.special,
     this.offlineSavedAt,
+    this.authorUid,
   });
 
   /// Thread id.
@@ -111,6 +112,11 @@ final class ThreadPageInfo {
   /// be reached ([asOffline]); null for a page that just came from the forum.
   final DateTime? offlineSavedAt;
 
+  /// The uid of the member who started the thread, as the forum's app API names it with every page (`thread.authorid`,
+  /// plugin 2.1.0); null when the page does not tell: an anonymous thread, a web page, an older plugin. A page past
+  /// the first does not show the first floor, this tells the thread's author all the same.
+  final int? authorUid;
+
   /// This page read back from an offline copy loaded at [savedAt]: without its reply form, whose form hash is from an
   /// old session and could only send a reply over a network that is not there.
   ThreadPageInfo asOffline(DateTime savedAt) => ThreadPageInfo(
@@ -136,6 +142,7 @@ final class ThreadPageInfo {
     replyCount: replyCount,
     special: special,
     offlineSavedAt: savedAt,
+    authorUid: authorUid,
   );
 }
 

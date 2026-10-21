@@ -45,6 +45,7 @@ final class Forum with ForumMappable {
     final lastPost = redirectUrl == null && s['lastpost'] is Map<String, dynamic>
         ? s['lastpost'] as Map<String, dynamic>
         : null;
+    // An anonymous last post names no author: the page prints the forum's "匿名" in its place, without a link.
     final lastPostAuthor = lastPost == null ? null : _apiText(lastPost['author']);
     final latestThreadTime = lastPost == null ? null : _apiTime(lastPost['dateline']);
     final todayCount = _apiInt(s['todayposts']);
@@ -69,7 +70,7 @@ final class Forum with ForumMappable {
           ? null
           : '$baseUrl/forum.php?mod=redirect&tid=${_apiInt(lastPost['tid'])}&goto=lastpost',
       latestThreadTitle: lastPost == null ? null : _apiText(lastPost['subject']),
-      latestThreadUserName: lastPostAuthor,
+      latestThreadUserName: lastPostAuthor == null || lastPostAuthor.isNotEmpty ? lastPostAuthor : _anonymousName,
       latestThreadUserUrl: lastPostAuthor == null || lastPostAuthor.isEmpty
           ? null
           : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPostAuthor)}',

@@ -457,7 +457,9 @@ void main() {
         icon,
       );
       expect(Friend.fromApi({...row, 'groupicon': ''}, ownList: true)!.groupIconUrl, isNull);
-      expect(Friend.fromApi(row, ownList: false)!.credits, '0', reason: "printed on another member's list");
+      // Printed on another member's list, but not 0 (`space_list`: `{if $value['credits']}`).
+      expect(Friend.fromApi({...row, 'credits': 0}, ownList: false)!.credits, isNull);
+      expect(Friend.fromApi({...row, 'credits': 12}, ownList: false)!.credits, '12');
       final page = friendListPageFromApi(
         _with('friend_v10_me.json', {
           'friends': [

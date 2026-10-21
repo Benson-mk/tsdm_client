@@ -263,7 +263,9 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
 
   /// Fetch the first page of thread [tid] once to learn who started it.
   ///
-  /// Only needed when the thread was opened on a later page and the current account blocks somebody.
+  /// Only needed when the thread was opened on a later page, the current account blocks somebody and the page does
+  /// not name the thread's author (a web page, an older plugin, an anonymous thread; the forum's app API names it with
+  /// every page, `thread.authorid`).
   void _resolveThreadAuthor(BuildContext context, String tid) {
     if (_resolvedTid == tid) {
       return;

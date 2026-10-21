@@ -15,17 +15,21 @@ sealed class ThreadSpecial {
 
   /// The special block of an answer's `special` [value] with the answer's [formHash] and [viewerUid] (`uid`, 0 for a
   /// guest); null when there is none or its `type` is not one of the five.
-  static ThreadSpecial? fromApi(Object? value, {String formHash = '', int viewerUid = 0}) {
+  ///
+  /// [timeOffset] is the answer's `timeoffset`: the times the app shows as dates (the end of a poll, the activity's
+  /// time and deadline, an application's time, the end of a debate) are the forum's wall clock with it, as the page
+  /// prints them and as the floors' times are shown, whatever the device's zone.
+  static ThreadSpecial? fromApi(Object? value, {String formHash = '', int viewerUid = 0, num timeOffset = 8}) {
     if (value is! Map<String, dynamic>) {
       return null;
     }
     final uid = viewerUid > 0 ? viewerUid : null;
     return switch (value['type']) {
-      'poll' => PollSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
+      'poll' => PollSpecial._fromApi(value, formHash: formHash, viewerUid: uid, timeOffset: timeOffset),
       'trade' => TradeSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
       'reward' => RewardSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
-      'activity' => ActivitySpecial._fromApi(value, formHash: formHash, viewerUid: uid),
-      'debate' => DebateSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
+      'activity' => ActivitySpecial._fromApi(value, formHash: formHash, viewerUid: uid, timeOffset: timeOffset),
+      'debate' => DebateSpecial._fromApi(value, formHash: formHash, viewerUid: uid, timeOffset: timeOffset),
       _ => null,
     };
   }
@@ -393,9 +397,15 @@ final class PollSpecial extends ThreadSpecial {
     required this.votersUrl,
     required this.choices,
     required this.form,
+    this.expirationClock,
   });
 
-  factory PollSpecial._fromApi(Map<String, dynamic> m, {required String formHash, required int? viewerUid}) {
+  factory PollSpecial._fromApi(
+    Map<String, dynamic> m, {
+    required String formHash,
+    required int? viewerUid,
+    required num timeOffset,
+  }) {
     final form = m['form'];
     return PollSpecial(
       formHash: formHash,
@@ -406,6 +416,7 @@ final class PollSpecial extends ThreadSpecial {
       overt: _apiFlag(m['overt']),
       voters: _apiInt(m['voters']),
       expiration: _apiTime(m['expiration']),
+      expirationClock: _apiWallClock(m['expiration'], timeOffset),
       expired: _apiFlag(m['expired']),
       resultsVisible: _apiFlag(m['results_visible']),
       afterResult: _apiFlag(m['after_result']),
@@ -460,8 +471,12 @@ final class PollSpecial extends ThreadSpecial {
   /// Number of voters.
   final int voters;
 
-  /// End of the vote; null when it never ends.
+  /// End of the vote, the real instant; null when it never ends. Whether it ended is the forum's [expired].
   final DateTime? expiration;
+
+  /// End of the vote as the forum's wall clock (`timeoffset`), the date the card shows, on the same clock as the times
+  /// of the floors; null when it never ends.
+  final DateTime? expirationClock;
 
   /// The vote has ended.
   final bool expired;
@@ -833,7 +848,7 @@ final class ActivityApplicant {
   /// Avatar (absolute), null when none.
   final String? avatar;
 
-  /// When they applied (to the minute).
+  /// When they applied (to the minute), the forum's wall clock as the page prints it.
   final DateTime? dateline;
 
   /// Their message, empty when none or not shown to the account.
@@ -878,7 +893,12 @@ final class ActivitySpecial extends ThreadSpecial {
     required this.pending,
   });
 
-  factory ActivitySpecial._fromApi(Map<String, dynamic> m, {required String formHash, required int? viewerUid}) {
+  factory ActivitySpecial._fromApi(
+    Map<String, dynamic> m, {
+    required String formHash,
+    required int? viewerUid,
+    required num timeOffset,
+  }) {
     final image = m['image'];
     final credit = m['credit'];
     List<ActivityApplicant> applicants(Object? value) => [
@@ -887,7 +907,7 @@ final class ActivitySpecial extends ThreadSpecial {
           uid: _apiInt(a['uid']),
           username: _apiText(a['username']),
           avatar: _apiImageUrl(a['avatar']),
-          dateline: _apiTime(a['dateline']),
+          dateline: _apiWallClock(a['dateline'], timeOffset),
           message: _apiText(a['message']),
           payment: a['payment'] is num ? _apiInt(a['payment']) : null,
         ),
@@ -900,9 +920,9 @@ final class ActivitySpecial extends ThreadSpecial {
       gender: _apiInt(m['gender']),
       cost: _apiInt(m['cost']),
       number: _apiInt(m['number']),
-      startFrom: _apiTime(m['starttimefrom']),
-      startTo: _apiTime(m['starttimeto']),
-      expiration: _apiTime(m['expiration']),
+      startFrom: _apiWallClock(m['starttimefrom'], timeOffset),
+      startTo: _apiWallClock(m['starttimeto'], timeOffset),
+      expiration: _apiWallClock(m['expiration'], timeOffset),
       closed: _apiFlag(m['closed']),
       image: image is Map<String, dynamic> ? (_apiImageUrl(image['thumb']) ?? _apiImageUrl(image['url'])) : null,
       appliedCount: m['applied_count'] is num ? _apiInt(m['applied_count']) : null,
@@ -946,13 +966,13 @@ final class ActivitySpecial extends ThreadSpecial {
   /// Places, 0 unlimited.
   final int number;
 
-  /// Start (to the minute).
+  /// Start (to the minute), the forum's wall clock as the page prints it.
   final DateTime? startFrom;
 
-  /// End; null when not said.
+  /// End, the forum's wall clock; null when not said.
   final DateTime? startTo;
 
-  /// Applications close; null when not said.
+  /// Applications close, the forum's wall clock; null when not said.
   final DateTime? expiration;
 
   /// Applications closed.
@@ -1097,13 +1117,22 @@ final class DebateUser {
 /// The umpire's verdict.
 final class DebateResult {
   /// Constructor.
-  const DebateResult({required this.winner, required this.umpirePoint, required this.bestDebater});
+  const DebateResult({
+    required this.winner,
+    required this.umpirePoint,
+    required this.bestDebater,
+    this.umpirePointHtml = '',
+  });
 
   /// 1 affirmative, 2 negative, another non-zero a draw, 0 not said.
   final int winner;
 
   /// The umpire's point (plain text).
   final String umpirePoint;
+
+  /// The umpire's point as the forum renders it (html), empty when the answer has none; shown in place of
+  /// [umpirePoint].
+  final String umpirePointHtml;
 
   /// The best debater's name.
   final String bestDebater;
@@ -1135,9 +1164,16 @@ final class DebateSpecial extends ThreadSpecial {
     this.votePost,
     this.joinTemplate = '',
     this.replyStand = 0,
+    this.affirmPointHtml = '',
+    this.negaPointHtml = '',
   });
 
-  factory DebateSpecial._fromApi(Map<String, dynamic> m, {required String formHash, required int? viewerUid}) {
+  factory DebateSpecial._fromApi(
+    Map<String, dynamic> m, {
+    required String formHash,
+    required int? viewerUid,
+    required num timeOffset,
+  }) {
     List<DebateUser> users(Object? value) => [
       for (final u in _apiMaps(value))
         DebateUser(uid: _apiInt(u['uid']), username: _apiText(u['username']), avatar: _apiImageUrl(u['avatar'])),
@@ -1147,20 +1183,23 @@ final class DebateSpecial extends ThreadSpecial {
       formHash: formHash,
       viewerUid: viewerUid,
       affirmPoint: _apiText(m['affirmpoint']),
+      affirmPointHtml: _apiText(m['affirmpoint_html']),
       negaPoint: _apiText(m['negapoint']),
+      negaPointHtml: _apiText(m['negapoint_html']),
       affirmVotes: _apiInt(m['affirmvotes']),
       negaVotes: _apiInt(m['negavotes']),
       affirmDebaters: m['affirmdebaters'] is num ? _apiInt(m['affirmdebaters']) : null,
       negaDebaters: m['negadebaters'] is num ? _apiInt(m['negadebaters']) : null,
       affirmAvatars: users(m['affirmavatars']),
       negaAvatars: users(m['negaavatars']),
-      endTime: _apiTime(m['endtime']),
+      endTime: _apiWallClock(m['endtime'], timeOffset),
       ended: _apiFlag(m['ended']),
       umpire: _apiText(m['umpire']),
       result: result is Map<String, dynamic>
           ? DebateResult(
               winner: _apiInt(result['winner']),
               umpirePoint: _apiText(result['umpirepoint']),
+              umpirePointHtml: _apiText(result['umpirepoint_html']),
               bestDebater: _apiText(result['bestdebater']),
             )
           : null,
@@ -1178,8 +1217,16 @@ final class DebateSpecial extends ThreadSpecial {
   /// The affirmative point (plain text).
   final String affirmPoint;
 
+  /// The affirmative point as the forum renders it (html: links, line breaks, formatting), empty when the answer has
+  /// none; shown in place of [affirmPoint].
+  final String affirmPointHtml;
+
   /// The negative point (plain text).
   final String negaPoint;
+
+  /// The negative point as the forum renders it (html), empty when the answer has none; shown in place of
+  /// [negaPoint].
+  final String negaPointHtml;
 
   /// Votes of the affirmative side.
   final int affirmVotes;
@@ -1199,7 +1246,7 @@ final class DebateSpecial extends ThreadSpecial {
   /// Debaters the page shows (16 at most).
   final List<DebateUser> negaAvatars;
 
-  /// End; null when unlimited.
+  /// End, the forum's wall clock as the page prints it; null when unlimited.
   final DateTime? endTime;
 
   /// Ended.

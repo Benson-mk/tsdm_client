@@ -16,6 +16,7 @@ class MyThread with MyThreadMappable {
     required this.latestReplyTime,
     required this.quotedMessage,
     required this.stateSet,
+    this.latestReplyClock,
   });
 
   /// Build a [MyThread] from a thread row [t] of a structured "my threads" answer of the forum's app API (plugin
@@ -27,12 +28,18 @@ class MyThread with MyThreadMappable {
   /// them by name) and `lastpost`, the states from the flags (closed, digest, attachment, poll, reward, the sticky
   /// level) with a draft told by its `displayorder` (-4, the page's "草稿箱" mark). A row that is one reply
   /// (`pid` > 0: the reply page lists one row per reply, as [buildReplyListFromTr] builds them) links the reply
-  /// (`goto=findpost`) and quotes it (`summary`).
-  factory MyThread.fromApi(Map<String, dynamic> t) {
+  /// (`goto=findpost`) and quotes it (`summary`); a row of the reply page ([reply], the answer's `kind` `reply`)
+  /// whose reply has no text quotes "......", as the page prints it then.
+  ///
+  /// The last reply is the real instant ([latestReplyTime], shown relative to now) and the forum's wall clock with
+  /// [timeOffset] (the answer's `timeoffset`, [latestReplyClock], shown as a date), as the page prints it.
+  factory MyThread.fromApi(Map<String, dynamic> t, {num timeOffset = 8, bool reply = false}) {
     final fid = tsdmAppInt(t['fid']);
-    final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0);
+    final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0, timeOffset: timeOffset);
     final pid = tsdmAppInt(t['pid']);
-    final summary = tsdmAppText(t['summary']);
+    // The reply page prints the reply's text, or "......" when it has none (`space_thread`: the message, or a
+    // numeric one such as "0", else "......").
+    final summary = reply && pid > 0 && tsdmAppText(t['summary']).isEmpty ? '......' : tsdmAppText(t['summary']);
     return MyThread(
       title: thread.title,
       url: pid > 0 ? '$baseUrl/forum.php?mod=redirect&goto=findpost&ptid=${thread.threadID}&pid=$pid' : thread.url,
@@ -43,6 +50,7 @@ class MyThread with MyThreadMappable {
       viewCount: thread.viewCount,
       latestReplyAuthor: thread.latestReplyAuthor,
       latestReplyTime: thread.latestReplyTime,
+      latestReplyClock: tsdmAppWallClockTime(t['lastpost'], timeOffset),
       quotedMessage: summary.isEmpty ? null : summary,
       stateSet: {...thread.stateSet, if (tsdmAppInt(t['displayorder']) == -4) ThreadStateModel.draft},
     );
@@ -83,6 +91,10 @@ class MyThread with MyThreadMappable {
   /// e.g. "2023-03-04 00:11:22".
   /// Actually can not be null.
   final DateTime? latestReplyTime;
+
+  /// The time of the latest reply as the forum's wall clock (a naive [DateTime] holding the clock the page prints),
+  /// for the date the card shows; null for a row read from the web page, whose [latestReplyTime] is that clock already.
+  final DateTime? latestReplyClock;
 
   /// Quoted message of last replied user that only exists in reply list.
   final String? quotedMessage;

@@ -417,7 +417,8 @@ void main() {
       expect(post.author.uid, '32');
       expect(post.author.url, '$baseUrl/home.php?mod=space&uid=32');
       expect(post.author.avatarUrl, '$baseUrl/data/avatar/noavatar.svg');
-      expect(post.publishTime, DateTime.fromMillisecondsSinceEpoch(1790763526 * 1000));
+      // The forum's wall clock (+8, the answer's `timeoffset`), as the page prints it, whatever the device's zone.
+      expect(post.publishTime, tsdmAppWallClockTime(1790763526, 8));
       expect(post.data, floor['body_html'], reason: 'the content html as it is');
       expect(post.data, contains('id="postmessage_3938"'));
       expect(post.shareLink, '$baseUrl/forum.php?mod=viewthread&tid=9199345');

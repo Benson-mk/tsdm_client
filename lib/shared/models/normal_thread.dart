@@ -239,9 +239,10 @@ class NormalThread with NormalThreadMappable {
   /// the title highlight expanded (`style`), `istoday` (the page's `span.xi1` on the publish time), `new` and
   /// `weeknew` (which depend on the visit cookie of the request); nothing is derived again here.
   ///
-  /// * Times (`dateline`, `lastpost`) are the forum's unix seconds, stored as the real instant and shown in the
-  ///   device's zone. The web page path reads the forum's wall clock text as the device's local time (an old bug
-  ///   kept there), so the two differ by the zone difference, and by the minute the page rounds to.
+  /// * Times (`dateline`, `lastpost`) are the forum's unix seconds. The last reply (`lastpost`), which the cards show
+  ///   as a time relative to now, is the real instant. The publish time (`dateline`), which the cards show as a date,
+  ///   is the forum's wall clock with [timeOffset] (the answer's `timeoffset`), the date the page prints, whatever the
+  ///   device's zone; the web page path reads that same text.
   /// * A moved thread (`moved` is the tid of the thread it was moved to) is the row of its target, as the page links
   ///   the row's title to the target: its id and url are the target's, it is closed, and its reply count is 0 (the
   ///   page prints `-` for the pointer row). A thread pushed from a group (`grouptid`) is likewise the row of the
@@ -261,7 +262,12 @@ class NormalThread with NormalThreadMappable {
   /// * States: the sticky level, closed (`closed` 1, or a moved thread: `moved` is the tid it points to), poll
   ///   (`special` 1), rewarded (`special` 3), rated up (`rate` > 0), attachment (`attachment` 1 a file, 2 an image:
   ///   both the picture state, as [fromTBody] does), digest (`digest` > 0).
-  factory NormalThread.fromApi(Map<String, dynamic> t, {required int fid, required int typePrefix}) {
+  factory NormalThread.fromApi(
+    Map<String, dynamic> t, {
+    required int fid,
+    required int typePrefix,
+    num timeOffset = 8,
+  }) {
     final moved = _apiInt(t['moved']);
     final groupTid = _apiInt(t['grouptid']);
     final tid = moved > 0 ? moved : (groupTid > 0 ? groupTid : _apiInt(t['tid']));
@@ -334,7 +340,7 @@ class NormalThread with NormalThreadMappable {
       url: '$baseUrl/forum.php?mod=viewthread&tid=$tid',
       threadID: '$tid',
       author: author,
-      publishDate: _apiTime(t['dateline']),
+      publishDate: _apiWallClock(t['dateline'], timeOffset),
       latestReplyAuthor: latestReplyAuthor,
       latestReplyTime: _apiTime(t['lastpost']),
       iconUrl: '',
@@ -613,4 +619,20 @@ String _apiText(Object? value) => value is String ? value : '';
 DateTime? _apiTime(Object? value) {
   final seconds = _apiInt(value);
   return seconds > 0 ? DateTime.fromMillisecondsSinceEpoch(seconds * 1000) : null;
+}
+
+/// A time field of an API answer (unix seconds of the forum) as the forum's wall clock for a member whose times the
+/// forum shows with an offset of [timeOffset] hours (`timeoffset` of the answer): a naive [DateTime] holding the clock
+/// the web page prints, to the second; null when missing or 0. What `tsdmAppWallClockTime` gives, for the times the
+/// app shows as absolute ones (see `tsdmAppTime` for the rule).
+DateTime? _apiWallClock(Object? value, num timeOffset) {
+  final seconds = _apiInt(value);
+  if (seconds <= 0) {
+    return null;
+  }
+  final t = DateTime.fromMillisecondsSinceEpoch(
+    seconds * 1000,
+    isUtc: true,
+  ).add(Duration(milliseconds: (timeOffset * 3600 * 1000).round()));
+  return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
 }

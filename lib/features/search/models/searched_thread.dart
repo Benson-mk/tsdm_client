@@ -21,11 +21,12 @@ class SearchedThread with SearchedThreadMappable {
   /// the row of its target, as the page links it; the times are the forum's unix seconds): the title is the plain
   /// `subject` (the page's title with the keyword highlighted is `subject_html`, which the web path drops too), the
   /// url the thread's, the author a member by uid (an anonymous author, `anonymous` 1 or no `authorid`, has no uid
-  /// and no link, as the page prints none), the forum from `fid` and `forum`. The publish time is null when the
-  /// row names none (the web path drops such a row).
-  factory SearchedThread.fromApi(Map<String, dynamic> t) {
+  /// and no link, as the page prints none), the forum from `fid` and `forum`. The publish time, shown as a date, is
+  /// the forum's wall clock with [timeOffset] (the answer's `timeoffset`), as the page prints it; null when the row
+  /// names none (the web path drops such a row).
+  factory SearchedThread.fromApi(Map<String, dynamic> t, {num timeOffset = 8}) {
     final fid = tsdmAppInt(t['fid']);
-    final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0);
+    final thread = NormalThread.fromApi(t, fid: fid, typePrefix: 0, timeOffset: timeOffset);
     return SearchedThread(
       tid: int.tryParse(thread.threadID) ?? 0,
       title: thread.title,

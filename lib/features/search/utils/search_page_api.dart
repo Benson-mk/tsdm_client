@@ -37,11 +37,14 @@ Map<String, dynamic>? searchApiAnswerOf(Object? data) {
 SearchResult searchResultFromApi(Map<String, dynamic> json) {
   final page = tsdmAppInt(json['page']);
   final pages = tsdmAppInt(json['pages']);
+  final timeOffset = tsdmAppTimeOffset(json);
   return SearchResult(
     currentPage: page > 0 ? page : 1,
     totalPages: pages > 0 ? pages : (page > 0 ? page : 1),
     count: json['count'] is num ? tsdmAppInt(json['count']) : null,
-    data: tsdmAppList(json['threads']).where(tsdmAppIsThreadRow).map(SearchedThread.fromApi).toList(),
+    data: tsdmAppList(
+      json['threads'],
+    ).where(tsdmAppIsThreadRow).map((e) => SearchedThread.fromApi(e, timeOffset: timeOffset)).toList(),
   );
 }
 
