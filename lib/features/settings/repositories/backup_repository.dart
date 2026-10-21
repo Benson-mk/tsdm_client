@@ -175,6 +175,10 @@ final class BackupRepository with LoggerMixin {
   /// backup, dangerous) on this device, so they are dropped on import and the cache is rebuilt from the network.
   static const cachePathTables = ['image_cache', 'user_avatar'];
 
+  /// Tables holding copies of forum pages saved on the device for reading without network: never written into a
+  /// backup (they are large, and the pages of every account on this device are in them), and dropped on import.
+  static const offlineCopyTables = ['offline_thread'];
+
   /// SQLite file header.
   static const _sqliteMagic = 'SQLite format 3\u0000';
 
@@ -216,6 +220,7 @@ final class BackupRepository with LoggerMixin {
         final password = secretsPassword;
         final payload = password == null ? null : readCredentials(exported);
         stripCredentials(exported);
+        stripOfflineCopies(exported);
         if (payload != null && password != null) {
           accounts = payload.accountCount;
           _writeSecrets(exported, await _seal(payload, password));
@@ -447,6 +452,15 @@ final class BackupRepository with LoggerMixin {
     }
   }
 
+  /// Remove the offline copies of forum pages from [db], see [offlineCopyTables].
+  static void stripOfflineCopies(Database db) {
+    for (final table in offlineCopyTables) {
+      if (hasTable(db, table)) {
+        db.execute('DELETE FROM $table');
+      }
+    }
+  }
+
   /// Whether [db] has a table named [name].
   static bool hasTable(Database db, String name) =>
       db.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [name]).isNotEmpty;
@@ -550,6 +564,7 @@ final class BackupRepository with LoggerMixin {
       try {
         stripCredentials(db);
         stripCachePaths(db);
+        stripOfflineCopies(db);
         if (secrets != null) {
           final restored = applyCredentials(db, secrets);
           info('restored the logins of $restored accounts into the import copy');

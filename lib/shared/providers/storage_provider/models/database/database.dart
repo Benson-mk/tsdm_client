@@ -21,6 +21,7 @@ part 'database.g.dart';
     FastReplyTemplate,
     Image,
     Notice,
+    OfflineThread,
     PersonalMessage,
     RepliedThread,
     Settings,
@@ -33,7 +34,7 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -186,6 +187,13 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
           }
         }
         info('migrating database schema from 13 to 14... ok!');
+      },
+      from14To15: (m, schema) async {
+        info('migrating database schema from 14 to 15...');
+        // Thread pages saved for reading without network. Drift writes `CREATE TABLE IF NOT EXISTS`: the step runs
+        // again safely when the background service isolate opened the file together with the app (see from13To14).
+        await m.create(schema.offlineThread);
+        info('migrating database schema from 14 to 15... ok!');
       },
     ),
   );

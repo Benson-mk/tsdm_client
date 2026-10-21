@@ -40,6 +40,11 @@ AppException mapException(Object error, StackTrace st) {
       error.message ?? error.error?.toString() ?? error.type.name,
       statusCode: response?.statusCode,
       headers: response?.headers,
+      connectionFailed:
+          response == null &&
+          (error.type == DioExceptionType.connectionError ||
+              error.type == DioExceptionType.connectionTimeout ||
+              (error.type == DioExceptionType.unknown && error.error is SocketException)),
     );
   }
   return HttpRequestFailedException(null);

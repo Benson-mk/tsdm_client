@@ -156,4 +156,63 @@ void main() {
     expect(rows.single.ignoreType, isNull);
     await db.close();
   });
+
+  test('upgrade from 14 to 15', () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final connection = await verifier.startAt(14);
+    final db = AppDatabase(connection);
+    await verifier.migrateAndValidate(db, 15);
+    await db.close();
+  });
+
+  test('the 14 to 15 step runs again safely when another connection already created the table', () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    // The table is there but the version is still 14: the background service isolate and the app opening the file
+    // together after an update.
+    final schema = await verifier.schemaAt(15);
+    schema.rawDatabase.execute('PRAGMA user_version = 14');
+    final db = AppDatabase(schema.newConnection());
+    await verifier.migrateAndValidate(db, 15);
+    await db.close();
+  });
+
+  test('upgrade from 14 to 15 keeps every stored row and starts with no offline thread page', () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final schema = await verifier.schemaAt(14);
+    schema.rawDatabase
+      ..execute(
+        'INSERT INTO cookie (username, uid, cookie, last_checkin, session_expired_at) '
+        "VALUES ('Alice', 1000, '{\"auth\":\"x\"}', 1760000000, NULL)",
+      )
+      ..execute("INSERT INTO settings (name, bool_value) VALUES ('enableDebugOperations', 1)")
+      ..execute(
+        'INSERT INTO thread_visit_history (uid, tid, username, thread_title, fid, forum_name, visit_time) '
+        "VALUES (1000, 42, 'Alice', 'a thread', 4, 'a forum', 1760000000)",
+      )
+      ..execute('INSERT INTO replied_thread (uid, tid, fid, time) VALUES (1000, 42, 4, 1760000000)')
+      ..execute(
+        'INSERT INTO notice (uid, nid, timestamp, data, already_read, ignore_type, author_id) '
+        "VALUES (1000, 7, 100, 'x', 1, 'post', 2000)",
+      )
+      ..execute(
+        "INSERT INTO custom_image (id, name, url, sort_order, added_at) VALUES (1, 's', 'https://example.com/s.png', 0, 1)",
+      );
+    final db = AppDatabase(schema.newConnection());
+    await verifier.migrateAndValidate(db, 15);
+
+    final cookies = await db.select(db.cookie).get();
+    expect(cookies.single.username, 'Alice');
+    expect(cookies.single.cookie, '{"auth":"x"}');
+    expect(cookies.single.lastCheckin, DateTime.fromMillisecondsSinceEpoch(1760000000 * 1000));
+    expect((await db.select(db.settings).get()).single.boolValue, isTrue);
+    final history = await db.select(db.threadVisitHistory).get();
+    expect(history.single.threadTitle, 'a thread');
+    expect((await db.select(db.repliedThread).get()).single.tid, 42);
+    final notices = await db.select(db.notice).get();
+    expect(notices.single.authorId, 2000);
+    expect(notices.single.ignoreType, 'post');
+    expect((await db.select(db.customImage).get()).single.url, 'https://example.com/s.png');
+    expect(await db.select(db.offlineThread).get(), isEmpty);
+    await db.close();
+  });
 }

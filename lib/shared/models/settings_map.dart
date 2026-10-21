@@ -57,6 +57,8 @@ class SettingsMap with SettingsMapMappable {
     this.enableBackgroundMessageService = false,
     this.autoDailyRedPacket = false,
     this.highRefreshRate = true,
+    this.offlineThreads = false,
+    this.offlineThreadsLimit = 50,
   });
 
   final String netClientAccept;
@@ -112,6 +114,13 @@ class SettingsMap with SettingsMapMappable {
 
   /// Whether Android runs at the highest refresh rate of the screen. Not required: backups from older versions lack it.
   final bool highRefreshRate;
+
+  /// Whether the thread pages loaded are saved for reading without network. Not required: backups from older versions
+  /// lack it.
+  final bool offlineThreads;
+
+  /// How many threads the offline pages are kept for. Not required: backups from older versions lack it.
+  final int offlineThreadsLimit;
 
   SettingsMap copyWithKey<T>(SettingsKeys<T> key, T? value) {
     assert(
@@ -172,6 +181,8 @@ class SettingsMap with SettingsMapMappable {
       SettingsKeys.textScaleFactor => copyWith(textScaleFactor: value as double?),
       SettingsKeys.threadContentScale => copyWith(threadContentScale: value as double?),
       SettingsKeys.highRefreshRate => copyWith(highRefreshRate: value as bool?),
+      SettingsKeys.offlineThreads => copyWith(offlineThreads: value as bool?),
+      SettingsKeys.offlineThreadsLimit => copyWith(offlineThreadsLimit: value as int?),
     };
   }
 }

@@ -119,14 +119,24 @@ final class ImageResponseNotImageException extends AppException with ImageRespon
 @MappableClass()
 final class HttpHandshakeFailedException extends AppException with HttpHandshakeFailedExceptionMappable {
   /// Constructor.
-  HttpHandshakeFailedException(String message, {this.statusCode, this.headers}) : super(message: message);
+  HttpHandshakeFailedException(String message, {this.statusCode, this.headers, this.connectionFailed = false})
+    : super(message: message);
 
   /// Optional status code.
   final int? statusCode;
 
   /// Optional response headers.
   final Headers? headers;
+
+  /// The forum was never reached: no network, the connection refused, or it timed out while connecting (dio's
+  /// connection error and connection timeout, a socket exception). Not set for an answer with an error status, a
+  /// timeout while the answer was coming, or a failed TLS handshake.
+  final bool connectionFailed;
 }
+
+/// Whether [e] means the forum could not be reached at all ([HttpHandshakeFailedException.connectionFailed]): not an
+/// HTTP error, not an answer of the forum (a permission message, a login page), not a dropped request.
+bool isNoNetworkFailure(AppException e) => e is HttpHandshakeFailedException && e.connectionFailed;
 
 /// Server responded an error.
 ///

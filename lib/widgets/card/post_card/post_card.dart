@@ -332,6 +332,9 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
       ),
       ThreadFloorInteractionMode.tapToReply => GestureDetector(
         onTap: () async {
+          if (_offline(context)) {
+            return;
+          }
           await widget.replyCallback?.call(widget.post.author, widget.post.postFloor, widget.post.replyAction);
         },
         child: child,
@@ -339,9 +342,14 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     };
   }
 
+  /// Whether the floor was read back from the offline copies of its thread: actions that need the network (reply,
+  /// rate, edit, report) are not offered.
+  bool _offline(BuildContext context) => context.readOrNull<ThreadBloc>()?.state.isOffline ?? false;
+
   List<PopupMenuEntry<_PostCardActions>> _buildContextMenuEntries(BuildContext context) {
     final threadBloc = context.readOrNull<ThreadBloc>();
     final onlyVisibleUid = threadBloc?.state.onlyVisibleUid;
+    final online = !_offline(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     PopupMenuItem<_PostCardActions> item(_PostCardActions value, IconData icon, String text, {Color? color}) =>
@@ -362,8 +370,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     // share and copy, then report on its own in the error color.
     final groups = <List<PopupMenuEntry<_PostCardActions>>>[
       [
-        item(_PostCardActions.reply, Icons.reply_outlined, context.t.postCard.reply),
-        if (widget.post.rateAction != null)
+        if (online) item(_PostCardActions.reply, Icons.reply_outlined, context.t.postCard.reply),
+        if (online && widget.post.rateAction != null)
           item(_PostCardActions.rate, Icons.rate_review_outlined, context.t.postCard.rate),
       ],
       [
@@ -373,7 +381,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         // Viewing specified author now, can switch to view all authors mode.
         if (threadBloc != null && onlyVisibleUid != null)
           item(_PostCardActions.viewAllAuthors, Icons.group_outlined, context.t.postCard.viewAllAuthors),
-        if (widget.post.editUrl != null) item(_PostCardActions.edit, Icons.edit_outlined, context.t.postCard.edit),
+        if (online && widget.post.editUrl != null)
+          item(_PostCardActions.edit, Icons.edit_outlined, context.t.postCard.edit),
       ],
       [
         if (widget.post.shareLink != null) ...[
@@ -388,7 +397,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         ],
       ],
       [
-        if (widget.post.reportTarget != null)
+        if (online && widget.post.reportTarget != null)
           item(_PostCardActions.report, Icons.flag_outlined, context.t.postReport.menu, color: colorScheme.error),
       ],
     ];

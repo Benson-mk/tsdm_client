@@ -303,8 +303,17 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
   }
 
   /// The state of the page [info] the repository built (from the structured answer of the forum's app API, or
-  /// parsed from the web page).
+  /// parsed from the web page, or read back from its offline copy).
+  ///
+  /// Appended to floors on screen, the offline mark of either stays: the oldest time the page was saved.
   IO<ThreadState> _stateOf(ThreadPageInfo info, {bool? clearOnlyVisibleUid}) => IO(() {
+    final previousOffline = state.postList.isEmpty ? null : state.offlineSavedAt;
+    final offlineSavedAt = switch ((previousOffline, info.offlineSavedAt)) {
+      (final DateTime a, final DateTime b) => a.isBefore(b) ? a : b,
+      (final DateTime a, null) => a,
+      (null, final DateTime b) => b,
+      (null, null) => null,
+    };
     final threadState = ThreadState(
       // A login or no-permission page names no thread: keep the one asked for, or the next reload (after logging in,
       // or for another account, GitHub #184 follow-up) would ask for no thread at all.
@@ -334,6 +343,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       postMedals: info.postMedals,
       viewCount: info.viewCount,
       replyCount: info.replyCount,
+      offlineSavedAt: offlineSavedAt,
     );
 
     return threadState;

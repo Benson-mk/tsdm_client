@@ -437,6 +437,7 @@
       "log": "Log",
       "selectOneCache": "Need to select at least one kind of cache",
       "clearSuccess": "Cleared successfully",
+      "offlineThreadsCache": "Offline threads",
       "scheduledCleaning": {
         "title": "Auto clear image",
         "details": "Clear long time not used image cache when app start",
@@ -450,6 +451,15 @@
           "7days": "7 days",
           "15days": "15 days",
           "30days": "30 days"
+        }
+      },
+      "offlineThreads": {
+        "title": "Save viewed threads offline",
+        "detail": "Keep the thread pages you open on this device to read them again without network; each account only sees its own copies. Turning it off deletes them",
+        "limit": {
+          "title": "Threads to keep",
+          "detail": "The threads not read for the longest time are deleted first",
+          "value": "${count: int} threads"
         }
       }
     },
@@ -766,6 +776,7 @@
       "title": "Operation Log"
     },
     "softCloseHint": "Thread is closed, be attention before posting",
+    "offlineBanner": "Offline copy (saved ${time: String})",
     "statistics": "${view: int} views ${reply: int} count",
     "threadInfo": {
       "title": "Thread info",

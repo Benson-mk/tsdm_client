@@ -335,6 +335,17 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    // "KT_HTTP_UNREACHABLE" when the host was not reached at all: no network, the name not resolved, the connection
+    // refused or timed out while connecting. The app reads a saved copy of a page then (offline threads); any other
+    // failure stays "KT_HTTP_ERROR".
+    private fun httpGetErrorCode(e: Exception): String {
+        val unreachable = e is java.net.UnknownHostException ||
+            e is java.net.ConnectException ||
+            e is java.net.NoRouteToHostException ||
+            (e is java.net.SocketTimeoutException && e.message?.startsWith("failed to connect") == true)
+        return if (unreachable) "KT_HTTP_UNREACHABLE" else "KT_HTTP_ERROR"
+    }
+
     private fun handleHttpChannelCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             HTTP_GET -> {
@@ -350,7 +361,7 @@ class MainActivity: FlutterActivity() {
                         result.success(buildResponse(statusCode, headers, body, isRedirect))
                     } catch (e: Exception) {
                         Log.e("KT_HTTP_ERROR", "failed to get: ${e.message ?: "unknown error"}")
-                        result.error("KT_HTTP_ERROR", "failed to perform http GET",e.message ?: "unknown error")
+                        result.error(httpGetErrorCode(e), "failed to perform http GET",e.message ?: "unknown error")
                     }
                 }
             }

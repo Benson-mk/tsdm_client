@@ -165,10 +165,12 @@ class StorageProvider with LoggerMixin {
     return cookies.map((e) => (UserLoginInfo(username: e.username, uid: e.uid), e.lastCheckin)).toList();
   }
 
-  /// Delete the user login info for the user specified by [uid], with the local marks of the account.
+  /// Delete the user login info for the user specified by [uid], with the local marks and the offline thread pages of
+  /// the account.
   Future<int> deleteUserLoginInfo(int uid) async {
     final deleted = await CookieDao(_db).deleteCookieByUid(uid);
     await RepliedThreadDao(_db).deleteByUid(uid);
+    await OfflineThreadDao(_db).deleteByUid(uid);
     return deleted;
   }
 
@@ -246,12 +248,14 @@ class StorageProvider with LoggerMixin {
 
   /// Delete cookie for [uid].
   ///
-  /// The local marks of the account ([recordRepliedThread]) go with it.
+  /// The local marks ([recordRepliedThread]) and the offline thread pages ([saveOfflineThreadPage]) of the account go
+  /// with it.
   Future<bool> deleteCookieByUid(int uid) async {
     // Update cookie cache.
     _cookieCache.removeWhere((e, _) => e.uid == uid);
     final affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
     await RepliedThreadDao(_db).deleteByUid(uid);
+    await OfflineThreadDao(_db).deleteByUid(uid);
     return affectedRows != 0;
   }
 
@@ -305,11 +309,13 @@ class StorageProvider with LoggerMixin {
     _cookieCache.removeWhere((e, _) => targets.contains(e.uid));
     final dao = CookieDao(_db);
     final marks = RepliedThreadDao(_db);
+    final offline = OfflineThreadDao(_db);
     return _db.transaction(() async {
       var deleted = 0;
       for (final uid in targets) {
         deleted += await dao.deleteCookieByUid(uid);
         await marks.deleteByUid(uid);
+        await offline.deleteByUid(uid);
       }
       return deleted;
     });
@@ -327,6 +333,7 @@ class StorageProvider with LoggerMixin {
       _cookieCache.removeWhere((e, _) => e.uid == uid);
       affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
       await RepliedThreadDao(_db).deleteByUid(uid);
+      await OfflineThreadDao(_db).deleteByUid(uid);
     } else if (username != null) {
       _cookieCache.removeWhere((e, _) => e.username == username);
       affectedRows = await CookieDao(_db).deleteCookieByUsername(username);
@@ -589,6 +596,75 @@ class StorageProvider with LoggerMixin {
   Future<void> deleteRepliedThreadsByUid(int uid) async {
     await RepliedThreadDao(_db).deleteByUid(uid);
   }
+
+  /*        offline threads        */
+
+  /// Save the answer [body] of page [page] of thread [tid] as served to user [uid], asked with [orderType] and
+  /// [authorId] (0 when not asked), loaded at [savedAt]; replaces the page saved before.
+  Future<void> saveOfflineThreadPage({
+    required int uid,
+    required int tid,
+    required int page,
+    required int orderType,
+    required int authorId,
+    required String body,
+    required DateTime savedAt,
+  }) async => OfflineThreadDao(_db).upsert(
+    OfflineThreadCompanion(
+      uid: Value(uid),
+      tid: Value(tid),
+      page: Value(page),
+      orderType: Value(orderType),
+      authorId: Value(authorId),
+      body: Value(body),
+      size: Value(utf8.encode(body).length),
+      savedAt: Value(savedAt),
+      lastUsedAt: Value(savedAt.millisecondsSinceEpoch),
+    ),
+  );
+
+  /// The saved page of the key ([saveOfflineThreadPage]), null when none; a page found is marked used at [usedAt].
+  Future<OfflineThreadEntity?> fetchOfflineThreadPage({
+    required int uid,
+    required int tid,
+    required int page,
+    required int orderType,
+    required int authorId,
+    DateTime? usedAt,
+  }) async {
+    final dao = OfflineThreadDao(_db);
+    final entity = await dao.selectPage(uid: uid, tid: tid, page: page, orderType: orderType, authorId: authorId);
+    if (entity != null) {
+      await dao.touch(
+        uid: uid,
+        tid: tid,
+        page: page,
+        orderType: orderType,
+        authorId: authorId,
+        time: usedAt ?? DateTime.now(),
+      );
+    }
+    return entity;
+  }
+
+  /// Every saved offline thread page of every user.
+  Future<List<OfflineThreadEntity>> fetchAllOfflineThreadPages() async => OfflineThreadDao(_db).selectAll();
+
+  /// Delete every saved page of thread [tid] for user [uid].
+  Future<int> deleteOfflineThread({required int uid, required int tid}) async =>
+      OfflineThreadDao(_db).deleteThread(uid: uid, tid: tid);
+
+  /// Delete every saved page of user [uid].
+  Future<int> deleteOfflineThreadsByUid(int uid) async => OfflineThreadDao(_db).deleteByUid(uid);
+
+  /// Delete every saved page of every user.
+  Future<int> clearOfflineThreads() async => OfflineThreadDao(_db).deleteAll();
+
+  /// Size of the saved pages in bytes.
+  Future<int> offlineThreadsSize() async => OfflineThreadDao(_db).totalSize();
+
+  /// Keep the pages of the [limit] most recently used threads only; returns the number of pages deleted.
+  Future<int> trimOfflineThreads(int limit) async => OfflineThreadDao(_db).keepRecentThreads(limit);
 
   /// Save an image sticker [url] with an optional [name] (#5); returns the row id.
   Future<int> addCustomImage({required String url, String name = ''}) async =>

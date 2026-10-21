@@ -9,6 +9,7 @@ import 'package:tsdm_client/constants/constants.dart';
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
@@ -22,6 +23,7 @@ import 'package:tsdm_client/features/favorite/utils/thread_favorite_action.dart'
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/jump_page/cubit/jump_page_cubit.dart';
 import 'package:tsdm_client/features/need_login/view/need_login_page.dart';
+import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
 import 'package:tsdm_client/features/replied_thread/cubit/replied_thread_cubit.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -172,6 +174,9 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   /// Account whose block list let [_shownTid] through: the list of another account starts over.
   int? _shownOwner;
 
+  /// Saves the pages loaded here while the setting is on, and reads them back without network.
+  final _offline = OfflineThreadRepository();
+
   /// The bloc of this page, created by the provider in [build]; kept to reload the page for another account.
   ThreadBloc? _threadBloc;
 
@@ -269,7 +274,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       try {
         // A separate repository: the page's own one remembers the url of the page shown. Oldest first, so the first
         // floor is on the first page whatever the thread's own order is.
-        final result = await ThreadRepository().fetchThreadFirstPage(tid: tid).run();
+        final result = await ThreadRepository(offline: _offline).fetchThreadFirstPage(tid: tid).run();
         result.match((e) => error('failed to learn the author of thread $tid: $e'), (v) {
           final page = v.page;
           final first = page.postList.firstWhereOrNull((e) => e.postFloor == 1);
@@ -573,7 +578,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   }
 
   Future<void> replyPostCallback(User user, int? postFloor, String? replyAction) async {
-    if (replyAction == null) {
+    // No reply bar on floors read back offline.
+    if (replyAction == null || (_threadBloc?.state.isOffline ?? false)) {
       return;
     }
 
@@ -597,6 +603,24 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
     // edges and pad the side insets themselves (feedback 110: a blank strip beside the bar in landscape).
     return Column(
       children: [
+        // Floors read back from the offline copies: say so, and when they were saved.
+        if (state.offlineSavedAt case final savedAt?)
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: Padding(
+              padding: edgeInsetsL12T8R12,
+              child: AppContentWidth(
+                maxWidth: appReadingMaxWidth,
+                child: AppNoticeBanner(
+                  key: const ValueKey('thread-offline-banner'),
+                  tone: AppNoticeTone.warning,
+                  icon: Icons.cloud_off_outlined,
+                  message: tr.offlineBanner(time: savedAt.yyyyMMDDHHMM()),
+                ),
+              ),
+            ),
+          ),
         Expanded(
           // Floors get the extra thread content scale on top of the global text scale (GitHub #137); the app bar,
           // the hints below and the reply bar keep the global scale.
@@ -630,7 +654,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
         ),
         // Replies are still accepted but the thread is about to close: a banner right above the reply box, in the
         // reading column.
-        if (state.threadSoftClosed && !state.threadClosed)
+        if (state.threadSoftClosed && !state.threadClosed && !state.isOffline)
           ColoredBox(
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             child: SafeArea(
@@ -699,7 +723,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   }
 
   Widget _buildReplyBar(BuildContext context, ThreadState state) {
-    if (state.postList.isEmpty) {
+    // Nothing to reply to, or floors read back offline: a reply needs the network (and a fresh form hash).
+    if (state.postList.isEmpty || state.isOffline) {
       return const SizedBox.shrink();
     }
     return ReplyBar(
@@ -739,7 +764,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
 
     return MultiBlocProvider(
       providers: [
-        RepositoryProvider<ThreadRepository>(create: (_) => ThreadRepository()),
+        RepositoryProvider<ThreadRepository>(create: (_) => ThreadRepository(offline: _offline)),
         RepositoryProvider<ReplyRepository>(create: (_) => const ReplyRepository()),
         BlocProvider(
           create: (context) => _threadBloc = ThreadBloc(
@@ -891,22 +916,24 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
                 onReverseOrder: () => context.readOrNull<ThreadBloc>()?.add(const ThreadChangeViewOrderRequested()),
                 customMenuItems: [
                   if (state.tid != null) ...[
-                    MenuCustomItem(
-                      icon: isThreadFavorited(context, tid: state.tid!)
-                          ? Icons.bookmark_remove_outlined
-                          : Icons.bookmark_add_outlined,
-                      description: isThreadFavorited(context, tid: state.tid!)
-                          ? context.t.threadPage.favorite.remove
-                          : context.t.threadPage.favorite.add,
-                      onSelected: () async {
-                        final changed = await toggleThreadFavorite(context, tid: state.tid!);
-                        if (changed && mounted) {
-                          // Relabel the menu item.
-                          setState(() {});
-                        }
-                      },
-                    ),
-                    if (context.read<AuthenticationRepository>().effectiveCurrentUid != null)
+                    // Favorite and share need the network: not offered on floors read back offline.
+                    if (!state.isOffline)
+                      MenuCustomItem(
+                        icon: isThreadFavorited(context, tid: state.tid!)
+                            ? Icons.bookmark_remove_outlined
+                            : Icons.bookmark_add_outlined,
+                        description: isThreadFavorited(context, tid: state.tid!)
+                            ? context.t.threadPage.favorite.remove
+                            : context.t.threadPage.favorite.add,
+                        onSelected: () async {
+                          final changed = await toggleThreadFavorite(context, tid: state.tid!);
+                          if (changed && mounted) {
+                            // Relabel the menu item.
+                            setState(() {});
+                          }
+                        },
+                      ),
+                    if (!state.isOffline && context.read<AuthenticationRepository>().effectiveCurrentUid != null)
                       MenuCustomItem(
                         icon: Icons.forward_to_inbox_outlined,
                         description: context.t.threadPage.shareToFriend.title,

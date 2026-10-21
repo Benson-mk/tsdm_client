@@ -437,6 +437,7 @@
       "log": "日誌",
       "selectOneCache": "需要至少選擇一項快取",
       "clearSuccess": "清除成功",
+      "offlineThreadsCache": "離線帖子",
       "scheduledCleaning": {
         "title": "自動清理圖片",
         "details": "應用程式啟動時刪除太久未使用的圖片快取",
@@ -450,6 +451,15 @@
           "7days": "7天",
           "15days": "15天",
           "30days": "30天"
+        }
+      },
+      "offlineThreads": {
+        "title": "離線保存看過的帖子",
+        "detail": "把看過的帖子頁面存在本機，沒有網路時可以再看；每個帳號只看得到自己保存的內容。關閉時會刪除已保存的內容",
+        "limit": {
+          "title": "最多保存的帖子數",
+          "detail": "超過時先刪除最久沒看的帖子",
+          "value": "${count: int} 個帖子"
         }
       }
     },
@@ -766,6 +776,7 @@
       "title": "操作記錄"
     },
     "softCloseHint": "帖子已关闭，回复前请注意",
+    "offlineBanner": "離線內容（${time: String} 保存）",
     "statistics": "${view: int} 查看 ${reply: int} 回覆",
     "threadInfo": {
       "title": "貼文訊息",

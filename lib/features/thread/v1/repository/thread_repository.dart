@@ -4,6 +4,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
+import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
@@ -17,8 +19,20 @@ import 'package:universal_html/parsing.dart';
 /// whether its first floor names no user (an anonymous or guest post: nobody on a block list can be its author).
 typedef ThreadFirstPage = ({ThreadPageInfo page, bool firstFloorNamesNoUser});
 
+/// A thread page answer read: the page built, and the account the forum served it to (null for a guest, or when the
+/// answer does not tell).
+typedef _ThreadAnswer = ({ThreadPageInfo page, int? viewerUid});
+
 /// Repository of thread page of the app.
 class ThreadRepository {
+  /// Constructor.
+  ///
+  /// With [offline], [fetchThreadPage] saves the pages it loads while the setting is on and reads them back when the
+  /// forum can not be reached ([fetchThreadFirstPage] only reads them back); without it nothing is saved or read.
+  ThreadRepository({OfflineThreadRepository? offline}) : _offline = offline;
+
+  final OfflineThreadRepository? _offline;
+
   String? _threadUrl;
 
   /// Getter to get the thread url.
@@ -88,6 +102,19 @@ class ThreadRepository {
   /// 1 whatever page was asked for (the author-only view asks the page the thread was on, the filtered thread may
   /// have fewer pages). A structured answer always tells its page.
   ///
+  /// # Offline copies
+  ///
+  /// With the offline repository given to the constructor and its setting on, for a logged in account:
+  ///
+  /// * a page with floors the forum served to that account is saved as it came, under the account, the thread, the
+  ///   page asked for and the filters (`ordertype`, `authorid`); the `findpost` redirect under the page it landed on,
+  ///   without filters, as that request has none;
+  /// * the forum's message refusing the thread to the account (no permission, no such thread; not the login prompt
+  ///   of an expired session) deletes every page of the thread saved for that account;
+  /// * when the forum could not be reached at all ([isNoNetworkFailure]), the page saved for the same account and the
+  ///   same request is built instead, marked with the time it was loaded ([ThreadPageInfo.offlineSavedAt]) and without
+  ///   its reply form; any other failure, or no saved page, is the failure as before.
+  ///
   /// # Exception
   ///
   /// * **HttpRequestedFailedException** when http request failed.
@@ -99,28 +126,112 @@ class ThreadRepository {
     String? onlyVisibleUid,
     bool? reverseOrder,
     int? exactOrder,
-  }) =>
-      _fetchAnswer(
-        tid: tid,
-        pid: pid,
-        pageNumber: pageNumber,
-        onlyVisibleUid: onlyVisibleUid,
-        reverseOrder: reverseOrder,
-        exactOrder: exactOrder,
-      ).flatMap(
-        (data) => AsyncEither(() async {
-          final api = threadApiAnswerOf(data);
-          if (api != null) {
-            return right(threadPageFromApi(api, pageNumber));
+  }) => AsyncEither(() async {
+    final offline = _offline != null && _offline.enabled ? _offline : null;
+    // The account the request goes out as: the client is bound to it, and drops the answer once another one is in use.
+    final uid = offline?.currentUid();
+    final orderType = tid == null ? 0 : (_orderTypeOf(exactOrder: exactOrder, reverseOrder: reverseOrder) ?? 0);
+    final authorId = tid == null ? 0 : (int.tryParse(onlyVisibleUid ?? '') ?? 0);
+    final askedTid = int.tryParse(tid ?? '');
+
+    final answer = await _fetchAnswer(
+      tid: tid,
+      pid: pid,
+      pageNumber: pageNumber,
+      onlyVisibleUid: onlyVisibleUid,
+      reverseOrder: reverseOrder,
+      exactOrder: exactOrder,
+    ).run();
+
+    switch (answer) {
+      case Left(value: final e):
+        // Never another account's copy: the account in use may have changed while the request was out.
+        if (offline != null &&
+            uid != null &&
+            askedTid != null &&
+            isNoNetworkFailure(e) &&
+            offline.currentUid() == uid) {
+          final key = OfflineThreadKey(
+            uid: uid,
+            tid: askedTid,
+            page: pageNumber,
+            orderType: orderType,
+            authorId: authorId,
+          );
+          final saved = await offline.load(key);
+          if (saved != null) {
+            ThreadPageInfo? page;
+            try {
+              page = _readThreadPage(
+                saved.body,
+                pageNumber: pageNumber,
+                pageFallback: pageFallback,
+              ).toNullable()?.page;
+            } on Object catch (_) {
+              // A copy that can not be built is no page: the failure stays.
+              page = null;
+            }
+            if (page != null && page.havePermission && !page.needLogin && page.postList.isNotEmpty) {
+              return right(page.asOffline(saved.savedAt));
+            }
           }
-          // An answer without a page is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage); the
-          // antitheft interceptor asked the web page again for one already.
-          if (tsdmAppAnswerWithoutPage(data)) {
-            return left(HttpRequestFailedException(HttpStatus.ok));
+        }
+        return left(e);
+      case Right(value: final data):
+        final read = _readThreadPage(
+          data,
+          pageNumber: pageNumber,
+          pageFallback: pageFallback,
+          readViewer: offline != null && uid != null,
+        );
+        if (read case Right(value: final v) when offline != null && uid != null) {
+          final page = v.page;
+          final pageTid = askedTid ?? int.tryParse(page.tid ?? '');
+          if (pageTid != null && !page.havePermission && !page.needLogin) {
+            offline.forgetThread(uid: uid, tid: pageTid);
+          } else if (pageTid != null && page.havePermission && !page.needLogin && page.postList.isNotEmpty) {
+            // Only what the forum served to this account: not the guest page of a session that expired.
+            if (v.viewerUid == uid) {
+              offline.save(
+                OfflineThreadKey(
+                  uid: uid,
+                  tid: pageTid,
+                  page: askedTid != null ? pageNumber : page.currentPage,
+                  orderType: orderType,
+                  authorId: authorId,
+                ),
+                data,
+              );
+            }
           }
-          return right(parseThreadDocument(tsdmAppPageDocument(data), pageFallback ?? pageNumber));
-        }),
-      );
+        }
+        return read.map((v) => v.page);
+    }
+  });
+
+  /// The page of the thread page answer [data] asked for page [pageNumber] (see [fetchThreadPage]), with the account it
+  /// was served to (read from a web page only with [readViewer]).
+  Either<AppException, _ThreadAnswer> _readThreadPage(
+    Object? data, {
+    required int pageNumber,
+    int? pageFallback,
+    bool readViewer = false,
+  }) {
+    final api = threadApiAnswerOf(data);
+    if (api != null) {
+      return right((page: threadPageFromApi(api, pageNumber), viewerUid: threadApiViewerUid(api)));
+    }
+    // An answer without a page is a failed request, not a thread without posts (see tsdmAppAnswerWithoutPage); the
+    // antitheft interceptor asked the web page again for one already.
+    if (tsdmAppAnswerWithoutPage(data)) {
+      return left(HttpRequestFailedException(HttpStatus.ok));
+    }
+    final document = tsdmAppPageDocument(data);
+    return right((
+      page: parseThreadDocument(document, pageFallback ?? pageNumber),
+      viewerUid: readViewer ? parseLoggedUidFromDocument(document) : null,
+    ));
+  }
 
   /// Fetch the first page of thread [tid], oldest floor first, to learn who started it (the thread page does, when the
   /// thread was opened on a later page and the current account blocks somebody).
@@ -129,34 +240,75 @@ class ThreadRepository {
   /// floor is on it whatever the thread's own order is; it names no user when it is an anonymous or guest post
   /// (`firstFloorNamesNoUser`): built, such a floor is in the list without a uid; parsed, the post parser skips it
   /// and the page is asked.
-  AsyncEither<ThreadFirstPage> fetchThreadFirstPage({required String tid}) =>
-      _fetchAnswer(
-        tid: tid,
-        pid: null,
-        pageNumber: 1,
-        onlyVisibleUid: null,
-        reverseOrder: false,
-        exactOrder: null,
-      ).flatMap(
-        (data) => AsyncEither(() async {
-          final api = threadApiAnswerOf(data);
-          if (api != null) {
-            final page = threadPageFromApi(api, 1);
-            return right((
-              page: page,
-              firstFloorNamesNoUser: page.postList.any((e) => e.postFloor == 1 && e.author.uid == null),
-            ));
-          }
-          if (tsdmAppAnswerWithoutPage(data)) {
-            return left(HttpRequestFailedException(HttpStatus.ok));
-          }
-          final document = tsdmAppPageDocument(data);
-          return right((
-            page: parseThreadDocument(document, 1),
-            firstFloorNamesNoUser: firstFloorNamesNoUser(document),
-          ));
-        }),
-      );
+  ///
+  /// With the offline repository on, the copy of the same page saved for the account in use is read when the forum
+  /// can not be reached; this lookup never saves one itself.
+  AsyncEither<ThreadFirstPage> fetchThreadFirstPage({required String tid}) => AsyncEither(() async {
+    final offline = _offline != null && _offline.enabled ? _offline : null;
+    final uid = offline?.currentUid();
+    final answer = await _fetchAnswer(
+      tid: tid,
+      pid: null,
+      pageNumber: 1,
+      onlyVisibleUid: null,
+      reverseOrder: false,
+      exactOrder: null,
+    ).run();
+    final Object? data;
+    switch (answer) {
+      case Left(value: final e):
+        final askedTid = int.tryParse(tid);
+        if (offline == null ||
+            uid == null ||
+            askedTid == null ||
+            !isNoNetworkFailure(e) ||
+            offline.currentUid() != uid) {
+          return left(e);
+        }
+        final saved = await offline.load(
+          OfflineThreadKey(
+            uid: uid,
+            tid: askedTid,
+            page: 1,
+            orderType: _orderTypeOf(exactOrder: null, reverseOrder: false) ?? 0,
+            authorId: 0,
+          ),
+        );
+        if (saved == null) {
+          return left(e);
+        }
+        data = saved.body;
+      case Right(:final value):
+        data = value;
+    }
+    final api = threadApiAnswerOf(data);
+    if (api != null) {
+      final page = threadPageFromApi(api, 1);
+      return right((
+        page: page,
+        firstFloorNamesNoUser: page.postList.any((e) => e.postFloor == 1 && e.author.uid == null),
+      ));
+    }
+    if (tsdmAppAnswerWithoutPage(data)) {
+      return left(HttpRequestFailedException(HttpStatus.ok));
+    }
+    final document = tsdmAppPageDocument(data);
+    return right((
+      page: parseThreadDocument(document, 1),
+      firstFloorNamesNoUser: firstFloorNamesNoUser(document),
+    ));
+  });
+
+  /// The `ordertype` asked with [exactOrder] and [reverseOrder] (see [_fetchAnswer]), null when none is asked.
+  static int? _orderTypeOf({required int? exactOrder, required bool? reverseOrder}) => switch ((
+    exactOrder,
+    reverseOrder,
+  )) {
+    (final int i, _) => i,
+    (null, true) => 1,
+    (null, false) => 2,
+    (null, null) => null,
+  };
 
   /// The body of the thread page answer: the web page, or the JSON answer of the forum's app API (which may be one
   /// without a page, see [tsdmAppAnswerWithoutPage]: the callers tell).
@@ -186,11 +338,9 @@ class ThreadRepository {
     // to find a post in a certain page number, in this use case a manually
     // other override may going into different page that does NOT contain
     // the target post.
-    final orderType = switch ((exactOrder, reverseOrder)) {
-      (final int i, _) => '&ordertype=$i',
-      (null, true) => '&ordertype=1',
-      (null, false) => '&ordertype=2',
-      (null, null) => '',
+    final orderType = switch (_orderTypeOf(exactOrder: exactOrder, reverseOrder: reverseOrder)) {
+      final int i => '&ordertype=$i',
+      null => '',
     };
 
     _pageNumber = pageNumber;
