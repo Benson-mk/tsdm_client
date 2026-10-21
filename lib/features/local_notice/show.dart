@@ -52,9 +52,9 @@ final class LocalNoticeAccount {
   /// Its name, for the title of a [named] notification.
   final String? username;
 
-  /// Whether every saved account is announced (`SettingsKeys.backgroundSyncAllAccounts`): the title names the account
-  /// and the account gets a notification of its own ([localNoticeIdOf]). Otherwise the notification looks as it
-  /// always did, one for the account in use.
+  /// Whether every saved account is announced (`SettingsKeys.backgroundSyncAllAccounts`): the title names the account,
+  /// the account gets a notification of its own ([localNoticeIdOf]) and the payload names it. Otherwise the
+  /// notification is exactly what it always was, one for the account in use.
   final bool named;
 }
 
@@ -63,22 +63,31 @@ typedef LocalNotificationContent = ({int id, String title, String body, String p
 
 /// Build the notification of [info] with the texts of [translations], about [account] when known.
 ///
-/// The payload names the account whenever it is known ([LocalNoticeKeys.openNotificationOf]): a tap opens the notice
-/// page as that account, switching to it first when another one is in use by then. Without [account] (the test
-/// notification of the settings page) the payload is the old one, the account in use.
+/// A [LocalNoticeAccount.named] notification (every logged-in account announced) names its account in the title, has
+/// an id of its own ([localNoticeIdOf]) and a payload naming the account ([LocalNoticeKeys.openNotificationOf]): a tap
+/// opens the notice page as that account, switching to it first when another one is in use by then. Any other
+/// notification is the one it always was: one id, the plain title, the payload of the account in use
+/// ([LocalNoticeKeys.openNotification]).
 LocalNotificationContent localNotificationContentOf(
   Translations translations,
   NotificationAutoSyncInfo info, {
   LocalNoticeAccount? account,
 }) {
   final tr = translations.localNotification;
-  final username = account?.username;
-  final named = account != null && account.named;
+  if (account == null || !account.named) {
+    return (
+      id: localNoticeId,
+      title: tr.notice.title,
+      body: localNotificationBodyOf(translations, info),
+      payload: LocalNoticeKeys.openNotification,
+    );
+  }
+  final username = account.username;
   return (
-    id: account != null && account.named ? localNoticeIdOf(account.uid) : localNoticeId,
-    title: named && username != null && username.isNotEmpty ? tr.notice.titleOf(username: username) : tr.notice.title,
+    id: localNoticeIdOf(account.uid),
+    title: username != null && username.isNotEmpty ? tr.notice.titleOf(username: username) : tr.notice.title,
     body: localNotificationBodyOf(translations, info),
-    payload: account == null ? LocalNoticeKeys.openNotification : LocalNoticeKeys.openNotificationOf(account.uid),
+    payload: LocalNoticeKeys.openNotificationOf(account.uid),
   );
 }
 

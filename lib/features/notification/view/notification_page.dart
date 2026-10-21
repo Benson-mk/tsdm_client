@@ -9,6 +9,7 @@ import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/blocking/utils/block_filter.dart';
 import 'package:tsdm_client/features/blocking/utils/notice_block_filter.dart';
+import 'package:tsdm_client/features/multi_user/widgets/current_account_avatar.dart';
 import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
@@ -127,7 +128,9 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
     final tr = context.t.noticePage;
     return BlocListener<NotificationBloc, NotificationState>(
       listener: (context, state) {
-        if (state.status == NotificationStatus.success) {
+        final inUse = watchCurrentAccount(context, listen: false)?.user?.uid;
+        if (state.status == NotificationStatus.success &&
+            (state.ownerUid == null || inUse == null || state.ownerUid == inUse)) {
           final blocked = currentBlockList(context, listen: false);
           final n = state.noticeList.where((e) => !e.alreadyRead && !isBlockedNoticeAuthor(e.authorId, blocked)).length;
           // Conversations with locally blocked users stay listed below but are muted: they do not count in the badge.
@@ -144,6 +147,10 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
       },
       child: BlocBuilder<NotificationBloc, NotificationState>(
         builder: (context, state) {
+          // Lists of another account than the one in use (switched, the new account's lists not in yet) are never
+          // shown: the page waits for them.
+          final inUse = watchCurrentAccount(context)?.user?.uid;
+          final foreign = state.ownerUid != null && inUse != null && state.ownerUid != inUse;
           // Notices of locally blocked users stay stored (and keep their read state) but are not listed.
           final blocked = currentBlockList(context);
           final noticeList = state.noticeList.where((e) => !isBlockedNoticeAuthor(e.authorId, blocked));
@@ -177,6 +184,7 @@ class _NotificationPageState extends State<NotificationPage> with SingleTickerPr
               : (0, 0, 0);
 
           final body = switch (state.status) {
+            _ when foreign => const CenteredCircularIndicator(),
             NotificationStatus.initial || NotificationStatus.loading => const CenteredCircularIndicator(),
             NotificationStatus.success => TabBarView(
               controller: _tabController,

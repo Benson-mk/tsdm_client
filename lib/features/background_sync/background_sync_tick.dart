@@ -19,7 +19,10 @@ const backgroundSyncDeadline = Duration(minutes: 6);
 /// Pause between the fetches of two accounts in one tick, when every saved account is polled.
 ///
 /// Same as the sync of all accounts (`NotificationSyncAllRepository.gap`): the plugin takes one call per action and
-/// account within its interval, and the forum answered 429 when several accounts asked at once.
+/// account within its interval, and the forum answered 429 when several accounts asked at once. The pause is each
+/// path's own (the background tick, the in-app round, the sync of all accounts): two paths may ask at the same moment
+/// for two different accounts, which only concerns each account itself; the same account is kept from being asked
+/// twice by its poll ([NotificationPollSlot]).
 const backgroundSyncAccountGap = Duration(seconds: 2);
 
 /// The settings one background sync reads fresh from the database.
@@ -195,8 +198,8 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
 ///
 /// What goes wrong for one account stays with it: an expired session is recorded for that account only (the sync of
 /// all accounts marks it, as for the account in use; the account in use is never logged out), a failure or a 429 is
-/// its own outcome, and the next account runs. Another account whose login is known to be expired is not polled again
-/// until it logs in again; the account in use is polled as before. A fetch given up at [deadline] ends the round
+/// its own outcome, and the next account runs. Another account whose login is known to be expired rests a day
+/// ([expiredAccountRetry]) before it is polled once more; the account in use is polled as before. A fetch given up at [deadline] ends the round
 /// though: the network the system holds would hold every account after it as long, and the next tick polls them.
 ///
 /// Every outcome is handed to [onOutcome] as soon as its account is done (the service announces it then), and the
@@ -244,11 +247,13 @@ Future<List<BackgroundSyncOutcome>> backgroundSyncAccountsTick({
     return outcomes;
   }
   await storage.refreshCookieCache();
+  final (:accounts, :retried) = await _accountsToPoll(storage, settings.loginUid);
   await _pollRound(
     storage: storage,
     repository: repository,
     settings: settings,
-    accounts: await _accountsToPoll(storage, settings.loginUid),
+    accounts: accounts,
+    retried: retried,
     service: true,
     now: now,
     deadline: deadline,
@@ -262,14 +267,16 @@ Future<List<BackgroundSyncOutcome>> backgroundSyncAccountsTick({
 
 /// The other accounts' part of the in-app auto sync (Android and Windows, while the app runs, in the tray too).
 ///
+/// [repository] reads each account's cookie from the database (`cookiesFromDatabase`).
+///
 /// The in-app auto sync polls the account in use itself, through the notification page's own fetch; when
 /// `SettingsKeys.backgroundSyncAllAccounts` is on, this polls every other account saved on this device right after,
 /// the way [backgroundSyncAccountsTick] polls them: one after another through the sync of all accounts, each with its
 /// own cookie, poll slot ([NotificationPollSlot], shared with the background message service, so whichever comes
 /// first polls an account and the other skips it), rows, bound, deleted conversations, block list and form hash;
 /// [gap] before each account (the account in use was just asked), what goes wrong for one account staying with it,
-/// another account known to be expired not polled until it logs in again, a fetch given up at [deadline] ending the
-/// round. The switch of the background message service plays no part here.
+/// another account known to be expired resting a day ([expiredAccountRetry]), a fetch given up at [deadline] ending
+/// the round. The switch of the background message service plays no part here.
 ///
 /// Nothing is polled when the setting is off, auto sync is set to never or nobody is logged in; the settings are read
 /// again before each account. Every outcome goes to [onOutcome] as soon as its account is done, every notification
@@ -293,14 +300,15 @@ Future<List<BackgroundSyncOutcome>> autoSyncOtherAccountsTick({
   if (_stopRound(settings, service: false) != null) {
     return outcomes;
   }
-  // The background service may have stored a cookie the forum renewed for another account.
-  await storage.refreshCookieCache();
-  final others = (await _accountsToPoll(storage, settings.loginUid)).skip(1).toList();
+  // The cookies are read from the database by [repository] (`cookiesFromDatabase`): the background service may have
+  // stored one the forum renewed, and the app's whole cache is not reloaded for that.
+  final (:accounts, :retried) = await _accountsToPoll(storage, settings.loginUid);
   await _pollRound(
     storage: storage,
     repository: repository,
     settings: settings,
-    accounts: others,
+    accounts: accounts.skip(1).toList(),
+    retried: retried,
     service: false,
     now: now,
     deadline: deadline,
@@ -314,12 +322,14 @@ Future<List<BackgroundSyncOutcome>> autoSyncOtherAccountsTick({
 
 /// Poll [accounts] one after another, see [backgroundSyncAccountsTick]; [service] tells the background message
 /// service (its switch ends the round) from the in-app auto sync. [waitFirst] waits [gap] before the first account
-/// too: the account in use was just asked.
+/// too: the account in use was just asked. [retried] are accounts marked expired polled once more
+/// ([expiredAccountRetry]): fetched, their mark is cleared.
 Future<void> _pollRound({
   required StorageProvider storage,
   required NotificationSyncAllRepository repository,
   required BackgroundSyncSettings settings,
   required List<UserLoginInfo> accounts,
+  required Set<int> retried,
   required bool service,
   required DateTime? now,
   required Duration deadline,
@@ -350,6 +360,13 @@ Future<void> _pollRound({
       deadline: deadline,
       onLate: onLate,
     );
+    if (polled.outcome case BackgroundSyncDone(
+      :final uid,
+      result: NotificationSyncResultSuccess(),
+    ) when retried.contains(uid)) {
+      // The forum answered this account's cookie as logged in: the expiry recorded for it was wrong, or is over.
+      await storage.clearSessionExpired(uid);
+    }
     await add(polled.outcome);
     if (polled.outcome is BackgroundSyncDisabled) {
       break;
@@ -410,21 +427,45 @@ Future<BackgroundSyncOutcome?> _prepare(Future<void> Function()? prepareNetwork)
   }
 }
 
+/// How long another account whose login is known to be expired is left alone: then it is polled once more, so a
+/// mark that was wrong (a guest page the forum answered by mistake) does not mute the account for good. Still expired,
+/// the sync marks it again and it rests another day; alive, its mark is cleared.
+const expiredAccountRetry = Duration(days: 1);
+
 /// The accounts a tick with every account on polls: the account in use [loginUid] first, as the in-app sync and the
 /// tick for it alone poll it (also while its login is marked expired); then every other account saved on this device
-/// with a name and a uid, as the sync of all accounts lists them, except those whose login is known to be expired.
-Future<List<UserLoginInfo>> _accountsToPoll(StorageProvider storage, int loginUid) async {
+/// with a name and a uid, as the sync of all accounts lists them, except those whose login was found expired less
+/// than [expiredAccountRetry] ago. `retried` are the other accounts polled although marked expired.
+Future<({List<UserLoginInfo> accounts, Set<int> retried})> _accountsToPoll(
+  StorageProvider storage,
+  int loginUid,
+) async {
   final stored = (await storage.getAllUsers())
       .where((e) => e.uid != null && e.uid! > 0 && e.username != null && e.username!.isNotEmpty)
       .toList();
-  final expired = (await storage.fetchExpiredSessions()).map((e) => e.user.uid).toSet();
+  final expiredAt = {
+    for (final e in await storage.fetchExpiredSessions())
+      if (e.user.uid case final int uid) uid: e.sessionExpiredAt,
+  };
+  final now = DateTime.now();
+  bool resting(int uid) => switch (expiredAt[uid]) {
+    final DateTime at => now.difference(at) < expiredAccountRetry,
+    null => false,
+  };
   final current = stored.where((e) => e.uid == loginUid).firstOrNull ?? UserLoginInfo(username: null, uid: loginUid);
-  final others = stored.where((e) => e.uid != loginUid && !expired.contains(e.uid));
-  final skipped = stored.where((e) => e.uid != loginUid && expired.contains(e.uid)).length;
+  final others = stored.where((e) => e.uid != loginUid).toList();
+  final polled = others.where((e) => !resting(e.uid!)).toList();
+  final skipped = others.length - polled.length;
   if (skipped > 0) {
     talker.debug('background sync: $skipped account(s) with an expired login not polled');
   }
-  return [current, ...others];
+  return (
+    accounts: [current, ...polled],
+    retried: {
+      for (final e in polled)
+        if (expiredAt.containsKey(e.uid)) e.uid!,
+    },
+  );
 }
 
 /// What polling one account brought: the `outcome`; whether a request was sent (`requested`, the poll was taken);

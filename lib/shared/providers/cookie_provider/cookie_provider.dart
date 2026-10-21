@@ -179,6 +179,25 @@ final class CookieProvider with LoggerMixin implements Storage {
     return true;
   }
 
+  /// [loadCookieFromStorage] for [userInfo] (its uid) read from the database instead of the cache of the storage
+  /// provider, see `StorageProvider.fetchCookieOfUid`.
+  Future<bool> loadCookieFromDatabase(UserLoginInfo userInfo) async {
+    final uid = userInfo.uid;
+    if (uid == null) {
+      error('failed to load cookie from database: no uid');
+      return false;
+    }
+    final databaseCookie = await getIt.get<StorageProvider>().fetchCookieOfUid(uid);
+    if (databaseCookie == null) {
+      error('failed to load cookie from database: uid ${"$uid".obscured(4)} not found');
+      return false;
+    }
+    _userLoginInfo = userInfo;
+    _cookieMap = stripServerFlagCookies(Map.castFrom(databaseCookie));
+    _mirrorsStoredRow = true;
+    return true;
+  }
+
   /// Save current user's info and cookie to storage.
   Future<void> saveCookieToStorage() async {
     if (!_userLoginInfo.isComplete) {

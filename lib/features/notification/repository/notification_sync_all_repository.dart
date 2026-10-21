@@ -38,6 +38,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
     NetClientProvider Function(CookieProvider cookie)? clientFactory,
     this.gap = const Duration(seconds: 2),
     this.maxRetryAfter = const Duration(seconds: 60),
+    this.cookiesFromDatabase = false,
   }) : _storageProvider = storageProvider,
        _notificationRepository = notificationRepository,
        _clientFactory = clientFactory ?? _defaultClient;
@@ -52,6 +53,11 @@ final class NotificationSyncAllRepository with LoggerMixin {
   ///
   /// Three pages are fetched per account; the forum answered 429 when four accounts checked in at once.
   final Duration gap;
+
+  /// Whether each account's cookie is read from the database rather than the cache of the storage provider: for the
+  /// in-app round of the other accounts, which must see the cookies the background service renewed, without
+  /// reloading the app's whole cache every round.
+  final bool cookiesFromDatabase;
 
   /// Longest wait accepted from a `Retry-After` header before the one retry of a rate-limited account.
   ///
@@ -71,11 +77,13 @@ final class NotificationSyncAllRepository with LoggerMixin {
   /// the background service may still be writing to it while the next one runs (GitHub #173).
   ///
   /// With [pollInterval] (the auto sync interval, for the sync of all accounts the user asks for) each account takes
-  /// its poll first ([NotificationPollSlot], shared with the in-app auto sync and the background message service), at
-  /// [now] (the current time by default): an account one of them polled within half the interval is not asked again
-  /// (the plugin answers a second call within its interval with 429), its result is what is stored now
-  /// ([NotificationSyncResultSuccess.recent]); a poll that brought nothing is given back. Without it (the background
-  /// tick, which takes the poll itself) every account is fetched.
+  /// its poll first ([NotificationPollSlot.takeForManualSync], shared with the in-app auto sync and the background
+  /// message service), at [now] (the current time by default): an account one of them polled within half the
+  /// interval, at most 30 seconds ago, is not asked again (the plugin answers a second call within its interval with
+  /// 429), its result is what is stored now ([NotificationSyncResultSuccess.recent]); a poll that brought nothing is
+  /// given back. Without it (the background tick and the in-app round of the other accounts, which take the poll
+  /// themselves) every account is fetched. The pause between accounts ([gap]) is this run's own, see
+  /// [NotificationPollSlot].
   AsyncEither<NotificationSyncAllInfo> syncAll({
     required List<UserLoginInfo> accounts,
     Duration? pollInterval,
@@ -112,7 +120,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
     }
     final int? slot;
     try {
-      slot = await NotificationPollSlot.take(_storageProvider, uid, interval, now: now);
+      slot = await NotificationPollSlot.takeForManualSync(_storageProvider, uid, interval, now: now);
       if (slot == null) {
         debug('uid ${"$uid".obscured(4)} was polled moments ago, using what is stored');
         final unread = await countUnreadNotification(storage: _storageProvider, uid: uid);
@@ -161,7 +169,10 @@ final class NotificationSyncAllRepository with LoggerMixin {
 
   Future<NotificationSyncResult> _syncOneUnguarded(int uid, UserLoginInfo user) async {
     final cookie = getIt.get<CookieProvider>(instanceName: ServiceKeys.empty);
-    if (!await cookie.loadCookieFromStorage(user)) {
+    final loaded = cookiesFromDatabase
+        ? await cookie.loadCookieFromDatabase(user)
+        : await cookie.loadCookieFromStorage(user);
+    if (!loaded) {
       return const NotificationSyncResultNotAuthorized();
     }
     final client = _clientFactory(cookie);

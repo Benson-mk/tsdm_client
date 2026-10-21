@@ -246,7 +246,15 @@ class AuthenticationRepository with LoggerMixin {
   });
 
   /// Parse logged user info from html [document].
-  AsyncVoidEither loginWithDocument(uh.Document document) => AsyncVoidEither(() async {
+  ///
+  /// [fetchedAs] is the account whose cookie the page was asked with, when the caller knows it: once the cookie in use
+  /// names another account (switched meanwhile), the page says nothing about the account in use and is dropped
+  /// ([IdentityChangedException]), its guest page included (it would mark the new account expired). Without it a
+  /// page served to another account than the cookie in use names is dropped the same way.
+  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs}) => AsyncVoidEither(() async {
+    if (_accountChangedSince(fetchedAs)) {
+      return left(IdentityChangedException());
+    }
     // Do NOT mark as unauthenticated here because auth with document is
     // only used as a verification of a token that intend to be valid. It's
     // outside the regular login progress.
@@ -261,6 +269,9 @@ class AuthenticationRepository with LoggerMixin {
       return left(LoginUserInfoNotFoundException());
     }
 
+    if (_servedToAnotherAccount(userInfo)) {
+      return left(IdentityChangedException());
+    }
     // Here we get complete user info.
     await getIt.get<CookieProvider>().saveCookieToStorage();
     await _markAuthenticated(userInfo);
@@ -269,26 +280,69 @@ class AuthenticationRepository with LoggerMixin {
     return rightVoid();
   });
 
+  /// Whether the cookie in use names another account than [fetchedAs], the one a page was asked as (see
+  /// [loginWithDocument]); false when the caller does not know.
+  bool _accountChangedSince(int? fetchedAs) {
+    if (fetchedAs == null) {
+      return false;
+    }
+    final inUse = getIt.get<CookieProvider>().userLoginInfo.uid;
+    if (inUse == fetchedAs) {
+      return false;
+    }
+    warning(
+      'page asked as uid ${"$fetchedAs".obscured(4)} while the cookie in use is uid ${"$inUse".obscured(4)} now: the '
+      'account changed meanwhile, nothing recorded',
+    );
+    return true;
+  }
+
+  /// Whether a page served to [user] arrived after the account in use changed: the global cookie now names another
+  /// complete account.
+  ///
+  /// The page was fetched with the cookie of the account in use when it was asked; an account switch (a tap on the
+  /// notification of another account at a cold start, while the homepage still verifies the stored login) loads the
+  /// other account's cookie meanwhile. Recording the page's account then saved that cookie into the row of the
+  /// page's account and named it in the settings: the two accounts' sessions mixed up. Such a page records nothing.
+  bool _servedToAnotherAccount(UserLoginInfo user) {
+    final inUse = getIt.get<CookieProvider>().userLoginInfo;
+    if (!inUse.isComplete || inUse.uid == user.uid) {
+      return false;
+    }
+    warning(
+      'page served to uid ${"${user.uid}".obscured(4)} while the cookie in use is uid ${"${inUse.uid}".obscured(4)} '
+      'now: the account changed meanwhile, nothing recorded',
+    );
+    return true;
+  }
+
   /// [loginWithDocument] for a page the forum's app API answered as structured fields (the homepage of plugin
   /// 2.3.0, `schema: 5`): [user] is the account the page was served to, null for a guest or the forum's message.
   /// [guest] tells the guest's page (served to nobody, or the login prompt) from any other page without an
   /// account: fetched with the cookie of the account in use, the guest's page means that session is dead (issue
-  /// #25), as the guest web page does.
-  AsyncVoidEither loginWithServedUser(UserLoginInfo? user, {required bool guest}) => AsyncVoidEither(() async {
-    if (user == null || user.uid == null || user.username == null) {
-      debug('failed to login with served user: user info not found');
-      if (guest) {
-        await markCurrentSessionExpired();
-      }
-      return left(LoginUserInfoNotFoundException());
-    }
+  /// #25), as the guest web page does. [fetchedAs] as for [loginWithDocument].
+  AsyncVoidEither loginWithServedUser(UserLoginInfo? user, {required bool guest, int? fetchedAs}) =>
+      AsyncVoidEither(() async {
+        if (_accountChangedSince(fetchedAs)) {
+          return left(IdentityChangedException());
+        }
+        if (user == null || user.uid == null || user.username == null) {
+          debug('failed to login with served user: user info not found');
+          if (guest) {
+            await markCurrentSessionExpired();
+          }
+          return left(LoginUserInfoNotFoundException());
+        }
+        if (_servedToAnotherAccount(user)) {
+          return left(IdentityChangedException());
+        }
 
-    await getIt.get<CookieProvider>().saveCookieToStorage();
-    await _markAuthenticated(user);
+        await getIt.get<CookieProvider>().saveCookieToStorage();
+        await _markAuthenticated(user);
 
-    debug('login with served user: user $user');
-    return rightVoid();
-  });
+        debug('login with served user: user $user');
+        return rightVoid();
+      });
 
   /// Record in storage that the forum session of the account in use ([effectiveCurrentUid]) is dead (issue #25).
   ///

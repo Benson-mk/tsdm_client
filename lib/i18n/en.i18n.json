@@ -383,9 +383,9 @@
         "detail": "Keeps checking for new notices and private messages at the auto sync interval and notifies you while the app is in the background or was cleared; uses some more battery (Android only)"
       },
       "backgroundSyncAllAccounts": {
-        "title": "Background notifications: all logged-in accounts",
-        "detail": "The app's auto sync (also while the desktop app is in the tray) and the Android background message service also check the other accounts logged in on this device, each with its own login; notifications name the account, and tapping one switches to it before opening the notifications",
-        "seenNote": "Checking the other accounts marks their reminders read on the website (the red dot goes away), as opening the notice page would"
+        "title": "Background notices: all logged-in accounts",
+        "detail": "The app's auto sync (also while the desktop app is in the tray) and the Android background message service also check the other accounts logged in on this device, each with its own login; new notices are announced under the account's name, and tapping one switches to that account before opening the notice page",
+        "seenNote": "Checking the other accounts marks their notices read on the website (the red dot goes away), as opening the notice page would"
       },
       "notificationPermission": {
         "title": "Notification permission",
@@ -858,7 +858,7 @@
         "waiting": "Waiting",
         "running": "Syncing",
         "success": "New notices ${notice}, new PMs ${pm}, new broadcasts ${bm}; unread ${unreadNotice}/${unreadPm}/${unreadBm}",
-        "recent": "Synced moments ago, the stored result is shown; unread ${unreadNotice}/${unreadPm}/${unreadBm}",
+        "recent": "Synced moments ago, the stored notices are shown; unread ${unreadNotice}/${unreadPm}/${unreadBm}",
         "notAuthed": "Login expired, sign in again",
         "rateLimited": "The forum rate-limited the request (429), try again later",
         "failed": "Failed: ${message}"
@@ -1527,7 +1527,7 @@
     "channelName": "New auto sync notice",
     "channelDesc": "Received new notice when auto sync",
     "ticker": "New notice",
-    "accountGone": "The account of this notification is no longer on this device",
+    "accountGone": "The account of this notice is no longer on this device",
     "notice": {
       "title": "New notice",
       "titleOf": "[${username}] New notice",

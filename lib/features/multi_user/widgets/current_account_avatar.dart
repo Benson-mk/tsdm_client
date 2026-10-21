@@ -5,12 +5,13 @@ import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 
-/// The [CurrentAccountState] above [context], watched; null when no [CurrentAccountCubit] is provided.
+/// The [CurrentAccountState] above [context], watched (read only, outside a build, with [listen] false); null when no
+/// [CurrentAccountCubit] is provided.
 ///
 /// Pages and widgets built in tests without the app's providers then show nothing extra.
-CurrentAccountState? watchCurrentAccount(BuildContext context) {
+CurrentAccountState? watchCurrentAccount(BuildContext context, {bool listen = true}) {
   try {
-    return context.watch<CurrentAccountCubit>().state;
+    return listen ? context.watch<CurrentAccountCubit>().state : context.read<CurrentAccountCubit>().state;
   } on ProviderNotFoundException {
     return null;
   }

@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_tick.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
+import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
@@ -33,6 +36,26 @@ final class OtherAccountsAutoSync with LoggerMixin {
        _repository = repository,
        _announce = announce;
 
+  /// The round the app wires into its auto sync: a sync of all accounts of its own, one account per call (the round
+  /// spaces them), each account's cookie read from the database (`cookiesFromDatabase`). [clientFactory] builds an
+  /// account's client, the default one when not given (tests replace it).
+  factory OtherAccountsAutoSync.forApp({
+    required StorageProvider storage,
+    required NotificationRepository notificationRepository,
+    required Future<void> Function(BackgroundSyncDone done) announce,
+    NetClientProvider Function(CookieProvider cookie)? clientFactory,
+  }) => OtherAccountsAutoSync(
+    storage: storage,
+    repository: NotificationSyncAllRepository(
+      storageProvider: storage,
+      notificationRepository: notificationRepository,
+      clientFactory: clientFactory,
+      gap: Duration.zero,
+      cookiesFromDatabase: true,
+    ),
+    announce: announce,
+  );
+
   final StorageProvider _storage;
   final NotificationSyncAllRepository _repository;
   final Future<void> Function(BackgroundSyncDone done) _announce;
@@ -55,6 +78,10 @@ final class OtherAccountsAutoSync with LoggerMixin {
 
   /// Whether a round is running.
   bool get isRunning => _running != null;
+
+  /// What the auto sync calls after each poll of the account in use (`AutoNotificationCubit.afterPoll`): a round,
+  /// not waited for.
+  void afterPoll() => unawaited(poll());
 
   /// Poll the other accounts once, unless a round is still running; the outcomes of this round, empty when skipped.
   ///
@@ -123,10 +150,10 @@ final class OtherAccountsAutoSync with LoggerMixin {
     }
   }
 
-  /// Wait for a running round, then stop reporting and close.
+  /// Stop reporting and starting rounds, wait for a running round, then close.
   Future<void> dispose() async {
-    await _running;
     _disposed = true;
+    await _running;
     await _synced.close();
     await _repository.dispose();
   }

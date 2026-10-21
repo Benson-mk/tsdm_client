@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_service.dart';
@@ -58,6 +59,7 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver
 import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:universal_html/parsing.dart';
 
 const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
 const _bob = UserLoginInfo(username: 'Bob', uid: 1001);
@@ -271,9 +273,21 @@ final class _Forum implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-/// Ticks one interval apart: the poll slots never skip them.
+/// Ticks five minutes apart from the start of the run: the poll slots never skip them.
 var _ticks = 0;
-DateTime _nextTick() => DateTime(2026, 10, 21).add(Duration(minutes: 5 * _ticks++));
+final _firstTick = DateTime.now();
+DateTime _nextTick() => _firstTick.add(Duration(minutes: 5 * _ticks++));
+
+/// Wait until [condition] holds, failing after [timeout] (a fetch that never comes would hang the test otherwise).
+Future<void> _until(bool Function() condition, {Duration timeout = const Duration(seconds: 5), String? reason}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('waited ${timeout.inSeconds}s for ${reason ?? 'a condition'}');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
 
 /// What a notice page shows the account in use as, and the order things happened in around a notification tap.
 final _log = <String>[];
@@ -384,16 +398,19 @@ void main() {
     await db.close();
   });
 
-  NotificationSyncAllRepository repository() {
+  NetClientProvider clientOf(CookieProvider cookie) => NetClientProvider.buildNoCookie(
+    dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+    cookie: cookie,
+  );
+
+  NotificationSyncAllRepository repository({bool cookiesFromDatabase = false}) {
     final repo = NotificationSyncAllRepository(
       storageProvider: storage,
       notificationRepository: NotificationRepository(storageProvider: storage),
-      clientFactory: (cookie) => NetClientProvider.buildNoCookie(
-        dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
-        cookie: cookie,
-      ),
+      clientFactory: clientOf,
       // One account per call, as in the service: the tick spaces the accounts.
       gap: Duration.zero,
+      cookiesFromDatabase: cookiesFromDatabase,
     );
     addTearDown(repo.dispose);
     return repo;
@@ -513,9 +530,7 @@ void main() {
       await loggedIn(allAccounts: false);
       forum.holds['alice'] = Completer<void>();
       final round = tick();
-      while (forum.of('alice').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('alice').isNotEmpty, reason: 'a request of alice');
       await settings.setValue(SettingsKeys.loginUid, _bob.uid!);
       forum.holds['alice']!.complete();
       final outcomes = await round;
@@ -617,7 +632,7 @@ void main() {
       expect(ids, isNot(contains(localNoticeId)));
       expect(ids, isNot(contains(backgroundSyncNotificationId)), reason: 'never the persistent one');
 
-      // Off: the one notification as before, still naming the account in its payload.
+      // Off: the one notification exactly as before, the payload of the account in use included.
       const info = NotificationAutoSyncInfoNotice(
         msg: 'm',
         notice: 1,
@@ -626,7 +641,7 @@ void main() {
         timestamp: 0,
       );
       final single = localNotificationContentOf(tr, info, account: const LocalNoticeAccount(uid: 1000));
-      expect((single.id, single.title, single.payload), (localNoticeId, '新訊息', 'openNotification:1000'));
+      expect((single.id, single.title, single.payload), (localNoticeId, '新訊息', LocalNoticeKeys.openNotification));
       // The test notification of the settings page names no account.
       final test = localNotificationContentOf(tr, info);
       expect((test.id, test.payload), (localNoticeId, LocalNoticeKeys.openNotification));
@@ -745,9 +760,7 @@ void main() {
       await loggedIn(allAccounts: true);
       forum.holds['alice'] = Completer<void>();
       final round = tick();
-      while (forum.of('alice').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('alice').isNotEmpty, reason: 'a request of alice');
       await settings.setValue(SettingsKeys.loginUid, _carol.uid!);
       forum.holds['alice']!.complete();
       final outcomes = await round;
@@ -759,9 +772,7 @@ void main() {
       await loggedIn(allAccounts: true);
       forum.holds['bob'] = Completer<void>();
       var round = tick();
-      while (forum.of('bob').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('bob').isNotEmpty, reason: 'a request of bob');
       await settings.setValue(SettingsKeys.backgroundSyncAllAccounts, false);
       forum.holds['bob']!.complete();
       var outcomes = await round;
@@ -780,9 +791,7 @@ void main() {
         ..requests.clear()
         ..holds['bob'] = Completer<void>();
       round = tick();
-      while (forum.of('bob').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('bob').isNotEmpty, reason: 'a request of bob');
       await settings.setValue(SettingsKeys.enableBackgroundMessageService, false);
       forum.holds['bob']!.complete();
       outcomes = await round;
@@ -837,9 +846,33 @@ void main() {
     });
   });
 
+  test('the polls of an account are forgotten with it', () async {
+    await loggedIn(allAccounts: true);
+    Future<List<int?>> polls(int uid) async => [
+      await storage.getInt(NotificationPollSlot.key(uid)),
+      await storage.getInt(NotificationPollSlot.manualKey(uid)),
+    ];
+    for (final uid in [1000, 1001, 1002]) {
+      await storage.saveInt(NotificationPollSlot.key(uid), 1);
+      await storage.saveInt(NotificationPollSlot.manualKey(uid), 1);
+    }
+    expect(await storage.deleteCookieByUid(1001), isTrue);
+    expect(await polls(1001), [null, null]);
+    expect(await storage.deleteCookiesByUids([1002]), 1);
+    expect(await polls(1002), [null, null]);
+    expect(await storage.deleteUserLoginInfo(1000), 1);
+    expect(await polls(1000), [null, null]);
+  });
+
   group('in the app: the other accounts after the account in use (Android, Windows)', () {
+    // As the app builds it: each account's cookie read from the database.
     Future<List<BackgroundSyncOutcome>> others({DateTime? now, Duration gap = Duration.zero}) =>
-        autoSyncOtherAccountsTick(storage: storage, repository: repository(), now: now ?? _nextTick(), gap: gap);
+        autoSyncOtherAccountsTick(
+          storage: storage,
+          repository: repository(cookiesFromDatabase: true),
+          now: now ?? _nextTick(),
+          gap: gap,
+        );
 
     test('off: nothing; on: every other account, without the background service switch', () async {
       await loggedIn(allAccounts: false);
@@ -929,9 +962,7 @@ void main() {
       await loggedIn(allAccounts: true);
       forum.holds['bob'] = Completer<void>();
       final round = others();
-      while (forum.of('bob').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('bob').isNotEmpty, reason: 'a request of bob');
       await settings.setValue(SettingsKeys.backgroundSyncAllAccounts, false);
       forum.holds['bob']!.complete();
       final outcomes = await round;
@@ -939,6 +970,107 @@ void main() {
       expect(outcomes[0], isA<BackgroundSyncStale>());
       expect(outcomes[1], isA<BackgroundSyncSkipped>());
       expect(forum.of('carol'), isEmpty);
+    });
+
+    test("each account's cookie is read from the database, the app's cache is not reloaded", () async {
+      await loggedIn(allAccounts: true);
+      // Carol logged in elsewhere on the same database (the service isolate renews cookies there): this provider's
+      // cache never saw her row.
+      await StorageProvider(db, {}, {}).saveCookie(username: 'Carol', uid: 1002, cookie: _jar(_carol));
+      await storage.deleteCookieByUid(1002);
+      await StorageProvider(db, {}, {}).saveCookie(username: 'Carol', uid: 1002, cookie: _jar(_carol));
+      expect(storage.getCookieByUidSync(1002), isNull);
+      final outcomes = await others();
+      expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
+        (1001, NotificationSyncResultSuccess),
+        (1002, NotificationSyncResultSuccess),
+      ]);
+      expect(forum.of('carol'), hasLength(4));
+      expect(storage.getCookieByUidSync(1002), isNull, reason: 'the cache was not reloaded');
+    });
+
+    test('an account marked expired rests a day, then is tried once more: alive, its mark goes', () async {
+      await loggedIn(allAccounts: true);
+      await storage.markSessionExpired(1001, at: DateTime.now().subtract(const Duration(hours: 1)));
+      await storage.markSessionExpired(1002, at: DateTime.now().subtract(const Duration(days: 2)));
+      forum.all['carol'] = _loginAnswer;
+      var outcomes = await others();
+      expect(
+        outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)),
+        [
+          (1002, NotificationSyncResultNotAuthorized),
+        ],
+        reason: 'Bob rests, Carol is tried again and is still expired',
+      );
+      expect(await expiredUids(), {1001, 1002});
+      outcomes = await others();
+      expect(outcomes, isEmpty, reason: 'Carol marked again: she rests another day');
+
+      // A day later the mark of Bob was wrong: he answers, and his mark goes.
+      await storage.markSessionExpired(1001, at: DateTime.now().subtract(const Duration(days: 1, minutes: 1)));
+      outcomes = await others();
+      expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
+        (1001, NotificationSyncResultSuccess),
+      ]);
+      expect(await expiredUids(), {1002});
+    });
+
+    test('the app wiring: off, the auto sync asks for nobody else; on, for every other account', () async {
+      await loggedIn(allAccounts: false);
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: CookieProvider(_alice, _jar(_alice)),
+        ),
+      );
+      final notifications = NotificationRepository(storageProvider: storage);
+      addTearDown(notifications.dispose);
+      final sync = OtherAccountsAutoSync.forApp(
+        storage: storage,
+        notificationRepository: notifications,
+        announce: (_) async {},
+        clientFactory: clientOf,
+      );
+      final auto = AutoNotificationCubit(
+        authenticationRepository: AuthenticationRepository(user: _alice),
+        notificationRepository: notifications,
+        storageProvider: storage,
+        afterPoll: sync.afterPoll,
+      );
+      addTearDown(() async {
+        auto.stop();
+        await auto.close();
+      });
+      auto.start(const Duration(seconds: 1));
+      await _until(() => forum.of('alice').contains('seen'), reason: "the poll of Alice's notices");
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await _until(() => !sync.isRunning, reason: 'nothing to run');
+      expect(forum.tokens.toSet(), {'alice'}, reason: 'off: zero requests for the other accounts');
+      auto.stop();
+
+      await settings.setValue(SettingsKeys.backgroundSyncAllAccounts, true);
+      expect(await sync.poll(), hasLength(2));
+      expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
+      await sync.dispose();
+    });
+
+    test('disposed while a round runs: nothing more is announced, no round starts', () async {
+      await loggedIn(allAccounts: true);
+      final announced = <int>[];
+      final sync = OtherAccountsAutoSync(
+        storage: storage,
+        repository: repository(cookiesFromDatabase: true),
+        announce: (done) async => announced.add(done.uid),
+        gap: Duration.zero,
+      );
+      forum.holds['bob'] = Completer<void>();
+      unawaited(sync.poll());
+      await _until(() => forum.of('bob').isNotEmpty, reason: "Bob's request");
+      final disposing = sync.dispose();
+      forum.holds['bob']!.complete();
+      await disposing;
+      expect(announced, isEmpty);
+      expect(await sync.poll(), isEmpty);
     });
 
     test('OtherAccountsAutoSync: one round at a time, each account announced with its name and reported', () async {
@@ -955,9 +1087,7 @@ void main() {
       addTearDown(sub.cancel);
       forum.holds['bob'] = Completer<void>();
       final round = sync.poll(now: _nextTick());
-      while (forum.of('bob').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('bob').isNotEmpty, reason: 'a request of bob');
       expect(sync.isRunning, isTrue);
       expect(await sync.poll(now: _nextTick()), isEmpty, reason: 'skipped while the previous round runs');
       forum.holds['bob']!.complete();
@@ -1019,24 +1149,18 @@ void main() {
         ..holds['alice'] = Completer<void>()
         ..holds['bob'] = Completer<void>();
       auto.start(const Duration(seconds: 1));
-      while (forum.of('alice').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('alice').isNotEmpty, reason: 'a request of alice');
       expect(auto.isPending, isTrue);
       expect(calls, isEmpty, reason: 'the account in use first');
       forum.holds['alice']!.complete();
-      while (forum.of('bob').isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => forum.of('bob').isNotEmpty, reason: 'a request of bob');
       expect(calls, ['after the poll, pending=false']);
       expect(forum.tokens.first, 'alice');
       // An account switch pauses the auto sync: with the other accounts still being polled it gets it at once.
       expect(auto.pause('switch user'), isFalse, reason: 'not pending');
       auto.stop();
       forum.holds['bob']!.complete();
-      while (sync.isRunning) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await _until(() => !sync.isRunning, reason: 'the round of the other accounts');
       expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
       expect(await storedNotices(1001), [_noticeId(1001)]);
       await sync.dispose();
@@ -1104,7 +1228,7 @@ void main() {
       await cubit.close();
     });
 
-    test('the cubit asks with the auto sync interval: a second run right after asks nobody', () async {
+    test('the cubit asks with the auto sync interval; an earlier sync of all accounts is never reused', () async {
       await loggedIn(allAccounts: false);
       final infos = NotificationInfoRepository();
       addTearDown(infos.dispose);
@@ -1117,11 +1241,66 @@ void main() {
       addTearDown(cubit.close);
       await cubit.start();
       expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
+      for (final uid in [1000, 1001, 1002]) {
+        expect(await storage.getInt(NotificationPollSlot.key(uid)), isNot(0), reason: 'recorded for the auto sync');
+      }
+      // Asked again by the user right after: the forum is asked again, the earlier run is not reused.
       forum.requests.clear();
       await cubit.start();
       final finished = cubit.state as NotificationSyncAllStateFinished;
-      expect(finished.results.map((e) => (e.$2 as NotificationSyncResultSuccess).recent), [true, true, true]);
-      expect(forum.requests, isEmpty);
+      expect(finished.results.map((e) => (e.$2 as NotificationSyncResultSuccess).recent), [false, false, false]);
+      expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
+      // The auto sync still skips them right after.
+      forum.requests.clear();
+      expect(
+        (await tick(now: DateTime.now().add(const Duration(seconds: 1)))).map((e) => e.runtimeType).toSet(),
+        {BackgroundSyncSkipped},
+        reason: 'off: the tick of the account in use only, skipped',
+      );
+      expect(forum.requests, isEmpty, reason: 'polled moments ago by the sync of all accounts');
+    });
+
+    test('an automatic poll is reused for half an interval, at most 30 seconds', () async {
+      await loggedIn(allAccounts: true);
+      final at = _nextTick();
+      // Auto sync every ten minutes: half an interval is five minutes, reused for thirty seconds only.
+      await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 600);
+      await storage.saveInt(
+        NotificationPollSlot.key(1000),
+        at.subtract(const Duration(seconds: 20)).millisecondsSinceEpoch,
+      );
+      await storage.saveInt(
+        NotificationPollSlot.key(1001),
+        at.subtract(const Duration(seconds: 40)).millisecondsSinceEpoch,
+      );
+      final results =
+          (await repository().syncAll(accounts: _everyone, pollInterval: const Duration(minutes: 10), now: at).run())
+              .getOrElse((e) => fail('$e'))
+              .finished;
+      expect(results.map((e) => (e.$2 as NotificationSyncResultSuccess).recent), [true, false, false]);
+      expect(forum.tokens.toSet(), {'bob', 'carol'}, reason: 'forty seconds is too old to show as fresh');
+      // A shorter interval: half of it is the limit.
+      expect(
+        await NotificationPollSlot.takeForManualSync(
+          storage,
+          1002,
+          const Duration(seconds: 20),
+          now: at.add(const Duration(seconds: 5)),
+        ),
+        isNotNull,
+        reason: 'a poll of the sync of all accounts itself is never reused',
+      );
+      await storage.saveInt(NotificationPollSlot.key(1002), at.millisecondsSinceEpoch);
+      expect(
+        await NotificationPollSlot.takeForManualSync(
+          storage,
+          1002,
+          const Duration(seconds: 20),
+          now: at.add(const Duration(seconds: 5)),
+        ),
+        isNull,
+        reason: 'one of the auto sync, five seconds old, is',
+      );
     });
 
     testWidgets('the progress page says the stored result is shown', (tester) async {
@@ -1148,7 +1327,69 @@ void main() {
         ),
       );
       expect(text, t.noticePage.syncAllPage.user.recent(unreadNotice: 1, unreadPm: 0, unreadBm: 2));
-      expect(text, 'Synced moments ago, the stored result is shown; unread 1/0/2');
+      expect(text, 'Synced moments ago, the stored notices are shown; unread 1/0/2');
+    });
+  });
+
+  group('a page of the stored account arriving after a switch (review probe)', () {
+    late AuthenticationRepository auth;
+    late CookieProvider global;
+
+    setUp(() async {
+      for (final u in [_alice, _bob]) {
+        await storage.saveCookie(username: u.username!, uid: u.uid!, cookie: _jar(u));
+      }
+      await settings.setValue(SettingsKeys.loginUid, 1000);
+      await settings.setValue(SettingsKeys.loginUsername, 'Alice');
+      global = CookieProvider.buildEmpty();
+      await global.loadCookieFromStorage(_alice);
+      getIt.registerSingleton<CookieProvider>(global);
+      // Cold start: the stored session is not verified yet.
+      auth = AuthenticationRepository(
+        clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = _SwitchForum(),
+          cookie: cookie,
+        ),
+      );
+      // The tap on Bob's notification switches first...
+      expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+    });
+
+    tearDown(() => auth.dispose());
+
+    String tokenIn(int uid) => RegExp('auth=([a-z]+)').firstMatch('${storage.getCookieByUidSync(uid)}')?[1] ?? 'none';
+
+    void expectBobUnmixed() {
+      expect(auth.currentUser?.uid, 1001);
+      expect(settings.currentSettings.loginUid, 1001);
+      expect(global.userLoginInfo.uid, 1001);
+      expect(tokenIn(1000), 'alice', reason: "Alice's stored row keeps her session");
+      expect(tokenIn(1001), 'bob');
+    }
+
+    test('...then the structured homepage served to Alice records nothing', () async {
+      final login = await auth.loginWithServedUser(_alice, guest: false).run();
+      expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
+      expectBobUnmixed();
+    });
+
+    test('...then the web homepage served to Alice records nothing', () async {
+      final login = await auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run();
+      expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
+      expectBobUnmixed();
+    });
+
+    test('...then a guest page asked with her cookie marks nobody expired', () async {
+      final login = await auth.loginWithDocument(parseHtmlDocument(_guestPage), fetchedAs: 1000).run();
+      expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
+      expect(await expiredUids(), isEmpty);
+      expectBobUnmixed();
+    });
+
+    test('the page of the account in use is recorded as before', () async {
+      expect((await auth.loginWithServedUser(_bob, guest: false, fetchedAs: 1001).run()).isRight(), isTrue);
+      expect((await auth.loginWithDocument(parseHtmlDocument(_authedPage(_bob))).run()).isRight(), isTrue);
+      expectBobUnmixed();
     });
   });
 
@@ -1200,10 +1441,12 @@ void main() {
       await auth.dispose();
     });
 
-    Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})?> tap(
-      WidgetTester tester,
-      String payload,
-    ) async {
+    /// The notice pages built: the account in use, and the owner and the notice ids of the lists then.
+    final pages = <(int?, int?, List<int>)>[];
+
+    /// The home page of the app with a notice route, under the providers the tap reads; its context.
+    Future<BuildContext> pumpHome(WidgetTester tester, {NotificationBloc? bloc}) async {
+      pages.clear();
       final router = GoRouter(
         routes: [
           GoRoute(
@@ -1213,8 +1456,10 @@ void main() {
           GoRoute(
             path: ScreenPaths.notice,
             name: ScreenPaths.notice,
-            builder: (_, _) {
+            builder: (context, _) {
               _log.add('notice page as ${auth.currentUser?.uid}');
+              final state = context.read<NotificationBloc>().state;
+              pages.add((auth.currentUser?.uid, state.ownerUid, state.noticeList.map((e) => e.id).toList()));
               return const Scaffold(body: Center(child: Text('notice page')));
             },
           ),
@@ -1226,24 +1471,188 @@ void main() {
           child: RepositoryProvider<AuthenticationRepository>.value(
             value: auth,
             child: BlocProvider<NotificationBloc>.value(
-              value: _Notifications(auth),
+              value: bloc ?? _Notifications(auth),
               child: MaterialApp.router(routerConfig: router, scaffoldMessengerKey: snackbarKey),
             ),
           ),
         ),
       );
       await _settle(tester);
-      final context = tester.element(find.text('home'));
-      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
-      // What the home page does with the payload of the tapped notification.
+      return tester.element(find.text('home'));
+    }
+
+    /// What the home page does with the payload of the tapped notification, from [context]; the result once done.
+    Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})> begin(
+      BuildContext context,
+      String payload, {
+      Duration settleTimeout = const Duration(seconds: 10),
+    }) {
       final open = LocalNoticeKeys.parseOpenNotification(payload)!;
       _log.clear();
-      unawaited(
-        openNoticePageOfAccount(context, uid: open.uid, popups: PopupRouteObserver()).then((e) => result = e),
+      return openNoticePageOfAccount(
+        context,
+        uid: open.uid,
+        popups: PopupRouteObserver(),
+        settleTimeout: settleTimeout,
       );
+    }
+
+    Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})?> tap(
+      WidgetTester tester,
+      String payload,
+    ) async {
+      final context = await pumpHome(tester);
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(begin(context, payload).then((e) => result = e));
       await _settle(tester, rounds: 12);
       return result;
     }
+
+    /// A cold start: the stored login of Alice is not verified yet, the global cookie is hers.
+    Future<void> coldStart(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        await authLog.cancel();
+        await auth.dispose();
+      });
+      auth = AuthenticationRepository(
+        clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = switchForum,
+          cookie: cookie,
+        ),
+      );
+      authLog = auth.status.listen((s) => _log.add('auth ${s.runtimeType} ${auth.currentUser?.uid}'));
+      expect(auth.currentUser, isNull);
+      expect(auth.effectiveCurrentUid, 1000, reason: 'the stored session counts');
+    }
+
+    /// The token of the auth cookie stored in the row of [uid].
+    String tokenIn(int uid) => RegExp('auth=([a-z]+)').firstMatch('${storage.getCookieByUidSync(uid)}')?[1] ?? 'none';
+
+    testWidgets('cold start: the switch waits for the stored login to be verified, the accounts never mix', (
+      tester,
+    ) async {
+      await coldStart(tester);
+      final context = await pumpHome(tester);
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(begin(context, LocalNoticeKeys.openNotificationOf(_bob.uid!)).then((e) => result = e));
+      await _settle(tester);
+      expect(result, isNull, reason: 'waiting for the stored login');
+      expect(switchForum.requests, isEmpty, reason: 'no switch while the homepage checks the stored login');
+
+      // The homepage fetched with Alice's cookie answers: her login is verified.
+      await tester.runAsync(() => auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run());
+      await _settle(tester, rounds: 12);
+      expect(result?.step, LocalNoticeAccountStep.switched);
+      expect(switchForum.requests, ['bob']);
+      expect(_log, [
+        'auth AuthStatusAuthed 1000',
+        'auth AuthStatusAuthed 1001',
+        'NotificationReloadFromStorageRequested as 1001',
+        'notice page as 1001',
+      ]);
+      expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'), reason: 'each row keeps its own session');
+      expect(settings.currentSettings.loginUid, 1001);
+      await _dispose(tester);
+    });
+
+    testWidgets('cold start with a stored login that never verifies: switched after the wait, still unmixed', (
+      tester,
+    ) async {
+      await coldStart(tester);
+      final context = await pumpHome(tester);
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(
+        begin(
+          context,
+          LocalNoticeKeys.openNotificationOf(_bob.uid!),
+          settleTimeout: const Duration(milliseconds: 200),
+        ).then((e) => result = e),
+      );
+      await _settle(tester, rounds: 12);
+      expect(result?.step, LocalNoticeAccountStep.switched);
+      expect(auth.currentUser?.uid, 1001);
+
+      // The homepage asked with Alice's cookie answers only now, as a guest's page or as hers: nothing recorded.
+      await tester.runAsync(() async {
+        expect(
+          (await auth.loginWithServedUser(null, guest: true, fetchedAs: 1000).run()).getLeft().toNullable(),
+          isA<IdentityChangedException>(),
+        );
+        expect(
+          (await auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run()).getLeft().toNullable(),
+          isA<IdentityChangedException>(),
+        );
+        expect(await expiredUids(), isEmpty, reason: "Alice's guest page says nothing about Bob");
+      });
+      expect(auth.currentUser?.uid, 1001);
+      expect(settings.currentSettings.loginUid, 1001);
+      expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'));
+      await _dispose(tester);
+    });
+
+    testWidgets("the page opens once the lists are the new account's, a fetch of the previous one dropped first", (
+      tester,
+    ) async {
+      final at = DateTime.now().subtract(const Duration(hours: 1)).millisecondsSinceEpoch ~/ 1000;
+      await tester.runAsync(() async {
+        for (final uid in [1000, 1001]) {
+          await persistFetchedNotification(
+            storage: storage,
+            uid: uid,
+            fetched: NotificationV2(
+              status: 0,
+              noticeList: [NoticeV2(id: _noticeId(uid), timestamp: at, data: 'notice of $uid')],
+              personalMessageList: const [],
+              broadcastMessageList: const [],
+            ),
+          );
+        }
+      });
+      // The in-app fetch of the account in use goes through the global client; Alice's is held by the forum.
+      forum.holds['alice'] = Completer<void>();
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: getIt.get<CookieProvider>(),
+        ),
+      );
+      final notifications = NotificationRepository(storageProvider: storage);
+      final infos = NotificationInfoRepository();
+      final bloc = NotificationBloc(
+        notificationRepository: notifications,
+        infoRepository: infos,
+        authRepo: auth,
+        storageProvider: storage,
+      );
+      final context = await pumpHome(tester, bloc: bloc);
+      bloc.add(NotificationReloadFromStorageRequested());
+      await _settle(tester);
+      expect(bloc.state.ownerUid, 1000);
+      expect(bloc.state.noticeList.map((e) => e.id), [_noticeId(1000)]);
+      bloc.add(const NotificationUpdateAllRequested());
+      await _settle(tester);
+      expect(bloc.state.status, NotificationStatus.loading, reason: "Alice's fetch in flight");
+
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(begin(context, LocalNoticeKeys.openNotificationOf(_bob.uid!)).then((e) => result = e));
+      await _settle(tester, rounds: 12);
+      expect(auth.currentUser?.uid, 1001, reason: 'switched');
+      expect(result, isNull);
+      expect(pages, isEmpty, reason: "the lists are still Alice's: no notice page yet");
+
+      forum.holds['alice']!.complete();
+      await _settle(tester, rounds: 16);
+      expect(result?.step, LocalNoticeAccountStep.switched);
+      expect(pages.map((e) => (e.$1, e.$2, e.$3.join(','))), [
+        (1001, 1001, '${_noticeId(1001)}'),
+      ], reason: "Bob's only");
+      await tester.runAsync(() async {
+        await bloc.close();
+        await notifications.dispose();
+        await infos.dispose();
+      });
+      await _dispose(tester);
+    });
 
     testWidgets('another account: switch first, its notices reloaded, then the notice page', (tester) async {
       final result = await tap(tester, LocalNoticeKeys.openNotificationOf(_bob.uid!));

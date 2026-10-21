@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
 import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
@@ -136,15 +137,17 @@ Future<SwitchAccountResult> _switchLikeTheMenu(BuildContext context, UserLoginIn
 }
 
 /// Carry out a tap on an auto sync notification about account [uid] from [context], a page under the app's providers
-/// (the home page). [uid] is null for a notification that names no account (posted before notifications named it, or
+/// (the home page). [uid] is null for a notification that names no account (only the account in use is announced, or
 /// the test notification of the settings page): the account in use.
 ///
 /// * The account in use, no account named, or nobody logged in: [openNoticePageForTap] right away, as before.
 /// * Another account saved on this device: switch to it first, the same way as the avatar menu's quick switch
 ///   ([switchTo], [switchAccount] by default: its toasts, one switch at a time, none while a reply is being sent, the
-///   in-app sync paused around it), then reload the notice lists for it and open the notice page. The background
-///   message service announces every saved account when asked to, and the account in use may have changed since any
-///   notification was posted.
+///   in-app sync paused around it), then open the notice page once its lists are the new account's. Every
+///   logged-in account is announced when asked to, and the account in use may have changed since any notification
+///   was posted.
+/// * At a cold start (the stored login not verified yet) the switch waits up to [settleTimeout] for the homepage to
+///   verify it: switching while that check runs with the stored account's cookie mixed the two accounts up.
 /// * The switch does not happen: nothing is opened, the notice page would show the account in use and not the one the
 ///   notification is about.
 /// * An account no longer on this device: nothing is opened, a toast says so.
@@ -157,19 +160,43 @@ Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}
   required int? uid,
   PopupRouteObserver? popups,
   Future<SwitchAccountResult> Function(BuildContext context, UserLoginInfo account)? switchTo,
+  Duration settleTimeout = const Duration(seconds: 10),
+  Duration reloadTimeout = const Duration(seconds: 5),
 }) async {
-  bool hasPopup() => (popups ?? popupRouteObserver).hasPopupRoute;
+  ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}) open(
+    LocalNoticeAccountStep step, {
+    required bool loggedIn,
+  }) {
+    final (:top, :action) = openNoticePageForTap(
+      GoRouter.of(context),
+      loggedIn: loggedIn,
+      hasPopup: (popups ?? popupRouteObserver).hasPopupRoute,
+    );
+    return (step: step, top: top, action: action);
+  }
+
+  const notOpened = (step: LocalNoticeAccountStep.notSwitched, top: null, action: null);
+  final auth = context.read<AuthenticationRepository>();
   // The stored session counts: when a notification cold-starts the app the home page has its first frame before the
   // homepage fetch verified the login, and `currentUser` is still null at that point (#14).
-  final current = context.read<AuthenticationRepository>().effectiveCurrentUid;
+  var current = auth.effectiveCurrentUid;
   if (uid == null || current == null || uid == current) {
-    final (:top, :action) = openNoticePageForTap(GoRouter.of(context), loggedIn: current != null, hasPopup: hasPopup());
-    return (step: LocalNoticeAccountStep.current, top: top, action: action);
+    return open(LocalNoticeAccountStep.current, loggedIn: current != null);
   }
   talker.info('notification of another account tapped: uid ${"$uid".obscured(4)}, switching to it first');
+  if (auth.currentUser == null) {
+    await _storedLoginSettled(auth, settleTimeout);
+    if (!context.mounted) {
+      return notOpened;
+    }
+    current = auth.effectiveCurrentUid;
+    if (current == null || current == uid) {
+      return open(LocalNoticeAccountStep.current, loggedIn: current != null);
+    }
+  }
   final account = (await getIt.get<StorageProvider>().getAllUsers()).firstWhereOrNull((e) => e.uid == uid);
   if (!context.mounted) {
-    return (step: LocalNoticeAccountStep.notSwitched, top: null, action: null);
+    return notOpened;
   }
   if (account == null) {
     showSnackBar(context: context, message: context.t.localNotification.accountGone);
@@ -178,13 +205,68 @@ Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}
   final result = await (switchTo ?? _switchLikeTheMenu)(context, account);
   if (result != SwitchAccountResult.switched || !context.mounted) {
     talker.info('notification of another account: not switched (${result.name}), notice page not opened');
-    return (step: LocalNoticeAccountStep.notSwitched, top: null, action: null);
+    return notOpened;
   }
-  // The pages follow the new account by themselves; the lists of the notice page are rebuilt for it right away, so
-  // the page never shows the previous account's notices under the new one.
-  context.readOrNull<NotificationBloc>()?.add(NotificationReloadFromStorageRequested());
-  final (:top, :action) = openNoticePageForTap(GoRouter.of(context), loggedIn: true, hasPopup: hasPopup());
-  return (step: LocalNoticeAccountStep.switched, top: top, action: action);
+  if (context.readOrNull<NotificationBloc>() case final bloc?) {
+    await _noticesReloadedFor(bloc, uid, reloadTimeout);
+    if (!context.mounted) {
+      return notOpened;
+    }
+  }
+  return open(LocalNoticeAccountStep.switched, loggedIn: true);
+}
+
+/// Wait up to [timeout] for the first settled status of [auth] (logged in, or not): at a cold start the homepage
+/// verifies the stored login, and a switch meanwhile raced it. Nothing settles when that login expired: the wait
+/// then ends at [timeout], and a page of the stored account arriving after the switch records nothing (see
+/// `AuthenticationRepository.loginWithServedUser`).
+Future<void> _storedLoginSettled(AuthenticationRepository auth, Duration timeout) async {
+  bool settled(AuthStatus? s) => s is AuthStatusAuthed || s is AuthStatusNotAuthed;
+  if (settled(auth.latestStatus)) {
+    return;
+  }
+  talker.info('waiting for the stored login to be verified before switching');
+  try {
+    // A closed stream (the app going away) ends the wait as well.
+    await auth.status.firstWhere(settled, orElse: () => const AuthStatusUnknown()).timeout(timeout);
+  } on TimeoutException {
+    talker.warning('the stored login was not verified within ${timeout.inSeconds}s, switching anyway');
+  }
+}
+
+/// Wait up to [timeout] for the lists of [bloc] to be the ones of [uid], not loading.
+///
+/// A fetch of the previous account still running ends dropped (its account is not the one in use any more, the state
+/// is reset), then the lists are rebuilt from storage for [uid]; without one they are rebuilt right away. The page
+/// shows nothing of another account meanwhile anyway ([NotificationState.ownerUid]).
+Future<void> _noticesReloadedFor(NotificationBloc bloc, int uid, Duration timeout) async {
+  bool ready(NotificationState s) => s.ownerUid == uid && s.status != NotificationStatus.loading;
+  if (ready(bloc.state)) {
+    return;
+  }
+  // A closed bloc (the app going away) ends the wait as well.
+  final reached = bloc.stream.firstWhere(ready, orElse: () => bloc.state);
+  void reload() {
+    if (!bloc.isClosed) {
+      bloc.add(NotificationReloadFromStorageRequested());
+    }
+  }
+
+  if (bloc.state.status == NotificationStatus.loading) {
+    unawaited(
+      bloc.stream
+          .firstWhere((s) => s.status != NotificationStatus.loading, orElse: () => bloc.state)
+          .timeout(timeout, onTimeout: () => bloc.state)
+          .then((_) => reload()),
+    );
+  } else {
+    reload();
+  }
+  try {
+    await reached.timeout(timeout);
+  } on TimeoutException {
+    talker.warning('the notices of the new account were not in within ${timeout.inSeconds}s, opening the page anyway');
+  }
 }
 
 /// Location of the page on top of [router], `null` before the first route matched.

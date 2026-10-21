@@ -312,14 +312,9 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
         // notifications.
         if (autoSyncPostsNotifications)
           RepositoryProvider<OtherAccountsAutoSync>(
-            create: (context) => OtherAccountsAutoSync(
+            create: (context) => OtherAccountsAutoSync.forApp(
               storage: getIt(),
-              repository: NotificationSyncAllRepository(
-                storageProvider: getIt(),
-                notificationRepository: context.repo(),
-                // One account per call: the round spaces the accounts itself.
-                gap: Duration.zero,
-              ),
+              notificationRepository: context.repo(),
               announce: (done) => showLocalNotificationWith(
                 plugin: flnp,
                 translations: t,
@@ -346,7 +341,7 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
                 authenticationRepository: context.repo(),
                 notificationRepository: context.repo(),
                 storageProvider: getIt(),
-                afterPoll: others == null ? null : () => unawaited(others.poll()),
+                afterPoll: others?.afterPoll,
               );
               if (widget.autoSyncNoticeSeconds > 0) {
                 bloc.start(Duration(seconds: widget.autoSyncNoticeSeconds));

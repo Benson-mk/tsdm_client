@@ -128,10 +128,10 @@ final class NotificationSyncAllCubit extends Cubit<NotificationSyncAllState> wit
   }
 
   /// The auto sync interval the run takes each account's poll with, null when auto sync is set to never: nobody
-  /// else polls then. Each account the in-app auto sync or the background service polled within half of it is not
-  /// asked again, its stored result is shown ([NotificationSyncResultSuccess.recent]), and an account this run
-  /// fetched is not asked again by them within half of it either: the plugin answers a second call within its
-  /// interval with 429.
+  /// else polls then. Each account the in-app auto sync or the background service polled within half of it (at most
+  /// 30 seconds ago) is not asked again, its stored result is shown ([NotificationSyncResultSuccess.recent]), and an
+  /// account this run fetched is not asked again by them within half of it either: the plugin answers a second call
+  /// within its interval with 429. An earlier run of this sync is never reused: asked again, the forum is asked again.
   Future<Duration?> _pollInterval() async {
     try {
       final seconds =

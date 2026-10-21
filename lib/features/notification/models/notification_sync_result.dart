@@ -44,8 +44,9 @@ final class NotificationSyncResultSuccess extends NotificationSyncResult with No
   final NotificationAutoSyncInfo? latest;
 
   /// Not fetched: the auto sync (in the app or the background service) polled the account moments ago, within half its
-  /// interval, and the forum is not asked twice (it answers 429). The counts are what is stored now, what the poll
-  /// brought; nothing is news here, the poll announced it.
+  /// interval and at most 30 seconds ago (`NotificationPollSlot.takeForManualSync`), and the forum is not asked twice
+  /// (it answers 429). The counts are what is stored now, what the poll brought; nothing is news here, the poll
+  /// announced it.
   final bool recent;
 }
 

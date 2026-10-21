@@ -21,6 +21,7 @@ import 'package:tsdm_client/features/red_packet/utils/parse_red_packet.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -114,14 +115,21 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       parsePinnedThreadGroupsFromDocument(document);
 
   /// Tell the authentication repository the account [page] was served to, as `loginWithDocument` reads it from
-  /// the web page: the structured answer names it in `user`.
-  AsyncVoidEither _loginWithPage(ForumHomePage page) => switch (page) {
-    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(document),
+  /// the web page: the structured answer names it in `user`. [fetchedAs] is the account whose cookie asked for it
+  /// ([_cookieUid] before the fetch): a page that arrives after a switch (a tap on another account's notification at
+  /// a cold start) records nothing ([IdentityChangedException]); the account change reloads the page.
+  AsyncVoidEither _loginWithPage(ForumHomePage page, {required int? fetchedAs}) => switch (page) {
+    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(document, fetchedAs: fetchedAs),
     ForumHomeApiPage(:final json) => _authenticationRepository.loginWithServedUser(
       servedUserOf(json),
       guest: indexAnswerIsGuest(json),
+      fetchedAs: fetchedAs,
     ),
   };
+
+  /// The account the global cookie names now, null when none (or no provider, in tests).
+  static int? _cookieUid() =>
+      getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null;
 
   Future<void> _onHomepageLoadRequested(HomepageLoadRequested event, Emitter<HomepageState> emit) async {
     _pageGeneration++;
@@ -137,6 +145,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
     var needLogin = false;
+    final fetchedAs = _cookieUid();
     final respList = (await Future.wait([
       _forumHomeRepository.fetchHomePage().mapLeft((e) {
         if (e case HttpHandshakeFailedException(:final statusCode)) {
@@ -169,7 +178,12 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     }
     final page = respList[0] as ForumHomePage;
     final avatarUrl = respList[1] as String;
-    await _loginWithPage(page).mapLeft(handle).run();
+    if (await _loginWithPage(page, fetchedAs: fetchedAs).mapLeft(handle).run() case Left(
+      value: IdentityChangedException(),
+    )) {
+      // Served to the previous account: the account change reloads the page for the new one.
+      return;
+    }
     // Parse data and change state.
     final s = _parseState(page, _authenticationRepository.currentUser?.username, avatarUrl: avatarUrl);
     emit(s);
@@ -180,19 +194,23 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
 
+    final fetchedAs = _cookieUid();
     switch (await _forumHomeRepository.fetchHomePage(force: true).run()) {
       case Left(:final value):
         handle(value);
         debug('failed to fetch dom: $value');
         emit(state.copyWith(status: HomepageStatus.failure));
       case Right(:final value):
-        await _loginWithPage(value)
-            .mapLeft((e) {
-              handle(e);
-              emit(state.copyWith(status: HomepageStatus.failure));
-            })
-            .map((v) => v)
-            .run();
+        final login = await _loginWithPage(value, fetchedAs: fetchedAs).run();
+        if (login case Left(value: IdentityChangedException())) {
+          // Served to the previous account: the account change reloads the page for the new one.
+          debug('homepage served to the previous account, dropped');
+          return;
+        }
+        login.mapLeft((e) {
+          handle(e);
+          emit(state.copyWith(status: HomepageStatus.failure));
+        });
         final loggedUser = _authenticationRepository.currentUser;
         if (loggedUser == null) {
           emit(const HomepageState(status: HomepageStatus.needLogin));
