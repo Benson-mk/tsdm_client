@@ -347,7 +347,10 @@ void main() {
       expect(t.latestReplyAuthor.uid, '32');
       expect(t.latestReplyAuthor.url, '$baseUrl/home.php?mod=space&username=ag_admin');
       expect(t.replyCount, 0);
-      expect(t.viewCount, 24);
+      // Views are live data (every fetch of the thread adds one): the count of the row.
+      final views = _row('forum_v2_fid2.json', 9199849)['views'] as int;
+      expect(views, greaterThan(0));
+      expect(t.viewCount, views);
       expect(t.price, isNull);
       expect(t.privilege, isNull);
       expect(t.css, isNull);
@@ -484,7 +487,12 @@ void main() {
     });
 
     test('published today', () {
-      expect(_thread('forum_v2_fid12.json', 9199945).isRecentThread, isTrue);
+      // `istoday` is the day of the fetch (a fixture fetched the next day has none): the flag of the row, either way.
+      NormalThread withToday(int tid, int today) =>
+          NormalThread.fromApi(_row('forum_v2_fid12.json', tid)..['istoday'] = today, fid: 12, typePrefix: 0);
+      expect(withToday(9199945, 1).isRecentThread, isTrue);
+      expect(withToday(9199945, 0).isRecentThread, isFalse);
+      expect(_row('forum_v2_fid12.json', 9199868)['istoday'], 0);
       expect(_thread('forum_v2_fid12.json', 9199868).isRecentThread, isFalse);
     });
 

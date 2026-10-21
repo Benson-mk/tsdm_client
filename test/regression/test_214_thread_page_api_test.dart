@@ -116,7 +116,7 @@ void main() {
   setUp(TsdmAppApi.reset);
 
   group('threadApiAnswerOf tells the structured answers apart', () {
-    test('schema 3: the structured page, and the message of the plugin (login tells it)', () {
+    test('schema 3 and later: the structured page, and the message of the plugin (login tells it)', () {
       for (final name in [
         'plain',
         'plain_guest',
@@ -138,9 +138,12 @@ void main() {
         'overpage',
       ]) {
         expect(threadApiAnswerOf(_raw('thread_v3_$name.json')), isNotNull, reason: name);
-        expect(_json('thread_v3_$name.json')['schema'], 3, reason: name);
+        // The fixtures are the answers of plugin 2.8.0 (schema 15; the file names keep the v3 of 2.1.0).
+        expect(_json('thread_v3_$name.json')['schema'], 15, reason: name);
       }
       expect(threadApiAnswerOf(_json('thread_v3_plain.json')), isNotNull, reason: 'decoded by dio already');
+      // Plugin 2.1.0 answered schema 3: still a structured page.
+      expect(threadApiAnswerOf(jsonEncode({..._json('thread_v3_plain.json'), 'schema': 3})), isNotNull);
       expect(threadApiAnswerOf(_raw('thread_v3_denied_guest.json')), isNotNull);
       expect(threadApiAnswerOf('{"ok":0,"error":"message","message":"x","schema":3}'), isNotNull);
     });
@@ -233,7 +236,11 @@ void main() {
       final page = _page('thread_v3_closed.json');
       expect(page.threadSoftClosed, isTrue);
       expect(page.threadClosed, isTrue, reason: 'a member, reply.allowed 0');
-      expect(page.latestModAct, '本主题由 任务系统 于 2026-9-26 03:20 解除限时高亮');
+      // The sentence is live data (the last moderation of the thread, its time relative to the fetch): the field as
+      // the page prints it.
+      final modAct = (_json('thread_v3_closed.json')['thread'] as Map<String, dynamic>)['modact'] as String;
+      expect(modAct, startsWith('本主题由 '));
+      expect(page.latestModAct, modAct);
       expect(page.replyParameters, isNotNull, reason: 'the forum still prints the form (fastpost 1)');
       expect(page.postList.every((e) => e.replyAction == null), isTrue, reason: 'can.reply 0 on every floor');
       expect(page.postList.every((e) => e.rateAction == null), isTrue);
@@ -889,8 +896,9 @@ void main() {
       }
       expect(raw, isNot(matches(RegExp(r'\b\d{1,3}(\.\d{1,3}){3}\b'))), reason: '$name: an IPv4 address');
       // Plain http only in the test content itself: the empty homepage link Discuz prints (`href="http://"`) and
-      // the example hosts of the test posts; never a real host.
-      for (final m in RegExp(r'http://[^"\x27&<\s\\]*').allMatches(raw)) {
+      // the example hosts of the test posts; never a real host. A url ends at a bracket too (the bbcode of a floor's
+      // `message`, `[url=http://…]…[/url]`).
+      for (final m in RegExp(r'http://[^"\x27&<\s\\\[\]]*').allMatches(raw)) {
         expect(m.group(0), matches(RegExp(r'^http://([a-z0-9.-]*\.example(\.com)?(/.*)?)?$')), reason: name);
       }
       final json = jsonDecode(raw) as Map<String, dynamic>;

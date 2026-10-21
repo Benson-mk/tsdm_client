@@ -183,8 +183,13 @@ void main() {
       expect(user.username, 'ag_low2');
       expect(user.avatarUrl, 'https://www.tsdm39.com/data/avatar/noavatar.svg', reason: 'the answer names it');
       expect(user.relatedLinkPairList, [('我的帖子', 'home.php?mod=space&do=thread&view=me')]);
-      expect(state.unreadNoticeCount, 5);
+      expect(state.unreadNoticeCount, 0, reason: 'live: ag_low2 had no unread notice when the fixture was fetched');
       expect(state.hasUnreadMessage, isFalse);
+      final withNotices = homepageStateFromApi({
+        ..._json('index_v5_member.json'),
+        'unread': {'notice': 5, 'pm': 0},
+      }, _viewer.username);
+      expect(withNotices.unreadNoticeCount, 5);
       expect(state.formHash, 'f1f2f3f4');
       expect(state.scrollSwiper, isTrue);
       expect(state.checkingDailyRedPacket, isFalse);
@@ -383,8 +388,8 @@ void main() {
       expect(checkin.threadCount, 44);
       expect(checkin.replyCount, 280);
       expect(checkin.threadTodayCount, isNull, reason: 'the fixture tool pins every todayposts to 0; Forum.fromApi maps non-zero elsewhere');
-      expect(checkin.latestThreadUrl, '$baseUrl/forum.php?mod=redirect&tid=9199970&goto=lastpost');
-      expect(checkin.latestThreadUserName, 'ag_t21');
+      expect(checkin.latestThreadUrl, '$baseUrl/forum.php?mod=redirect&tid=9199961&goto=lastpost');
+      expect(checkin.latestThreadUserName, 'ag_t13');
       expect(checkin.latestThreadTitle, isNotEmpty);
       expect(checkin.subForumList, isNull);
 
