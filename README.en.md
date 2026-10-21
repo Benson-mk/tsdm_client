@@ -16,15 +16,17 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.39.0 (2026-10-20)
+## Latest update: 1.40.0 (2026-10-21)
 
-- Security fix: the summaries on private and broadcast message cards were rendered as web content, so a sender could plant an off-site image in them with a special spelling; they are shown as plain text now (conversations stored by older versions display correctly too).
-- The notification page no longer piles up (#196): opening it from the bell or the menu of a thread or forum page returns to the one already open.
-- Fixed the unread marker of the private message and broadcast message pages: conversations already read on the web, and old broadcast messages read long ago, no longer count as unread.
-- With the forum's API plugin 1.9.0 the notification sync reads notices and conversations from the API instead of the web pages; nothing changes with an older plugin.
-- Android build number 142, installs over earlier releases and test builds.
+- With the forum's API plugin 2.x, the forum, thread, profile, home, search, guide, my threads, favorites, friends, conversation and credit log pages are built from the API's structured data, and the results of submitted forms are read from the JSON the API prepares, no longer parsed from web pages; with an older plugin the web pages are parsed as before.
+- Special threads (poll, trade, reward, activity, debate) are shown as the app's own cards: apply for an activity, pick the best answer, or support a side of a debate right there (API plugin 2.8.0).
+- Background notifications can cover every account logged in on this device (Android and Windows, off by default); tapping another account's notification switches to that account first.
+- Keep threads you have read for offline reading (Settings → Storage, off by default).
+- Experimental: render posts with the app's own renderer (Settings → Advanced, off by default, API plugin 2.7.0).
+- Fixed accounts getting mixed up, or a fresh login being marked as expired, when switching accounts or logging in again.
+- Android build number 143, installs over earlier releases and test builds.
 
-[Download 1.39.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.39.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.40.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.40.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
