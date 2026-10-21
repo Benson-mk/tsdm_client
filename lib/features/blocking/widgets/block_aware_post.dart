@@ -51,7 +51,13 @@ class BlockAwarePost extends StatelessWidget {
       authorOfPost: (pid) => int.tryParse(postList.where((e) => e.postID == '$pid').firstOrNull?.author.uid ?? ''),
       placeholder: context.t.userBlock.quotePlaceholder,
     );
-    return builder(context, identical(data, post.data) ? post : post.copyWith(data: data));
+    // A redacted floor drops its bbcode as well: the app renderer would draw the blocked quote from it.
+    return builder(
+      context,
+      identical(data, post.data)
+          ? post
+          : post.copyWith(data: data, messageBbcode: null, messageReason: 'blocked-quote'),
+    );
   }
 }
 

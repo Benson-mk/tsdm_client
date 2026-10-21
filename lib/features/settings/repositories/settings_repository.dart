@@ -146,6 +146,7 @@ final class SettingsRepository with LoggerMixin {
       textScaleFactor: s.extract(_SK.textScaleFactor),
       threadContentScale: s.extract(_SK.threadContentScale),
       highRefreshRate: s.extract(_SK.highRefreshRate),
+      enableAppPostRenderer: s.extract(_SK.enableAppPostRenderer),
     );
   }
 

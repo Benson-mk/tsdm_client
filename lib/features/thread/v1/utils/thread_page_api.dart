@@ -55,7 +55,8 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///   form (`fastpost` 0);
 /// * `posts` are the floors in the forum's order, hot and sticky replies included ([Post.fromApi]), with the
 ///   answer's `uid` as the account they were served to; the placeholder of a deleted floor of a rush thread
-///   (`deleted` 1) is left out, as the page parser leaves it out;
+///   (`deleted` 1) is left out, as the page parser leaves it out; since plugin 2.7.0 (`schema: 14`) each floor also
+///   keeps its bbcode, its attachments, the answer's `codes` and `smilies_version`, for the app's own renderer;
 /// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`).
 ///
 /// The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
@@ -118,6 +119,8 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
           page: currentPage,
           pay: pay,
           draft: draft,
+          codes: json['codes'],
+          smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
         ),
       )
       .toList();
