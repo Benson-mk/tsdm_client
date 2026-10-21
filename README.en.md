@@ -16,17 +16,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.40.0 (2026-10-21)
+## Latest update: 1.41.0 (2026-10-21)
 
-- With the forum's API plugin 2.x, the forum, thread, profile, home, search, guide, my threads, favorites, friends, conversation and credit log pages are built from the API's structured data, and the results of submitted forms are read from the JSON the API prepares, no longer parsed from web pages; with an older plugin the web pages are parsed as before.
-- Special threads (poll, trade, reward, activity, debate) are shown as the app's own cards: apply for an activity, pick the best answer, or support a side of a debate right there (API plugin 2.8.0).
-- Background notifications can cover every account logged in on this device (Android and Windows, off by default); tapping another account's notification switches to that account first.
-- Keep threads you have read for offline reading (Settings → Storage, off by default).
-- Experimental: render posts with the app's own renderer (Settings → Advanced, off by default, API plugin 2.7.0).
-- Fixed accounts getting mixed up, or a fresh login being marked as expired, when switching accounts or logging in again.
-- Android build number 143, installs over earlier releases and test builds.
+- The phone homepage has a new layout: the forum's pinned groups are tabs of one card, listing one group at a time, so the page is much shorter; the app remembers the group you picked last.
+- 1.40.0: structured pages with the forum's API plugin 2.x, special thread cards, background notifications for every logged-in account, offline copies of the threads you read, and more; see the changelog.
+- Android build number 144, installs over earlier releases and test builds.
 
-[Download 1.40.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.40.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.41.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.41.0) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
