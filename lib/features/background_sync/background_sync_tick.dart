@@ -323,7 +323,7 @@ Future<List<BackgroundSyncOutcome>> autoSyncOtherAccountsTick({
 /// Poll [accounts] one after another, see [backgroundSyncAccountsTick]; [service] tells the background message
 /// service (its switch ends the round) from the in-app auto sync. [waitFirst] waits [gap] before the first account
 /// too: the account in use was just asked. [retried] are accounts marked expired polled once more
-/// ([expiredAccountRetry]): fetched, their mark is cleared.
+/// ([expiredAccountRetry]): answered as themselves, their mark is cleared.
 Future<void> _pollRound({
   required StorageProvider storage,
   required NotificationSyncAllRepository repository,
@@ -362,9 +362,10 @@ Future<void> _pollRound({
     );
     if (polled.outcome case BackgroundSyncDone(
       :final uid,
-      result: NotificationSyncResultSuccess(),
-    ) when retried.contains(uid)) {
-      // The forum answered this account's cookie as logged in: the expiry recorded for it was wrong, or is over.
+      result: NotificationSyncResultSuccess(:final servedUid),
+    ) when retried.contains(uid) && servedUid == uid) {
+      // The forum answered this account's cookie as this very account: the expiry recorded for it was wrong, or is
+      // over. An answer that does not name the account (or names another) leaves the mark.
       await storage.clearSessionExpired(uid);
     }
     await add(polled.outcome);
@@ -429,7 +430,7 @@ Future<BackgroundSyncOutcome?> _prepare(Future<void> Function()? prepareNetwork)
 
 /// How long another account whose login is known to be expired is left alone: then it is polled once more, so a
 /// mark that was wrong (a guest page the forum answered by mistake) does not mute the account for good. Still expired,
-/// the sync marks it again and it rests another day; alive, its mark is cleared.
+/// the sync marks it again and it rests another day; answered as itself, its mark is cleared.
 const expiredAccountRetry = Duration(days: 1);
 
 /// The accounts a tick with every account on polls: the account in use [loginUid] first, as the in-app sync and the

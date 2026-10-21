@@ -20,6 +20,7 @@ final class NotificationSyncResultSuccess extends NotificationSyncResult with No
     required this.unreadBroadcastMessage,
     this.latest,
     this.recent = false,
+    this.servedUid,
   });
 
   /// Notices that are news to the account (not stored before, or a newer copy).
@@ -48,6 +49,9 @@ final class NotificationSyncResultSuccess extends NotificationSyncResult with No
   /// (it answers 429). The counts are what is stored now, what the poll brought; nothing is news here, the poll
   /// announced it.
   final bool recent;
+
+  /// The account the forum answered as, null when it did not tell (see `FetchedNotification`).
+  final int? servedUid;
 }
 
 /// The stored cookie of the account is gone or expired: the server answered the guest page.

@@ -224,6 +224,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
             unreadPersonalMessage: persisted.unread.personalMessage,
             unreadBroadcastMessage: persisted.unread.broadcastMessage,
             latest: autoSyncInfoOf(persisted.fresh),
+            servedUid: value.servedUid,
           );
       }
     }

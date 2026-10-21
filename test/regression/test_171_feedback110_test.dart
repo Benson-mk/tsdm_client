@@ -282,6 +282,10 @@ final class _Auth extends Fake implements AuthenticationRepository {
   @override
   Stream<AuthStatus> get status => _controller.stream;
 
+  /// Nothing is replayed: the stream is a plain broadcast one.
+  @override
+  AuthStatus? get latestStatus => null;
+
   @override
   int? get effectiveCurrentUid => currentUser?.uid;
 

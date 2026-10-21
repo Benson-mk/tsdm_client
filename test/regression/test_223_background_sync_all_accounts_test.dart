@@ -16,6 +16,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -23,6 +24,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart' show Either;
 import 'package:go_router/go_router.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
@@ -33,6 +35,7 @@ import 'package:tsdm_client/features/background_sync/background_sync_service.dar
 import 'package:tsdm_client/features/background_sync/background_sync_tick.dart';
 import 'package:tsdm_client/features/background_sync/other_accounts_auto_sync.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
+import 'package:tsdm_client/features/homepage/bloc/homepage_bloc.dart';
 import 'package:tsdm_client/features/local_notice/keys.dart';
 import 'package:tsdm_client/features/local_notice/show.dart';
 import 'package:tsdm_client/features/local_notice/tap.dart';
@@ -46,6 +49,7 @@ import 'package:tsdm_client/features/notification/repository/notification_reposi
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/features/notification/view/notification_sync_all_page.dart';
+import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -59,6 +63,7 @@ import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver
 import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:universal_html/parsing.dart';
 
 const _alice = UserLoginInfo(username: 'Alice', uid: 1000);
@@ -192,6 +197,9 @@ final class _Forum implements HttpClientAdapter {
   /// The conversations `pmlist` lists for an account (by token), none when missing.
   final pms = <String, List<Map<String, Object?>>>{};
 
+  /// The account `notify` answers an account's cookie as (by token), the account itself when missing.
+  final servedAs = <String, int>{};
+
   final requests = <_Request>[];
   final seenForms = <({String token, Map<String, String> form})>[];
   final unexpected = <String>[];
@@ -242,7 +250,7 @@ final class _Forum implements HttpClientAdapter {
     final answer =
         all[token] ??
         switch (name) {
-          'notify' when uid != null => _Answer.json(_notifyOf(uid)),
+          'notify' when uid != null => _Answer.json({..._notifyOf(uid), 'uid': servedAs[token] ?? uid}),
           'pmlist' when uid != null => _Answer.json(_pmlistOf(uid, pms[token] ?? const [])),
           'seen' when uid != null => _Answer.json({
             'ok': 1,
@@ -292,26 +300,35 @@ Future<void> _until(bool Function() condition, {Duration timeout = const Duratio
 /// What a notice page shows the account in use as, and the order things happened in around a notification tap.
 final _log = <String>[];
 
-/// The notification bloc of the app, reduced to recording the reload asked after the switch.
+/// The notification bloc of the app, reduced to recording the reload asked after the switch and answering it with the
+/// (empty) lists of the account in use, as the real bloc does.
 final class _Notifications extends Fake implements NotificationBloc {
   _Notifications(this._auth);
 
   final AuthenticationRepository _auth;
+  final _states = StreamController<NotificationState>.broadcast();
+  NotificationState _state = const NotificationState(status: NotificationStatus.success);
 
   @override
-  void add(NotificationEvent event) => _log.add('${event.runtimeType} as ${_auth.currentUser?.uid}');
+  void add(NotificationEvent event) {
+    _log.add('${event.runtimeType} as ${_auth.currentUser?.uid}');
+    if (event is NotificationReloadFromStorageRequested) {
+      _state = NotificationState(status: NotificationStatus.success, ownerUid: _auth.currentUser?.uid);
+      _states.add(_state);
+    }
+  }
 
   @override
-  NotificationState get state => const NotificationState(status: NotificationStatus.success);
+  NotificationState get state => _state;
 
   @override
-  Stream<NotificationState> get stream => const Stream.empty();
+  Stream<NotificationState> get stream => _states.stream;
 
   @override
   bool get isClosed => false;
 
   @override
-  Future<void> close() async {}
+  Future<void> close() => _states.close();
 }
 
 /// The check page the switch reads, as served to a logged-in [user].
@@ -329,6 +346,9 @@ final class _SwitchForum implements HttpClientAdapter {
   final expired = <String>{};
   final requests = <String>[];
 
+  /// When set, every check is answered once this completes.
+  Completer<void>? hold;
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -338,12 +358,80 @@ final class _SwitchForum implements HttpClientAdapter {
     final cookie = '${options.headers['cookie'] ?? options.headers['Cookie'] ?? ''}';
     final token = _Forum._authRe.firstMatch(cookie)?[1] ?? 'no cookie';
     requests.add(token);
+    if (hold != null) {
+      await hold!.future;
+    }
     final user = _everyone.where((u) => _token(u) == token).firstOrNull;
     return ResponseBody.fromString(
       user == null || expired.contains(token) ? _guestPage : _authedPage(user),
       200,
       headers: {
         Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The structured homepage of plugin 2.3.0 as served to [user].
+Map<String, dynamic> _homepageOf(UserLoginInfo user) => {
+  ...(jsonDecode(File('test/data/tsdmapp/index_v5_member.json').readAsStringSync()) as Map<String, dynamic>),
+  'uid': user.uid,
+  'user': {'uid': user.uid, 'username': user.username, 'avatar': 'https://forum.test/data/avatar/noavatar.svg'},
+  'red_packet': null,
+};
+
+/// `forum.php` answered to the account of the auth cookie of the request (Alice without one); any other page is the
+/// own profile page (the homepage reads the avatar there).
+final class _HomeForum implements HttpClientAdapter {
+  final paths = <String>[];
+
+  /// The tokens of the requests of `forum.php`, in order.
+  final homepageTokens = <String>[];
+
+  /// When set, every answer waits for it.
+  Completer<void>? hold;
+
+  /// The answers of `forum.php` to an account (by token) wait for these.
+  final holds = <String, Completer<void>>{};
+
+  /// Accounts (by token) whose `forum.php` is answered with a server error.
+  final failing = <String>{};
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    paths.add(options.uri.path);
+    final cookie = '${options.headers['cookie'] ?? options.headers['Cookie'] ?? ''}';
+    final token = _Forum._authRe.firstMatch(cookie)?[1];
+    if (options.uri.path.endsWith('forum.php')) {
+      homepageTokens.add(token ?? 'none');
+    }
+    if (hold != null) {
+      await hold!.future;
+    }
+    final homepage = options.uri.path.endsWith('forum.php');
+    if (homepage && holds[token] != null) {
+      await holds[token]!.future;
+    }
+    if (homepage && failing.contains(token)) {
+      return ResponseBody.fromString('<html><body>Server Error</body></html>', 500);
+    }
+    final user = _everyone.where((u) => _token(u) == token).firstOrNull ?? _alice;
+    final body = options.uri.path.endsWith('forum.php')
+        ? jsonEncode(_homepageOf(user))
+        // The own profile page, read by the homepage for the avatar.
+        : File('test/data/tsdmapp/profile_v4_self.json').readAsStringSync();
+    return ResponseBody.fromString(
+      body,
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json; charset=utf-8'],
       },
     );
   }
@@ -862,6 +950,12 @@ void main() {
     expect(await polls(1002), [null, null]);
     expect(await storage.deleteUserLoginInfo(1000), 1);
     expect(await polls(1000), [null, null]);
+    // Removed by name only.
+    await storage.saveCookie(username: 'Bob', uid: 1001, cookie: _jar(_bob));
+    await storage.saveInt(NotificationPollSlot.key(1001), 1);
+    await storage.saveInt(NotificationPollSlot.manualKey(1001), 1);
+    expect(await storage.deleteCookieByUserInfo(const UserLoginInfo(username: 'Bob', uid: null)), isTrue);
+    expect(await polls(1001), [null, null]);
   });
 
   group('in the app: the other accounts after the account in use (Android, Windows)', () {
@@ -972,7 +1066,7 @@ void main() {
       expect(forum.of('carol'), isEmpty);
     });
 
-    test("each account's cookie is read from the database, the app's cache is not reloaded", () async {
+    test("each account's cookie is read from the database, its cache entry brought in line", () async {
       await loggedIn(allAccounts: true);
       // Carol logged in elsewhere on the same database (the service isolate renews cookies there): this provider's
       // cache never saw her row.
@@ -986,7 +1080,11 @@ void main() {
         (1002, NotificationSyncResultSuccess),
       ]);
       expect(forum.of('carol'), hasLength(4));
-      expect(storage.getCookieByUidSync(1002), isNull, reason: 'the cache was not reloaded');
+      expect(
+        storage.getCookieByUidSync(1002),
+        isNotNull,
+        reason: "Carol's entry brought in line with the row read, for the switch and the removal check",
+      );
     });
 
     test('an account marked expired rests a day, then is tried once more: alive, its mark goes', () async {
@@ -1006,8 +1104,18 @@ void main() {
       outcomes = await others();
       expect(outcomes, isEmpty, reason: 'Carol marked again: she rests another day');
 
-      // A day later the mark of Bob was wrong: he answers, and his mark goes.
+      // A day later Bob's row answers, but as another account (it holds that account's session): the mark stays.
       await storage.markSessionExpired(1001, at: DateTime.now().subtract(const Duration(days: 1, minutes: 1)));
+      forum.servedAs['bob'] = 1002;
+      outcomes = await others();
+      expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
+        (1001, NotificationSyncResultSuccess),
+      ]);
+      expect(await expiredUids(), {1001, 1002}, reason: 'answered as somebody else: not proof of his login');
+
+      // Another day later the mark of Bob was wrong: he answers as himself, and his mark goes.
+      await storage.markSessionExpired(1001, at: DateTime.now().subtract(const Duration(days: 1, minutes: 1)));
+      forum.servedAs.remove('bob');
       outcomes = await others();
       expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
         (1001, NotificationSyncResultSuccess),
@@ -1368,13 +1476,13 @@ void main() {
     }
 
     test('...then the structured homepage served to Alice records nothing', () async {
-      final login = await auth.loginWithServedUser(_alice, guest: false).run();
+      final login = await auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
       expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
       expectBobUnmixed();
     });
 
     test('...then the web homepage served to Alice records nothing', () async {
-      final login = await auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice))).run();
+      final login = await auth.loginWithDocument(parseHtmlDocument(_authedPage(_alice)), fetchedAs: 1000).run();
       expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
       expectBobUnmixed();
     });
@@ -1390,6 +1498,196 @@ void main() {
       expect((await auth.loginWithServedUser(_bob, guest: false, fetchedAs: 1001).run()).isRight(), isTrue);
       expect((await auth.loginWithDocument(parseHtmlDocument(_authedPage(_bob))).run()).isRight(), isTrue);
       expectBobUnmixed();
+    });
+  });
+
+  group('identity writes, one at a time (re-review probes)', () {
+    late CookieProvider global;
+
+    setUp(() async {
+      for (final u in [_alice, _bob]) {
+        await storage.saveCookie(username: u.username!, uid: u.uid!, cookie: _jar(u));
+      }
+      await settings.setValue(SettingsKeys.loginUid, 1000);
+      await settings.setValue(SettingsKeys.loginUsername, 'Alice');
+      global = CookieProvider.buildEmpty();
+      await global.loadCookieFromStorage(_alice);
+      getIt.registerSingleton<CookieProvider>(global);
+    });
+
+    String tokenIn(int uid) => RegExp('auth=([a-z]+)').firstMatch('${storage.getCookieByUidSync(uid)}')?[1] ?? 'none';
+
+    test("P1: Bob's cookie loaded while the record of Alice's page waits: her row keeps her session", () async {
+      final auth = AuthenticationRepository();
+      addTearDown(auth.dispose);
+      // The homepage's page of Alice is recorded...
+      final login = auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
+      // ...while the cookie in use turns into Bob's.
+      await global.loadCookieFromStorage(_bob);
+      expect((await login).getLeft().toNullable(), isA<IdentityChangedException>());
+      expect(tokenIn(1000), 'alice', reason: "Alice's row must keep her session");
+      expect(tokenIn(1001), 'bob');
+      expect(settings.currentSettings.loginUid, 1000, reason: 'the bare cookie load is no switch: nothing named');
+      expect(auth.currentUser, isNull);
+    });
+
+    for (final spin in [
+      for (var t = 5; t <= 7; t++)
+        for (var m = 0; m <= 24; m += 2) t * 100 + m,
+    ]) {
+      test('P1b: a real switch and the record of the page race (spin $spin)', () async {
+        final forum = _SwitchForum()..hold = Completer<void>();
+        final auth = AuthenticationRepository(
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final switching = auth.switchUser(_bob).run();
+        await _until(() => forum.requests.isNotEmpty, reason: "the check of Bob's login");
+        forum.hold!.complete();
+        for (var i = 0; i < spin ~/ 100; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        for (var i = 0; i < spin % 100; i++) {
+          await Future<void>.value();
+        }
+        final login = await auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
+        expect((await switching).isRight(), isTrue);
+        expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
+        expect(tokenIn(1000), 'alice');
+        expect(tokenIn(1001), 'bob');
+        expect(settings.currentSettings.loginUid, 1001);
+        expect(auth.currentUser?.uid, 1001);
+      });
+    }
+
+    group('homepage', () {
+      late _HomeForum home;
+      late ForumHomeRepository forumHome;
+
+      setUp(() {
+        TsdmAppApi.reset();
+        home = _HomeForum();
+        getIt.registerFactory<NetClientProvider>(
+          () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = home),
+        );
+        forumHome = ForumHomeRepository();
+      });
+      tearDown(() => forumHome.dispose());
+
+      HomepageBloc homepage(AuthenticationRepository auth) {
+        final bloc = HomepageBloc(
+          forumHomeRepository: forumHome,
+          profileRepository: ProfileRepository(),
+          authenticationRepository: auth,
+        );
+        addTearDown(bloc.close);
+        return bloc;
+      }
+
+      test("P2: Alice's row holds Bob's session: the page served to Bob is adopted, as before", () async {
+        await storage.saveCookie(username: 'Alice', uid: 1000, cookie: _jar(_bob));
+        await global.loadCookieFromStorage(_alice);
+        final auth = AuthenticationRepository();
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth)..add(HomepageRefreshRequested());
+        await _until(() => bloc.state.status != HomepageStatus.loading && auth.currentUser != null, reason: 'loaded');
+        expect(auth.currentUser?.uid, 1001, reason: 'the session the forum serves is followed');
+        expect(settings.currentSettings.loginUid, 1001);
+        expect(tokenIn(1001), 'bob');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(bloc.state.status, isNot(HomepageStatus.loading), reason: 'never stuck loading');
+        expect(
+          home.paths.where((p) => p.endsWith('forum.php')),
+          hasLength(1),
+          reason: 'the page shown is the account it was served to: no second load',
+        );
+      });
+
+      test('P3: a switch that is the first status of the run reloads the homepage for Bob', () async {
+        final forum = _SwitchForum();
+        final auth = AuthenticationRepository(
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth);
+        expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+        await _until(() => home.paths.any((p) => p.endsWith('forum.php')), reason: 'the homepage of Bob');
+        await _until(() => bloc.state.status != HomepageStatus.loading, reason: 'loaded');
+        expect(auth.currentUser?.uid, 1001);
+      });
+
+      test('P3 control: after an earlier status the switch reloads the homepage too', () async {
+        final forum = _SwitchForum();
+        final auth = AuthenticationRepository(
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth)..add(HomepageLoadRequested());
+        await _until(() => bloc.state.status == HomepageStatus.success, reason: 'the homepage of Alice');
+        expect(home.paths.where((p) => p.endsWith('forum.php')), hasLength(1));
+        expect(auth.currentUser?.uid, 1000, reason: 'recorded by the page');
+        expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+        await _until(() => home.paths.where((p) => p.endsWith('forum.php')).length == 2, reason: 'reloaded for Bob');
+        await _until(() => bloc.state.status != HomepageStatus.loading, reason: 'loaded');
+      });
+
+      test("a failure of the previous account's load answered after Bob's page does not replace it", () async {
+        final forum = _SwitchForum();
+        final auth = AuthenticationRepository(
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth);
+        home
+          ..holds['alice'] = Completer<void>()
+          ..failing.add('alice');
+        bloc.add(HomepageRefreshRequested());
+        await _until(() => home.homepageTokens.isNotEmpty, reason: "the homepage asked with Alice's cookie");
+        expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+        await _until(() => bloc.state.status == HomepageStatus.success, reason: "Bob's homepage");
+        expect(home.homepageTokens, ['alice', 'bob']);
+        home.holds['alice']!.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(bloc.state.status, HomepageStatus.success, reason: "Alice's late failure is stale");
+      });
+
+      test("a page of Alice landing after the switch is dropped and the homepage loads Bob's, never stuck", () async {
+        final forum = _SwitchForum();
+        final auth = AuthenticationRepository(
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth);
+        // The page of Alice asked at the cold start, answered only after the switch.
+        home.hold = Completer<void>();
+        bloc.add(HomepageLoadRequested());
+        await _until(() => home.homepageTokens.isNotEmpty, reason: "the homepage asked with Alice's cookie");
+        expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+        await _until(() => home.homepageTokens.length == 2, reason: 'the homepage asked again for Bob');
+        home.hold!.complete();
+        await _until(() => bloc.state.status == HomepageStatus.success, reason: "Bob's homepage");
+        expect(home.homepageTokens, ['alice', 'bob']);
+        expect(auth.currentUser?.uid, 1001);
+        expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'));
+        expect(settings.currentSettings.loginUid, 1001);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(bloc.state.status, HomepageStatus.success, reason: 'the stale page of Alice changed nothing');
+      });
     });
   });
 
@@ -1484,17 +1782,11 @@ void main() {
     /// What the home page does with the payload of the tapped notification, from [context]; the result once done.
     Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})> begin(
       BuildContext context,
-      String payload, {
-      Duration settleTimeout = const Duration(seconds: 10),
-    }) {
+      String payload,
+    ) {
       final open = LocalNoticeKeys.parseOpenNotification(payload)!;
       _log.clear();
-      return openNoticePageOfAccount(
-        context,
-        uid: open.uid,
-        popups: PopupRouteObserver(),
-        settleTimeout: settleTimeout,
-      );
+      return openNoticePageOfAccount(context, uid: open.uid, popups: PopupRouteObserver());
     }
 
     Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})?> tap(
@@ -1528,49 +1820,21 @@ void main() {
     /// The token of the auth cookie stored in the row of [uid].
     String tokenIn(int uid) => RegExp('auth=([a-z]+)').firstMatch('${storage.getCookieByUidSync(uid)}')?[1] ?? 'none';
 
-    testWidgets('cold start: the switch waits for the stored login to be verified, the accounts never mix', (
+    testWidgets("cold start: switched right away, the homepage's late answer for the stored account records nothing", (
       tester,
     ) async {
       await coldStart(tester);
       final context = await pumpHome(tester);
       ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
       unawaited(begin(context, LocalNoticeKeys.openNotificationOf(_bob.uid!)).then((e) => result = e));
-      await _settle(tester);
-      expect(result, isNull, reason: 'waiting for the stored login');
-      expect(switchForum.requests, isEmpty, reason: 'no switch while the homepage checks the stored login');
-
-      // The homepage fetched with Alice's cookie answers: her login is verified.
-      await tester.runAsync(() => auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run());
       await _settle(tester, rounds: 12);
-      expect(result?.step, LocalNoticeAccountStep.switched);
+      expect(result?.step, LocalNoticeAccountStep.switched, reason: 'no wait for the stored login');
       expect(switchForum.requests, ['bob']);
       expect(_log, [
-        'auth AuthStatusAuthed 1000',
         'auth AuthStatusAuthed 1001',
         'NotificationReloadFromStorageRequested as 1001',
         'notice page as 1001',
       ]);
-      expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'), reason: 'each row keeps its own session');
-      expect(settings.currentSettings.loginUid, 1001);
-      await _dispose(tester);
-    });
-
-    testWidgets('cold start with a stored login that never verifies: switched after the wait, still unmixed', (
-      tester,
-    ) async {
-      await coldStart(tester);
-      final context = await pumpHome(tester);
-      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
-      unawaited(
-        begin(
-          context,
-          LocalNoticeKeys.openNotificationOf(_bob.uid!),
-          settleTimeout: const Duration(milliseconds: 200),
-        ).then((e) => result = e),
-      );
-      await _settle(tester, rounds: 12);
-      expect(result?.step, LocalNoticeAccountStep.switched);
-      expect(auth.currentUser?.uid, 1001);
 
       // The homepage asked with Alice's cookie answers only now, as a guest's page or as hers: nothing recorded.
       await tester.runAsync(() async {
@@ -1586,7 +1850,31 @@ void main() {
       });
       expect(auth.currentUser?.uid, 1001);
       expect(settings.currentSettings.loginUid, 1001);
+      expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'), reason: 'each row keeps its own session');
+      await _dispose(tester);
+    });
+
+    testWidgets('the answer for the stored account landing while the switch checks Bob waits for it, then is refused', (
+      tester,
+    ) async {
+      await coldStart(tester);
+      final context = await pumpHome(tester);
+      switchForum.hold = Completer<void>();
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(begin(context, LocalNoticeKeys.openNotificationOf(_bob.uid!)).then((e) => result = e));
+      await _settle(tester);
+      expect(switchForum.requests, ['bob'], reason: "the switch checks Bob's login, holding the identity lock");
+      Either<AppException, void>? login;
+      unawaited(auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run().then((e) => login = e));
+      await _settle(tester);
+      expect(login, isNull, reason: 'the record of the page waits for the switch');
+      switchForum.hold!.complete();
+      await _settle(tester, rounds: 12);
+      expect(result?.step, LocalNoticeAccountStep.switched);
+      expect(login?.getLeft().toNullable(), isA<IdentityChangedException>());
       expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'));
+      expect(settings.currentSettings.loginUid, 1001);
+      expect(auth.currentUser?.uid, 1001);
       await _dispose(tester);
     });
 
@@ -1646,6 +1934,47 @@ void main() {
       expect(pages.map((e) => (e.$1, e.$2, e.$3.join(','))), [
         (1001, 1001, '${_noticeId(1001)}'),
       ], reason: "Bob's only");
+      await tester.runAsync(() async {
+        await bloc.close();
+        await notifications.dispose();
+        await infos.dispose();
+      });
+      await _dispose(tester);
+    });
+
+    testWidgets('another switch while the lists of the new account are awaited wins: no notice page', (tester) async {
+      // A fetch of Alice in flight keeps the lists hers until it ends.
+      forum.holds['alice'] = Completer<void>();
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: getIt.get<CookieProvider>(),
+        ),
+      );
+      final notifications = NotificationRepository(storageProvider: storage);
+      final infos = NotificationInfoRepository();
+      final bloc = NotificationBloc(
+        notificationRepository: notifications,
+        infoRepository: infos,
+        authRepo: auth,
+        storageProvider: storage,
+      );
+      final context = await pumpHome(tester, bloc: bloc);
+      bloc.add(const NotificationUpdateAllRequested());
+      await _settle(tester);
+      expect(bloc.state.status, NotificationStatus.loading);
+      ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})? result;
+      unawaited(begin(context, LocalNoticeKeys.openNotificationOf(_bob.uid!)).then((e) => result = e));
+      await _settle(tester, rounds: 12);
+      expect(auth.currentUser?.uid, 1001);
+      expect(result, isNull, reason: "waiting for Bob's lists");
+      // The avatar menu switches to Carol meanwhile.
+      await tester.runAsync(() => auth.switchUser(_carol).run());
+      await _settle(tester, rounds: 12);
+      expect(result?.step, LocalNoticeAccountStep.notSwitched, reason: 'the later switch wins');
+      expect(pages, isEmpty, reason: 'no notice page for Bob under Carol');
+      forum.holds['alice']!.complete();
+      await _settle(tester);
       await tester.runAsync(() async {
         await bloc.close();
         await notifications.dispose();

@@ -4,10 +4,10 @@ import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rxdart/rxdart.dart' show MergeStream;
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
-import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
 import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
@@ -141,13 +141,14 @@ Future<SwitchAccountResult> _switchLikeTheMenu(BuildContext context, UserLoginIn
 /// the test notification of the settings page): the account in use.
 ///
 /// * The account in use, no account named, or nobody logged in: [openNoticePageForTap] right away, as before.
-/// * Another account saved on this device: switch to it first, the same way as the avatar menu's quick switch
+/// * Another account saved on this device: switch to it right away, the same way as the avatar menu's quick switch
 ///   ([switchTo], [switchAccount] by default: its toasts, one switch at a time, none while a reply is being sent, the
-///   in-app sync paused around it), then open the notice page once its lists are the new account's. Every
-///   logged-in account is announced when asked to, and the account in use may have changed since any notification
-///   was posted.
-/// * At a cold start (the stored login not verified yet) the switch waits up to [settleTimeout] for the homepage to
-///   verify it: switching while that check runs with the stored account's cookie mixed the two accounts up.
+///   in-app sync paused around it), then open the notice page once its lists are the new account's (up to
+///   [reloadTimeout]). Every logged-in account is announced when asked to, and the account in use may have changed
+///   since any notification was posted. At a cold start the homepage may still be verifying the stored login: its
+///   answer arriving after the switch is refused under the identity lock and the homepage reloads for the new account
+///   (`AuthenticationRepository.loginWithServedUser`).
+/// * Another switch while the lists are awaited (the avatar menu) wins: the notice page is not opened.
 /// * The switch does not happen: nothing is opened, the notice page would show the account in use and not the one the
 ///   notification is about.
 /// * An account no longer on this device: nothing is opened, a toast says so.
@@ -160,7 +161,6 @@ Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}
   required int? uid,
   PopupRouteObserver? popups,
   Future<SwitchAccountResult> Function(BuildContext context, UserLoginInfo account)? switchTo,
-  Duration settleTimeout = const Duration(seconds: 10),
   Duration reloadTimeout = const Duration(seconds: 5),
 }) async {
   ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}) open(
@@ -179,21 +179,11 @@ Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}
   final auth = context.read<AuthenticationRepository>();
   // The stored session counts: when a notification cold-starts the app the home page has its first frame before the
   // homepage fetch verified the login, and `currentUser` is still null at that point (#14).
-  var current = auth.effectiveCurrentUid;
+  final current = auth.effectiveCurrentUid;
   if (uid == null || current == null || uid == current) {
     return open(LocalNoticeAccountStep.current, loggedIn: current != null);
   }
   talker.info('notification of another account tapped: uid ${"$uid".obscured(4)}, switching to it first');
-  if (auth.currentUser == null) {
-    await _storedLoginSettled(auth, settleTimeout);
-    if (!context.mounted) {
-      return notOpened;
-    }
-    current = auth.effectiveCurrentUid;
-    if (current == null || current == uid) {
-      return open(LocalNoticeAccountStep.current, loggedIn: current != null);
-    }
-  }
   final account = (await getIt.get<StorageProvider>().getAllUsers()).firstWhereOrNull((e) => e.uid == uid);
   if (!context.mounted) {
     return notOpened;
@@ -208,63 +198,83 @@ Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}
     return notOpened;
   }
   if (context.readOrNull<NotificationBloc>() case final bloc?) {
-    await _noticesReloadedFor(bloc, uid, reloadTimeout);
+    await _noticesReloadedFor(
+      bloc,
+      uid,
+      reloadTimeout,
+      inUse: () => auth.effectiveCurrentUid,
+      accountChanges: auth.status,
+    );
     if (!context.mounted) {
       return notOpened;
     }
   }
+  if (auth.effectiveCurrentUid != uid) {
+    talker.info('notification of another account: switched away meanwhile, notice page not opened');
+    return notOpened;
+  }
   return open(LocalNoticeAccountStep.switched, loggedIn: true);
 }
 
-/// Wait up to [timeout] for the first settled status of [auth] (logged in, or not): at a cold start the homepage
-/// verifies the stored login, and a switch meanwhile raced it. Nothing settles when that login expired: the wait
-/// then ends at [timeout], and a page of the stored account arriving after the switch records nothing (see
-/// `AuthenticationRepository.loginWithServedUser`).
-Future<void> _storedLoginSettled(AuthenticationRepository auth, Duration timeout) async {
-  bool settled(AuthStatus? s) => s is AuthStatusAuthed || s is AuthStatusNotAuthed;
-  if (settled(auth.latestStatus)) {
-    return;
+/// Wait up to [timeout] for the first event of [stream] that passes [test]; false when none came in time or the
+/// stream ended. The subscription and the timer end with the wait, whatever ends it.
+Future<bool> _firstWithin<T>(Stream<T> stream, bool Function(T event) test, Duration timeout) async {
+  final done = Completer<bool>();
+  void finish({required bool reached}) {
+    if (!done.isCompleted) {
+      done.complete(reached);
+    }
   }
-  talker.info('waiting for the stored login to be verified before switching');
+
+  final timer = Timer(timeout, () => finish(reached: false));
+  final subscription = stream.listen((event) {
+    if (test(event)) {
+      finish(reached: true);
+    }
+  }, onDone: () => finish(reached: false));
   try {
-    // A closed stream (the app going away) ends the wait as well.
-    await auth.status.firstWhere(settled, orElse: () => const AuthStatusUnknown()).timeout(timeout);
-  } on TimeoutException {
-    talker.warning('the stored login was not verified within ${timeout.inSeconds}s, switching anyway');
+    return await done.future;
+  } finally {
+    timer.cancel();
+    await subscription.cancel();
   }
 }
 
-/// Wait up to [timeout] for the lists of [bloc] to be the ones of [uid], not loading.
+/// Wait up to [timeout] for the lists of [bloc] to be the ones of [uid], not loading; the wait also ends when the
+/// account in use ([inUse], told by [accountChanges]) is not [uid] any more: another switch won.
 ///
 /// A fetch of the previous account still running ends dropped (its account is not the one in use any more, the state
 /// is reset), then the lists are rebuilt from storage for [uid]; without one they are rebuilt right away. The page
 /// shows nothing of another account meanwhile anyway ([NotificationState.ownerUid]).
-Future<void> _noticesReloadedFor(NotificationBloc bloc, int uid, Duration timeout) async {
+Future<void> _noticesReloadedFor(
+  NotificationBloc bloc,
+  int uid,
+  Duration timeout, {
+  required int? Function() inUse,
+  required Stream<Object?> accountChanges,
+}) async {
   bool ready(NotificationState s) => s.ownerUid == uid && s.status != NotificationStatus.loading;
-  if (ready(bloc.state)) {
+  bool over(NotificationState s) => ready(s) || inUse() != uid;
+  if (over(bloc.state)) {
     return;
   }
-  // A closed bloc (the app going away) ends the wait as well.
-  final reached = bloc.stream.firstWhere(ready, orElse: () => bloc.state);
-  void reload() {
-    if (!bloc.isClosed) {
-      bloc.add(NotificationReloadFromStorageRequested());
+  Stream<Object?> changes() => MergeStream<Object?>([bloc.stream, accountChanges]);
+  final reached = _firstWithin<Object?>(changes(), (_) => over(bloc.state), timeout);
+  if (bloc.state.status == NotificationStatus.loading) {
+    // The fetch of the previous account first: the reload is skipped while one runs.
+    final previousEnded = await _firstWithin<Object?>(
+      changes(),
+      (_) => bloc.state.status != NotificationStatus.loading || inUse() != uid,
+      timeout,
+    );
+    if (!previousEnded) {
+      talker.warning('the fetch of the previous account did not end within ${timeout.inSeconds}s');
     }
   }
-
-  if (bloc.state.status == NotificationStatus.loading) {
-    unawaited(
-      bloc.stream
-          .firstWhere((s) => s.status != NotificationStatus.loading, orElse: () => bloc.state)
-          .timeout(timeout, onTimeout: () => bloc.state)
-          .then((_) => reload()),
-    );
-  } else {
-    reload();
+  if (!bloc.isClosed && inUse() == uid) {
+    bloc.add(NotificationReloadFromStorageRequested());
   }
-  try {
-    await reached.timeout(timeout);
-  } on TimeoutException {
+  if (!await reached) {
     talker.warning('the notices of the new account were not in within ${timeout.inSeconds}s, opening the page anyway');
   }
 }
