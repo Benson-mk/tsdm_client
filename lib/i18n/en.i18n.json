@@ -1049,6 +1049,7 @@
   "ratePostPage": {
     "title": "Rate",
     "description": "Rate $username post at floor $floor",
+    "descriptionNoFloor": "Rate $username post",
     "reason": "Reason",
     "success": "Rate success",
     "noticeAuthor": "Notice the author",
@@ -1348,7 +1349,10 @@
     "share": "Copy share link",
     "openInBrowser": "Open in browser",
     "copyText": "Copy Text",
-    "copyPid": "Copy pid (${pid: String})"
+    "copyPid": "Copy pid (${pid: String})",
+    "avatarBlocked": "Avatar hidden",
+    "hotReply": "Recommended",
+    "jumpToHotFloor": "Go to the floor"
   },
   "postReport": {
     "menu": "Report",

@@ -45,7 +45,10 @@ Map<String, dynamic>? forumApiAnswerOf(Object? data) {
 ///   [StickThread], the rest as [NormalThread] ([NormalThread.fromApi]); `subforums` as [Forum] ([Forum.fromApi]).
 /// * The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
 ///   permission (`havePermission` false, the message text as the denied message, as the page's `#messagetext p`).
-/// * `page` / `pages` give the pagination; `types.items` the type filter with the page's "everything" entry first,
+/// * `page` / `pages` give the pagination: since plugin 2.8.2 as the page's pagination prints it, the page the forum
+///   really shows (its first page when asked past its last page or past the site's limit of pages, `threadmaxpages`)
+///   and the last page one can go to (within that limit); before, the page asked and the pages of all the threads.
+///   `types.items` the type filter with the page's "everything" entry first,
 ///   only when the forum lists its types (`types.listable` 1): the page shows no type row otherwise, nor when the
 ///   forum has no types, and the app no filter bar then; `filters.*` the menus of the page in its order and names,
 ///   each with its "everything" entry first (`specialtype` only lists the special threads the forum allows, which can

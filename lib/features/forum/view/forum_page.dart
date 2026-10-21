@@ -386,7 +386,7 @@ class _ForumPageState extends State<ForumPage> with SingleTickerProviderStateMix
         ],
       ),
       ForumStatus.failure => buildRetryButton(context, () {
-        context.read<ForumBloc>().add(ForumLoadMoreRequested(state.currentPage));
+        context.read<ForumBloc>().add(const ForumRetryRequested());
       }),
       ForumStatus.success => _buildSuccessContent(context, state),
     };

@@ -22,6 +22,13 @@ import 'package:tsdm_client/widgets/debounce_buttons.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/section_switch_list_tile.dart';
 
+/// What the rate page says it rates: the post of [username] at [floor], or without the floor when its number is not
+/// known (`0`, a hot reply whose floor the forum does not tell).
+String ratePostDescription(Translations t, {required String username, required String floor}) =>
+    (int.tryParse(floor) ?? 0) > 0
+    ? t.ratePostPage.description(username: username, floor: floor)
+    : t.ratePostPage.descriptionNoFloor(username: username);
+
 /// Page to rate a post in thread.
 class RatePostPage extends StatefulWidget {
   /// Constructor.
@@ -39,7 +46,7 @@ class RatePostPage extends StatefulWidget {
   /// Post id.
   final String pid;
 
-  /// Post floor.
+  /// Post floor; `0` when not known (a hot reply whose floor the forum does not tell).
   final String floor;
 
   /// Url to do the rate action.
@@ -214,7 +221,7 @@ class _RatePostPageState extends State<RatePostPage> with LoggerMixin {
                           sizedBoxW12H12,
                           Expanded(
                             child: Text(
-                              tr.description(username: widget.username, floor: widget.floor),
+                              ratePostDescription(context.t, username: widget.username, floor: widget.floor),
                               style: Theme.of(
                                 context,
                               ).textTheme.titleMedium?.copyWith(color: colorScheme.secondary),

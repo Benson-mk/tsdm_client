@@ -215,6 +215,11 @@ class _PostListState extends State<PostList> with LoggerMixin {
       return sizedBoxEmpty;
     }
 
+    // The first floor of that pid only: a hot reply is in the list twice when the first page and the page it is on
+    // are both loaded (first as hot, then where it is), and the key may be on one of them.
+    final initialIndex = widget.initialPostID == null
+        ? -1
+        : widget.postList.indexWhere((e) => e.postID == '${widget.initialPostID}');
     return SuperSliverList.separated(
       listController: _listController,
       itemCount: widget.postList.length,
@@ -226,7 +231,7 @@ class _PostListState extends State<PostList> with LoggerMixin {
         // build after `initialPostID` changes (the thread page drops its scroll target one frame after a reload). A
         // card must therefore not rely on its own `context` across an async gap that may span such a rebuild; the
         // edit flow takes what it needs before opening the editor (GitHub #76).
-        return post.postID == '${widget.initialPostID}' ? KeyedSubtree(key: _initialPostKey, child: card) : card;
+        return index == initialIndex ? KeyedSubtree(key: _initialPostKey, child: card) : card;
       },
       separatorBuilder: (context, index) => widget.useDivider ? sizedBoxW8H8 : sizedBoxW4H4,
     );

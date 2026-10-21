@@ -40,3 +40,10 @@ final class ForumChangeThreadFilterStateRequested extends ForumEvent
   /// [FilterState] to change to.
   final FilterState filterState;
 }
+
+/// User requested to load again what failed to load: the page asked last.
+@MappableClass()
+final class ForumRetryRequested extends ForumEvent with ForumRetryRequestedMappable {
+  /// Constructor.
+  const ForumRetryRequested() : super();
+}

@@ -1049,6 +1049,7 @@
   "ratePostPage": {
     "title": "評分",
     "description": "給 $username 在 $floor 樓的貼文評分",
+    "descriptionNoFloor": "給 $username 的貼文評分",
     "reason": "理由",
     "success": "評分成功",
     "noticeAuthor": "通知作者",
@@ -1348,7 +1349,10 @@
     "share": "複製分享連結",
     "openInBrowser": "在瀏覽器中開啟",
     "copyText": "複製文字",
-    "copyPid": "複製pid（${pid: String}）"
+    "copyPid": "複製pid（${pid: String}）",
+    "avatarBlocked": "頭像被屏蔽",
+    "hotReply": "推薦",
+    "jumpToHotFloor": "跳到該樓"
   },
   "postReport": {
     "menu": "檢舉",

@@ -74,3 +74,13 @@ vote, an activity application and its cancel, a best answer and a debate vote;
 `special_v15_reward_bestanswer_refused_action.json` is the forum's refusal of a second best answer, from the plugin's
 acceptance run (`evidence/special280.json`). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
 (and the same rows in `profile_html`), `checkin.last` (and the check-in row), the IP ports. Everything else must not be edited by hand; change the plugin or the tool instead.
+
+Since plugin 2.8.2 the tool's groups `index`, `index_fav`, `forum` and `thread` were fetched again from the test forum
+running 2.8.2 (the forum descriptions as html, `redirect`/`private` of the categories and the subforums, `allreplies`,
+each floor's `avatar_blocked`/`hot`/`hot_position`). `*_282_*.json` (`index_v5_282_*`: forum 7 with a description of
+activity links, a link forum 25, a forum 26 the viewer may not enter; `forum_v2_282_*`: subforum 15 with a thread link
+in its description, as a link forum and as a forum the viewer may not enter, forum 11 asked past its last page and past
+the site's limit of pages (`threadmaxpages` 3), and its last page under that limit; `thread_v15_282_*`: the thread of
+the acceptance fixture with the avatars of banned authors hidden, with two hot replies, and with one author's floors)
+are answers of the plugin's 2.8.2 acceptance run (`evidence/audit282.json`), scrubbed with the tool's own functions
+(`scrub`, `normalize`, `normalize_thread`, the index group's pins), as the fixtures of the special threads were.

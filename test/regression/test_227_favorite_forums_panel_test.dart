@@ -669,7 +669,7 @@ void main() {
       getIt.registerFactory<NetClientProvider>(
         () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum),
       );
-      final repo = ForumHomeRepository(favoritesPanelTimeout: timeout);
+      final repo = ForumHomeRepository(documentTimeout: timeout);
       addTearDown(repo.dispose);
       return repo;
     }
@@ -1130,9 +1130,9 @@ void main() {
     });
   });
 
-  test('the app expects plugin 2.8.1; 2.8.0 is older (no favorites panel)', () {
-    expect(expectedTsdmAppVersion, '2.8.1');
+  test('the app expects plugin 2.8.1 or later; 2.8.0 is older (no favorites panel)', () {
+    expect(compareTsdmAppVersions(expectedTsdmAppVersion, '2.8.1'), greaterThanOrEqualTo(0));
     expect(const TsdmAppPluginInfo(version: '2.8.0', api: 1, nodoc: true).olderThanExpected, isTrue);
-    expect(const TsdmAppPluginInfo(version: '2.8.1', api: 1, nodoc: true).olderThanExpected, isFalse);
+    expect(const TsdmAppPluginInfo(version: expectedTsdmAppVersion, api: 1, nodoc: true).olderThanExpected, isFalse);
   });
 }

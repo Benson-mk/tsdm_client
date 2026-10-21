@@ -1049,6 +1049,7 @@
   "ratePostPage": {
     "title": "评分",
     "description": "给 $username 在 $floor 楼的帖子评分",
+    "descriptionNoFloor": "给 $username 的帖子评分",
     "reason": "理由",
     "success": "评分成功",
     "noticeAuthor": "通知作者",
@@ -1348,7 +1349,10 @@
     "share": "复制分享链接",
     "openInBrowser": "在浏览器中打开",
     "copyText": "复制文字",
-    "copyPid": "复制pid（${pid: String}）"
+    "copyPid": "复制pid（${pid: String}）",
+    "avatarBlocked": "头像被屏蔽",
+    "hotReply": "推荐",
+    "jumpToHotFloor": "跳到该楼"
   },
   "postReport": {
     "menu": "举报",
