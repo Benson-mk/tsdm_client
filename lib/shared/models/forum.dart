@@ -22,6 +22,8 @@ final class Forum with ForumMappable {
     this.latestThreadTitle,
     this.latestThreadUserName,
     this.latestThreadUserUrl,
+    this.isPrivate = false,
+    this.redirectUrl,
   });
 
   /// Build a [Forum] from a subforum [s] of a structured forum page answer of the forum's app API (plugin 2.0.0,
@@ -34,10 +36,15 @@ final class Forum with ForumMappable {
   ///   instant) and its author with the member's url by username.
   /// * `subforums` are the forum's own subforums (the page's "子版块: a, b" row), null when there are none as the page
   ///   has no row then; [subThreadList] is never given.
+  /// * `redirect` makes a link forum ([redirectUrl], see [forumRedirectUrlOf]): the page prints no latest thread for
+  ///   it, so none is given whatever `lastpost` holds (plugins before 2.8.1 send one with the subforums of the forum
+  ///   page). `private` (the "我收藏的版块" panel of the homepage, plugin 2.8.1) gives [isPrivate].
   factory Forum.fromApi(Map<String, dynamic> s) {
     final fid = _apiInt(s['fid']);
-    final redirect = _apiText(s['redirect']);
-    final lastPost = s['lastpost'] is Map<String, dynamic> ? s['lastpost'] as Map<String, dynamic> : null;
+    final redirectUrl = forumRedirectUrlOf(_apiText(s['redirect']), fid);
+    final lastPost = redirectUrl == null && s['lastpost'] is Map<String, dynamic>
+        ? s['lastpost'] as Map<String, dynamic>
+        : null;
     final lastPostAuthor = lastPost == null ? null : _apiText(lastPost['author']);
     final latestThreadTime = lastPost == null ? null : _apiTime(lastPost['dateline']);
     final todayCount = _apiInt(s['todayposts']);
@@ -50,7 +57,7 @@ final class Forum with ForumMappable {
 
     return Forum(
       forumID: fid,
-      url: redirect.isNotEmpty ? redirect : '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+      url: redirectUrl ?? '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
       name: _apiText(s['name']),
       iconUrl: _apiText(s['icon']),
       threadCount: _apiInt(s['threads']),
@@ -67,7 +74,35 @@ final class Forum with ForumMappable {
           ? null
           : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPostAuthor)}',
       subForumList: subForumList.isEmpty ? null : subForumList,
+      isPrivate: _apiInt(s['private']) == 1,
+      redirectUrl: redirectUrl,
     );
+  }
+
+  /// The address of the link forum [fid] whose `redirect` setting is [redirect], as [redirectUrl] keeps it; null when
+  /// [redirect] is empty (not a link forum).
+  ///
+  /// The setting is whatever the site wrote: it is resolved on the forum (a relative address) and kept only when it
+  /// is a web address (`http`, `https`, with a host). Anything else (an address that does not parse, another scheme
+  /// such as `javascript:`, `intent:` or `file:`) gives the forum's own page, which the forum redirects to the
+  /// address as it does on the web page: one forum's setting never fails the page that lists it.
+  static String? forumRedirectUrlOf(String redirect, int fid) {
+    final text = redirect.trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    Uri? uri;
+    try {
+      final parsed = Uri.tryParse(text);
+      uri = parsed == null ? null : Uri.parse('$baseUrl/').resolveUri(parsed);
+    } on FormatException {
+      uri = null;
+    }
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https')) || uri.host.isEmpty) {
+      talker.warning('link forum $fid: not a web address, the forum page is opened instead');
+      return '$baseUrl/forum.php?mod=forumdisplay&fid=$fid';
+    }
+    return uri.toString();
   }
 
   /// Forum id.
@@ -116,6 +151,17 @@ final class Forum with ForumMappable {
 
   /// Url of the latest thread.
   final String? latestThreadUserUrl;
+
+  /// Whether the viewer may not enter the forum and the page prints "私密版块" in place of its latest thread (a forum
+  /// the site still lists to those who may not enter, `hideprivate` off).
+  final bool isPrivate;
+
+  /// The address a link forum (the page prints "链接到外部地址" in place of its counts and latest thread) leads to,
+  /// opened in the browser as the page opens it in a new window; null for any other forum.
+  ///
+  /// The `redirect` of the forum's app API, a web address ([forumRedirectUrlOf]); read from the web page, which prints
+  /// no address, the forum's own page, which the forum redirects to it.
+  final String? redirectUrl;
 
   /// Is current forum in expanded layout when parsing from server side
   /// html document.

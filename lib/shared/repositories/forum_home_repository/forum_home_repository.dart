@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
 
 import 'package:fpdart/fpdart.dart';
@@ -27,12 +28,39 @@ import 'package:tsdm_client/utils/logger.dart';
 /// answer, whose `document` holds the blocks of the page) is kept as its document ([ForumHomeWebPage]), parsed as
 /// the web page always was.
 ///
+/// Callers that ask while a fetch is on its way for the same session share it ([fetchHomePage]): the homepage and the
+/// topics tab loading together cost one request.
+///
+/// The "我收藏的版块" panel comes with the structured answer since plugin 2.8.1 (`favorites`). An answer of an older
+/// plugin names the viewer's favorite forums by id only; the topics tab, the only page showing the panel, then asks
+/// for it ([requestFavoritesPanel]): the page is asked once more without `nodoc=1`, in the background, and that
+/// answer, which carries the `document` the panel is read from, is published as the page. The homepage never waits
+/// for it.
+///
 /// **Need to call dispose.**
 final class ForumHomeRepository with LoggerMixin {
+  /// Constructor.
+  ///
+  /// [favoritesPanelTimeout] is how long [requestFavoritesPanel] waits for the page with its document.
+  ForumHomeRepository({this.favoritesPanelTimeout = const Duration(seconds: 10)});
+
+  /// How long [requestFavoritesPanel] waits for the page with its document before the page stays without it.
+  final Duration favoritesPanelTimeout;
+
   final _dailyRewards = DailyRewardsRepository();
 
   /// Cached page of the forum homepage.
   ForumHomePage? _page;
+
+  /// The session [_page] was asked with.
+  _Session? _pageSession;
+
+  /// The fetch on its way, and the session it was asked with: callers asking meanwhile for the same session share it.
+  Future<Either<AppException, ForumHomePage>>? _pending;
+  _Session? _pendingSession;
+
+  /// The page the panel was last asked for ([requestFavoritesPanel]): asked once per page.
+  ForumHomePage? _panelAskedFor;
 
   /// Every page fetched from the server, the latest one replayed to new listeners.
   final _pageSubject = BehaviorSubject<ForumHomePage>();
@@ -47,8 +75,13 @@ final class ForumHomeRepository with LoggerMixin {
   /// Get the cached [_page].
   ForumHomePage? getCache() => _page;
 
-  /// Drop the cached page so the next fetch goes to the server.
-  void invalidate() => _page = null;
+  /// Drop the cached page so the next fetch goes to the server, and let no later caller share a fetch on its way.
+  void invalidate() {
+    _page = null;
+    _pageSession = null;
+    _pending = null;
+    _pendingSession = null;
+  }
 
   /// Release the stream.
   Future<void> dispose() async {
@@ -56,39 +89,117 @@ final class ForumHomeRepository with LoggerMixin {
   }
 
   /// Fetch the home page of app from server.
+  ///
+  /// Without [force], the cached page, or the fetch on its way for the session in use now when there is one. A
+  /// forced fetch always asks the server: it may follow a change (a favorite added) that a fetch on its way missed.
   AsyncEither<ForumHomePage> fetchHomePage({bool force = false}) => AsyncEither(() async {
     debug('fetch home page');
     if (!force && _page != null) {
       debug('use cached home page');
       return right(_page!);
     }
-
-    final pageEither = await _fetchForumHome().run();
-    if (pageEither.isLeft()) {
-      return left(pageEither.unwrapErr());
+    final session = _sessionNow();
+    final pending = _pending;
+    if (!force && pending != null && _pendingSession == session) {
+      debug('join the home page fetch on its way');
+      return pending;
     }
-
-    final page = pageEither.unwrap();
-    _page = page;
-    if (!_pageSubject.isClosed) {
-      _pageSubject.add(page);
+    final fetch = _fetchAndKeep(session);
+    _pending = fetch;
+    _pendingSession = session;
+    try {
+      return await fetch;
+    } finally {
+      if (identical(_pending, fetch)) {
+        _pending = null;
+        _pendingSession = null;
+      }
     }
-    debug('use fetched home page');
-    return right(page);
   });
+
+  /// Fetch the page asked with [session], then keep and publish it.
+  Future<Either<AppException, ForumHomePage>> _fetchAndKeep(_Session session) async {
+    final pageEither = await _fetchForumHome().run();
+    if (pageEither case Right(value: final page)) {
+      _page = page;
+      _pageSession = session;
+      if (!_pageSubject.isClosed) {
+        _pageSubject.add(page);
+      }
+      debug('use fetched home page');
+    }
+    return pageEither;
+  }
+
+  /// Read the "我收藏的版块" panel of [page] from the web page, in the background: for the topics tab, when [page] is an
+  /// answer of plugin 2.3.0 to 2.8.0 that names favorite forums without their panel ([favoritesPanelNeedsDocument]).
+  ///
+  /// The page is asked once more without `nodoc=1` (the answer keeps its `document`), with the client of the session
+  /// in use, waiting at most [favoritesPanelTimeout]. That answer is cached and published on [pageStream] (the topics
+  /// tab reads the panel from it, `forumGroupsFromApi`) only when it is the structured page served to the account
+  /// [page] was served to, the session [page] was asked with is still the one in use, and [page] is still the cached
+  /// page; otherwise, or when it fails, [page] stays, and its panel is looked up among the categories.
+  ///
+  /// Nothing is asked for any other page, one that is not the cached page any more, or a page it was asked for already.
+  Future<void> requestFavoritesPanel(ForumHomePage page) async {
+    if (page is! ForumHomeApiPage || !favoritesPanelNeedsDocument(page.json)) {
+      return;
+    }
+    final session = _sessionNow();
+    if (!identical(page, _page) || identical(page, _panelAskedFor) || session != _pageSession) {
+      return;
+    }
+    _panelAskedFor = page;
+    debug('favorite forums without their panel (plugin before 2.8.1): asking the homepage with its document');
+    final Either<AppException, ForumHomePage> answer;
+    try {
+      answer = await _askPage(getIt.get<NetClientProvider>(), withDocument: true).timeout(favoritesPanelTimeout);
+    } on TimeoutException {
+      warning('homepage with its document timed out, panel not read');
+      return;
+    } on Object catch (e) {
+      warning('homepage with its document failed: $e, panel not read');
+      return;
+    }
+    final ForumHomeApiPage full;
+    switch (answer) {
+      case Right(value: final ForumHomeApiPage value) when value.json['ok'] == 1 && value.servedUid == page.servedUid:
+        full = value;
+      case Right(:final value):
+        warning('homepage with its document is another page (served to ${value.servedUid}), panel not read');
+        return;
+      case Left(:final value):
+        warning('homepage with its document failed: $value, panel not read');
+        return;
+    }
+    if (!identical(page, _page) || _sessionNow() != session) {
+      debug('homepage with its document dropped: the page or the session changed meanwhile');
+      return;
+    }
+    _page = full;
+    if (!_pageSubject.isClosed) {
+      _pageSubject.add(full);
+    }
+  }
 
   /// Fetch the topic page of app from server.
   ///
   /// The topics tab shows the same `forum.php` as the homepage, so this is the same cache and the same fetch.
   AsyncEither<ForumHomePage> fetchTopicPage({bool force = false}) => fetchHomePage(force: force);
 
+  /// The [homePage] asked in the JSON mode without [tsdmAppNodocQuery]: the answer keeps its `document`.
+  static const _homePageWithDocument = '$homePage?$tsdmAppJsonQuery';
+
   /// Ask [client] for the [homePage] once: the structured answer of plugin 2.3.0 ([indexApiAnswerOf]), or the
-  /// document of any other answer.
+  /// document of any other answer. Lean (`nodoc=1`), or with its `document` when [withDocument].
   ///
   /// An answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or an empty body) is a
   /// failed request, not a forum without boards.
-  static Future<Either<AppException, ForumHomePage>> _askPage(NetClientProvider client) async {
-    switch (await client.get(withTsdmAppJson(homePage)).run()) {
+  static Future<Either<AppException, ForumHomePage>> _askPage(
+    NetClientProvider client, {
+    bool withDocument = false,
+  }) async {
+    switch (await client.get(withDocument ? _homePageWithDocument : withTsdmAppJson(homePage)).run()) {
       case Left(:final value):
         return left(value);
       case Right(:final value):
@@ -162,4 +273,14 @@ final class ForumHomeRepository with LoggerMixin {
     if (!isCurrent()) return left(IdentityChangedException());
     return first;
   });
+}
+
+/// The account the global cookie names and the session of it it holds ([CookieProvider.generation]); null fields
+/// without a cookie provider (tests).
+typedef _Session = ({int? uid, int? generation});
+
+/// The session in use now.
+_Session _sessionNow() {
+  final cookie = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>() : null;
+  return (uid: cookie?.userLoginInfo.uid, generation: cookie?.generation);
 }
