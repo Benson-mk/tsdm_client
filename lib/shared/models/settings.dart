@@ -251,6 +251,13 @@ enum SettingsKeys<T> implements Comparable<SettingsKeys<T>> {
   /// Only floors whose bbcode the forum's app API gives (plugin 2.7.0, the account sees the whole content) and whose
   /// tags the app renders faithfully; every other floor keeps the forum's html. Off by default.
   enableAppPostRenderer<bool>(name: 'enableAppPostRenderer', type: bool, defaultValue: false),
+
+  /// Title of the pinned thread group (the tabs of the forum homepage block: 最新活动, 见习天使, ..., 发帖排行) last
+  /// selected in the one card of the phone homepage.
+  ///
+  /// Kept by title, the groups have no other stable key; empty or a title the homepage no longer has selects the first
+  /// group. One value for every account.
+  homepagePinnedGroup<String>(name: 'homepagePinnedGroup', type: String, defaultValue: ''),
   ;
 
   const SettingsKeys({required this.name, required this.type, required this.defaultValue});

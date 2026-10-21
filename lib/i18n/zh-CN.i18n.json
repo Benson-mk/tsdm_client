@@ -585,12 +585,45 @@
     "featureRequestAction": "到 GitHub 提出功能需求",
     "featureRequestOpenFailed": "无法打开浏览器，请重试，或复制下方链接自行打开。",
     "donationTitle": "自愿赞助",
-    "donationDescription": "本项目免费开源，欢迎自愿赞助，支持客户端的开发与维护。赞助由维护者 Carinoasd 个人收取，非论坛官方募款；是否赞助不影响功能使用。",
+    "donationDescription": "本项目免费开源，欢迎自愿赞助，支持客户端的开发与维护。赞助由维护者 Carinoasd 个人收取，同样可以领取论坛「支援天使」公告的奖励（见下方）；是否赞助不影响功能使用。",
     "donationInstructions": "使用支付宝扫码，或截图后在支付宝扫一扫中选择图片。也可以保存原图。",
     "donationCodeLabel": "支付宝自愿赞助二维码，收款人为 Carinoasd",
     "saveDonationCode": "保存赞助码",
     "donationCodeSaved": "赞助码已保存。",
     "donationCodeSaveFailed": "无法保存赞助码，请重试或使用截图。",
+    "forumReward": {
+      "title": "论坛奖励",
+      "description": "赞助 App 开发同样可以获得论坛「支援天使」公告的奖励，标准与公告相同。",
+      "separator": "：",
+      "tier50": {
+        "amount": "满 50 元",
+        "reward": "纪念等级「梦幻天使」，以及 300 威望、1500 天使币、50 宣传点（其他金额按此标准的倍数计算）"
+      },
+      "tier100": {
+        "amount": "满 100 元",
+        "reward": "永久纪念勋章「瓶中MIKU」"
+      },
+      "tier200": {
+        "amount": "满 200 元",
+        "reward": "「梦幻天使2」等级（该用户组签到积分加倍），并额外获得「瞌睡天使」勋章"
+      },
+      "tierEvery100": {
+        "amount": "之后每满 100 元",
+        "reward": "一枚有特殊意义的永久周年纪念勋章"
+      },
+      "tier500": {
+        "amount": "满 500 元",
+        "reward": "可在「梦幻天使X」与「梦幻天使Y」之间选择"
+      },
+      "claimTitle": "领取方式",
+      "claim": "付款时在支付宝的备注里写上你的论坛用户名（或 UID），奖励会发到这个账号，不用另外私信。",
+      "account": "你的论坛账号：${username}（UID ${uid}）",
+      "accountNoUid": "你的论坛账号：${username}",
+      "copyUsername": "复制用户名",
+      "usernameCopied": "已复制用户名，付款时贴到备注里即可。",
+      "notLoggedIn": "请在备注里写上你的论坛用户名。",
+      "viewAnnouncement": "查看论坛公告"
+    },
     "title": "关于",
     "whatIsThis": "这是？",
     "description": "天使动漫论坛官方跨平台客户端",
