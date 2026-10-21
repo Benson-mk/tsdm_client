@@ -1,0 +1,415 @@
+{
+ "_about": "The text the html muncher renders each real sample of test/data to (rich text by rich text, images as an underlined mark, icons left out, email addresses as <email>), see test_228_munch_whitespace_test.dart: before and after the fix of the white space collapsing where they differ, the one text where they do not. Recorded by running that test with MUNCH_WHITESPACE_DUMP set, with the muncher before the fix and after it.",
+ "samples": {
+  "test/data/chat_history_bare_url_x5.html#pm0": {
+   "before": "«您\n\n[tsdm_client X5 修復版 自動測試] 私訊 #n1，可忽略。\n5 天前»\n",
+   "after": "«您\n \n[tsdm_client X5 修復版 自動測試] 私訊 #n1，可忽略。\n5 天前»\n"
+  },
+  "test/data/chat_history_bare_url_x5.html#pm1": {
+   "before": "«￼Alice\n分享帖子: 链接测试 https://www.tsdm39.com/forum.php?mod=viewthread&tid=1264975\n3 秒前»\n«@»\n",
+   "after": "«￼Alice  \n分享帖子: 链接测试 https://www.tsdm39.com/forum.php?mod=viewthread&tid=1264975\n3 秒前»\n«@»\n"
+  },
+  "test/data/chat_history_bare_url_x5.html#pm2": "",
+  "test/data/email_protection_post_x5.html#body": {
+   "before": "«[tsdm_client X5 修復版 自動測試] 電子郵件連結樣本，可忽略。￼寫信給我另一種寫法 ￼<email>\n純文字 ￼<email>»\n",
+   "after": "«[tsdm_client X5 修復版 自動測試] 電子郵件連結樣本，可忽略。￼寫信給我 另一種寫法 ￼<email>\n純文字 ￼<email>»\n"
+  },
+  "test/data/locked_purchase_x5.html#pcb0": "«[img]\n￼https://mora.jp/package/43000100/SEXX03272B00Z_48/\n\n■ tuki.、新曲「バブル」をリリース\n\nバブル - Bubble\ntuki.\nレーベル\n配信開始日\n収録曲数\n収録時間\n販売データ\nThe Lunar Landing Plan\n2026.08.23\n全1曲\n03:18\nハイレゾ｜FLAC｜48.0kHz/24bit»\n",
+  "test/data/notice_friend_request_x5.html#notice0": {
+   "before": "«￼Alice请求加您为好友，附言：附言样例  ￼批准申请»\n«@»\n",
+   "after": "«￼Alice 请求加您为好友，附言：附言样例  ￼批准申请»\n«@»\n"
+  },
+  "test/data/notice_read_x5.html#notice0": {
+   "before": "«￼Alice回复了您的帖子 ￼測試測試測試測試￼查看»\n«@»\n",
+   "after": "«￼Alice 回复了您的帖子 ￼測試測試測試測試   ￼查看»\n«@»\n"
+  },
+  "test/data/pm_list_bare_url_x5.html#pm0": {
+   "before": "«￼Alice对 您\n说 :\n分享帖子: 链接测试 https://www.tsdm39.com/forum.php?mod=viewthreadtid=1264975    \n2 秒前\n\n共 2 条\n￼菜单| \n￼回复»\n«@»\n",
+   "after": "«￼Alice 对 您\n说 :\n分享帖子: 链接测试 https://www.tsdm39.com/forum.php?mod=viewthreadtid=1264975  \n2 秒前\n\n  共 2 条\n￼菜单 | ￼回复»\n«@»\n"
+  },
+  "test/data/post_div_align_x5.html#body": "«￼\n\n\n￼\n\n\n￼\n\n\n活动时间\n\n·2026.03.28——2026.04.03\n\n活动规则\n\n·请务必按照答题格式回答题目，如果没有按照答题格式回答问题且经过两次提醒后依旧不改，则版区保留不给评分的权利；\n·最高可获得25WW+50TSB+若干TR/FH；\n·不要回复无关内容或使用小号多次回答，严禁抄袭、AI作答；\n·本帖已开启仅回帖者可见；\n·评分后再次编辑将不会重新评分；\n·对本次活动存在疑问可私信咨询版主。\n\n活动内容\n\n在《葬送的芙莉莲》第二期第10集里，面对同事的劝阻，邓肯还是决定去黄金乡。\n\n【PART 1】\n\n在其他ACGN作品中，有哪些头也不回的剧情（想去的地方、想做的事情有困难面对他人的劝阻依旧选择去或者做）呢？请举出一例，并附上相关剧情（需要相关截图，至少20字）\n\n【PART 2】\n\n明明有困难，为什么依然想要去、想要做呢，写出你的选择并说明原因（至少25字）\n\n答题卡￼»\n«欢迎参与《葬送的芙莉莲》第二期活动»\n«[img]»\n«本期的主题是头也不回»\n«Code Block»\n«【PART 1】\n作品：\n头也不回的剧情：\n截图：\n\n【PART 2】\n明明有困难，为什么依然想要去、想要做：\n原因：\n»\n",
+  "test/data/red_packet_post_x5.html#pcb0": "«￼\nRT，測試一下，再加上DK進世界賽 真的是蠻爽的，發紅包來慶祝一下\n許哥戰隊牛逼，偉大無須多言»\n«許哥牛逼»\n«均分紅包 · 剩 0/25 份 · 已被搶光»\n",
+  "test/data/spoiler_post_x5.html#postmessage_1000": "«折叠标签测试（测试账号发的，可忽略）\nA 正确嵌套：￼\n\nB 错误嵌套（模拟编辑器上色）：￼»\n«Spoiler Block»\n«测试折叠A»\n«Spoiler Block»\n«测试折叠B»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message0": "«BU pm GC1 第一則 由 B 發（gc1b1_1789176308198）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message1": "«BU pm GC1 B 的新發言（gc1b2_1789176308198）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message2": "«BU pm GC1 C 的新發言（gc1c1_1789176308198）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message3": "«BU pm GC1 B 的新發言（gc1b2_1789176308198_1789176956916）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message4": "«BU pm GC1 C 的新發言（gc1c1_1789176308198_1789176956916）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message5": "«BU pm GC1 B 的手機版發言（gc1bm_1789176308198_1789177110564）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message6": "«BU pm GC1 B 的新發言（gc1b2_1789176308198_1789177497980）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message7": "«BU pm GC1 C 的新發言（gc1c1_1789176308198_1789177497980）»\n",
+  "test/data/tsdmapp/pm_v11_chat.json#message8": "«BU pm GC1 B 的手機版發言（gc1bm_1789176308198_1789177649330）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message0": "«BU 試用：B 私訊 A（1789151263072）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message1": "«BU pm B 私訊 A（bpm_1789176308198）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message2": "«BU pm B 拉黑後私訊 A（bpm2_1789176308198）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message3": "«BU pm B 拉黑後私訊 A（bpm2_1789176308198_1789176956916）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message4": "«BU pm B 拉黑後私訊 A（bpm2_1789176308198_1789177497980）»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message5": "«NC858969ag_low [​b]粗體[​/b] [​url=http://ad.example.com]廣告連結[​/url] [​color=red]紅字[​/color] [​img]http://ad.example.com/a.png[​/img] [url=home.php?mod=space&uid=35]@ag_low2[/url]»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message6": "«NC894563ag_low [​b]粗體[​/b] [​url=http://ad.example.com]廣告連結[​/url] [​color=red]紅字[​/color] [​img]http://ad.example.com/a.png[​/img] [url=home.php?mod=space&uid=35]@ag_low2[/url]»\n",
+  "test/data/tsdmapp/pm_v11_view.json#message7": "«NC117391ag_low [​b]粗體[​/b] [​url=http://ad.example.com]廣告連結[​/url] [​color=red]紅字[​/color] [​img]http://ad.example.com/a.png[​/img] [url=home.php?mod=space&uid=35]@ag_low2[/url]»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message0": "«精品动漫资源 查看网址: funv99.com cvbrji»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message1": "«你好 代刷 便宜 czr1qd»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message2": "«我們的論壇 [​url]https://www.tsdm39.com/forum.php?mod=viewthread&tid=9199345[​/url] dwabqd»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message3": "«￼关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子\n看這帖 dwabqf»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message4": "«精品动漫资源 查看网址: funv99.com dwabqg»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message5": "«精品动漫资源 查看网址: funv99.com dwabqi»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message6": "«￼关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子\n看這帖 [​b]粗[​/b] e0giqh»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message7": "«[​url=https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=3955&ptid=9199345][​b][​color=red][​size=7]关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子[​/size][​/color][​/b][​/url]\n竄改測試 e0giqi»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message8": "«￼关于您在“測試[​b]粗[​/b]標題e0giq”的帖子\n看標題 e0giqk»\n",
+  "test/data/tsdmapp/pm_v11_view_last.json#message9": "«看 funv99.com fsknld»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message0": "«你好 代刷 便宜 6io4zd»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message1": "«你好 代刷 便宜 6k0isd»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message2": "«我們的論壇 [​url]https://www.tsdm39.com/forum.php?mod=viewthread&tid=9199345[​/url] 7dbmgd»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message3": "«[​url=https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=3955&ptid=9199345][​b]关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子[​/b][​/url]\n看這帖 7dbmgf»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message4": "«精品动漫资源 查看网址: funv99.com 7dbmgi»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message5": "«我們的論壇 [​url]https://www.tsdm39.com/forum.php?mod=viewthread&tid=9199345[​/url] 7hxead»\n",
+  "test/data/tsdmapp/pm_v11_view_p1.json#message6": "«[​url=https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=3955&ptid=9199345][​b]关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子[​/b][​/url]\n看這帖 7hxeaf»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message0": "«精品动漫资源 查看网址: funv99.com bkty5g»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message1": "«精品动漫资源 查看网址: funv99.com bkty5i»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message2": "«￼关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子\n看這帖 [​b]粗[​/b] cnqsuh»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message3": "«[​url=https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=3955&ptid=9199345][​b][​color=red][​size=7]关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子[​/size][​/color][​/b][​/url]\n竄改測試 cnqsui»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message4": "«￼关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子\n看這帖 [​b]粗[​/b] cr0ylh»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message5": "«[​url=https://www.tsdm39.com/forum.php?mod=redirect&goto=findpost&pid=3955&ptid=9199345][​b][​color=red][​size=7]关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子[​/size][​/color][​/b][​/url]\n竄改測試 cr0yli»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message6": "«￼关于您在“測試[​b]粗[​/b]標題cr0yl”的帖子\n看標題 cr0ylk»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message7": "«我們的論壇 [​url]https://www.tsdm39.com/forum.php?mod=viewthread&tid=9199345[​/url] cvbrjd»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message8": "«￼关于您在“[Rulebot multi fixture 20260930-101846] FID2 版規問答測試”的帖子\n看這帖 cvbrjf»\n",
+  "test/data/tsdmapp/pm_v11_view_p2.json#message9": "«精品动漫资源 查看网址: funv99.com cvbrjg»\n",
+  "test/data/tsdmapp/profile_v4_other_admin.json#usersig": "«￼簽名裡的舊網域連結»\n",
+  "test/data/tsdmapp/s3_index.html#pm0": {
+   "before": "«•  [img]￼ag_low\n•  [img]￼ag_admin»\n«@»\n«@»\n",
+   "after": "«•  [img] ￼ag_low\n•  [img] ￼ag_admin»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_applied.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n4 人\n2026-10-22 08:50您的加入申请已发出，请等待发起者审批\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (4 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_low2»\n«@»\n«@»\n«»\n«自付»\n«刚刚\n»\n«￼[img]￼ag_low»\n«@»\n«@»\n«»\n«自付»\n«刚刚\n»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人\n4 人\n2026-10-22 08:50\n您的加入申请已发出，请等待发起者审批\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (4 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_low2»\n«@»\n«@»\n«»\n«自付»\n«刚刚\n»\n«￼[img] ￼ag_low»\n«@»\n«@»\n«»\n«自付»\n«刚刚\n»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_author_sees_pending.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n|\n￼邀请\n￼管理￼导出\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (4 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_low2»\n«@»\n«@»\n«APPLY_JSON_222088»\n«自付»\n«刚刚\n»\n«￼[img]￼ag_low»\n«@»\n«@»\n«APPLY_WEB_222088»\n«自付»\n«刚刚\n»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«COMPLETE_MSG_222088»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«PENDING_MSG_222088»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人 |\n￼邀请\n ￼管理   ￼导出\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (4 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_low2»\n«@»\n«@»\n«APPLY_JSON_222088»\n«自付»\n«刚刚\n»\n«￼[img] ￼ag_low»\n«@»\n«@»\n«APPLY_WEB_222088»\n«自付»\n«刚刚\n»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«COMPLETE_MSG_222088»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«PENDING_MSG_222088»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_closed.json#5825": {
+   "before": "«測試活動前天 08:50\nPLACE_222088不限\n人\n2026-10-21 07:50\n活動 A2_BODY_222088 活動說明»\n",
+   "after": "«測試活動\n前天 08:50\nPLACE_222088\n不限\n人\n2026-10-21 07:50\n活動 A2_BODY_222088 活動說明»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_complete_data.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_credit_no_lowerlimit.json#5826": {
+   "before": "«測試活動2026-10-23 08:50PLACE_222088不限\n人\n1 人\n\n活動 A3_BODY_222088 活動說明\n暂未通过 (1 人)\n￼»\n«»\n«留言»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50\nPLACE_222088\n不限\n人\n1 人\n活動 A3_BODY_222088 活動說明\n暂未通过 (1 人)\n￼»\n« »\n«留言»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_credit_not_enough.json#5826": {
+   "before": "«測試活動2026-10-23 08:50PLACE_222088不限\n人\n1 人\n\n活動 A3_BODY_222088 活動說明\n暂未通过 (1 人)\n￼»\n«»\n«留言»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50\nPLACE_222088\n不限\n人\n1 人\n活動 A3_BODY_222088 活動說明\n暂未通过 (1 人)\n￼»\n« »\n«留言»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_open_guest.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_open_member.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人\n4 人\n2026-10-22 08:50\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_activity_verified.json#5824": {
+   "before": "«測試活動2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088不限\n10 元人\n4 人\n2026-10-22 08:50您已经参加了此活动\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n«»\n«留言»\n«每人花销»\n«申请时间»\n«￼[img]￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img]￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n",
+   "after": "«測試活動\n2026-10-23 08:50 至 2026-10-24 08:50 商定\nPLACE_222088\n不限\n10 元\n人\n4 人\n2026-10-22 08:50\n您已经参加了此活动\n活動 A1_BODY_222088 活動說明\n已通过 (1 人)\n￼\n\n暂未通过 (2 人)\n￼»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mod»\n«@»\n«@»\n«我會到 VERIFIED_MSG_222088»\n«10 元»\n«1 小时前\n»\n« »\n«留言»\n«每人花销»\n«申请时间»\n«￼[img] ￼ag_mid»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n«￼[img] ￼ag_t01»\n«@»\n«@»\n«»\n«自付»\n«1 小时前\n»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_ended_result.json#6301": {
+   "before": "«裁判观点: 正方勝UMPIRE_925316最佳辩手: ag_low\n辯論 D2_BODY_925316 辯論說明结束时间: 2026-10-21 09:41 裁判: ag_mod正方观点 (0)正方觀點 AFF_925316\n反方观点 (0)反方觀點 NEG_925316\n•  ￼[img]￼ag_low»\n«@»\n«@»\n",
+   "after": "«裁判观点: 正方勝 UMPIRE_925316最佳辩手: ag_low\n辯論 D2_BODY_925316 辯論說明结束时间: 2026-10-21 09:41 裁判: ag_mod正方观点 (0) 正方觀點 AFF_925316\n反方观点 (0) 反方觀點 NEG_925316\n•  ￼[img] ￼ag_low»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_ended_result.json#6302": "«D2 正方發言（ag_low）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_ended_result.json#affirmpoint_html": "«正方觀點 AFF_925316»\n",
+  "test/data/tsdmapp/special_v15_debate_ended_result.json#negapoint_html": "«反方觀點 NEG_925316»\n",
+  "test/data/tsdmapp/special_v15_debate_ended_result.json#umpirepoint": {
+   "before": "«正方勝UMPIRE_925316»\n",
+   "after": "«正方勝 UMPIRE_925316»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_no_endtime.json#6303": {
+   "before": "«辯論 D3_BODY_925316 辯論說明正方观点 (0)正方觀點 AFF_925316\n反方观点 (0)反方觀點 NEG_925316»\n",
+   "after": "«辯論 D3_BODY_925316 辯論說明正方观点 (0) 正方觀點 AFF_925316\n反方观点 (0) 反方觀點 NEG_925316»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_no_first_floor.json#6298": "«正方發言（ag_low）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_open_guest.json#6297": {
+   "before": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1)正方觀點 AFF_925316\n反方观点 (0)反方觀點 NEG_925316\n•  ￼[img]￼ag_low\n•  ￼[img]￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n",
+   "after": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1) 正方觀點 AFF_925316\n反方观点 (0) 反方觀點 NEG_925316\n•  ￼[img] ￼ag_low\n•  ￼[img] ￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_open_guest.json#6299": "«反方發言（ag_mid）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_open_guest.json#6300": "«中立發言（ag_t01）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_open_member.json#6297": {
+   "before": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1)正方觀點 AFF_925316\n反方观点 (0)反方觀點 NEG_925316\n•  ￼[img]￼ag_low\n•  ￼[img]￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n",
+   "after": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1) 正方觀點 AFF_925316\n反方观点 (0) 反方觀點 NEG_925316\n•  ￼[img] ￼ag_low\n•  ￼[img] ￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_p2_argued.json#6314": "«D4 中立發言 7（ag_t01）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_p2_argued.json#6315": "«D4 中立發言 8（ag_t01）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_p2_argued.json#6316": "«D4 第 2 頁的正方發言（ag_low）925316»\n",
+  "test/data/tsdmapp/special_v15_debate_umpire_voted.json#6297": {
+   "before": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1)正方觀點 AFF_925316\n反方观点 (0)反方觀點 NEG_925316\n•  ￼[img]￼ag_low\n•  ￼[img]￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n",
+   "after": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (1) 正方觀點 AFF_925316\n反方观点 (0) 反方觀點 NEG_925316\n•  ￼[img] ￼ag_low\n•  ￼[img] ￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_debate_voted.json#6297": {
+   "before": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (2)正方觀點 AFF_925316\n反方观点 (1)反方觀點 NEG_925316\n•  ￼[img]￼ag_low\n•  ￼[img]￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n",
+   "after": "«辯論 D1_BODY_925316 辯論說明结束时间: 2026-10-23 09:51 裁判: ag_mod正方观点 (2) 正方觀點 AFF_925316\n反方观点 (1) 反方觀點 NEG_925316\n•  ￼[img] ￼ag_low\n•  ￼[img] ￼ag_mid»\n«@»\n«@»\n«@»\n«@»\n"
+  },
+  "test/data/tsdmapp/special_v15_poll_banned_first_low2.json#5792": "«￼»\n«Blocked content»\n«This post has been blocked by administrator or moderator»\n",
+  "test/data/tsdmapp/special_v15_poll_banned_first_mod.json#5792": "«￼\nPOLL_P5_BODY_222088 首樓單帖屏蔽»\n«Blocked content»\n«This post has been blocked by administrator or moderator»\n",
+  "test/data/tsdmapp/special_v15_poll_expired.json#5790": "«POLL_P3_BODY_222088 已過期»\n",
+  "test/data/tsdmapp/special_v15_poll_image.json#5791": "«POLL_P4_BODY_222088 圖片投票»\n",
+  "test/data/tsdmapp/special_v15_poll_multi_hidden.json#5789": "«POLL_P2_BODY_222088 多選、投票後結果可見»\n",
+  "test/data/tsdmapp/special_v15_poll_multi_mod.json#5789": "«POLL_P2_BODY_222088 多選、投票後結果可見»\n",
+  "test/data/tsdmapp/special_v15_poll_multi_voted.json#5789": "«POLL_P2_BODY_222088 多選、投票後結果可見»\n",
+  "test/data/tsdmapp/special_v15_poll_single_after_vote.json#5788": "«POLL_P1_BODY_222088 單選、結果公開»\n",
+  "test/data/tsdmapp/special_v15_poll_single_author.json#5788": "«POLL_P1_BODY_222088 單選、結果公開»\n",
+  "test/data/tsdmapp/special_v15_poll_single_before.json#5788": "«POLL_P1_BODY_222088 單選、結果公開»\n",
+  "test/data/tsdmapp/special_v15_poll_single_guest.json#5788": "«POLL_P1_BODY_222088 單選、結果公開»\n",
+  "test/data/tsdmapp/special_v15_reward_best_anonymous.json#5821": "«￼\n\n\n悬赏 R8_Q_222088»\n«Bounty»\n«RESOLVED»\n«2 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_best_anonymous.json#5822": "«ANON_BEST_TEXT_222088 匿名的最佳答案»\n",
+  "test/data/tsdmapp/special_v15_reward_best_anonymous.json#5823": "«悬赏 R8 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_best_banned.json#5818": "«￼\n\n\n悬赏 R7_Q_222088»\n«Bounty»\n«RESOLVED»\n«2 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_best_banned.json#5819": "",
+  "test/data/tsdmapp/special_v15_reward_best_banned.json#5820": "«悬赏 R7 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_best_banned_mod.json#5819": "«BANNED_BEST_TEXT_222088 禁止組作者的最佳答案»\n",
+  "test/data/tsdmapp/special_v15_reward_best_password.json#5815": "«￼\n\n\n悬赏 R6_Q_222088»\n«Bounty»\n«RESOLVED»\n«2 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_best_password.json#5816": "",
+  "test/data/tsdmapp/special_v15_reward_best_password.json#5817": "«悬赏 R6 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_open_author.json#5800": "«￼\n\n\nREWARD_R1_Q_222088 問題»\n«Bounty»\n«PROCESSING»\n«2 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_open_author.json#5801": "«R1 的回答（ag_low）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_open_author.json#5802": "«R1 的回答（ag_admin）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved.json#5806": "«￼\n\n\n悬赏 R3_Q_222088»\n«Bounty»\n«RESOLVED»\n«5 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved.json#5807": "«BEST_TEXT_222088 最佳答案的內文»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved.json#5808": "«悬赏 R3 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_author.json#5809": "«￼\n\n\n悬赏 R4_Q_222088»\n«Bounty»\n«RESOLVED»\n«4 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_author.json#5810": "«￼\nBEST_HIDDENREPLY_222088 回帖仅作者可见的最佳答案»\n«Only visible to the thread author»\n«This content only visible to ￼»\n«author»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_author.json#5811": "«￼\n悬赏 R4 的另一個回答（ag_low2）222088»\n«Only visible to the thread author»\n«This content only visible to ￼»\n«author»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_locked.json#5809": "«￼\n\n\n悬赏 R4_Q_222088»\n«Bounty»\n«RESOLVED»\n«4 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_locked.json#5810": "«￼»\n«Only visible to the thread author»\n«This content only visible to ￼»\n«author»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hiddenreply_locked.json#5811": "«悬赏 R4 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hide_excerpt.json#5812": "«￼\n\n\n悬赏 R5_Q_222088»\n«Bounty»\n«RESOLVED»\n«1 coins»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hide_excerpt.json#5813": "«最佳答案藏了字￼\n\nREWARD_HIDE_SECRET_222088\n\n\n之後»\n«Some content requires enough points to be visible»\n«2 points are required»\n",
+  "test/data/tsdmapp/special_v15_reward_resolved_hide_excerpt.json#5814": "«悬赏 R5 的另一個回答（ag_low2）222088»\n",
+  "test/data/tsdmapp/special_v15_trade_author.json#5795": {
+   "before": "«TRADE_T1_INTRO_222088 櫃台說明￼柜台商品管理|\n￼交易记录\n[img]\n￼展开\n\n￼商品一 222088\n全新商品\n3天5小时\n10.00元  \n附加 5天使币\n此商品已被删除\n￼展开\n\n￼商品三 222088\n二手商品\n3天使币»\n",
+   "after": "«TRADE_T1_INTRO_222088 櫃台說明￼柜台商品管理 |\n￼交易记录\n[img]\n￼展开\n\n￼商品一 222088\n全新商品\n3天5小时\n10.00 元   附加 5 天使币\n此商品已被删除\n￼展开\n\n￼商品三 222088\n二手商品\n3 天使币»\n"
+  },
+  "test/data/tsdmapp/special_v15_trade_author.json#5799": "«商品帖裡的一般回覆 222088»\n",
+  "test/data/tsdmapp/special_v15_trade_authorid_filter.json#5795": {
+   "before": "«TRADE_T1_INTRO_222088 櫃台說明￼柜台商品管理|\n￼交易记录»\n",
+   "after": "«TRADE_T1_INTRO_222088 櫃台說明￼柜台商品管理 |\n￼交易记录»\n"
+  },
+  "test/data/tsdmapp/special_v15_trade_guest.json#5795": {
+   "before": "«TRADE_T1_INTRO_222088 櫃台說明[img]\n￼展开\n\n￼商品一 222088\n全新商品\n3天5小时\n10.00元  \n附加 5天使币\n此商品已被删除\n￼展开\n\n￼商品三 222088\n二手商品\n3天使币»\n",
+   "after": "«TRADE_T1_INTRO_222088 櫃台說明[img]\n￼展开\n\n￼商品一 222088\n全新商品\n3天5小时\n10.00 元   附加 5 天使币\n此商品已被删除\n￼展开\n\n￼商品三 222088\n二手商品\n3 天使币»\n"
+  },
+  "test/data/tsdmapp/thread_denied.html#pcb0": "«[img]»\n",
+  "test/data/tsdmapp/thread_hide.html#pcb0": "«公開介紹 HIDETEST￼\n結尾公開￼\n\nHIDDEN_SENTINEL_B»\n«Some content requires reply»\n«￼ to see contents here»\n«Reply»\n«Some content requires enough points to be visible»\n«10 points are required»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb0": "«第10號\n[master]\n[node1]0[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb1": "«第11號\n[master]\n[node1]1[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb2": "«第12號\n[master]\n[node1]2[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb3": "«第13號\n[master]\n[node1]3[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb4": "«第14號\n[master]\n[node1]4[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb5": "«第15號\n[master]\n[node1]5[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb6": "«第16號\n[master]\n[node1]6[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb7": "«第17號\n[master]\n[node1]7[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb8": "«第18號\n[master]\n[node1]8[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_page2.html#pcb9": "«第19號\n[master]\n[node1]9[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_paid.html#pcb0": "",
+  "test/data/tsdmapp/thread_plain.html#pcb0": "«此主題僅供 Rulebot 1.1 多版塊隔離驗證，透過 Discuz 原生流程建立；驗證完畢保留測試證據。»\n",
+  "test/data/tsdmapp/thread_plain.html#pcb1": {
+   "before": "«NC984059ag_mid粗體￼廣告連結紅字[img]@ag_low2»\n",
+   "after": "«NC984059ag_mid 粗體 ￼廣告連結 紅字 [img] @ag_low2»\n"
+  },
+  "test/data/tsdmapp/thread_plain.html#pcb2": "«多版驗收怎麼算？»\n",
+  "test/data/tsdmapp/thread_plain.html#pcb3": "«￼»\n«Only visible to the thread author»\n«This content only visible to ￼»\n«author»\n",
+  "test/data/tsdmapp/thread_plain.html#pcb4": "«NC650591ag_low 編輯 [​i]斜體[​/i] [​size=7]大字[​/size]»\n",
+  "test/data/tsdmapp/thread_plain.html#pcb5": {
+   "before": "«NC650591ag_mid粗體￼廣告連結紅字[img]@ag_low2»\n",
+   "after": "«NC650591ag_mid 粗體 ￼廣告連結 紅字 [img] @ag_low2»\n"
+  },
+  "test/data/tsdmapp/thread_plain.html#pcb6": {
+   "before": "«NC912001off粗體»\n",
+   "after": "«NC912001off 粗體»\n"
+  },
+  "test/data/tsdmapp/thread_plain.html#pcb7": "«NC984059ag_low 編輯 [​i]斜體[​/i] [​size=7]大字[​/size]»\n",
+  "test/data/tsdmapp/thread_plain.html#pcb8": {
+   "before": "«NC048829off粗體»\n",
+   "after": "«NC048829off 粗體»\n"
+  },
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]￼tsdmapp270_cover.png\n\n[img]￼tsdmapp270_paid.png\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip153 Bytes, 下载次数: 7»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img] ￼tsdmapp270_cover.png\n\n[img] ￼tsdmapp270_paid.png\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip 153 Bytes, 下载次数: 7»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4990": "«回覆可見 282713\n本帖隐藏的内容\nHIDE_REPLY_SECRET_282713\n\n之後的字»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4991": "«積分可見￼\n\nHIDE_CREDITS_SECRET_282713»\n«Some content requires enough points to be visible»\n«5 points are required»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4992": "«￼\nAFTER_FREE_282713»\n«FREE_PART_282713»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4993": "«[b]LITERAL_TAGS_282713[/b] bbcodeoff»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4994": "«<b>HTML_ON_282713</b> 原始 HTML»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4995": {
+   "before": "«密碼樓的內文 282713[img]»\n",
+   "after": "«密碼樓的內文 282713 [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4996": "«:) http://example.com/x 不換表情不自動連結 282713»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4997": "«純文字\n第二行 282713\n\n日本語とemoji 😀 結尾»\n",
+  "test/data/tsdmapp/thread_v14_access_noimage.json#4998": "«[payment=5]PAYMENT_TEXT_282713[/payment] X5 沒有這個標籤»\n",
+  "test/data/tsdmapp/thread_v14_attachments.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img]￼tsdmapp270_paid.png\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip153 Bytes, 下载次数: 7»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img] ￼tsdmapp270_paid.png\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip 153 Bytes, 下载次数: 7»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_attachments.json#4995": {
+   "before": "«密碼樓的內文 282713[img]»\n",
+   "after": "«密碼樓的內文 282713 [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_banned_digest.json#5009": "«精華主題首樓 282713»\n",
+  "test/data/tsdmapp/thread_v14_banned_digest.json#5010": "«BANNED_DIGEST_282713 精華主題裡禁止組作者的回覆»\n",
+  "test/data/tsdmapp/thread_v14_banned_digest.json#5011": "«精華主題裡的一般回覆 282713»\n",
+  "test/data/tsdmapp/thread_v14_customcode.json#5022": "«首樓 I 282713»\n",
+  "test/data/tsdmapp/thread_v14_customcode.json#5023": "«自訂代碼 [hide]CUSTOM_HIDE_SECRET_282713[/hide] 之後»\n",
+  "test/data/tsdmapp/thread_v14_customcode.json#5024": {
+   "before": "«前導零\n\n一般[img]»\n",
+   "after": "«前導零\n\n一般 [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_free_paid.json#5003": "«PAID_FREE_INTRO_282713»\n",
+  "test/data/tsdmapp/thread_v14_free_paid.json#5004": "«付費主題裡的一般回覆 282713»\n",
+  "test/data/tsdmapp/thread_v14_guestthumb.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n\n￼登录/注册后可看大图\n\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n￼登录/注册后可看大图\n\n[img]\n￼登录/注册后可看大图\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip153 Bytes, 下载次数: 7»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n                               \n￼登录/注册后可看大图\n\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n￼登录/注册后可看大图\n\n[img]\n￼登录/注册后可看大图\n\n結尾　全形空白與        tab￼tsdmapp270_note.zip 153 Bytes, 下载次数: 7»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_guestthumb.json#4990": "«回覆可見 282713￼\n之後的字»\n«Some content requires reply»\n«￼ to see contents here»\n«Reply»\n",
+  "test/data/tsdmapp/thread_v14_guestthumb.json#4991": "«積分可見￼»\n«Some content requires enough points to be visible»\n«5 points are required, but you only have 0 points»\n",
+  "test/data/tsdmapp/thread_v14_guestthumb.json#4995": "",
+  "test/data/tsdmapp/thread_v14_hiddenreply_attach.json#5005": "«首樓 C 282713»\n",
+  "test/data/tsdmapp/thread_v14_hide_replied.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img]\n結尾　全形空白與        tab￼tsdmapp270_perm.png阅读权限: 100[img]\n￼tsdmapp270_note.zip153 Bytes, 下载次数: 7»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img]\n結尾　全形空白與        tab￼tsdmapp270_perm.png 阅读权限: 100 [img]\n￼tsdmapp270_note.zip 153 Bytes, 下载次数: 7»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_hide_replied.json#4995": {
+   "before": "«密碼樓的內文 282713[img]»\n",
+   "after": "«密碼樓的內文 282713 [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_hide_viewer_not_replied.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n\n\n結尾　全形空白與        tab\n本帖子中包含更多资源\n您需要 ￼登录才可以下载或查看，没有账号？￼立即注册\n×»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n\n\n結尾　全形空白與        tab\n本帖子中包含更多资源\n您需要 ￼登录 才可以下载或查看，没有账号？￼立即注册\n×»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_jammer.json#4989": {
+   "before": "«首樓[img]表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結https://example.com/auto\n粗體紅字大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img]\n結尾　全形空白與        tab￼tsdmapp270_perm.png阅读权限: 100[img]\n￼tsdmapp270_note.zip153 Bytes, 下载次数: 7»\n«引用的話[img]»\n«Code Block»\n«<?php echo 1; ?>»\n",
+   "after": "«首樓 [img] 表情與各種標籤 282713\n￼\n￼\n\n[img]\n￼連結 https://example.com/auto\n粗體 紅字 大字\n•  一\n•  二\n\n￼如果无法播放，请点击此处在新窗口打开\n\n[spoiler=標題]折疊內文[/spoiler]\n[img]\n[img]\n結尾　全形空白與        tab￼tsdmapp270_perm.png 阅读权限: 100 [img]\n￼tsdmapp270_note.zip 153 Bytes, 下载次数: 7»\n«引用的話 [img]»\n«Code Block»\n«<?php echo 1; ?>»\n"
+  },
+  "test/data/tsdmapp/thread_v14_jammer.json#4990": "«回覆可見 282713\n本帖隐藏的内容\nHIDE_REPLY_SECRET_282713\n4 D\" e* B9 w$ ~  e0 @4 T2 n\n之後的字»\n",
+  "test/data/tsdmapp/thread_v14_jammer.json#4995": {
+   "before": "«密碼樓的內文 282713[img]»\n",
+   "after": "«密碼樓的內文 282713 [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_jammer.json#4997": "«純文字\n+ u% a% T& h\" M* P\n第二行 282713: `+ d! q) S( ^6 @( ]2 B\n\n; Q; Q\" z9 h/ m' @2 J9 g, i\n日本語とemoji 😀 結尾»\n",
+  "test/data/tsdmapp/thread_v14_moderate.json#5007": "«PENDING_FIRST_282713 首樓»\n",
+  "test/data/tsdmapp/thread_v14_moderate.json#5008": "«待审核»\n",
+  "test/data/tsdmapp/thread_v14_plain.json#4546": "«原生发帖页。\n￼»\n«￼本主题由 管理团队 于 前天 13:29\n解除置顶»\n",
+  "test/data/tsdmapp/thread_v14_singleban_mod.json#5012": "«非精華主題首樓 282713»\n",
+  "test/data/tsdmapp/thread_v14_singleban_mod.json#5013": "«￼\nSINGLEBAN_282713 單帖屏蔽的回覆»\n«Blocked content»\n«This post has been blocked by administrator or moderator»\n",
+  "test/data/tsdmapp/thread_v14_singleban_mod.json#5014": "«BANNED_PLAIN_282713 非精華主題裡禁止組作者的回覆»\n",
+  "test/data/tsdmapp/thread_v14_smileys.json#4999": "«￼\n\nHIDE_DAYS_SECRET_282713»\n«Some content requires enough points to be visible»\n«2 points are required»\n",
+  "test/data/tsdmapp/thread_v14_smileys.json#5000": {
+   "before": "«[spoiler=折疊]SPOILER_TEXT_282713[/spoiler][img]»\n",
+   "after": "«[spoiler=折疊]SPOILER_TEXT_282713[/spoiler] [img]»\n"
+  },
+  "test/data/tsdmapp/thread_v14_smileys.json#5001": {
+   "before": "«藏在回覆可見裡的附件\n本帖隐藏的内容\nHIDE_ATT_SECRET_282713[img]\n\n之外»\n",
+   "after": "«藏在回覆可見裡的附件\n本帖隐藏的内容\nHIDE_ATT_SECRET_282713 [img]\n\n之外»\n"
+  },
+  "test/data/tsdmapp/thread_v14_smileys.json#5002": "«JSON_SECRET_282713 jsonEditor 的段落»\n",
+  "test/data/tsdmapp/thread_v14_spoofed.json#5015": "«偽造測試首樓 282713»\n",
+  "test/data/tsdmapp/thread_v15_282_author.json#6732": "«2 樓 ag_low：一般回覆（熱門 1）»\n",
+  "test/data/tsdmapp/thread_v15_282_avatar_blocked.json#6731": "«首樓（ag_admin）»\n",
+  "test/data/tsdmapp/thread_v15_282_avatar_blocked.json#6736": "«6 樓 ag_low：匿名»\n",
+  "test/data/tsdmapp/thread_v15_282_avatar_blocked.json#6738": "«8 樓 ag_low2：一般回覆»\n",
+  "test/data/tsdmapp/thread_v15_282_avatar_blocked.json#6739": "«9 樓 ag_low2：一般回覆»\n",
+  "test/data/tsdmapp/thread_v15_282_avatar_blocked.json#6740": "«10 樓 ag_low2：一般回覆»\n",
+  "test/data/tsdmapp/thread_v15_282_hot.json#6742": "«12 樓 ag_low2：一般回覆（熱門 2）»\n",
+  "test/data/tsdmapp/thread_v3_closed.json#3755": {
+   "before": "«￼\n￼\n我今天最想说:「管理员今天也来签到了」.\n￼»\n«本贴是论坛每日签到系统在每天的第一位签到者签到时所自动生成的,如果您还未签到,￼请点此进行签到的操作.»\n«我在2026-09-25 01:06完成签到,是今天第一个签到的用户,获得随机奖励天使币18,另外我还额外获得了天使币10.»\n«￼本主题由 管理团队 于 昨天 20:34\n下沉»\n",
+   "after": "«￼\n￼\n我今天最想说:「管理员今天也来签到了」.\n￼»\n«本贴是论坛每日签到系统在每天的第一位签到者签到时所自动生成的,如果您还未签到,￼请点此进行签到的操作.»\n«我在 2026-09-25 01:06 完成签到,是今天第一个签到的用户,获得随机奖励 天使币 18,另外我还额外获得了 天使币 10.»\n«￼本主题由 管理团队 于 昨天 20:34\n下沉»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3756": {
+   "before": "«￼\n我今天最想说:「超版签到 &amp; 测试 &lt;b&gt;标签&lt;/b&gt;」.»\n«我在2026-09-25 01:06完成签到,是今天第2个签到的用户,获得随机奖励天使币18,另外我还额外获得了天使币9»\n",
+   "after": "«￼\n我今天最想说:「超版签到 &amp; 测试 &lt;b&gt;标签&lt;/b&gt;」.»\n«我在 2026-09-25 01:06 完成签到,是今天第2个签到的用户,获得随机奖励 天使币 18,另外我还额外获得了 天使币 9»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3757": {
+   "before": "«￼\n我今天最想说:「区版主签到一下」.»\n«我在2026-09-25 01:06完成签到,是今天第3个签到的用户,获得随机奖励天使币8,另外我还额外获得了天使币8»\n",
+   "after": "«￼\n我今天最想说:「区版主签到一下」.»\n«我在 2026-09-25 01:06 完成签到,是今天第3个签到的用户,获得随机奖励 天使币 8,另外我还额外获得了 天使币 8»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3758": {
+   "before": "«￼\n我今天最想说:「低权会员签到测试」.»\n«我在2026-09-25 01:07完成签到,是今天第4个签到的用户,获得随机奖励天使币10,另外我还额外获得了天使币7»\n",
+   "after": "«￼\n我今天最想说:「低权会员签到测试」.»\n«我在 2026-09-25 01:07 完成签到,是今天第4个签到的用户,获得随机奖励 天使币 10,另外我还额外获得了 天使币 7»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3759": {
+   "before": "«￼\n我今天最想说:「粗体试试 BBCode」.»\n«我在2026-09-25 01:07完成签到,是今天第5个签到的用户,获得随机奖励天使币6,另外我还额外获得了天使币6»\n",
+   "after": "«￼\n我今天最想说:「粗体 试试 BBCode」.»\n«我在 2026-09-25 01:07 完成签到,是今天第5个签到的用户,获得随机奖励 天使币 6,另外我还额外获得了 天使币 6»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3760": {
+   "before": "«￼\n我今天最想说:「新版签到 & <b>测试</b> [⁠b]粗[⁠/b]」.»\n«我在2026-09-25 01:08完成签到,是今天第6个签到的用户,获得随机奖励天使币5,另外我还额外获得了天使币5»\n",
+   "after": "«￼\n我今天最想说:「新版签到 & <b>测试</b> [⁠b]粗[⁠/b]」.»\n«我在 2026-09-25 01:08 完成签到,是今天第6个签到的用户,获得随机奖励 天使币 5,另外我还额外获得了 天使币 5»\n"
+  },
+  "test/data/tsdmapp/thread_v3_closed.json#3761": {
+   "before": "«￼\n我今天最想说:「开心签到啦」.»\n«我在2026-09-25 01:08完成签到,是今天第7个签到的用户,获得随机奖励天使币9,另外我还额外获得了天使币4»\n",
+   "after": "«￼\n我今天最想说:「开心签到啦」.»\n«我在 2026-09-25 01:08 完成签到,是今天第7个签到的用户,获得随机奖励 天使币 9,另外我还额外获得了 天使币 4»\n"
+  },
+  "test/data/tsdmapp/thread_v3_denied.json#3254": "«[img]»\n",
+  "test/data/tsdmapp/thread_v3_edited.json#4436": "«￼\n网盘链接 Link：https://pan.baidu.com/s/acc160c2a9822\n提取码 Code：cc2a»\n«购买原地址 Original Site：￼https://mora.jp/package/43000011/4538182931059/\n[img]\n￼\nアルバム情報\nタイトル：THE BOOK\nアーティスト：YOASOBI\n発売日：2021.01.06\nレーベル：YOASOBI\nフォーマット：AAC｜320kbps\n曲数：9\n収録時間：29:59\n容量：70.3MB\n[spoiler=収録曲]\n\n•  1. Epilogue\n•  2. アンコール\n•  3. ハルジオン\n•  4. あの夢をなぞって\n•  5. たぶん\n•  6. 群青\n•  7. ハルカ\n•  8. 夜に駆ける\n•  9. Prologue\n\n[/spoiler]\n￼\n网盘 Cloud：百度网盘\n购买商店 Store：mora\n文件格式 Format：AAC 320kbps\n文件大小 Size：70.3MB\n是否自购 Self-purchased：否»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200000": "«本期年終獎申報，請照下列範本，把每一欄的數字填在標籤中間後回帖：￼\n未填齊者以年度卓越獎個數與額外係數為準。»\n«Code Block»\n«\n[master]\n1. 版主月：[node1][/node1]\n2. 發帖數：[node2][/node2]\n3. 精華數：[node3][/node3]\n4. 活動分：[node4][/node4]\n5. 額外係數：[node5][/node5]\n6. 年度卓越獎個數：[node6][/node6]\n7. 出勤日數：[node7][/node7]\n8. 互動次數：[node8][/node8]\n9. 原創篇數：[node9][/node9]\n10. 置頂次數：[node10][/node10]\n11. 檢舉處理數：[node11][/node11]\n12. 加減分：[node12][/node12]\n[/master]\n»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200001": "«申報如下：\n[master]\n[node1]13[/node1]\n[node2]8[/node2]\n[node3]3[/node3]\n[node4]5[/node4]\n[node5]2[/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200002": "«申報如下：\n[master]\n[node1]14[/node1]\n[node2]8[/node2]\n[node3]3[/node3]\n[node4]5[/node4]\n[node5]1,3[/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200003": "«申報如下：\n[master]\n[node1]10[/node1]\n[node4]36[/node4\n[node6]2[/node6]\n[/master]»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200004": "«申報如下：\n[master]\n[node1][/node1]\n[node2][/node2]\n[node3][/node3]\n[node4][/node4]\n[node5][/node5]\n[node6][/node6]\n[node7][/node7]\n[node8][/node8]\n[node9][/node9]\n[node10][/node10]\n[node11][/node11]\n[node12][/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200005": "«申報如下：\n[master]\n[node1]15[/node1]\n[node2]8[/node2]\n[node3]3[/node3]\n[node4]5[/node4]\n[node5][/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200006": "«申報如下：\n[master]\n[node1]１２[/node1]\n[node2]12&lt;br /&gt;[/node2]\n[node3]3[/node3]\n[node4]5[/node4]\n[node5]2[/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200007": "«申報如下：\n[master]\n[node1][/node1]\n[node2][/node2]\n[node3][/node3]\n[node4]5[/node4]\n[node5]2[/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200008": "«@gl_dave 版主我等等補，先佔個樓。»\n",
+  "test/data/tsdmapp/thread_v3_findpost.json#200010": "«申報如下：\n[master]\n[node1]14[/node1]\n[node2]8[/node2]\n[node3]3[/node3]\n[node4]5[/node4]\n[node5]2[/node5]\n[node6]1[/node6]\n[node7]20[/node7]\n[node8]15[/node8]\n[node9]4[/node9]\n[node10]0[/node10]\n[node11]-1[/node11]\n[node12]1.5[/node12]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_hide.json#3976": "«公開介紹 HIDETEST￼\n結尾公開￼\n\nHIDDEN_SENTINEL_B»\n«Some content requires reply»\n«￼ to see contents here»\n«Reply»\n«Some content requires enough points to be visible»\n«10 points are required»\n",
+  "test/data/tsdmapp/thread_v3_long_author.json#4043": "«wptheme 留言测试 1791184669513\n￼\n￼\n￼\n￼\n￼\n￼\n￼\n￼\n￼»\n«ag_low 补充了以下内容 (2026-10-5 15:20)\nwptheme 留言测试 1791184816552»\n«ag_low 补充了以下内容 (2026-10-5 21:39)\nwptheme 留言测试 1791207579616»\n«ag_low 补充了以下内容 (2026-10-6 00:26)\nwptheme 留言测试 1791217565104»\n«ag_low 补充了以下内容 (2026-10-6 00:50)\nwptheme 留言测试 1791219038761»\n«ag_low 补充了以下内容 (2026-10-6 13:06)\nwptheme 留言测试 1791263175627»\n«ag_low 补充了以下内容 (2026-10-8 01:55)\nwptheme 留言测试 1791395747189»\n«ag_low 补充了以下内容 (2026-10-8 01:59)\nwptheme 留言测试 1791395943600»\n«ag_low 补充了以下内容 (2026-10-8 02:18)\nwptheme 留言测试 1791397110122»\n«ag_low 补充了以下内容 (2026-10-8 02:20)\nwptheme 留言测试 1791397203317»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100019": "«本期年終獎申報，請照下列範本，把值填在標籤中間後回帖：￼\n未填齊者以組別＋額外係數為準。»\n«Code Block»\n«\n[master]\n1. 版主月：[node1][/node1]\n2. 發帖數：[node2][/node2]\n3. 精華數：[node3][/node3]\n4. 活動分：[node4][/node4]\n5. 額外係數：[node5][/node5]\n6. 組別：[node6][/node6]\n7. 出勤：[node7][/node7]\n8. 互動：[node8][/node8]\n9. 原創：[node9][/node9]\n10. 置頂：[node10][/node10]\n11. 檢舉處理：[node11][/node11]\n12. 備註：[node12][/node12]\n[/master]\n»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100020": "«第1號\n[master]\n[node1]1[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100021": "«第2號\n[master]\n[node1]2[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100022": "«第3號\n[master]\n[node1]3[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100023": "«第4號\n[master]\n[node1]4[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100024": "«第5號\n[master]\n[node1]5[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100025": "«第6號\n[master]\n[node1]6[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100026": "«第7號\n[master]\n[node1]7[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100027": "«第8號\n[master]\n[node1]8[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p1.json#100028": "«第9號\n[master]\n[node1]9[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100029": "«第10號\n[master]\n[node1]0[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100030": "«第11號\n[master]\n[node1]1[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100031": "«第12號\n[master]\n[node1]2[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100032": "«第13號\n[master]\n[node1]3[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100033": "«第14號\n[master]\n[node1]4[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100034": "«第15號\n[master]\n[node1]5[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100035": "«第16號\n[master]\n[node1]6[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100036": "«第17號\n[master]\n[node1]7[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100037": "«第18號\n[master]\n[node1]8[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_p2.json#100038": "«第19號\n[master]\n[node1]9[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100319": "«第300號\n[master]\n[node1]0[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100318": "«第299號\n[master]\n[node1]9[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100317": "«第298號\n[master]\n[node1]8[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100316": "«第297號\n[master]\n[node1]7[/node1]\n[node5]2[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100315": "«第296號\n[master]\n[node1]6[/node1]\n[node5]1[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100314": "«第295號\n[master]\n[node1]5[/node1]\n[node5]0[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100313": "«第294號\n[master]\n[node1]4[/node1]\n[node5]4[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_long_reverse.json#100312": "«第293號\n[master]\n[node1]3[/node1]\n[node5]3[/node5]\n[node6]甲組[/node6]\n[/master]\n以上，謝謝版主。»\n",
+  "test/data/tsdmapp/thread_v3_moderated.json#4663": "«￼\n出售说明 SALE094886\n[spoiler=解压密码]SALEPW094886[/spoiler]\n广告 SALEAD094886\n￼\n\nMG：￼download\n￼»\n«简介 INTRO094886\n[spoiler=解压密码]FREEPW094886[/spoiler]\n广告 FREEAD094886\n￼\n\n试听：￼http://free.example/094886»\n«Some content requires enough points to be visible»\n«99999 points are required, but you only have 1032 points»\n«Some content requires enough points to be visible»\n«99999 points are required, but you only have 1032 points»\n«￼本主题由 管理团队 于 昨天 09:55\n打开»\n",
+  "test/data/tsdmapp/thread_v3_paid.json#3055": "",
+  "test/data/tsdmapp/thread_v3_plain.json#3938": "«此主題僅供 Rulebot 1.1 多版塊隔離驗證，透過 Discuz 原生流程建立；驗證完畢保留測試證據。»\n",
+  "test/data/tsdmapp/thread_v3_plain.json#3954": {
+   "before": "«NC984059ag_mid粗體￼廣告連結紅字[img]@ag_low2»\n",
+   "after": "«NC984059ag_mid 粗體 ￼廣告連結 紅字 [img] @ag_low2»\n"
+  },
+  "test/data/tsdmapp/thread_v3_plain.json#3942": "«[Rulebot local acceptance FID2] 多版驗收答案：這是 FID2 的獨立規則。»\n",
+  "test/data/tsdmapp/thread_v3_plain.json#3951": {
+   "before": "«NC650591ag_mid粗體￼廣告連結紅字[img]@ag_low2»\n",
+   "after": "«NC650591ag_mid 粗體 ￼廣告連結 紅字 [img] @ag_low2»\n"
+  },
+  "test/data/tsdmapp/thread_v3_poll.json#3217": "«投票增強驗收用帖。»\n",
+  "test/data/tsdmapp/thread_v3_rush_deleted.json#3206": "«這是搶樓主題的 1 樓，每人限回 3 樓，長度足夠通過檢查。»\n",
+  "test/data/tsdmapp/thread_v3_rush_deleted.json#3207": "«搶樓測試 RS-off 第一則。»\n",
+  "test/data/tsdmapp/thread_v3_rush_deleted.json#3209": "«搶樓上限測試 third：這一則會是第 3 樓。»\n",
+  "test/data/tsdmapp/thread_v3_typed.json#4084": "«ag_admin 的 2026 年度回顾\n\n发表主题 106　回帖 45　收到评分 4 次　新获得勋章 0 枚\n最活跃的月份：9 月（84 帖）\n最常发帖的版块：新番追蹤（64 帖）、繪圖・插畫（56 帖）、PS 每日签到验收版（10 帖）\n收到的评分：威望 +6　精灵 +3\n\n【年度感言】\n这一年在论坛过得很开心，认识了很多朋友，也学到了很多东西，明年继续加油！\n\n查看我的完整年度回顾：https://www.tsdm39.com/plugin.php?id=yearreview&uid=32&year=2026»\n"
+ }
+}
