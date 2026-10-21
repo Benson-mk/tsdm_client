@@ -234,9 +234,9 @@ void main() {
     });
 
     test('the statistics, by title', () {
-      expect(p.credits, '1030');
+      expect(p.credits, '1032');
       expect(p.famous, '5');
-      expect(p.coins, '673');
+      expect(p.coins, '675');
       expect(p.publicity, '0');
       expect(p.scheming, '0');
       expect(p.natural, '0');
@@ -248,7 +248,12 @@ void main() {
 
     test('the header: unread notices and messages', () {
       final page = ProfileApiPage(_json('profile_v4_self.json'));
-      expect(unreadInfoOf(page), (5, false));
+      expect(unreadInfoOf(page), (0, false), reason: 'live: ag_low2 had no unread notice when the fixture was fetched');
+      final withNotices = ProfileApiPage({
+        ..._json('profile_v4_self.json'),
+        'unread': {'notice': 5, 'pm': 0},
+      });
+      expect(unreadInfoOf(withNotices), (5, false));
       expect(page.avatarUrl, 'https://www.tsdm39.com/data/avatar/noavatar.svg');
       expect(page.loggedIn, isTrue);
       final withPm = ProfileApiPage({
@@ -293,8 +298,8 @@ void main() {
       expect(p.lastVisitIP, isNull);
       expect(p.onlineTime, '51 小时');
       expect(p.lastPostTime, _at(1792499820));
-      expect(p.credits, '1190');
-      expect(p.coins, '827');
+      expect(p.credits, '1196');
+      expect(p.coins, '833');
       expect(p.checkinAllCoins, '18');
       expect(parseFriendsInfo(p.friendsCount).count, '0');
     });
@@ -303,7 +308,7 @@ void main() {
       final p = _profile('other_low');
       expect(p.username, 'ag_low');
       expect(p.uid, '31');
-      expect(p.avatarUrl, 'https://img.ts-dm.net/images/2024/11/22/2.gif');
+      expect(p.avatarUrl, 'https://img.ts-dm.net/images/2024/02/01/2024.02.gif');
       expect(p.gender, '男');
       expect(p.from, isNull, reason: 'the forum did not print the city');
       expect(p.birthdayYear, isNull);
@@ -311,8 +316,8 @@ void main() {
       expect(p.profileMedals, hasLength(24));
       expect(p.profileMedals!.first.id, '1759');
       expect(p.moderatorGroup, isNull);
-      expect(p.credits, '-7694');
-      expect(p.coins, '-8654');
+      expect(p.credits, '-7692');
+      expect(p.coins, '-8652');
       expect(p.scheming, '-470');
       expect(p.natural, '-460');
       expect(p.spirit, '-7');

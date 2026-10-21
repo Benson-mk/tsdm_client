@@ -292,7 +292,38 @@ void main() {
     });
 
     test('an answer before 2.7.0 (schema 3) leaves the new fields empty', () {
-      final post = _posts(_json('thread_v3_plain.json')).first;
+      // The fixture is the answer of 2.8.0 (schema 15): without what 2.7.0 and 2.8.0 added, it is the answer of 2.1.0.
+      const addedTop = {'codes', 'smilies_version', 'special'};
+      const addedFloor = {
+        'message',
+        'message_reason',
+        'bbcodeoff',
+        'smileyoff',
+        'parseurloff',
+        'allowbbcode',
+        'allowsmilies',
+        'allowimgcode',
+        'allowmediacode',
+        'attachments',
+        'best',
+        'customtags',
+        'stand',
+        'stand_votes',
+      };
+      final json = _json('thread_v3_plain.json');
+      final old = <String, dynamic>{
+        for (final e in json.entries)
+          if (!addedTop.contains(e.key)) e.key: e.value,
+        'schema': 3,
+        'posts': [
+          for (final floor in (json['posts'] as List).cast<Map<String, dynamic>>())
+            {
+              for (final e in floor.entries)
+                if (!addedFloor.contains(e.key)) e.key: e.value,
+            },
+        ],
+      };
+      final post = _posts(old).first;
       expect(post.messageBbcode, isNull);
       expect(post.messageReason, isNull);
       expect(post.bbcodeCodes, isNull);
