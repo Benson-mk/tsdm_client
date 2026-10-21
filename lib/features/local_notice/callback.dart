@@ -50,7 +50,8 @@ Future<void> _bringWindowToFront() async {
 ///
 /// Android only, call at boot after the plugin is initialized. [onLocalNotificationOpened] is not invoked for the
 /// tap that launched the app, its payload only exists in the launch details; only the payloads this app knows
-/// ([LocalNoticeKeys]) are kept. Failures are logged and swallowed because they must not block the boot.
+/// ([LocalNoticeKeys.parseOpenNotification], with or without the account) are kept. Failures are logged and swallowed
+/// because they must not block the boot.
 Future<void> rememberNotificationLaunch() async {
   if (!isAndroid) {
     return;
@@ -63,7 +64,7 @@ Future<void> rememberNotificationLaunch() async {
     }
     final payload = launch.notificationResponse?.payload;
     talker.info('app launched from local notification: payload=$payload');
-    if (payload == LocalNoticeKeys.openNotification) {
+    if (LocalNoticeKeys.parseOpenNotification(payload) != null) {
       rememberLaunchPayload(payload);
     } else {
       talker.warning('ignore launch notification with unknown payload: $payload');

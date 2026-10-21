@@ -572,7 +572,22 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
                 BlocListener<NotificationStateAutoSyncCubit, NotificationAutoSyncInfo?>(
                   listenWhen: (prev, curr) => curr != null && prev != curr,
                   listener: (context, state) async {
-                    await showLocalNotification(context, state!);
+                    // The in-app sync announces the account in use; the notification carries it so a tap after a
+                    // switch opens it as that account. Named like the background service names every account when
+                    // that service polls them all.
+                    final user = context.repo<AuthenticationRepository>().currentUser;
+                    final s = getIt.get<SettingsRepository>().currentSettings;
+                    await showLocalNotification(
+                      context,
+                      state!,
+                      account: user?.uid == null
+                          ? null
+                          : LocalNoticeAccount(
+                              uid: user!.uid!,
+                              username: user.username,
+                              named: s.enableBackgroundMessageService && s.backgroundSyncAllAccounts,
+                            ),
+                    );
                   },
                 ),
                 // Content of identified authors is held back while the block list can not be read; say why, with a retry.

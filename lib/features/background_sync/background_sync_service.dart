@@ -7,8 +7,9 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 /// Android background message service (#80).
 ///
 /// A foreground service (the persistent "receiving messages" notification) whose isolate runs
-/// `backgroundSyncTick` at the auto sync interval, so new notices and private messages are announced while the app is
-/// in the background or was cleared. The isolate has no activity, so it opens the shared database itself, builds the
+/// `backgroundSyncAccountsTick` at the auto sync interval, so new notices and private messages are announced while the
+/// app is in the background or was cleared: for the account in use, or for every saved account when
+/// `SettingsKeys.backgroundSyncAllAccounts` is on. The isolate has no activity, so it opens the shared database itself, builds the
 /// same repositories the app uses and talks to the app only through the `synced` event.
 ///
 /// Channel of the persistent notification. Separate from the one that carries new messages: low importance, no sound.

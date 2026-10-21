@@ -133,6 +133,7 @@ final class SettingsRepository with LoggerMixin {
       showUnreadBroadcastMessageBadge: s.extract(_SK.showUnreadBroadcastMessageBadge),
       autoSyncNoticeSeconds: s.extract(_SK.autoSyncNoticeSeconds),
       enableBackgroundMessageService: s.extract(_SK.enableBackgroundMessageService),
+      backgroundSyncAllAccounts: s.extract(_SK.backgroundSyncAllAccounts),
       enableDebugOperations: s.extract(_SK.enableDebugOperations),
       fontFamily: s.extract(_SK.fontFamily),
       enableEditorBBCodeParser: s.extract(_SK.enableEditorBBCodeParser),

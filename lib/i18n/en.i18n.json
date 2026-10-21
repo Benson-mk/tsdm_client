@@ -382,6 +382,10 @@
         "title": "Background Message Service",
         "detail": "Keeps checking for new notices and private messages at the auto sync interval and notifies you while the app is in the background or was cleared; uses some more battery (Android only)"
       },
+      "backgroundSyncAllAccounts": {
+        "title": "Background notifications: all logged-in accounts",
+        "detail": "The background message service also checks the other accounts logged in on this device, each with its own login; notifications name the account, and tapping one switches to it before opening the notifications (Android only)"
+      },
       "notificationPermission": {
         "title": "Notification permission",
         "detail": "Required by auto sync to show new notices, messages and broadcasts as system notifications",
@@ -1521,8 +1525,10 @@
     "channelName": "New auto sync notice",
     "channelDesc": "Received new notice when auto sync",
     "ticker": "New notice",
+    "accountGone": "The account of this notification is no longer on this device",
     "notice": {
       "title": "New notice",
+      "titleOf": "[${username}] New notice",
       "detail": {
         "notice": "You received ${noticeCount: int} notice, ${pmCount: int} PMs, ${bmCount: int} BMs\n[Notice]${msg: String}",
         "pm": "You received ${noticeCount: int} notice, ${pmCount: int} PMs, ${bmCount: int} BMs\n[PM]${user: String}: ${msg: String}",

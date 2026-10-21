@@ -382,6 +382,10 @@
         "title": "后台消息接收",
         "detail": "开启后 App 退到后台或被清掉时，仍按「自动同步消息」的间隔检查新提醒与私信并发出通知；会多耗一些电（仅安卓）"
       },
+      "backgroundSyncAllAccounts": {
+        "title": "后台通知：所有已登录账号",
+        "detail": "后台消息接收也检查此设备上其他已登录的账号，各自用自己的登录；通知会标出账号，点通知时先切换到该账号再打开通知页（仅安卓）"
+      },
       "notificationPermission": {
         "title": "通知权限",
         "detail": "自动同步需要此权限才能把新提醒、消息和公共消息显示为系统通知",
@@ -1521,8 +1525,10 @@
     "channelName": "新提醒",
     "channelDesc": "自动同步消息时收到新提醒",
     "ticker": "新提醒",
+    "accountGone": "这条通知的账号已不在此设备上",
     "notice": {
       "title": "新消息",
+      "titleOf": "[${username}] 新消息",
       "detail": {
         "notice": "收到了${noticeCount: int}条提醒，${pmCount: int}条私信，${bmCount: int}条公共消息\n[提醒]${msg: String}",
         "pm": "收到了${noticeCount: int}条提醒，${pmCount: int}条私信，${bmCount: int}条公共消息\n[私信]${user: String}：${msg: String}",

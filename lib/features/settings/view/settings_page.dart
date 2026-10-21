@@ -475,6 +475,14 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     await _applyBackgroundSyncSettings(context);
   }
 
+  /// Poll every saved account in the background, or the account in use only. A running service reads the settings
+  /// again and ticks right away, so the other accounts are polled without waiting for the next interval.
+  Future<void> _toggleBackgroundSyncAllAccounts(BuildContext context, {required bool enable}) async {
+    await getIt.get<SettingsRepository>().setValue(SettingsKeys.backgroundSyncAllAccounts, enable);
+    if (!context.mounted) return;
+    await _applyBackgroundSyncSettings(context);
+  }
+
   /// Reading and editing behavior: order, floor interaction, editor parser and the templates.
   Widget _buildBehaviorSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.behaviorSection;
@@ -590,6 +598,18 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             subtitle: Text(tr.backgroundMessageService.detail),
             value: state.settingsMap.enableBackgroundMessageService,
             onChanged: (v) async => _toggleBackgroundSync(context, enable: v),
+          ),
+        if (isAndroid)
+          SectionSwitchListTile(
+            key: const ValueKey('background-sync-all-accounts'),
+            secondary: const Icon(Icons.switch_account_outlined),
+            title: Text(tr.backgroundSyncAllAccounts.title),
+            subtitle: Text(tr.backgroundSyncAllAccounts.detail),
+            value: state.settingsMap.backgroundSyncAllAccounts,
+            // A setting of the background message service: offered while it is on.
+            onChanged: state.settingsMap.enableBackgroundMessageService
+                ? (v) async => _toggleBackgroundSyncAllAccounts(context, enable: v)
+                : null,
           ),
       ],
     );

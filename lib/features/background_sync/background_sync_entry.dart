@@ -69,6 +69,7 @@ final class _BackgroundSyncRuntime {
         dio: settingsRepo.buildDefaultDio(nativeHttp: false),
         cookie: cookie,
       ),
+      // One account per call: the tick spaces the accounts itself (`backgroundSyncAccountGap`).
       gap: Duration.zero,
     );
     final plugin = FlutterLocalNotificationsPlugin();
@@ -133,6 +134,9 @@ Future<IOSink> _initBackgroundLogger() async {
   return sink;
 }
 
+/// ` for uid 12**` in a log line about one account, nothing for the whole tick.
+String _ofUid(int? uid) => uid == null ? '' : ' for uid ${"$uid".obscured(4)}';
+
 /// Entry point of the service isolate.
 @pragma('vm:entry-point')
 Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
@@ -167,7 +171,12 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
     await service.stopSelf();
   }
 
-  /// Act on what a tick (or a fetch given up by one, answered later) brought.
+  /// Act on what a tick (or a fetch given up by one, answered later) brought, one account at a time.
+  ///
+  /// A notification carries its account ([LocalNoticeAccount]): a tap opens the notice page as that account. With
+  /// every account announced it names the account and is that account's own, see [BackgroundSyncDone.named]. An
+  /// expired login of any account was recorded for that account by the sync itself; nothing else is done here, the
+  /// account in use is never logged out by the service.
   Future<void> report(BackgroundSyncOutcome outcome) async {
     if (stopping) {
       // The app asked for the stop while the fetch was in flight: whatever came back is stored, not announced.
@@ -178,15 +187,20 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
       switch (outcome) {
         case BackgroundSyncDisabled():
           await stop('switched off');
-        case BackgroundSyncSkipped(:final reason):
-          talker.debug('background sync: skipped, $reason');
-        case BackgroundSyncStale(:final reason):
-          talker.info('background sync: not announced, $reason');
-        case BackgroundSyncDone(:final uid, :final result):
+        case BackgroundSyncSkipped(:final reason, :final uid):
+          talker.debug('background sync: skipped${_ofUid(uid)}, $reason');
+        case BackgroundSyncStale(:final reason, :final uid):
+          talker.info('background sync: not announced${_ofUid(uid)}, $reason');
+        case BackgroundSyncDone(:final uid, :final username, :final named, :final result):
           talker.debug('background sync: ${result.runtimeType} for uid ${"$uid".obscured(4)}');
           if (result case NotificationSyncResultSuccess(:final latest)) {
             if (latest != null) {
-              await showLocalNotificationWith(plugin: runtime.plugin, translations: t, info: latest);
+              await showLocalNotificationWith(
+                plugin: runtime.plugin,
+                translations: t,
+                info: latest,
+                account: LocalNoticeAccount(uid: uid, username: username, named: named),
+              );
             }
             service.invoke(BackgroundSyncEvents.synced, {
               'uid': uid,
@@ -213,13 +227,14 @@ Future<void> backgroundSyncEntryPoint(ServiceInstance service) async {
     }
     ticking = true;
     try {
-      final outcome = await backgroundSyncTick(
+      // Each account is announced as soon as it is done; the account in use only, unless every account is asked for.
+      await backgroundSyncAccountsTick(
         storage: runtime.storage,
         repository: runtime.repository,
         prepareNetwork: runtime.refreshNetwork,
         onLate: (late) => unawaited(report(late)),
+        onOutcome: report,
       );
-      await report(outcome);
     } on Object catch (e, st) {
       talker.handle(e, st, 'background sync: tick failed');
     } finally {
