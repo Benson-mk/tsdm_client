@@ -1049,6 +1049,7 @@
   "ratePostPage": {
     "title": "Rate",
     "description": "Rate $username post at floor $floor",
+    "descriptionNoFloor": "Rate $username post",
     "reason": "Reason",
     "success": "Rate success",
     "noticeAuthor": "Notice the author",

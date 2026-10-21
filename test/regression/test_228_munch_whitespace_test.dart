@@ -9,8 +9,10 @@
 ///
 /// HTML's rules (`white-space: normal`) are applied to the lines the muncher lays out: a run of spaces, tabs and line
 /// breaks is one space, across elements; none at the start of a line (of the content, of a quote, a cell, a heading,
-/// after a line break) nor at its end. `<pre>` is left as it is. `<dd>`, a block of its own on the web page, now ends
-/// its line: the fields of an activity or goods block got their lines only from the source's line breaks before.
+/// after a line break) nor at its end. `<pre>` is left as it is. A `<div>`, a `<p>` and a `<dd>`, blocks of the web
+/// page, start a line of their own, and a paragraph's line ends with it (a `<br>` right after it takes that break, so
+/// `</p><br />` gives no blank line more than before): the line breaks the source's own line breaks gave by chance
+/// before (a text then a block, the fields of an activity block) are now where the web page breaks the line.
 ///
 /// Every real sample the repository holds (the post bodies, signatures and forum rules of the plugin's answers, the
 /// post bodies, notices and private messages of the web pages under `test/data`) is rendered, and its text compared
@@ -249,6 +251,47 @@ void main() {
       expect(find.text('centered', findRichText: true), findsOneWidget);
     });
 
+    testWidgets('a block starts a line of its own; a paragraph ends its line, a <br> after it adds none', (
+      tester,
+    ) async {
+      // The line break of the source before a block, or at the end of a paragraph, was a line break before: the
+      // block's own line now, as on the web page.
+      expect(await _text(tester, 'abc\r\n<div>block</div>tail'), 'abc\nblock\ntail');
+      expect(await _text(tester, '<p>one\r\n</p><p>two\r\n</p>three'), 'one\ntwo\nthree');
+      expect(await _text(tester, '<p>one</p>\r\n<p>two</p>'), 'one\ntwo');
+      expect(await _text(tester, '<table><tr><td>abc\r\n<div>block</div>tail</td></tr></table>'), 'abc\nblock\ntail');
+      // `[p]` then a line: no blank line more than before.
+      expect(await _text(tester, '<p>one</p><br />\r\n<br />\r\ntwo'), 'one\n\ntwo');
+      expect(await _text(tester, 'x<br />\r\n<div>block</div><br />\r\ny'), 'x\nblock\n\ny');
+      // After a paragraph: a link (its mark), a list item (its mark) on a new line.
+      expect(await _text(tester, '<p>one</p><a href="https://example.com/">link</a>'), 'one\n\uFFFClink');
+      expect(await _text(tester, '<p>one</p><ul><li>item</li></ul>'), 'one\n•  item');
+      // An empty paragraph changes nothing.
+      expect(await _text(tester, 'text <p></p>after'), 'text after');
+    });
+
+    testWidgets('an empty link, in a quote or not, does not turn what follows into a link', (tester) async {
+      Iterable<TextSpan> spans(InlineSpan span) sync* {
+        if (span is TextSpan) {
+          yield span;
+          for (final child in span.children ?? const <InlineSpan>[]) {
+            yield* spans(child);
+          }
+        }
+      }
+
+      expect(await _text(tester, 'x<a href="https://example.com/"> </a>y'), 'x y');
+      for (final html in [
+        '<a href="https://example.com/"></a>after',
+        '<div class="quote"><blockquote>quoted<a href="https://example.com/"></a></blockquote></div>after',
+      ]) {
+        await _text(tester, html);
+        final root = (find.byType(RichText).evaluate().first.widget as RichText).text;
+        final after = spans(root).firstWhere((e) => e.text?.contains('after') ?? false);
+        expect(after.recognizer, isNull, reason: html);
+      }
+    });
+
     testWidgets('<dd> ends its line', (tester) async {
       expect(
         await _text(tester, '<dl>\r\n<dt>类型:</dt>\r\n<dd>活动</dd>\r\n<dt>地点:</dt>\r\n<dd>\r\n某地\r\n</dd>\r\n</dl>'),
@@ -290,6 +333,6 @@ void main() {
           fail('$id: bad record');
       }
     }
-    expect(changed, 52);
+    expect(changed, 63);
   });
 }

@@ -14,6 +14,16 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
+import 'package:tsdm_client/widgets/card/post_card/floor_label.dart';
+
+/// The floor [post] is reported as: "#N", a hot reply as the card names it ("推荐 #N"), with its pid when its floor
+/// is not known ("推荐 (PID n)", "PID n").
+String postReportFloorLabel(Translations t, Post post) => switch ((post.hot, post.shownFloor)) {
+  (true, final floor?) => postFloorLabel(t, floor: null, hot: true, hotFloor: floor),
+  (true, null) => '${t.postCard.hotReply} (PID ${post.postID})',
+  (false, final floor?) => '#$floor',
+  (false, null) => 'PID ${post.postID}',
+};
 
 /// Open the report dialog of [post] (#127). Does nothing when the forum offered no report for it.
 ///
@@ -29,7 +39,7 @@ Future<void> showPostReportDialog(BuildContext context, Post post) async {
     barrierDismissible: false,
     builder: (_) => PostReportDialog(
       target: target,
-      floorLabel: post.postFloor != null ? '#${post.postFloor}' : 'PID ${post.postID}',
+      floorLabel: postReportFloorLabel(context.t, post),
       authorName: post.author.name,
       currentUid: () => auth.effectiveCurrentUid,
       accountChanges: auth.status,

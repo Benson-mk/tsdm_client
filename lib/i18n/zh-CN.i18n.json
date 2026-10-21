@@ -1049,6 +1049,7 @@
   "ratePostPage": {
     "title": "评分",
     "description": "给 $username 在 $floor 楼的帖子评分",
+    "descriptionNoFloor": "给 $username 的帖子评分",
     "reason": "理由",
     "success": "评分成功",
     "noticeAuthor": "通知作者",

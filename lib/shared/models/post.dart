@@ -448,12 +448,13 @@ class Post with PostMappable {
   /// floors banned one by one): the card shows no avatar either, not even one kept for the author ([author] has none).
   final bool avatarBlocked;
 
-  /// A hot reply: the forum puts it first on the first page and prints "推荐" in place of its floor number
-  /// ([postFloor] is null).
+  /// A hot reply: the forum puts it first on the first page and numbers it -1, printed "推荐" by the default
+  /// template and "-1#" by the site's theme in place of its floor number ([postFloor] is null).
   final bool hot;
 
   /// The floor a [hot] reply really is (plugin 2.8.2, `hot_position`), where it is printed on its own page; null when
-  /// not known (the thread does not keep floor positions, the web page) and for any other floor.
+  /// not known (the forum gives 0 when the thread keeps no floor positions, as the production forum's threads; the
+  /// web page) and for any other floor.
   final int? hotFloor;
 
   /// The floor number to name this floor by: [postFloor], or for a [hot] reply the floor it really is ([hotFloor]).
@@ -585,10 +586,14 @@ class Post with PostMappable {
 
     final pollNode = postDataNode?.querySelector('form#poll');
 
-    final postFloor = postDataNode?.querySelector('div.pi > strong > a > em')?.firstEndDeepText()?.parseToInt();
-    // A hot reply prints "推荐" where the floor number goes.
+    final printedFloor = postDataNode?.querySelector('div.pi > strong > a > em')?.firstEndDeepText()?.parseToInt();
+    // A hot reply: the forum numbers it -1, which the site's theme prints as it is ("-1#"), the default template as
+    // "推荐". It has no floor number of its own.
     final hot =
-        postFloor == null && (postDataNode?.querySelector('div.pi > strong > a')?.innerText.contains('推荐') ?? false);
+        (printedFloor != null && printedFloor <= 0) ||
+        (printedFloor == null &&
+            (postDataNode?.querySelector('div.pi > strong > a')?.innerText.contains('推荐') ?? false));
+    final postFloor = hot ? null : printedFloor;
 
     final shareLink = postDataNode?.querySelector('div.pi > strong > a')?.attributes['href']?.prependHost();
 

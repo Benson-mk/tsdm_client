@@ -30,6 +30,7 @@ import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/card/lock_card/locked_card.dart';
 import 'package:tsdm_client/widgets/card/packet_card.dart';
 import 'package:tsdm_client/widgets/card/poll_card.dart';
+import 'package:tsdm_client/widgets/card/post_card/floor_label.dart';
 import 'package:tsdm_client/widgets/card/post_card/show_user_brief_profile_dialog.dart';
 import 'package:tsdm_client/widgets/card/rate_card.dart';
 import 'package:tsdm_client/widgets/copy_content_dialog.dart';
@@ -116,7 +117,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
       pathParameters: <String, String>{
         'username': widget.post.author.name,
         'pid': widget.post.postID,
-        'floor': '${widget.post.shownFloor}',
+        // 0 when the floor is not known (a hot reply whose floor the forum does not tell): the page says no floor.
+        'floor': '${widget.post.shownFloor ?? 0}',
         'rateAction': widget.post.rateAction!,
       },
     );
@@ -656,9 +658,10 @@ class _BlockedAvatar extends StatelessWidget {
   }
 }
 
-/// The floor number at the end of a floor's header, "#N"; a hot reply ([Post.hot]) says "推荐" there as the page does,
-/// with the floor it really is when known ([Post.hotFloor]), and goes to that floor when tapped (its share link, the
-/// forum's `findpost`), as the page's "推荐" links to it.
+/// The floor number at the end of a floor's header, "#N" ([postFloorLabel]); a hot reply ([Post.hot]) says "推荐"
+/// there as the page does, with the floor it really is when known ([Post.hotFloor]), and then goes to that floor when
+/// tapped (its share link, the forum's `findpost`). The production forum does not tell that floor (its threads keep
+/// no floor positions): "推荐" alone, nothing to tap.
 class _FloorBadge extends StatelessWidget {
   const _FloorBadge(this.post);
 
@@ -668,13 +671,7 @@ class _FloorBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final tr = context.t.postCard;
-    final String text;
-    if (post.hot) {
-      text = [tr.hotReply, if (post.hotFloor case final floor?) '#$floor'].join(' ');
-    } else {
-      text = post.postFloor == null ? '#' : '#${post.postFloor}';
-    }
+    final text = postFloorLabel(context.t, floor: post.postFloor, hot: post.hot, hotFloor: post.hotFloor);
     final badge = DecoratedBox(
       decoration: BoxDecoration(
         color: post.hot ? colorScheme.tertiaryContainer : colorScheme.surfaceContainerHigh,
@@ -692,11 +689,11 @@ class _FloorBadge extends StatelessWidget {
       ),
     );
     final link = post.shareLink;
-    if (!post.hot || link == null || isOfflineFloor(context)) {
+    if (!post.hot || post.hotFloor == null || link == null || isOfflineFloor(context)) {
       return badge;
     }
     return Tooltip(
-      message: tr.jumpToHotFloor,
+      message: context.t.postCard.jumpToHotFloor,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () async => context.dispatchAsUrl(link),

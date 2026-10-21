@@ -8,6 +8,7 @@ import 'package:tsdm_client/features/blocking/widgets/user_block_button.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
+import 'package:tsdm_client/widgets/card/post_card/floor_label.dart';
 
 /// Shows [post] through [builder], or a placeholder keeping its floor when the author is blocked locally.
 ///
@@ -37,6 +38,8 @@ class BlockAwarePost extends StatelessWidget {
         uid: authorUid!,
         username: post.author.name,
         floor: post.postFloor,
+        hot: post.hot,
+        hotFloor: post.hotFloor,
         pending: !list.isKnown,
         failed: list.status == UserBlockListStatus.failed,
       );
@@ -68,6 +71,8 @@ class BlockedPostPlaceholder extends StatelessWidget {
     required this.uid,
     required this.username,
     this.floor,
+    this.hot = false,
+    this.hotFloor,
     this.pending = false,
     this.failed = false,
     super.key,
@@ -81,6 +86,12 @@ class BlockedPostPlaceholder extends StatelessWidget {
 
   /// Floor number, kept so the floors around stay in place.
   final int? floor;
+
+  /// A hot reply: "推荐" in place of the floor number, with [hotFloor] when known, as the card says.
+  final bool hot;
+
+  /// The floor a [hot] reply really is, when known.
+  final int? hotFloor;
 
   /// The block list is not known yet (loading or failed): the post is held back, not known as blocked.
   final bool pending;
@@ -118,7 +129,7 @@ class BlockedPostPlaceholder extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  floor == null ? '#' : '#$floor',
+                  postFloorLabel(context.t, floor: floor, hot: hot, hotFloor: hotFloor),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.outline),
                 ),
                 Text(

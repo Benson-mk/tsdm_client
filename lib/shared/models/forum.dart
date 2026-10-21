@@ -95,13 +95,38 @@ final class Forum with ForumMappable {
   /// The links to threads (`tid=`) of a forum's description [html] (`description_html`), as [fromFlRowNode] reads the
   /// description from the page: put in its `p.xg2` in the forum's cell, the html is parsed as the page's is (a block
   /// in the description closes the paragraph and stays in the cell).
-  static List<(String, String)> _descriptionThreadLinks(String html) =>
-      parseHtmlDocument('<table><tbody><tr><td><p class="xg2">$html</p></td></tr></tbody></table>')
-          .querySelectorAll('td > p a')
-          .where((e) => e.attributes['href']?.contains('tid=') ?? false)
-          .map((e) => (e.firstEndDeepText(), e.attributes['href']))
-          .whereType<(String, String)>()
-          .toList();
+  static List<(String, String)> _descriptionThreadLinks(String html) => _threadLinksOf(
+    parseHtmlDocument('<table><tbody><tr><td><p class="xg2">$html</p></td></tr></tbody></table>').querySelectorAll(
+      'td > p a',
+    ),
+  );
+
+  /// The shortcuts of a forum card among the links [anchors] of its row ([subThreadList]): each link to a thread
+  /// (`tid=`) with its text, or the name of the picture an image link holds (`alt`, `title`); a link with neither
+  /// (a banner without a name, as many of the production forum's descriptions have) is left out, as a shortcut
+  /// without a label would be an empty button.
+  static List<(String, String)> _threadLinksOf(Iterable<uh.Element> anchors) => [
+    for (final anchor in anchors)
+      if (anchor.attributes['href'] case final String href when href.contains('tid='))
+        if (_linkTitleOf(anchor) case final String title) (title, href),
+  ];
+
+  /// The label of the link [anchor]: its text (the text of its first innermost element, as the page's readers take
+  /// it, else all of it), else the `alt` or `title` of a picture in it, else its own `title`; null when none.
+  static String? _linkTitleOf(uh.Element anchor) {
+    for (final text in [
+      anchor.firstEndDeepText(),
+      anchor.innerText,
+      ...anchor.querySelectorAll('img').expand((e) => [e.attributes['alt'], e.attributes['title']]),
+      anchor.attributes['title'],
+    ]) {
+      final title = text?.trim();
+      if (title != null && title.isNotEmpty) {
+        return title;
+      }
+    }
+    return null;
+  }
 
   /// The address of the link forum [fid] whose `redirect` setting is [redirect], as [redirectUrl] keeps it; null when
   /// [redirect] is empty (not a link forum).
@@ -325,12 +350,7 @@ final class Forum with ForumMappable {
         .whereType<(String, String)>()
         .toList();
 
-    final subThreadList = element
-        .querySelectorAll('td > p a')
-        .where((e) => e.attributes['href']?.contains('tid=') ?? false)
-        .map((e) => (e.firstEndDeepText(), e.attributes['href']))
-        .whereType<(String, String)>()
-        .toList();
+    final subThreadList = _threadLinksOf(element.querySelectorAll('td > p a'));
 
     return Forum(
       forumID: forumID,

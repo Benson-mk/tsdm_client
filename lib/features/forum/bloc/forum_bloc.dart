@@ -26,11 +26,22 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
     on<ForumRefreshRequested>(_onForumRefreshRequested);
     on<ForumJumpPageRequested>(_onForumJumpPageRequested);
     on<ForumChangeThreadFilterStateRequested>(_onForumChangeThreadFilterStateRequested);
+    on<ForumRetryRequested>(_onForumRetryRequested);
   }
 
   final ForumRepository _forumRepository;
 
+  /// The page asked last, which [ForumRetryRequested] asks again.
+  int _askedPage = 1;
+
+  /// Ask again the page asked last, as going on with the list: after a page failed to go on with the list, the list
+  /// holds the pages before it (asking the page shown again, as before, added its threads a second time); after a
+  /// refresh, a jump or a filter failed, the list is empty.
+  Future<void> _onForumRetryRequested(ForumRetryRequested event, ForumEmitter emit) =>
+      _onForumLoadMoreRequested(ForumLoadMoreRequested(_askedPage), emit);
+
   Future<void> _onForumLoadMoreRequested(ForumLoadMoreRequested event, ForumEmitter emit) async {
+    _askedPage = event.pageNumber;
     if (state.status == ForumStatus.failure) {
       // Restoring from failure state.
       emit(state.copyWith(status: ForumStatus.loading, pollOfferUid: null));
@@ -65,6 +76,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
   }
 
   Future<void> _onForumRefreshRequested(ForumRefreshRequested event, ForumEmitter emit) async {
+    _askedPage = 1;
     emit(state.copyWith(status: ForumStatus.loading, normalThreadList: [], pollOfferUid: null));
 
     await await _forumRepository.fetchForum(fid: state.fid, filterState: state.filterState).match((e) {
@@ -75,6 +87,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
   }
 
   Future<void> _onForumJumpPageRequested(ForumJumpPageRequested event, ForumEmitter emit) async {
+    _askedPage = event.pageNumber;
     emit(state.copyWith(status: ForumStatus.loading, normalThreadList: [], pollOfferUid: null));
     await await _forumRepository
         .fetchForum(fid: state.fid, pageNumber: event.pageNumber, filterState: state.filterState)
@@ -90,6 +103,7 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
     ForumChangeThreadFilterStateRequested event,
     ForumEmitter emit,
   ) async {
+    _askedPage = 1;
     emit(
       state.copyWith(
         status: ForumStatus.loading,

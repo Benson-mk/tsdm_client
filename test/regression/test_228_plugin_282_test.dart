@@ -38,12 +38,15 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/activities/models/forum_activity.dart';
 import 'package:tsdm_client/features/activities/view/activities_page.dart';
+import 'package:tsdm_client/features/blocking/widgets/block_aware_post.dart';
 import 'package:tsdm_client/features/forum/bloc/forum_bloc.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/forum/repository/forum_repository.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_api.dart';
 import 'package:tsdm_client/features/forum/utils/forum_page_parser.dart';
 import 'package:tsdm_client/features/homepage/utils/homepage_api.dart';
+import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
+import 'package:tsdm_client/features/rate/view/rate_post_page.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
@@ -173,11 +176,14 @@ final class _FakeForumRepository extends ForumRepository {
   final ForumPageData Function(int pageNumber) pages;
   final asked = <int>[];
 
+  /// Whether the next request fails.
+  bool Function() fail = () => false;
+
   @override
   AsyncEither<ForumPageData> fetchForum({required String fid, required FilterState filterState, int pageNumber = 1}) =>
       AsyncEither(() async {
         asked.add(pageNumber);
-        return right(pages(pageNumber));
+        return fail() ? left(HttpRequestFailedException(500)) : right(pages(pageNumber));
       });
 }
 
@@ -381,6 +387,24 @@ void main() {
         expect(forum.withDocument, hasLength(2), reason: 'a new page, asked once more');
       });
 
+      test('a page another fetch replaced in the same session: asked all the same, not published', () async {
+        final forum = _Forum(
+          lean: () => _ok(olderLean()),
+          full: () => _ok({...olderLean(), 'document': '<div id="ct">$_productionRow</div>'}),
+        );
+        final repo = repositoryOf(forum);
+        // The activities page fetched its page, then the homepage refreshed before the document was asked.
+        final mine = _right(await repo.fetchHomePage(force: true).run()) as ForumHomeApiPage;
+        final latest = _right(await repo.fetchHomePage(force: true).run()) as ForumHomeApiPage;
+        final full = await repo.fetchPageDocument(mine);
+        expect(parseForumActivitiesFromApi(full!.json), hasLength(17));
+        expect(repo.getCache(), same(latest), reason: 'not published: not the cached page');
+        expect(forum.withDocument, hasLength(1));
+        // The favorites panel of a page not shown any more is not asked.
+        await repo.requestFavoritesPanel(mine);
+        expect(forum.withDocument, hasLength(1));
+      });
+
       test('failed, too slow, another account, the session changed: null and the page stays', () async {
         for (final (name, full) in [
           ('failed', _ok({'ok': 0, 'error': 'internal'})),
@@ -481,6 +505,41 @@ void main() {
   });
 
   group('B. the links of a forum card', () {
+    test('an image link is named by its picture; one without a name is left out (no empty button)', () {
+      // As the production forum's descriptions: banners linking to threads, most without `alt`.
+      final description = [
+        '<a href="https://www.tsdm39.com/forum.php?mod=viewthread&amp;tid=1" target="_blank">',
+        '<img class="zoom" src="https://example.com/1.png" border="0" alt="" /></a>',
+        '<a href="forum.php?mod=viewthread&amp;tid=2"><img src="https://example.com/2.png" alt="第二期" /></a>',
+        '<a href="forum.php?mod=viewthread&amp;tid=3" title="第三期"><img src="https://example.com/3.png" /></a>',
+        '<a href="forum.php?mod=viewthread&amp;tid=4"><font color="red">文字</font></a>',
+      ].join();
+      const expected = [
+        ('第二期', 'forum.php?mod=viewthread&tid=2'),
+        ('第三期', 'forum.php?mod=viewthread&tid=3'),
+        ('文字', 'forum.php?mod=viewthread&tid=4'),
+      ];
+      expect(Forum.fromApi({'fid': 1, 'name': '版块', 'description_html': description}).subThreadList, expected);
+      final row = parseHtmlDocument(
+        [
+          '<table><tr class="fl_row"><td><h2><a href="forum.php?mod=forumdisplay&fid=1">版块</a></h2>',
+          '<p class="xg2">$description</p></td>',
+          '<td class="fl_i"><span class="xi2">1</span><span class="xg1"> / 2</span></td></tr></table>',
+        ].join(),
+      ).querySelector('tr.fl_row')!;
+      expect(Forum.fromFlRowNode(row)!.subThreadList, expected, reason: 'the web page path, the same');
+      // Only nameless banners: no shortcut at all.
+      expect(
+        Forum.fromApi({
+          'fid': 1,
+          'name': '版块',
+          'description_html':
+              '<a href="forum.php?mod=viewthread&amp;tid=1"><img src="https://example.com/1.png" /></a>',
+        }).subThreadList,
+        isNull,
+      );
+    });
+
     test('description_html: its thread links, as the page row gives them; none without it', () {
       final row = parseHtmlDocument(_productionRow).querySelector('tr.fl_row')!;
       final page = Forum.fromFlRowNode(row)!;
@@ -650,6 +709,23 @@ void main() {
       expect((unknown.hotFloor, unknown.shownFloor), (null, null));
     });
 
+    test('the web page path, production markup: a hot reply prints "-1#"; no floor number, a hot reply', () {
+      final node = parseHtmlDocument(
+        File('test/data/thread_hot_reply_x5.html').readAsStringSync(),
+      ).querySelector('div#post_77994723')!;
+      final post = Post.fromPostNode(node, 1)!;
+      expect((post.hot, post.postFloor, post.hotFloor, post.shownFloor), (true, null, null, null));
+      expect(post.shareLink, contains('goto=findpost&ptid=1265238&pid=77994723'));
+      // A floor of its own number stays a floor.
+      final plain = Post.fromPostNode(
+        parseHtmlDocument(
+          File('test/data/thread_hot_reply_x5.html').readAsStringSync().replaceFirst('<em>-1</em>', '<em>5</em>'),
+        ).querySelector('div#post_77994723')!,
+        1,
+      )!;
+      expect((plain.hot, plain.postFloor), (false, 5));
+    });
+
     test('the web page path: "头像被屏蔽" and "推荐" read from the floor', () {
       final json = _api('thread_v15_282_avatar_blocked');
       final floor = (json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((e) => e['pid'] == 6733);
@@ -727,10 +803,53 @@ void main() {
         expect(find.text('#1'), findsOneWidget);
         expect(find.text('${t.postCard.hotReply} #12'), findsOneWidget);
         expect(find.text(t.postCard.hotReply), findsOneWidget, reason: 'its floor not known');
-        expect(find.byTooltip(t.postCard.jumpToHotFloor), findsNWidgets(2));
+        // Going to the floor only where its floor is known (the production forum does not tell it).
+        expect(find.byTooltip(t.postCard.jumpToHotFloor), findsOneWidget);
         expect(find.text('#'), findsNothing);
         expect(tester.takeException(), isNull);
       });
+
+      testWidgets('the placeholder of a blocked author names a hot reply as the card does', (tester) async {
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: const MaterialApp(
+              home: Scaffold(
+                body: Column(
+                  children: [
+                    BlockedPostPlaceholder(uid: 1, username: 'Bob', hot: true),
+                    BlockedPostPlaceholder(uid: 1, username: 'Bob', hot: true, hotFloor: 12),
+                    BlockedPostPlaceholder(uid: 1, username: 'Bob', floor: 3),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text(t.postCard.hotReply), findsOneWidget);
+        expect(find.text('${t.postCard.hotReply} #12'), findsOneWidget);
+        expect(find.text('#3'), findsOneWidget);
+        expect(find.text('#'), findsNothing);
+      });
+    });
+
+    test('the rate page and the report name the floor, without one when it is not known', () {
+      expect(
+        ratePostDescription(t, username: 'Bob', floor: '12'),
+        t.ratePostPage.description(username: 'Bob', floor: '12'),
+      );
+      for (final unknown in ['0', 'null', '']) {
+        expect(
+          ratePostDescription(t, username: 'Bob', floor: unknown),
+          t.ratePostPage.descriptionNoFloor(username: 'Bob'),
+        );
+      }
+      expect(t.ratePostPage.descriptionNoFloor(username: 'Bob'), isNot(contains('null')));
+      final posts = threadPageFromApi(_api('thread_v15_282_hot'), 1).postList;
+      final hot = posts.firstWhere((e) => e.postID == '6742');
+      expect(postReportFloorLabel(t, hot), '${t.postCard.hotReply} #12');
+      expect(postReportFloorLabel(t, hot.copyWith(hotFloor: null)), '${t.postCard.hotReply} (PID 6742)');
+      expect(postReportFloorLabel(t, posts.first), '#1');
+      expect(postReportFloorLabel(t, posts.first.copyWith(postFloor: null)), 'PID ${posts.first.postID}');
     });
   });
 
@@ -760,6 +879,36 @@ void main() {
       await bloc.stream.firstWhere((e) => e.status == ForumStatus.success);
       expect((bloc.state.currentPage, bloc.state.totalPages), (1, 3));
       expect(bloc.state.normalThreadList.map((e) => e.threadID), ['1', '2']);
+      await bloc.close();
+    });
+
+    test('retrying a page that failed asks that page again: nothing added twice', () async {
+      var failing = false;
+      final asked = <int>[];
+      final repository = _FakeForumRepository((n) => _forumPage(answered: n, total: 3, threads: [n * 10]))
+        ..fail = () => failing;
+      final bloc = ForumBloc(fid: '11', forumRepository: repository)..add(const ForumLoadMoreRequested(1));
+      await bloc.stream.firstWhere((e) => e.status == ForumStatus.success);
+      failing = true;
+      bloc.add(const ForumLoadMoreRequested(2));
+      await bloc.stream.firstWhere((e) => e.status == ForumStatus.failure);
+      failing = false;
+      bloc.add(const ForumRetryRequested());
+      await bloc.stream.firstWhere((e) => e.status == ForumStatus.success);
+      expect(bloc.state.normalThreadList.map((e) => e.threadID), ['10', '20'], reason: 'before: 10, 10');
+      expect(bloc.state.currentPage, 2);
+      asked.addAll(repository.asked);
+      expect(asked, [1, 2, 2]);
+
+      // A jump that failed: the page jumped to.
+      failing = true;
+      bloc.add(const ForumJumpPageRequested(3));
+      await bloc.stream.firstWhere((e) => e.status == ForumStatus.failure);
+      failing = false;
+      bloc.add(const ForumRetryRequested());
+      await bloc.stream.firstWhere((e) => e.status == ForumStatus.success);
+      expect(bloc.state.normalThreadList.map((e) => e.threadID), ['30']);
+      expect(repository.asked.skip(3), [3, 3]);
       await bloc.close();
     });
 

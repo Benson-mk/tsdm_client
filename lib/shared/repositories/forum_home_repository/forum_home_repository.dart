@@ -56,9 +56,6 @@ final class ForumHomeRepository with LoggerMixin {
   /// Cached page of the forum homepage.
   ForumHomePage? _page;
 
-  /// The session [_page] was asked with.
-  _Session? _pageSession;
-
   /// The fetch on its way, and the session it was asked with: callers asking meanwhile for the same session share it.
   Future<Either<AppException, ForumHomePage>>? _pending;
   _Session? _pendingSession;
@@ -66,6 +63,9 @@ final class ForumHomeRepository with LoggerMixin {
   /// The page asked once more with its document ([fetchPageDocument]) and that request, on its way or done: asked once
   /// per page, every caller asking for the same page shares it.
   ({ForumHomeApiPage page, Future<ForumHomeApiPage?> answer})? _documentFetch;
+
+  /// The session each page fetched was asked with.
+  final _sessionOfPage = Expando<_Session>();
 
   /// Every page fetched from the server, the latest one replayed to new listeners.
   final _pageSubject = BehaviorSubject<ForumHomePage>();
@@ -83,7 +83,6 @@ final class ForumHomeRepository with LoggerMixin {
   /// Drop the cached page so the next fetch goes to the server, and let no later caller share a fetch on its way.
   void invalidate() {
     _page = null;
-    _pageSession = null;
     _pending = null;
     _pendingSession = null;
     _documentFetch = null;
@@ -128,7 +127,7 @@ final class ForumHomeRepository with LoggerMixin {
     final pageEither = await _fetchForumHome().run();
     if (pageEither case Right(value: final page)) {
       _page = page;
-      _pageSession = session;
+      _sessionOfPage[page] = session;
       if (!_pageSubject.isClosed) {
         _pageSubject.add(page);
       }
@@ -142,9 +141,10 @@ final class ForumHomeRepository with LoggerMixin {
   ///
   /// The page with its document is asked ([fetchPageDocument]); published on [pageStream], the topics tab reads the
   /// panel from it (`forumGroupsFromApi`). When it fails, [page] stays, and its panel is looked up among the
-  /// categories. Nothing is asked for any other page.
+  /// categories. Nothing is asked for any other page, nor for one that is not the cached page any more (the panel of
+  /// the page shown since is asked for that page).
   Future<void> requestFavoritesPanel(ForumHomePage page) async {
-    if (page is! ForumHomeApiPage || !favoritesPanelNeedsDocument(page.json)) {
+    if (page is! ForumHomeApiPage || !favoritesPanelNeedsDocument(page.json) || !identical(page, _page)) {
       return;
     }
     debug('favorite forums without their panel (plugin before 2.8.1): asking the homepage with its document');
@@ -159,8 +159,10 @@ final class ForumHomeRepository with LoggerMixin {
   /// [documentTimeout]; asked once per page: callers asking for the same page share the request, on its way or done.
   /// The answer is given only when it is the structured page served to the account [page] was served to and the
   /// session [page] was asked with is still the one in use; null otherwise, when it fails, and without asking when
-  /// [page] is not the cached page or the session changed since it was fetched. When [page] is still the cached page,
-  /// the answer is cached and published on [pageStream] in its place.
+  /// the session changed since [page] was fetched (or [page] was not fetched here). A page another fetch replaced
+  /// meanwhile in the same session (the homepage refreshed while the activities page was loading) is asked for all
+  /// the same; only when [page] is still the cached page is the answer cached and published on [pageStream] in its
+  /// place.
   Future<ForumHomeApiPage?> fetchPageDocument(ForumHomeApiPage page) {
     if (page.json['document'] is String) {
       return Future.value(page);
@@ -170,7 +172,7 @@ final class ForumHomeRepository with LoggerMixin {
       return asked.answer;
     }
     final session = _sessionNow();
-    if (!identical(page, _page) || session != _pageSession) {
+    if (_sessionOfPage[page] != session) {
       return Future.value();
     }
     final answer = _askPageDocument(page, session);
@@ -205,6 +207,7 @@ final class ForumHomeRepository with LoggerMixin {
       debug('homepage with its document dropped: the session changed meanwhile');
       return null;
     }
+    _sessionOfPage[full] = session;
     if (identical(page, _page)) {
       _page = full;
       if (!_pageSubject.isClosed) {
