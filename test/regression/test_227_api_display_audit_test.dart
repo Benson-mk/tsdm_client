@@ -9,7 +9,8 @@
 // 5. Another member's friends list prints no credits for 0, as `space_list` does.
 // 6. A reply without text quotes "......" ("..." in the guide), as the pages print it.
 // 7. The thread's author is `thread.authorid` on every page: no extra request of the first page for the block list.
-// 8. "TA的主题" of another member opens that member's threads, not the account's own list.
+// 8. "TA的主题" of another member opens the search by their name, or their profile when the link names a uid only, not
+//    the account's own list.
 // 9. An anonymous last post of a forum row names "匿名", as the page does.
 //
 // The samples are synthetic, shaped as the production forum's answers and its X5 author column (test_004); the
@@ -991,18 +992,23 @@ void main() {
   });
 
   group("8. a member's thread list", () {
-    test("of another member: the search of their threads; of nobody: the account's own list", () {
+    test("of another member: by name their search, by uid only their profile; of nobody: the account's own list", () {
+      // By uid only: the profile, whose "搜索此人的帖子" searches by the name (a bare `srchuid` found nothing).
       final other = 'home.php?mod=space&uid=1103&do=thread&view=me&from=space'.parseUrlToRoute()!;
-      expect(other.screenPath, ScreenPaths.search);
-      expect(other.queryParameters, {'authorUid': '1103'});
+      expect(other.screenPath, ScreenPaths.profile);
+      expect(other.queryParameters, {'uid': '1103'});
       final escaped = '$baseUrl/home.php?mod=space&amp;uid=1103&amp;do=thread&amp;type=thread&amp;view=me'
           .unescapeHtml()!
           .parseUrlToRoute()!;
-      expect(escaped.screenPath, ScreenPaths.search);
-      expect(escaped.queryParameters, {'authorUid': '1103'});
+      expect(escaped.screenPath, ScreenPaths.profile);
+      expect(escaped.queryParameters, {'uid': '1103'});
+      // By name (with or without the uid): the search by that name.
       final byName = 'home.php?mod=space&username=fixture&do=thread&view=me'.parseUrlToRoute()!;
       expect(byName.screenPath, ScreenPaths.search);
       expect(byName.queryParameters, {'authorName': 'fixture'});
+      final both = 'home.php?mod=space&uid=1103&username=fixture&do=thread&view=me'.parseUrlToRoute()!;
+      expect(both.screenPath, ScreenPaths.search);
+      expect(both.queryParameters, {'authorName': 'fixture'});
 
       expect('home.php?mod=space&do=thread&view=me'.parseUrlToRoute()!.screenPath, ScreenPaths.myThread);
       expect(myThreadReplyUrl.parseUrlToRoute()!.screenPath, ScreenPaths.myThread);
@@ -1072,10 +1078,10 @@ void main() {
         expect(query.containsKey('srchuid'), isFalse);
       });
 
-      testWidgets('a member named by uid is searched by uid', (tester) async {
-        final query = await searchOf(tester, 'home.php?mod=space&uid=1103&do=thread&view=me');
-        expect(query['srchuid'], '1103');
-        expect(query.containsKey('srchuname'), isFalse);
+      testWidgets('a member named by name and uid is searched by the name alone', (tester) async {
+        final query = await searchOf(tester, 'home.php?mod=space&uid=1103&username=fixture&do=thread&view=me');
+        expect(query['srchuname'], 'fixture');
+        expect(query.containsKey('srchuid'), isFalse);
       });
     });
   });

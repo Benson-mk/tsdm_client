@@ -95,10 +95,13 @@ extension ParseUrl on String {
     }
 
     if (mod == 'space' && queryParameters['do'] == 'thread' && queryParameters['view'] == 'me') {
-      // A member's own list names nobody ("我的帖子"). One that names a member (`uid`, `username`: "TA的主题" of a
-      // profile or a floor, also the account's own) is that member's list: their threads are the search by that
-      // author, the page the profile opens for them ("搜索此人的帖子"); their replies (`type=reply`) and comments
-      // have no page in the app and open as an unsupported forum link (the web page).
+      // A member's own list names nobody ("我的帖子"). One that names a member ("TA的主题" of a profile or a floor,
+      // also the account's own) is that member's list, which the app has no page for:
+      //
+      // * by name (`username`): their threads are the search by that name, as the profile's "搜索此人的帖子";
+      // * by uid only: their profile, whose "搜索此人的帖子" searches by their name. The forum's search by a bare uid
+      //   (`srchuid` alone) found nothing for testers (see `SearchRepository.searchWithParameters`);
+      // * their replies (`type=reply`) and comments open as an unsupported forum link (the web page).
       final uid = queryParameters['uid'];
       final username = queryParameters['username'];
       final hasUid = uid != null && uid.isNotEmpty && uid != '0';
@@ -110,10 +113,10 @@ extension ParseUrl on String {
       if (type != null && type.isNotEmpty && type != 'thread') {
         return null;
       }
-      return RecognizedRoute(
-        ScreenPaths.search,
-        queryParameters: {if (hasUid) 'authorUid': uid else 'authorName': username!},
-      );
+      if (hasUsername) {
+        return RecognizedRoute(ScreenPaths.search, queryParameters: {'authorName': username});
+      }
+      return RecognizedRoute(ScreenPaths.profile, queryParameters: {'uid': uid!});
     }
 
     // Favorites list, with or without uid: home.php?mod=space[&uid=xxx]&do=favorite[&view=me][&type=thread|forum]
