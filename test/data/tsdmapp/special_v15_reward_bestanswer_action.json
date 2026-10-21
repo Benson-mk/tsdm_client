@@ -1,0 +1,17 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792543834,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "message",
+ "message": "最佳答案设置成功",
+ "message_key": "reward_completion",
+ "url": "forum.php?mod=viewthread&tid=9200375",
+ "handlekey": "",
+ "values": {},
+ "login": 0,
+ "alert": "info"
+}

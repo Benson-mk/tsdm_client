@@ -38,6 +38,7 @@ final class ThreadPageInfo {
     required this.postMedals,
     required this.viewCount,
     required this.replyCount,
+    this.special,
   });
 
   /// Thread id.
@@ -99,6 +100,11 @@ final class ThreadPageInfo {
 
   /// Thread reply count.
   final int? replyCount;
+
+  /// The special block of the thread (poll, goods, bounty, activity, debate) the page's first floor holds, as the
+  /// forum's app API gives it (plugin 2.8.0); null on another page, for a web page or an older plugin. The first floor
+  /// carries it too ([Post.special]).
+  final ThreadSpecial? special;
 }
 
 /// Whether the thread page says the thread accepts no more replies.

@@ -12,6 +12,7 @@ import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
+import 'package:tsdm_client/features/special_thread/widgets/special_thread_card.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode_view.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/interactive_post_entry.dart';
@@ -228,6 +229,9 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                   ].join(' · '),
                   style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
                 ),
+                // What the page prints in the floor's header of a special thread: the accepted answer of a bounty, the
+                // floor's side in a debate (plugin 2.8.0).
+                if (SpecialFloorBadges.any(widget.post)) ...[sizedBoxW4H4, SpecialFloorBadges(widget.post)],
                 // Badges the forum renders in this floor's author column: the user group badge and the secondary title
                 // of this author. Nothing about the current account is used here. They wrap below each other on narrow
                 // windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
@@ -491,8 +495,33 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     }
   }
 
+  /// Reload the page of this floor after an action of the thread's special block (a vote, an application, accepting
+  /// an answer…), keeping this floor as the scroll target as after an edit; null without a thread page above (the
+  /// post of a notice), where the special cards offer no action.
+  VoidCallback? _specialReload(BuildContext context) {
+    final threadBloc = context.readOrNull<ThreadBloc>();
+    if (threadBloc == null) {
+      return null;
+    }
+    final onEdited = widget.onEdited;
+    final page = widget.post.page;
+    return () {
+      if (threadBloc.isClosed) {
+        return;
+      }
+      onEdited?.call();
+      threadBloc.add(ThreadJumpPageRequested(page));
+    };
+  }
+
   Widget _buildContextMenuRow(BuildContext context) => Row(
     children: [
+      // Accepting this floor as the answer of the bounty, for the thread's author (plugin 2.8.0).
+      if ((widget.post.bestAnswerRequest, _specialReload(context)) case (final request?, final reload?))
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: SpecialBestAnswerButton(request, onReload: reload),
+        ),
       const Spacer(),
       // The floor's action menu, at the end of the floor: muted rounded button, the icon stays the usual "more" so it
       // reads like the other menus of the app.
@@ -524,10 +553,18 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         // Post body
         sizedBoxW12H12,
         InteractivePostEntry(data: widget.post.data, postId: widget.post.postID),
+        // The special block of the thread (plugin 2.8.0), where the web page prints it: the bounty and the activity
+        // before the content, the poll, the goods and the debate after it. Its html is cut out of the content.
+        if (widget.post.special case final special? when SpecialThreadCard.aboveContent(special))
+          SpecialThreadCard(special, pid: widget.post.postID, onReload: _specialReload(context)),
         _buildPostBody(context),
         // 红包 if any.
         if (widget.post.locked.isNotEmpty) ...widget.post.locked.where((e) => e.isValid()).map(LockedCard.new),
-        if (widget.post.poll case final poll?) PollCard(widget.post.postID, fromPage: poll),
+        if (widget.post.special case final special?) ...[
+          if (!SpecialThreadCard.aboveContent(special))
+            SpecialThreadCard(special, pid: widget.post.postID, onReload: _specialReload(context)),
+        ] else if (widget.post.poll case final poll?)
+          PollCard(widget.post.postID, fromPage: poll),
         if (widget.post.packetUrl != null) ...[
           sizedBoxW12H12,
           PacketCard(widget.post.packetUrl!, allTaken: widget.post.packetAllTaken),

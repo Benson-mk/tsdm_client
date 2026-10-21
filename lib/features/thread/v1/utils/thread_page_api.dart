@@ -4,6 +4,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/features/thread/v1/utils/special_block.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_medal_menu_info.dart';
@@ -57,7 +58,14 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///   answer's `uid` as the account they were served to; the placeholder of a deleted floor of a rush thread
 ///   (`deleted` 1) is left out, as the page parser leaves it out; since plugin 2.7.0 (`schema: 14`) each floor also
 ///   keeps its bbcode, its attachments, the answer's `codes` and `smilies_version`, for the app's own renderer;
-/// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`).
+/// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`);
+/// * since plugin 2.8.0 (`schema: 15`) `special` is the special block of the first floor (poll, goods, bounty,
+///   activity, debate: [ThreadSpecial], null when the answer has none or names another type), kept on the page and
+///   on the first floor ([Post.special]), whose content then leaves out what the forum's template of the block
+///   printed ([bodyHtmlWithoutSpecialBlock]): the app shows the block as its own card. The floors the account may
+///   accept as the answer of a bounty (`special.set_best.pids`) carry the request doing it
+///   ([Post.bestAnswerRequest]); each floor's side in a debate and the accepted answer come with the floor
+///   ([Post.fromApi]). Without `special` every floor is exactly what it was.
 ///
 /// The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
 /// permission (`havePermission` false, the message text as the denied message, as the page's `#messagetext p`);
@@ -105,22 +113,28 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final totalPages = json['pages'] is num ? _int(json['pages']) : pageNumber;
   final draft = _int(thread['draft']) == 1;
   final pay = thread['pay'] is Map<String, dynamic> ? _map(thread['pay']) : null;
+  final special = ThreadSpecial.fromApi(json['special'], formHash: _text(json['formhash']), viewerUid: uid);
 
   // The placeholder a rush thread prints for a deleted floor (`deleted` 1: "无效楼层，该帖已经被删除", no author, no
   // content) is left out, as the page parser leaves out a floor without an author.
   final postList = _list(json['posts'])
       .where((p) => _int(p['deleted']) != 1)
       .map(
-        (p) => Post.fromApi(
-          p,
-          tid: tid ?? '',
-          fid: fid ?? 0,
-          viewerUid: uid,
-          page: currentPage,
-          pay: pay,
-          draft: draft,
-          codes: json['codes'],
-          smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
+        (p) => _withSpecial(
+          Post.fromApi(
+            p,
+            tid: tid ?? '',
+            fid: fid ?? 0,
+            viewerUid: uid,
+            page: currentPage,
+            pay: pay,
+            draft: draft,
+            codes: json['codes'],
+            smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
+            threadSpecial: _int(thread['special']),
+          ),
+          special,
+          first: _int(p['first']) == 1,
         ),
       )
       .toList();
@@ -190,7 +204,33 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
     postMedals: postMedals,
     viewCount: _int(thread['views']),
     replyCount: _int(thread['replies']),
+    special: special,
   );
+}
+
+/// [post] with what the page's [special] block gives it: the [first] floor the block itself, its content without the
+/// forum's html of the block; a floor the account may accept as the answer of a bounty the request doing it.
+Post _withSpecial(Post post, ThreadSpecial? special, {required bool first}) {
+  if (special == null) {
+    return post;
+  }
+  final pid = int.tryParse(post.postID) ?? 0;
+  if (first) {
+    if (post.isSpoofed) {
+      // The plugin gives no block for a forged first floor; nothing of it is shown either way.
+      return post;
+    }
+    return post.copyWith(
+      special: special,
+      data: bodyHtmlWithoutSpecialBlock(post.data, special, pid: post.postID),
+    );
+  }
+  if (special case final RewardSpecial reward when pid > 0) {
+    if (reward.bestAnswerRequest(pid) case final request?) {
+      return post.copyWith(bestAnswerRequest: request);
+    }
+  }
+  return post;
 }
 
 /// The account a structured answer [json] ([threadApiAnswerOf]) was served to: its `uid`, null for a guest (0) and

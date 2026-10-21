@@ -1,0 +1,180 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792543835,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "checknewpm": "",
+ "type": "thread",
+ "schema": 15,
+ "codes": {
+  "allowsmilies": 1,
+  "allowbbcode": 1,
+  "allowimgcode": 1,
+  "allowhtml": 0,
+  "allowmediacode": 0,
+  "jammer": 0,
+  "maxsmilies": 10,
+  "imgwhitelist": {
+   "enabled": 0,
+   "domains": []
+  }
+ },
+ "smilies_version": "1071fed373e93cf2a184c2ef81938b99",
+ "timeoffset": 8,
+ "thread": {
+  "tid": 9200385,
+  "fid": 2,
+  "subject": "tsdmapp 2.8.0 活動 A3 222088",
+  "authorid": 32,
+  "author": "ag_admin",
+  "anonymous": 0,
+  "dateline": 1792539800,
+  "views": 100,
+  "replies": 0,
+  "readperm": 0,
+  "price": 0,
+  "special": 4,
+  "closed": 0,
+  "digest": 0,
+  "displayorder": 0,
+  "typeid": 0,
+  "typename": "",
+  "sortid": 0,
+  "sortname": "",
+  "moved": 0,
+  "soft_closed": 0,
+  "draft": 0,
+  "pay": null,
+  "modact": ""
+ },
+ "forum": {
+  "fid": 2,
+  "name": "📢 公告 & 新手報到"
+ },
+ "nav": [
+  {
+   "fid": 1,
+   "name": "🏠 論壇大廳",
+   "type": "group"
+  },
+  {
+   "fid": 2,
+   "name": "📢 公告 & 新手報到",
+   "type": "forum"
+  }
+ ],
+ "page": 1,
+ "pages": 1,
+ "ppp": 10,
+ "ordertype": 0,
+ "authorid": 0,
+ "reply": {
+  "allowed": 1,
+  "fastpost": 1,
+  "fastpost_allowed": 1,
+  "posttime": "1700000000",
+  "subject": "",
+  "action": "forum.php?mod=post&action=reply&fid=2&tid=9200385&extra=page%3D1&replysubmit=yes&infloat=yes&handlekey=fastpost"
+ },
+ "menus_html": [],
+ "posts": [
+  {
+   "pid": 5826,
+   "position": 1,
+   "deleted": 0,
+   "first": 1,
+   "authorid": 32,
+   "author": "ag_admin",
+   "anonymous": 0,
+   "dateline": 1792539800,
+   "invisible": 0,
+   "avatar": "https://www.tsdm39.com/data/avatar/noavatar.svg",
+   "share_url": "forum.php?mod=viewthread&tid=9200385",
+   "group": {
+    "gid": 1,
+    "title": "管理员",
+    "color": "",
+    "icon": ""
+   },
+   "lastedit": null,
+   "can": {
+    "reply": 1,
+    "edit": 0,
+    "rate": 0,
+    "report": 1
+   },
+   "urls": {
+    "reply": "forum.php?mod=post&action=reply&fid=2&tid=9200385&reppost=5826&extra=page%3D1&page=1",
+    "edit": "forum.php?mod=post&action=edit&fid=2&tid=9200385&pid=5826&page=1",
+    "rate": "forum.php?mod=misc&action=rate&tid=9200385&pid=5826",
+    "report": "misc.php?mod=report&rtype=post&rid=5826&tid=9200385&fid=2"
+   },
+   "signature_html": "<a href=\"https://www.tsdm39.com/forum.php?mod=viewthread&amp;tid=9\" target=\"_blank\">簽名裡的舊網域連結</a>",
+   "poll_html": "",
+   "packet_html": "",
+   "rate": null,
+   "author_html": "\r\n<div id=\"favatar5826\" class=\"pls cl favatar\">\r\n<div class=\"pi\">\r\n<div class=\"authi\"><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xw1\">ag_admin</a>\r\n</div>\r\n</div>\r\n<div class=\"p_pop blk bui card_gender_0\" id=\"userinfo5826\" style=\"display: none; margin-top: -11px;\">\r\n<div class=\"m z\">\r\n<div id=\"userinfo5826_ma\"></div>\r\n</div>\r\n<div class=\"i y\">\r\n<div>\r\n<strong><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xi2\">ag_admin</a></strong>\r\n<em>当前在线</em>\r\n</div><dl class=\"cl\">\r\n<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl><div class=\"imicn\">\r\n<a href=\"http://\" target=\"_blank\" title=\"查看个人网站\"><img src=\"static/image/common/forumlink.gif\" alt=\"查看个人网站\" /></a><a href=\"home.php?mod=space&amp;uid=32&amp;do=profile\" target=\"_blank\" title=\"查看详细资料\"><img src=\"static/image/common/userinfo.gif\" alt=\"查看详细资料\" /></a>\r\n</div>\r\n<div id=\"avatarfeed\"><span id=\"threadsortswait\"></span></div>\r\n</div>\r\n</div>\r\n<div>\r\n<div class=\"avatar\" onmouseover=\"showauthor(this, 'userinfo5826')\"><a href=\"home.php?mod=space&amp;uid=32\" class=\"avtm\" target=\"_blank\"><img data-src=\"./data/avatar/noavatar.svg\" class=\"_avt user_avatar\"></a></div>\r\n</div>\r\n<div class=\"qdsmile\"><li><center>TA的每日心情</center><table><tr><th><a href=\"forum.php?mod=forumdisplay&amp;fid=4\"><img onmouseover=\"showMenu({'ctrlid':this.id});\" id=\"heart_5826\" src=\"source/plugin/dsu_paulsign/img/1/kx.gif\" alt=\"\"></a></th><th><font size=\"5px\">开心</font></th></tr></table><div style=\"display:none\" id=\"heart_5826_menu\" class=\"p_pop h_pop tsqd\">管理员今天也来签到了</div><p style=\"margin:0\">签到天数: 1天[LV.1]初来乍到</p></li></div><div class=\"tns xg2\"><table cellspacing=\"0\" cellpadding=\"0\"><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=thread&view=me&from=space\" class=\"xi2\">248</a></p>主题</th><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=reply&view=me&from=space\" class=\"xi2\">67</a></p>回帖</th><td><p><a href=\"home.php?mod=space&uid=32&do=profile\" class=\"xi2\">1196</a></p>积分</td></table></div>\r\n\r\n<p><em><a href=\"home.php?mod=spacecp&amp;ac=usergroup&amp;gid=1\" target=\"_blank\">管理员</a></em></p>\r\n\r\n\r\n<p><span><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star1 fic4 fc-l\" title=\"Rank: 9\"></i></span></p>\r\n\r\n\r\n\r\n<dl class=\"pil cl\">\r\n\t<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl>\r\n\r\n<dl class=\"pil cl\"></dl><ul class=\"xl xl2 o cl\">\r\n<li class=\"pm2\"><a href=\"home.php?mod=spacecp&amp;ac=pm&amp;op=showmsg&amp;handlekey=showmsg_32&amp;touid=32&amp;pmid=0&amp;daterange=2&amp;pid=5826&amp;tid=9200385\" onclick=\"showWindow('sendpm', this.href);\" title=\"发消息\" class=\"xi2\">发消息</a></li>\r\n</ul>\r\n</div>\r\n",
+   "body_html": "\r\n \r\n<div class=\"pcbs\"><script type=\"text/javascript\">\r\nfunction checkform(theform) {\r\nif (theform.message.value.length > 200) {\r\nalert('您的留言超过 200 个字符的限制');\r\ntheform.message.focus();\r\nreturn false;\r\n}\r\nreturn true;\r\n}\r\n</script>\r\n\r\n<div class=\"act pbm cl\">\r\n<div class=\"spvimg\">\r\n<div class=\"nophoto\"></div></div>\r\n<div class=\"spi\">\r\n<dl>\r\n<dt>活动类型:</dt>\r\n<dd><strong>測試活動</strong></dd>\r\n<dt>开始时间:</dt>\r\n<dd>\r\n2026-10-23 08:50</dd>\r\n<dt>活动地点:</dt>\r\n<dd>PLACE_222088</dd>\r\n<dt>性别:</dt>\r\n<dd>\r\n 不限\r\n</dd>\r\n</dl>\r\n<dl class=\"nums mtw\">\r\n<dt>已报名人数:</dt>\r\n<dd>\r\n<em>1</em> 人\r\n</dd>\r\n</dl>\r\n<dl>\r\n<dt>剩余名额:</dt>\r\n<dd>\r\n1 人\r\n</dd>\r\n<dt></dt>\r\n<dd>\r\n<p class=\"pns\">\r\n<button class=\"pn\" value=\"true\" name=\"ijoin\" onclick=\"showDialog($('activityjoin').innerHTML, 'info', '我要参加')\"><span>我要参加</span></button></p>\r\n</dd>\r\n</dl>\r\n</div>\r\n</div>\r\n\r\n<table cellspacing=\"0\" cellpadding=\"0\"><tr><td class=\"t_f\" id=\"postmessage_5826\">活動 A3_BODY_222088 活動說明</td></tr></table>\r\n\r\n\r\n<div id=\"activityjoin\" style=\"display:none\">\r\n<form name=\"activity\" id=\"activity\" method=\"post\" autocomplete=\"off\" action=\"forum.php?mod=misc&amp;action=activityapplies&amp;fid=2&amp;tid=9200385&amp;pid=5826\" onsubmit=\"ajaxpost('activity', 'return_activityapplies', 'return_activityapplies', 'onerror');return false;\">\r\n<input type=\"hidden\" name=\"formhash\" value=\"f1f2f3f4\" />\r\n<input type=\"hidden\" name=\"handlekey\" value=\"activityapplies\" />\r\n<div class=\"c\">\r\n<p class=\"xi1\">注意：参加此活动将扣除您 65535 威望</p><div class=\"actfm\">\r\n<table summary=\"我要参加\" cellpadding=\"0\" cellspacing=\"0\" class=\"actl\">\r\n<tr>\r\n<th>留言</th>\r\n<td><textarea name=\"message\" maxlength=\"200\" cols=\"38\" rows=\"3\" class=\"pt\"></textarea></td>\r\n</tr>\r\n</table>\r\n</div>\r\n</div>\r\n<div class=\"o pns\">\r\n<p class=\"xi1\">威望 不足65535</p>\r\n</div>\r\n</form>\r\n\r\n<script type=\"text/javascript\">\r\nfunction succeedhandle_activityapplies(locationhref, message) {\r\nshowDialog(message, 'right', '', 'location.href=\"' + locationhref + '\"');\r\n}\r\n</script>\r\n</div>\r\n<div class=\"ptm pbm xs1\">\r\n<h2>暂未通过 (1 人)</h2>\r\n<table class=\"dt\">\r\n<tr>\r\n<th width=\"140\">&nbsp;</th>\r\n<th>留言</th>\r\n<th width=\"110\">申请时间</th>\r\n</tr><tr>\r\n<td>\r\n<a target=\"_blank\" href=\"home.php?mod=space&amp;uid=33\" class=\"ratl vm\"><img data-src=\"./data/avatar/noavatar.svg\" class=\"_avt user_avatar\"></a>\r\n<a target=\"_blank\" href=\"home.php?mod=space&amp;uid=33\">ag_mid</a>\r\n</td>\r\n<td></td>\r\n<td><span title=\"2026-10-21 07:43\">1&nbsp;小时前</span></td>\r\n</tr>\r\n</table>\r\n</div>\r\n\r\n</div>\r\n<div id=\"comment_5826\" class=\"cm\">\r\n</div>\r\n\r\n<div id=\"post_rate_div_5826\"></div>\r\n",
+   "message": "活動 A3_BODY_222088 活動說明",
+   "message_reason": "",
+   "bbcodeoff": 1,
+   "smileyoff": 1,
+   "parseurloff": 0,
+   "allowsmilies": 1,
+   "allowbbcode": 1,
+   "allowimgcode": 1,
+   "allowmediacode": 1,
+   "attachments": [],
+   "customtags": [],
+   "stand": 0,
+   "stand_votes": 0,
+   "best": 0
+  }
+ ],
+ "special": {
+  "type": "activity",
+  "class": "測試活動",
+  "place": "PLACE_222088",
+  "gender": 0,
+  "cost": 0,
+  "number": 1,
+  "starttimefrom": 1792716600,
+  "starttimeto": 0,
+  "expiration": 0,
+  "closed": 0,
+  "image": null,
+  "applied_count": 1,
+  "verified_count": 0,
+  "pending_count": 1,
+  "remaining": 1,
+  "credit": {
+   "amount": 65535,
+   "enough": 0,
+   "id": 1,
+   "title": "威望",
+   "unit": ""
+  },
+  "applied": 0,
+  "verified": null,
+  "can_apply": 0,
+  "apply_mode": "",
+  "apply": null,
+  "can_cancel": 0,
+  "cancel": null,
+  "can_manage": 0,
+  "manage_url": "",
+  "applylist": [],
+  "applylist_more": "",
+  "pending": [
+   {
+    "uid": 33,
+    "username": "ag_mid",
+    "avatar": "https://www.tsdm39.com/data/avatar/noavatar.svg",
+    "dateline": 1792539780,
+    "message": "",
+    "payment": null
+   }
+  ]
+ }
+}

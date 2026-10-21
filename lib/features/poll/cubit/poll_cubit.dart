@@ -2,6 +2,9 @@ import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
+import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/shared/models/models.dart';
 import 'package:universal_html/parsing.dart';
 
 /// Ephemeral poll UI state; never saved to disk.
@@ -14,6 +17,7 @@ final class PollState {
     this.failed = false,
     this.submissionUnconfirmed = false,
     this.choices = const {},
+    this.refusal,
   });
 
   /// Latest server snapshot.
@@ -33,12 +37,16 @@ final class PollState {
 
   /// Explicitly selected option identifiers.
   final Set<String> choices;
+
+  /// The forum refused the latest vote, with this message (the forum's app API's result, plugin 2.6.0).
+  final String? refusal;
 }
 
 /// Serializes voting and discards completions from obsolete accounts/pages.
 class PollCubit extends Cubit<PollState> {
   /// Constructor.
-  PollCubit({required this.url, required this.currentUid, required this.repository}) : super(const PollState());
+  PollCubit({required this.url, required this.currentUid, required this.repository, this.onVoted})
+    : super(const PollState());
 
   /// Original post URL, resolved by the forum to its thread.
   final String url;
@@ -48,8 +56,20 @@ class PollCubit extends Cubit<PollState> {
 
   /// Creates an identity-bound transport for each new fetch.
   final PollRepository Function() repository;
+
+  /// Called instead of the GET for the results when the forum took a vote (its app API's result, plugin 2.6.0): the
+  /// thread page holding the card reloads, and builds the card again with the poll as the forum now has it. Null
+  /// where nothing reloads (the post of a notice): the card asks for the results itself.
+  final void Function()? onVoted;
   int _generation = 0;
   PollRepository? _loadedRepository;
+
+  /// A vote was taken and [onVoted] asked the thread page to reload; the card waits for it (busy).
+  bool _awaitsReload = false;
+
+  /// Whether the card waits for the reload of its thread page after a vote ([onVoted]): a reload that failed at once
+  /// leaves the card on screen, which then asks for the poll itself.
+  bool get awaitsReload => _awaitsReload;
 
   /// The polls a vote was sent for since the app started, as (account, [url]); in memory only.
   ///
@@ -65,6 +85,7 @@ class PollCubit extends Cubit<PollState> {
 
   /// Hide old-account data immediately, including during a login transition.
   void invalidate() {
+    _awaitsReload = false;
     _generation++;
     _loadedRepository = null;
     emit(const PollState(busy: true));
@@ -109,8 +130,29 @@ class PollCubit extends Cubit<PollState> {
     return true;
   }
 
+  /// Show the poll [special] of the thread page the card is in (the forum's app API, plugin 2.8.0), without asking the
+  /// forum, as [adopt] shows a page's form, under the same conditions: the page belongs to the account in use, and it
+  /// does not show the poll open although this account sent a vote for it since. False when it cannot be shown, the
+  /// caller then loads instead.
+  bool adoptSpecial(PollSpecial special) {
+    final uid = currentUid();
+    final servedUid = special.viewerUid;
+    if ((servedUid == null && uid != null) || (servedUid != null && servedUid != uid)) {
+      return false;
+    }
+    final poll = forumPollFromSpecial(special, loggedIn: uid != null && servedUid == uid);
+    if (poll.availability == PollAvailability.available && uid != null && _votesSent.contains((uid, url))) {
+      return false;
+    }
+    _generation++;
+    _loadedRepository = repository();
+    emit(PollState(poll: poll, uid: uid));
+    return true;
+  }
+
   /// Reload by GET only. Never repeat a failed/ambiguous submission here.
   Future<void> load() async {
+    _awaitsReload = false;
     final generation = ++_generation;
     final uid = currentUid();
     final repo = repository();
@@ -160,12 +202,28 @@ class PollCubit extends Cubit<PollState> {
     final generation = ++_generation;
     emit(PollState(poll: poll, uid: snapshot.uid, busy: true, choices: snapshot.choices));
     _votesSent.add((snapshot.uid!, url));
+    TsdmAppWriteResult? result;
     try {
-      await repo.vote(poll, snapshot.choices);
+      result = await repo.vote(poll, snapshot.choices);
     } on Exception {
       // A failed response can still mean the server accepted the vote. Only GET next.
     }
     if (!_current(generation, snapshot.uid)) return;
+    // The forum's verdict when its app API gave one (a `page` tells nothing by itself): a vote taken reloads the
+    // thread page where there is one, a refusal is shown with the forum's words and the poll read again.
+    String? refusal;
+    if (result != null && result.kind != TsdmAppWriteKind.page) {
+      if (result.succeeded && onVoted != null) {
+        _awaitsReload = true;
+        onVoted!();
+        return;
+      }
+      if (!result.succeeded) {
+        refusal = result.reason.isEmpty ? t.pollVoting.refused : result.reason;
+        // The forum said no: the vote was not counted.
+        _votesSent.remove((snapshot.uid!, url));
+      }
+    }
     try {
       final refreshed = await repo.fetch(url, snapshot.uid);
       if (!_current(generation, snapshot.uid)) return;
@@ -173,13 +231,14 @@ class PollCubit extends Cubit<PollState> {
         PollState(
           poll: refreshed,
           uid: snapshot.uid,
-          submissionUnconfirmed: refreshed.availability != PollAvailability.voted,
+          submissionUnconfirmed: refusal == null && refreshed.availability != PollAvailability.voted,
+          refusal: refusal,
         ),
       );
     } on Exception {
       if (_current(generation, snapshot.uid)) {
         _loadedRepository = null;
-        emit(PollState(uid: snapshot.uid, failed: true, submissionUnconfirmed: true));
+        emit(PollState(uid: snapshot.uid, failed: true, submissionUnconfirmed: refusal == null, refusal: refusal));
       }
     }
   }

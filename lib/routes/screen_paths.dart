@@ -392,6 +392,9 @@ class DialogPaths {
   /// Common dialog to show question.
   static const String question = '/dialog/question';
 
+  /// Dialog to fill a form of a special thread (the activity's application, its cancel).
+  static const String specialThreadForm = '/dialog/specialThreadForm';
+
   /// Dialog to let user copy contents.
   static const String copyContent = '/dialog/copyContent';
 

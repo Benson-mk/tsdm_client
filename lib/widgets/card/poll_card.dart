@@ -19,6 +19,7 @@ import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
+import 'package:tsdm_client/widgets/cached_image/cached_image.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 
 /// Ordinary poll embedded in the first post, shared by both thread readers.
@@ -32,15 +33,27 @@ import 'package:tsdm_client/widgets/indicator.dart';
 /// the whole thread page again on each account status, twice when created); only a card such a reload left on screen
 /// with the poll of the account before asks for the poll itself, once. Elsewhere (the post of a notice) nothing
 /// reloads the post, the card loads again itself when the account changed.
+///
+/// With the forum's app API 2.8.0 the page gives the poll as fields ([fromSpecial], the thread's `special`), shown the
+/// same way instead of the form. A vote the forum's result says was taken calls [onVoted] (the thread page reloads
+/// and builds the card again with the poll as the forum now has it) instead of asking for the results; a refused vote
+/// shows the forum's message.
 class PollCard extends StatefulWidget {
   /// [controller] permits deterministic UI tests; production creates its own.
-  const PollCard(this.pid, {super.key, this.fromPage, this.controller});
+  const PollCard(this.pid, {super.key, this.fromPage, this.fromSpecial, this.onVoted, this.controller});
 
   /// First post identifier used by the forum redirect route.
   final String pid;
 
   /// The poll form of the page the post was read from, null when not known.
   final PostPoll? fromPage;
+
+  /// The poll of the page the post was read from as the forum's app API gives it (plugin 2.8.0); preferred over
+  /// [fromPage].
+  final PollSpecial? fromSpecial;
+
+  /// Reload the thread page after a vote the forum took; null where nothing reloads.
+  final VoidCallback? onVoted;
 
   /// Optional test controller, owned by its caller.
   final PollCubit? controller;
@@ -90,10 +103,15 @@ class _PollCardState extends State<PollCard> {
       url: '$baseUrl/forum.php?mod=redirect&goto=findpost&pid=${Uri.encodeQueryComponent(widget.pid)}',
       currentUid: () => auth.effectiveCurrentUid,
       repository: () => PollRepository.network(getIt.get<NetClientProvider>()),
+      onVoted: widget.onVoted,
     );
     _stateSubscription = _cubit.stream.listen((state) => _followLogins(auth, state));
+    final special = widget.fromSpecial;
     final page = widget.fromPage;
-    if (page == null || !_cubit.adopt(page.form, servedUid: page.viewerUid)) {
+    final adopted = special != null
+        ? _cubit.adoptSpecial(special)
+        : page != null && _cubit.adopt(page.form, servedUid: page.viewerUid);
+    if (!adopted) {
       unawaited(_cubit.load());
     }
     final thread = context.readOrNull<ThreadBloc>();
@@ -127,7 +145,8 @@ class _PollCardState extends State<PollCard> {
     _threadLoadCheck = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _threadLoadCheck = false;
-      if (mounted && _cubit.state.uid != auth.effectiveCurrentUid) {
+      // A vote reloads the thread page ([PollCubit.onVoted]): a reload that failed at once left this card waiting.
+      if (mounted && (_cubit.state.uid != auth.effectiveCurrentUid || _cubit.awaitsReload)) {
         unawaited(_cubit.load());
       }
     });
@@ -207,7 +226,8 @@ class _PollCardState extends State<PollCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pid != widget.pid ||
         oldWidget.controller != widget.controller ||
-        oldWidget.fromPage != widget.fromPage) {
+        oldWidget.fromPage != widget.fromPage ||
+        oldWidget.fromSpecial != widget.fromSpecial) {
       _stop();
       if (oldWidget.controller == null) unawaited(_cubit.close());
       _start();
@@ -241,6 +261,21 @@ class _PollCardState extends State<PollCard> {
     if (mounted && auth.effectiveCurrentUid == uid) await _cubit.load();
   }
 
+  /// The image of a choice of an image poll, small; tapping opens it.
+  Widget? _optionImage(PollOption option) {
+    final image = option.image;
+    if (image == null) {
+      return null;
+    }
+    return GestureDetector(
+      onTap: () async => context.dispatchAsUrl(image, external: true),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(appInnerRadius),
+        child: CachedImage(image, width: 56, height: 56, fit: BoxFit.cover),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => BlocBuilder<PollCubit, PollState>(
     bloc: _cubit,
@@ -263,6 +298,11 @@ class _PollCardState extends State<PollCard> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: AppNoticeBanner(tone: AppNoticeTone.warning, icon: Icons.help_outline, message: tr.unconfirmed),
+              ),
+            if (state.refusal case final refusal?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AppNoticeBanner(tone: AppNoticeTone.error, message: refusal, selectable: true),
               ),
             if (state.failed)
               Padding(
@@ -294,6 +334,7 @@ class _PollCardState extends State<PollCard> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(option.label),
                           subtitle: option.result == null ? null : Text(option.result!),
+                          secondary: _optionImage(option),
                         ),
                     ],
                   ),
@@ -306,6 +347,7 @@ class _PollCardState extends State<PollCard> {
                       controlAffinity: ListTileControlAffinity.leading,
                       title: Text(option.label),
                       subtitle: option.result == null ? null : Text(option.result!),
+                      secondary: _optionImage(option),
                       value: state.choices.contains(option.id),
                       onChanged:
                           state.busy ||
@@ -320,6 +362,7 @@ class _PollCardState extends State<PollCard> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(option.label),
                       subtitle: option.result == null ? null : Text(option.result!),
+                      trailing: _optionImage(option),
                     ),
               ],
               if (poll.notice.isNotEmpty)
