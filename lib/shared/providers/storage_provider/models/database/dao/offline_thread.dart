@@ -73,6 +73,33 @@ final class OfflineThreadDao extends DatabaseAccessor<AppDatabase> with _$Offlin
     return row.read(sum) ?? 0;
   }
 
+  /// Whether no page is saved.
+  Future<bool> isEmpty() async {
+    final row =
+        await (selectOnly(offlineThread)
+              ..addColumns([offlineThread.uid])
+              ..limit(1))
+            .getSingleOrNull();
+    return row == null;
+  }
+
+  /// Keep the [limit] most recently used pages of thread [tid] for user [uid] (any page, order and author filter);
+  /// delete the others. Returns the number of pages deleted.
+  Future<int> keepRecentPages({required int uid, required int tid, required int limit}) async {
+    if (limit < 0) {
+      return 0;
+    }
+    return customUpdate(
+      'DELETE FROM offline_thread WHERE uid = ?1 AND tid = ?2 AND rowid NOT IN ( '
+      'SELECT rowid FROM offline_thread WHERE uid = ?1 AND tid = ?2 '
+      'ORDER BY last_used_at DESC, page, order_type, author_id LIMIT ?3 '
+      ')',
+      variables: [Variable.withInt(uid), Variable.withInt(tid), Variable.withInt(limit)],
+      updates: {offlineThread},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
   /// Keep the [limit] most recently used threads (one thread being one account and one tid, whatever its pages);
   /// delete the pages of the others. Returns the number of pages deleted.
   Future<int> keepRecentThreads(int limit) async {

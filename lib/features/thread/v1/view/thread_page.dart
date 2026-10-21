@@ -406,7 +406,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
 
   /// Record the visit of the thread in [state] and mark it replied when the user has a floor on the page.
   void _recordVisitHistory(BuildContext context, ThreadState state) {
-    if (state.status != ThreadStatus.success) {
+    // Floors read back from an offline copy are no visit of the forum: the history and the replied marks stay.
+    if (state.status != ThreadStatus.success || state.isOffline) {
       return;
     }
     // Record thread visit history.

@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' hide State;
 import 'package:go_router/go_router.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
@@ -43,6 +44,7 @@ import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
+import 'package:tsdm_client/features/offline_thread/utils/thread_refusal.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/models/models.dart';
 import 'package:tsdm_client/features/settings/repositories/backup_repository.dart';
@@ -283,6 +285,30 @@ void main() {
   Future<List<OfflineThreadEntity>> saved() => storage.fetchAllOfflineThreadPages();
 
   group('setting off', () {
+    test('loading the settings while off drops the pages any other path left, never while on', () async {
+      Future<void> leaveAPage() => storage.saveOfflineThreadPage(
+        uid: 35,
+        tid: 1,
+        page: 1,
+        orderType: 0,
+        authorId: 0,
+        body: 'a page',
+        savedAt: DateTime(2026, 10, 20),
+      );
+      await leaveAPage();
+      final restarted = SettingsRepository(storage);
+      addTearDown(restarted.dispose);
+      await restarted.init();
+      expect(await saved(), isEmpty, reason: 'an imported backup, an older run');
+
+      await turnOn();
+      await leaveAPage();
+      final again = SettingsRepository(storage);
+      addTearDown(again.dispose);
+      await again.init();
+      expect(await saved(), hasLength(1));
+    });
+
     test('is the default, nothing is saved and a failed load stays a failure', () async {
       expect(settings.currentSettings.offlineThreads, isFalse);
       expect(settings.currentSettings.offlineThreadsLimit, 50);
@@ -572,6 +598,96 @@ void main() {
       await bloc.stream.firstWhere((s) => s.status == ThreadStatus.success);
       expect(bloc.state.isOffline, isFalse);
       expect(bloc.state.postList.first.postID, '100019');
+    });
+
+    test('only the messages that mean the thread is gone or not viewable delete its saved pages', () async {
+      final copies = offlineCopies();
+      final repo = ThreadRepository(offline: copies);
+      Future<int> afterMessage(String message, {int login = 0}) async {
+        await storage.clearOfflineThreads();
+        forum.answer = (_) => _answer('thread_v3_plain.json', current ?? 0);
+        _right(await load(repo));
+        await copies.pendingWrites;
+        forum.answer = (_) =>
+            jsonEncode({'ok': 0, 'api': 1, 'error': 'message', 'message': message, 'login': login, 'schema': 3});
+        _right(await load(repo));
+        await copies.pendingWrites;
+        return (await saved()).length;
+      }
+
+      // Each refusal of the forum's language packs, simplified and traditional, as the plugin gives its text.
+      final refusals = {
+        for (final entry in offlineThreadRefusals.entries)
+          for (final sentence in entry.value)
+            sentence.replaceAll('{readperm}', '20').replaceAll('{grouptitle}', '新手上路'):
+                '${entry.key} ${entry.value.indexOf(sentence)}',
+      };
+      expect(refusals, hasLength(18));
+      for (final message in refusals.keys) {
+        expect(await afterMessage(message), 0, reason: refusals[message]);
+      }
+      // The visible text after a sentence cut at its first tag.
+      expect(await afterMessage('抱歉，您需要升级您所在的用户组后才能访问该版块，详细请 点击这里查看。'), 0);
+      expect(await afterMessage('您需要拥有以下勋章才能访问这个版块 勋章A 点击进入勋章页面'), 0);
+
+      for (final keep in [
+        '抱歉，您的请求太频繁，请稍后再试',
+        '抱歉，本站正在维护中，请稍后访问',
+        '没有找到帖子',
+        '版主设定的自定义提示',
+        '抱歉，本帖要求阅读权限高于',
+      ]) {
+        expect(await afterMessage(keep), 1, reason: keep);
+      }
+      expect(await afterMessage('抱歉，指定的主题不存在或已被删除或正在被审核', login: 1), 1, reason: 'the login prompt');
+    });
+
+    test('the web page of the forum refusing the thread deletes its saved pages too', () async {
+      final copies = offlineCopies();
+      final repo = ThreadRepository(offline: copies);
+      _right(await load(repo));
+      await copies.pendingWrites;
+      forum.contentType = 'text/html; charset=utf-8';
+      String messagePage(String text) =>
+          '<html><body><div id="messagetext" class="alert_error"><p>$text</p></div></body></html>';
+
+      forum.answer = (_) => messagePage('抱歉，您的请求太频繁，请稍后再试');
+      expect(_right(await load(repo)).havePermission, isFalse);
+      await copies.pendingWrites;
+      expect(await saved(), hasLength(1));
+
+      forum.answer = (_) => messagePage('\n  抱歉，指定的主題不存在或已被刪除或正在被審核  \n');
+      expect(_right(await load(repo)).havePermission, isFalse);
+      await copies.pendingWrites;
+      expect(await saved(), isEmpty);
+    });
+
+    test('a thread keeps its 20 most recently used pages', () async {
+      final copies = offlineCopies();
+      Future<void> saveAt(int uid, int tid, int page) async {
+        copies.save(OfflineThreadKey(uid: uid, tid: tid, page: page, orderType: 0, authorId: 0), 'page $page');
+        await copies.pendingWrites;
+        await Future<void>.delayed(const Duration(milliseconds: 3));
+      }
+
+      for (var page = 1; page <= 20; page++) {
+        await saveAt(35, 1, page);
+      }
+      await saveAt(35, 2, 1);
+      await saveAt(36, 1, 1);
+      // Page 1 read offline: the most recently used of the thread now.
+      await storage.fetchOfflineThreadPage(uid: 35, tid: 1, page: 1, orderType: 0, authorId: 0);
+      await Future<void>.delayed(const Duration(milliseconds: 3));
+      await saveAt(35, 1, 21);
+      await saveAt(35, 1, 22);
+
+      final rows = await saved();
+      final pages = rows.where((e) => e.uid == 35 && e.tid == 1).map((e) => e.page).toSet();
+      expect(pages, hasLength(OfflineThreadRepository.pagesPerThread));
+      expect(pages, isNot(contains(2)));
+      expect(pages, isNot(contains(3)));
+      expect(pages, containsAll([1, 4, 21, 22]));
+      expect(rows.where((e) => e.tid == 2 || e.uid == 36), hasLength(2), reason: 'other threads keep theirs');
     });
 
     test('a saved page that can not be built is not shown', () async {
@@ -887,7 +1003,7 @@ void main() {
       await getIt.get<ImageCacheProvider>().dispose();
     });
 
-    Future<void> pumpThread(WidgetTester tester) async {
+    Future<void> pumpThread(WidgetTester tester, {String tid = '1120'}) async {
       final info = NotificationInfoRepository();
       final counts = NotificationStateCubit(info);
       final cubit = UserBlockCubit(
@@ -900,8 +1016,8 @@ void main() {
         routes: [
           GoRoute(
             path: '/',
-            builder: (_, _) => const ThreadPage(
-              threadID: '1120',
+            builder: (_, _) => ThreadPage(
+              threadID: tid,
               findPostID: null,
               pageNumber: '1',
               overrideReverseOrder: false,
@@ -939,6 +1055,17 @@ void main() {
       );
       await _settle(tester);
     }
+
+    /// When the account last visited the thread, from the history.
+    Future<DateTime?> visits() async =>
+        (await storage
+                .fetchThreadVisitHistoryByUid(
+                  _alice.uid!,
+                )
+                .run())
+            .getOrElse((_) => [])
+            .firstOrNull
+            ?.visitTime;
 
     ThreadBloc threadBloc(WidgetTester tester) => BlocProvider.of<ThreadBloc>(tester.element(find.byType(PostList)));
 
@@ -1020,6 +1147,8 @@ void main() {
       expect(firstFloor(tester), '100029');
       await savedPages(tester, 2);
       final savedAt = (await tester.runAsync(saved))!.firstWhere((e) => e.page == 1).savedAt;
+      final visited = await tester.runAsync(visits);
+      expect(visited, isNotNull, reason: 'the forum page is a visit');
 
       forum.failure = _Failure.connection;
       await jump(tester, 1);
@@ -1042,6 +1171,7 @@ void main() {
       expect(firstFloor(tester), '100029');
       expect(find.text(t.general.failedToLoad), findsOneWidget);
       expect(forum.requests.map((e) => e['page']), ['1', '2', '1', '2', '3'], reason: 'every load asked the forum');
+      expect(await tester.runAsync(visits), visited, reason: 'an offline copy is no visit');
 
       // The network is back: the page from the forum, the actions again.
       forum.failure = null;
@@ -1070,6 +1200,64 @@ void main() {
       expect(offline, isNot(contains(t.threadPage.favorite.add)));
       expect(offline, isNot(contains(t.threadPage.shareToFriend.title)));
       expect(offline, contains(t.threadPage.copyTid(tid: '1120')));
+      await _dispose(tester);
+    });
+
+    testWidgets('the purchase and the red packet need the network', (tester) async {
+      await tester.runAsync(turnOn);
+      // The paid thread, with a red packet on its first floor.
+      forum.answer = (_) {
+        final json = jsonDecode(_answer('thread_v3_paid.json', current ?? 0)) as Map<String, dynamic>;
+        ((json['posts'] as List).first as Map<String, dynamic>)['packet_html'] =
+            '<div id="ts_packet"><a href="plugin.php?id=tsdm_packet:packet&amp;pid=3055"> '
+            '<img src="static/image/post/rp-1.svg" /></a></div>';
+        return jsonEncode(json);
+      };
+      await pumpThread(tester, tid: '9199057');
+      await savedPages(tester, 1);
+      final purchase = find.widgetWithIcon(OutlinedButton, FontAwesomeIcons.coins);
+      final openPacket = find.text(t.packetCard.open);
+      expect(purchase, findsOneWidget);
+      expect(openPacket, findsOneWidget);
+
+      forum.failure = _Failure.connection;
+      await jump(tester, 1);
+      expect(banner, findsOneWidget);
+      expect(purchase, findsNothing);
+      expect(openPacket, findsNothing);
+      expect(find.text(t.packetCard.title), findsOneWidget, reason: 'the packet itself is still told');
+      await _dispose(tester);
+    });
+
+    testWidgets('the poll vote needs the network, its results stay', (tester) async {
+      await tester.runAsync(turnOn);
+      // Without the images of the floors (medals in the author column): nothing is downloaded in tests.
+      forum.answer = (_) {
+        final json = jsonDecode(_answer('thread_v3_poll.json', current ?? 0)) as Map<String, dynamic>;
+        for (final post in (json['posts'] as List).cast<Map<String, dynamic>>()) {
+          for (final field in ['author_html', 'body_html', 'signature_html']) {
+            if (post[field] case final String html) {
+              post[field] = html.replaceAll(RegExp('<img[^>]*>'), '');
+            }
+          }
+        }
+        return jsonEncode(json);
+      };
+      await pumpThread(tester, tid: '9199099');
+      await savedPages(tester, 1);
+      final vote = find.text(t.pollVoting.submit);
+      final refresh = find.text(t.pollVoting.refresh);
+      expect(vote, findsOneWidget);
+      expect(refresh, findsOneWidget);
+
+      forum.failure = _Failure.connection;
+      await jump(tester, 1);
+      expect(banner, findsOneWidget);
+      expect(vote, findsNothing);
+      expect(refresh, findsNothing);
+      expect(find.byType(CheckboxListTile), findsNothing);
+      expect(find.byType(RadioListTile<String>), findsNothing);
+      expect(find.text(t.pollCard.title), findsOneWidget);
       await _dispose(tester);
     });
   });

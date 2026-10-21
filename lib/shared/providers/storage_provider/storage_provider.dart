@@ -666,6 +666,22 @@ class StorageProvider with LoggerMixin {
   /// Keep the pages of the [limit] most recently used threads only; returns the number of pages deleted.
   Future<int> trimOfflineThreads(int limit) async => OfflineThreadDao(_db).keepRecentThreads(limit);
 
+  /// Keep the [limit] most recently used pages of thread [tid] for user [uid] only; returns the number of pages
+  /// deleted.
+  Future<int> trimOfflineThreadPages({required int uid, required int tid, required int limit}) async =>
+      OfflineThreadDao(_db).keepRecentPages(uid: uid, tid: tid, limit: limit);
+
+  /// Delete every saved offline thread page when there is any; returns the number of pages deleted.
+  ///
+  /// Reads first, so an empty table (the usual case) costs no write.
+  Future<int> clearOfflineThreadsIfAny() async {
+    final dao = OfflineThreadDao(_db);
+    if (await dao.isEmpty()) {
+      return 0;
+    }
+    return dao.deleteAll();
+  }
+
   /// Save an image sticker [url] with an optional [name] (#5); returns the row id.
   Future<int> addCustomImage({required String url, String name = ''}) async =>
       CustomImageDao(_db).add(url: url, name: name);

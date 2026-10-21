@@ -13,6 +13,7 @@ import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/interactive_post_entry.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -332,7 +333,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
       ),
       ThreadFloorInteractionMode.tapToReply => GestureDetector(
         onTap: () async {
-          if (_offline(context)) {
+          if (isOfflineFloor(context)) {
             return;
           }
           await widget.replyCallback?.call(widget.post.author, widget.post.postFloor, widget.post.replyAction);
@@ -342,14 +343,11 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     };
   }
 
-  /// Whether the floor was read back from the offline copies of its thread: actions that need the network (reply,
-  /// rate, edit, report) are not offered.
-  bool _offline(BuildContext context) => context.readOrNull<ThreadBloc>()?.state.isOffline ?? false;
-
   List<PopupMenuEntry<_PostCardActions>> _buildContextMenuEntries(BuildContext context) {
     final threadBloc = context.readOrNull<ThreadBloc>();
     final onlyVisibleUid = threadBloc?.state.onlyVisibleUid;
-    final online = !_offline(context);
+    // Read back from an offline copy: nothing that needs the network.
+    final online = !isOfflineFloor(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     PopupMenuItem<_PostCardActions> item(_PostCardActions value, IconData icon, String text, {Color? color}) =>

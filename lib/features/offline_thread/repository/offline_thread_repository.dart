@@ -82,8 +82,12 @@ class OfflineThreadRepository with LoggerMixin {
   /// Whether pages are saved and read back.
   bool get enabled => _settingsRepo?.currentSettings.offlineThreads ?? false;
 
-  /// How many threads are kept.
+  /// How many threads are kept, of every account together.
   int get limit => _settingsRepo?.currentSettings.offlineThreadsLimit ?? 50;
+
+  /// How many pages of one thread (of one account, any order and author filter) are kept, the least recently used ones
+  /// going first.
+  static const pagesPerThread = 20;
 
   /// The account requests are sent as now, null for a guest.
   int? currentUid() {
@@ -119,7 +123,8 @@ class OfflineThreadRepository with LoggerMixin {
     _ => null,
   };
 
-  /// Save the answer [data] of [key], loaded now, then keep the [limit] most recently used threads.
+  /// Save the answer [data] of [key], loaded now, then keep the [pagesPerThread] most recently used pages of its thread
+  /// and the [limit] most recently used threads.
   void save(OfflineThreadKey key, Object? data) {
     final now = DateTime.now();
     final limit = this.limit;
@@ -138,6 +143,10 @@ class OfflineThreadRepository with LoggerMixin {
         body: body,
         savedAt: now,
       );
+      final pages = await _store.trimOfflineThreadPages(uid: key.uid, tid: key.tid, limit: pagesPerThread);
+      if (pages > 0) {
+        debug('offline threads: evicted $pages pages of thread ${key.tid} beyond $pagesPerThread');
+      }
       final evicted = await _store.trimOfflineThreads(limit);
       if (evicted > 0) {
         debug('offline threads: evicted $evicted pages beyond $limit threads');

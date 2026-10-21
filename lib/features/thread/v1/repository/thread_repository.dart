@@ -6,6 +6,7 @@ import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
+import 'package:tsdm_client/features/offline_thread/utils/thread_refusal.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
@@ -109,8 +110,9 @@ class ThreadRepository {
   /// * a page with floors the forum served to that account is saved as it came, under the account, the thread, the
   ///   page asked for and the filters (`ordertype`, `authorid`); the `findpost` redirect under the page it landed on,
   ///   without filters, as that request has none;
-  /// * the forum's message refusing the thread to the account (no permission, no such thread; not the login prompt
-  ///   of an expired session) deletes every page of the thread saved for that account;
+  /// * the forum's message refusing the thread to the account ([forumRefusesThread]: no such thread, no permission;
+  ///   not the login prompt of an expired session, not a request refused for being too frequent) deletes every page of
+  ///   the thread saved for that account;
   /// * when the forum could not be reached at all ([isNoNetworkFailure]), the page saved for the same account and the
   ///   same request is built instead, marked with the time it was loaded ([ThreadPageInfo.offlineSavedAt]) and without
   ///   its reply form; any other failure, or no saved page, is the failure as before.
@@ -187,7 +189,7 @@ class ThreadRepository {
         if (read case Right(value: final v) when offline != null && uid != null) {
           final page = v.page;
           final pageTid = askedTid ?? int.tryParse(page.tid ?? '');
-          if (pageTid != null && !page.havePermission && !page.needLogin) {
+          if (pageTid != null && forumRefusesThread(page)) {
             offline.forgetThread(uid: uid, tid: pageTid);
           } else if (pageTid != null && page.havePermission && !page.needLogin && page.postList.isNotEmpty) {
             // Only what the forum served to this account: not the guest page of a session that expired.

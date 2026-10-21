@@ -15,6 +15,7 @@ import 'package:tsdm_client/features/purchase/bloc/purchase_bloc.dart';
 import 'package:tsdm_client/features/purchase/repository/purchase_repository.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -218,8 +219,8 @@ class _LockedCardState extends State<LockedCard> with LoggerMixin {
             tr.purchase.purchasedInfo(num: _buildUnderlineText(context, '${widget.locked.purchasedCount!}')),
             style: secondaryStyle,
           ),
-        sizedBoxW4H4,
-        _buildPurchaseBody(context),
+        // Read back from an offline copy of the thread: no purchase without network.
+        if (!isOfflineFloor(context)) ...[sizedBoxW4H4, _buildPurchaseBody(context)],
       ]);
     } else if (widget.locked.lockedWithReply) {
       title = tr.reply.title;

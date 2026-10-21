@@ -88,6 +88,19 @@ final class SettingsRepository with LoggerMixin {
   Future<void> init() async {
     _state = await _initMap();
     _controller.add(_state);
+    if (!_state.offlineThreads) {
+      // Offline thread copies only exist while their setting is on: drop what an imported backup, an older run or any
+      // other path left behind while it is off.
+      try {
+        final dropped = await _storage.clearOfflineThreadsIfAny();
+        if (dropped > 0) {
+          info('offline threads are off: dropped $dropped saved pages');
+        }
+      } on Object catch (e, st) {
+        error('failed to drop the offline thread pages: $e');
+        handleRaw(e, st);
+      }
+    }
   }
 
   /// Load settings from storage.

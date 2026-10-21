@@ -7,6 +7,7 @@ import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/packet/cubit/packet_cubit.dart';
 import 'package:tsdm_client/features/packet/repository/packet_repository.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/utils/show_toast.dart';
@@ -35,6 +36,7 @@ class PacketCard extends StatelessWidget {
 
     final colorScheme = Theme.of(context).colorScheme;
     final tr = context.t.packetCard;
+    final offline = isOfflineFloor(context);
 
     return MultiBlocProvider(
       providers: [
@@ -94,11 +96,14 @@ class PacketCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(tr.detail, style: Theme.of(context).textTheme.bodyMedium),
-                  sizedBoxW12H12,
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: sizeButtonInCardMinWidth),
-                    child: FilledButton.tonalIcon(icon: body, label: label, onPressed: callback),
-                  ),
+                  // Read back from an offline copy of the thread: no packet to open without network.
+                  if (!offline) ...[
+                    sizedBoxW12H12,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: sizeButtonInCardMinWidth),
+                      child: FilledButton.tonalIcon(icon: body, label: label, onPressed: callback),
+                    ),
+                  ],
                 ],
               ),
             );

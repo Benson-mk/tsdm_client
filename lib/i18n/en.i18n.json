@@ -458,7 +458,7 @@
         "detail": "Keep the thread pages you open on this device to read them again without network; each account only sees its own copies. Turning it off deletes them",
         "limit": {
           "title": "Threads to keep",
-          "detail": "The threads not read for the longest time are deleted first",
+          "detail": "Shared by all accounts; the threads not read for the longest time are deleted first. Each thread keeps at most 20 pages",
           "value": "${count: int} threads"
         }
       }
