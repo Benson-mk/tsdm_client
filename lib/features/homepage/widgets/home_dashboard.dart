@@ -96,6 +96,52 @@ const _minCompactGreetingWidth = 148.0;
   return (width: preferred, beside: false);
 }
 
+/// A tab of a homepage card with tabs (the forum guide, the pinned thread groups): bold label, underlined in the
+/// primary color when [selected].
+class HomeCardTab extends StatelessWidget {
+  /// Constructor.
+  const HomeCardTab({required this.label, required this.selected, required this.onTap, super.key});
+
+  /// Tab label, never cut: the tab row scrolls instead.
+  final String label;
+
+  /// Whether this tab is the one shown.
+  final bool selected;
+
+  /// Select this tab.
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 3),
+            ),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Greeting text for the local [hour].
 String homeGreeting(BuildContext context, int hour, String name) {
   final tr = context.t.homepage.greeting;

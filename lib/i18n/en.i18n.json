@@ -585,12 +585,45 @@
     "featureRequestAction": "Request a feature on GitHub",
     "featureRequestOpenFailed": "Could not open the browser. Please try again, or copy the link below and open it yourself.",
     "donationTitle": "Voluntary donation",
-    "donationDescription": "This project is free and open source. Donations support the development and maintenance of the client and are received personally by Carinoasd. This is not an official forum fundraiser. All features remain available whether or not you donate.",
+    "donationDescription": "This project is free and open source. Donations support the development and maintenance of the client and are received personally by Carinoasd. They also earn the rewards of the forum announcement 「支援天使」 (Support Angel), see below. All features remain available whether or not you donate.",
     "donationInstructions": "Scan with Alipay, or take a screenshot and select it from the Alipay scanner. You can also save the original image.",
     "donationCodeLabel": "Alipay QR code for voluntary donations to Carinoasd",
     "saveDonationCode": "Save QR code",
     "donationCodeSaved": "QR code saved.",
     "donationCodeSaveFailed": "Could not save the QR code. Please try again or take a screenshot.",
+    "forumReward": {
+      "title": "Forum rewards",
+      "description": "A donation to the app's development earns the rewards of the forum announcement 「支援天使」 (Support Angel), on the same terms as the announcement.",
+      "separator": ": ",
+      "tier50": {
+        "amount": "From ¥50",
+        "reward": "the commemorative rank 「梦幻天使」, plus 300 prestige (威望), 1500 angel coins (天使币) and 50 publicity points (宣传点); other amounts count in multiples of this"
+      },
+      "tier100": {
+        "amount": "From ¥100",
+        "reward": "the permanent commemorative medal 「瓶中MIKU」"
+      },
+      "tier200": {
+        "amount": "From ¥200",
+        "reward": "the rank 「梦幻天使2」 (check-in points doubled for this user group), plus the medal 「瞌睡天使」"
+      },
+      "tierEvery100": {
+        "amount": "Every further ¥100",
+        "reward": "a permanent anniversary medal with a special meaning"
+      },
+      "tier500": {
+        "amount": "From ¥500",
+        "reward": "a choice between 「梦幻天使X」 and 「梦幻天使Y」"
+      },
+      "claimTitle": "How to claim",
+      "claim": "when paying, write your forum username (or UID) in the Alipay note. The rewards go to that account, no private message needed.",
+      "account": "Your forum account: ${username} (UID ${uid})",
+      "accountNoUid": "Your forum account: ${username}",
+      "copyUsername": "Copy username",
+      "usernameCopied": "Username copied. Paste it into the payment note.",
+      "notLoggedIn": "Write your forum username in the payment note.",
+      "viewAnnouncement": "View the forum announcement"
+    },
     "title": "About",
     "whatIsThis": "What's This",
     "description": "Official cross-platform client for TSDM forum",

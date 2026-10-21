@@ -25,6 +25,7 @@ import 'package:tsdm_client/features/notification/repository/notification_info_r
 import 'package:tsdm_client/features/profile/bloc/current_title_cubit.dart';
 import 'package:tsdm_client/features/profile/repository/profile_repository.dart';
 import 'package:tsdm_client/features/root/stream/scroll_to_top_stream.dart';
+import 'package:tsdm_client/features/settings/widgets/support_development_dialog.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
@@ -47,6 +48,18 @@ const _mediumLayoutWidth = 600.0;
 
 /// Width of the side column in the wide layout.
 const _railWidth = 320.0;
+
+/// Width an app bar action takes at most: an [IconButton] with its padding.
+const _appBarActionWidth = 48.0;
+
+/// Room the app bar keeps for its title at text scale 1: the spacing on both sides of it and a short title.
+const _appBarTitleRoom = 96.0;
+
+/// Gap after the last app bar action.
+const _appBarEndGap = 4.0;
+
+/// An app bar entry of the homepage that goes into the overflow menu when the bar is too narrow for it.
+typedef _BarEntry = ({IconData icon, String label, Future<void> Function() onPressed});
 
 /// Arrangement of the homepage cards.
 enum HomeLayout {
@@ -140,8 +153,9 @@ class _HomepagePageState extends State<HomepagePage> {
   ///
   /// * Wide: threads on the left, statistics, tools and the support entry in a side column.
   /// * Medium: one column, statistics and support side by side above the threads.
-  /// * Compact: one column; the greeting carries the day's actions and the today count, the threads come right after
-  ///   it and the utility cards follow them, so no tall card pushes the threads down.
+  /// * Compact: one column; the greeting carries the day's actions and the today count, the short support entry sits
+  ///   right under it, the threads come next (the pinned groups as tabs of one card, [PinTabSection], then the guide)
+  ///   and the utility cards follow them, so no tall card pushes the threads down.
   Widget _buildDashboard(BuildContext context, HomepageState state, double width) {
     final layout = homeLayoutFor(width, Theme.of(context).platform);
     final hasStatus = state.forumStatus != const ForumStatus.empty();
@@ -165,7 +179,12 @@ class _HomepagePageState extends State<HomepagePage> {
             loggedUserInfo: state.loggedUserInfo,
             swiperUrlList: state.swiperUrlList,
           );
-    final pinned = state.pinnedThreadGroupList.isEmpty ? null : PinSection(state.pinnedThreadGroupList);
+    // Phones list the pinned groups as tabs of one card instead of one tall card each.
+    final pinned = state.pinnedThreadGroupList.isEmpty
+        ? null
+        : layout == HomeLayout.compact
+        ? PinTabSection(state.pinnedThreadGroupList)
+        : PinSection(state.pinnedThreadGroupList);
     // The guide owns the fetch of the guide index page. It keeps its place in the tree (first child of the main
     // column's Expanded, found by key among its siblings) in every layout, so a window resize or a rotation moves the
     // loaded guide instead of fetching it again.
@@ -208,12 +227,12 @@ class _HomepagePageState extends State<HomepagePage> {
       case HomeLayout.compact:
         main = [
           greeting,
+          support,
           swiper,
           pinned,
           guide,
           if (hasStatus) HomeForumStatsCard(state.forumStatus),
           const HomeToolsCard(columns: 2),
-          support,
         ];
     }
     final gap = layout == HomeLayout.compact ? 12.0 : 16.0;
@@ -233,6 +252,102 @@ class _HomepagePageState extends State<HomepagePage> {
         ],
       ],
     );
+  }
+
+  /// Actions of the homepage app bar, [width] wide.
+  ///
+  /// Search, the check-in of a failed load, the notice button and the account always stay in the bar. The pokemon
+  /// centre, the activities of a failed load and the support entry go into a "more" menu, in this order, when the bar
+  /// would leave its title too little room (a 320dp phone, large text); a 360dp phone keeps them all in the bar. The
+  /// menu takes the place of at least two of them, otherwise it saves nothing.
+  List<Widget> _buildAppBarActions(BuildContext context, HomepageState state, double width) {
+    final username = state.loggedUserInfo?.username;
+    final avatarUrl = state.loggedUserInfo?.avatarUrl;
+
+    // Check-in, the daily red packet and activities moved into the greeting card of the loaded page. Only a
+    // failed load, which has no greeting card, keeps them reachable here. While the page loads or refreshes
+    // the bar stays as it is around it (search, and the account actions once known) instead of flashing the
+    // old activity entry for the length of the refresh (feedback 110).
+    final showDailyActionsInBar = state.status == HomepageStatus.failure;
+
+    final activities = (
+      icon: Icons.event_outlined,
+      label: context.t.activitiesPage.title,
+      onPressed: () async => context.pushNamed<void>(ScreenPaths.activities),
+    );
+    final pokemon = (
+      icon: Icons.catching_pokemon,
+      label: context.t.pokemon.title,
+      onPressed: () async => context.pushNamed<void>(ScreenPaths.pokemon),
+    );
+    final support = (
+      icon: Icons.favorite_border,
+      label: context.t.aboutPage.supportDevelopment,
+      onPressed: () async => showDialog<void>(context: context, builder: (_) => const SupportDevelopmentDialog()),
+    );
+
+    final foldable = [if (username != null) pokemon, if (showDailyActionsInBar) activities, support];
+    final fixedCount = 1 + (username == null ? 0 : (showDailyActionsInBar ? 3 : 2));
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final slots = ((width - _appBarTitleRoom * textScale - _appBarEndGap) / _appBarActionWidth).floor();
+    final missing = fixedCount + foldable.length - slots;
+    final folded = missing > 0 ? foldable.take(math.min(foldable.length, missing + 1)).toList() : const <_BarEntry>[];
+
+    Widget? button(_BarEntry entry) => folded.contains(entry)
+        ? null
+        : IconButton(icon: Icon(entry.icon), tooltip: entry.label, onPressed: entry.onPressed);
+
+    return [
+      if (showDailyActionsInBar) ?button(activities),
+      IconButton(
+        icon: const Icon(Icons.search_outlined),
+        tooltip: context.t.searchPage.title,
+        onPressed: () async => context.pushNamed(ScreenPaths.search),
+      ),
+      ?button(support),
+      if (username != null) ...[
+        if (showDailyActionsInBar) const CheckinButton(enableSnackBar: true),
+        const NoticeButton(),
+        ?button(pokemon),
+        IconButton(
+          icon: SizedBox(
+            width: 32,
+            height: 32,
+            child: HeroUserAvatar(username: username, avatarUrl: avatarUrl, heroTag: username),
+          ),
+          tooltip: context.t.homepage.showMoreUserOperationsTip,
+          onPressed: () async => showHeroDialog(
+            context,
+            (context, _, _) => UserOperationDialog(
+              username: username,
+              avatarUrl: avatarUrl,
+              heroTag: username,
+              latestThreadUrl: state.loggedUserInfo?.relatedLinkPairList.lastOrNull?.$2,
+            ),
+          ),
+        ),
+      ],
+      if (folded.isNotEmpty)
+        PopupMenuButton<_BarEntry>(
+          key: const ValueKey('homepage-app-bar-more'),
+          tooltip: context.t.general.more,
+          onSelected: (entry) async => entry.onPressed(),
+          itemBuilder: (_) => [
+            for (final entry in folded)
+              PopupMenuItem(
+                value: entry,
+                child: Row(
+                  children: [
+                    Icon(entry.icon),
+                    sizedBoxW12H12,
+                    Flexible(child: Text(entry.label)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      const SizedBox(width: _appBarEndGap),
+    ];
   }
 
   @override
@@ -348,69 +463,24 @@ class _HomepagePageState extends State<HomepagePage> {
             };
 
             _refreshController.finishRefresh();
-            final username = state.loggedUserInfo?.username;
-            final avatarUrl = state.loggedUserInfo?.avatarUrl;
 
-            // Check-in, the daily red packet and activities moved into the greeting card of the loaded page. Only a
-            // failed load, which has no greeting card, keeps them reachable here. While the page loads or refreshes
-            // the bar stays as it is around it (search, and the account actions once known) instead of flashing the
-            // old activity entry for the length of the refresh (feedback 110).
-            final showDailyActionsInBar = state.status == HomepageStatus.failure;
-
-            return Scaffold(
-              appBar: AppBar(
-                title: Text(context.t.homepage.title),
-                actions: [
-                  if (showDailyActionsInBar)
-                    IconButton(
-                      icon: const Icon(Icons.event_outlined),
-                      tooltip: context.t.activitiesPage.title,
-                      onPressed: () async => context.pushNamed(ScreenPaths.activities),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.search_outlined),
-                    tooltip: context.t.searchPage.title,
-                    onPressed: () async => context.pushNamed(ScreenPaths.search),
-                  ),
-                  if (username != null) ...[
-                    if (showDailyActionsInBar) const CheckinButton(enableSnackBar: true),
-                    const NoticeButton(),
-                    IconButton(
-                      icon: const Icon(Icons.catching_pokemon),
-                      tooltip: context.t.pokemon.title,
-                      onPressed: () async => context.pushNamed(ScreenPaths.pokemon),
-                    ),
-                    IconButton(
-                      icon: SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: HeroUserAvatar(username: username, avatarUrl: avatarUrl, heroTag: username),
-                      ),
-                      tooltip: context.t.homepage.showMoreUserOperationsTip,
-                      onPressed: () async => showHeroDialog(
-                        context,
-                        (context, _, _) => UserOperationDialog(
-                          username: username,
-                          avatarUrl: avatarUrl,
-                          heroTag: username,
-                          latestThreadUrl: state.loggedUserInfo?.relatedLinkPairList.lastOrNull?.$2,
-                        ),
-                      ),
-                    ),
-                  ],
-                  sizedBoxW4H4,
-                ],
-              ),
-              body: SafeArea(
-                left: false,
-                top: false,
-                bottom: false,
-                child: NotificationListener<UserScrollNotification>(
-                  onNotification: _handleScrollNotification,
-                  child: AnimatedSwitcher(duration: duration200, child: body),
+            return LayoutBuilder(
+              builder: (context, constraints) => Scaffold(
+                appBar: AppBar(
+                  title: Text(context.t.homepage.title),
+                  actions: _buildAppBarActions(context, state, constraints.maxWidth),
                 ),
+                body: SafeArea(
+                  left: false,
+                  top: false,
+                  bottom: false,
+                  child: NotificationListener<UserScrollNotification>(
+                    onNotification: _handleScrollNotification,
+                    child: AnimatedSwitcher(duration: duration200, child: body),
+                  ),
+                ),
+                floatingActionButton: _buildFloatingActionButton(context, state),
               ),
-              floatingActionButton: _buildFloatingActionButton(context, state),
             );
           },
         ),

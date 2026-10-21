@@ -585,12 +585,45 @@
     "featureRequestAction": "到 GitHub 提出功能需求",
     "featureRequestOpenFailed": "無法開啟瀏覽器，請重試，或複製下方連結自行開啟。",
     "donationTitle": "自願贊助",
-    "donationDescription": "本專案免費開源，歡迎自願贊助，支持客戶端的開發與維護。贊助由維護者 Carinoasd 個人收取，非論壇官方募款；是否贊助不影響功能使用。",
+    "donationDescription": "本專案免費開源，歡迎自願贊助，支持客戶端的開發與維護。贊助由維護者 Carinoasd 個人收取，同樣可以領取論壇「支援天使」公告的獎勵（見下方）；是否贊助不影響功能使用。",
     "donationInstructions": "使用支付寶掃碼，或截圖後在支付寶掃一掃中選擇圖片。也可以儲存原圖。",
     "donationCodeLabel": "支付寶自願贊助 QR Code，收款人為 Carinoasd",
     "saveDonationCode": "儲存贊助碼",
     "donationCodeSaved": "贊助碼已儲存。",
     "donationCodeSaveFailed": "無法儲存贊助碼，請重試或使用截圖。",
+    "forumReward": {
+      "title": "論壇獎勵",
+      "description": "贊助 App 開發同樣可以獲得論壇「支援天使」公告的獎勵，標準與公告相同。",
+      "separator": "：",
+      "tier50": {
+        "amount": "滿 50 元",
+        "reward": "紀念等級「夢幻天使」，以及 300 威望、1500 天使幣、50 宣傳點（其他金額按此標準的倍數計算）"
+      },
+      "tier100": {
+        "amount": "滿 100 元",
+        "reward": "永久紀念勳章「瓶中MIKU」"
+      },
+      "tier200": {
+        "amount": "滿 200 元",
+        "reward": "「夢幻天使2」等級（該使用者群組簽到積分加倍），並額外獲得「瞌睡天使」勳章"
+      },
+      "tierEvery100": {
+        "amount": "之後每滿 100 元",
+        "reward": "一枚有特殊意義的永久週年紀念勳章"
+      },
+      "tier500": {
+        "amount": "滿 500 元",
+        "reward": "可在「夢幻天使X」與「夢幻天使Y」之間選擇"
+      },
+      "claimTitle": "領取方式",
+      "claim": "付款時在支付寶的備註裡寫上你的論壇使用者名稱（或 UID），獎勵會發到這個帳號，不用另外私訊。",
+      "account": "你的論壇帳號：${username}（UID ${uid}）",
+      "accountNoUid": "你的論壇帳號：${username}",
+      "copyUsername": "複製使用者名稱",
+      "usernameCopied": "已複製使用者名稱，付款時貼到備註裡即可。",
+      "notLoggedIn": "請在備註裡寫上你的論壇使用者名稱。",
+      "viewAnnouncement": "查看論壇公告"
+    },
     "title": "關於",
     "whatIsThis": "這是？",
     "description": "天使動畫論壇官方跨平台客戶端",

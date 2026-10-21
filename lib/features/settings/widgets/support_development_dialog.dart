@@ -3,7 +3,12 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
+import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/extensions/string.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -22,6 +27,9 @@ class SupportDevelopmentDialog extends StatefulWidget {
 
   /// Original donation image, bundled so it can also be viewed offline.
   static const imagePath = 'assets/images/alipay-donation.jpg';
+
+  /// The forum announcement 「支援天使，重建经费征集」: donations to this app get its rewards too, on the same terms.
+  static const forumRewardUrl = '$baseUrl/forum.php?mod=viewthread&tid=1266879';
 
   @override
   State<SupportDevelopmentDialog> createState() => _SupportDevelopmentDialogState();
@@ -92,13 +100,146 @@ class _SupportDevelopmentDialogState extends State<SupportDevelopmentDialog> wit
     }
   }
 
+  /// Open the reward announcement in the app's thread page, in place of this dialog: a dialog left under the thread
+  /// would keep its modal barrier (holding back notification taps) while the thread is read.
+  Future<void> _openForumRewardAnnouncement() async {
+    final route = SupportDevelopmentDialog.forumRewardUrl.parseUrlToRoute();
+    final router = GoRouter.maybeOf(context);
+    if (route == null || router == null) {
+      error('can not open the forum reward announcement: no route');
+      return;
+    }
+    Navigator.of(context).pop();
+    await router.pushNamed(
+      route.screenPath,
+      pathParameters: route.pathParameters,
+      queryParameters: route.queryParameters,
+    );
+  }
+
+  Future<void> _copyUsername(String username) async {
+    await Clipboard.setData(ClipboardData(text: username));
+    if (mounted) {
+      showSnackBar(context: context, message: context.t.aboutPage.forumReward.usernameCopied);
+    }
+  }
+
+  /// The rewards of the forum announcement, how to claim them and the account in use to write in the payment note.
+  ///
+  /// The account is the one the app acts as ([AuthenticationRepository.effectiveCurrentUser]), nothing is fetched.
+  Widget _buildForumReward(BuildContext context) {
+    final tr = context.t.aboutPage.forumReward;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final bodyStyle = textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant);
+    final strong = TextStyle(fontWeight: FontWeight.bold, color: colorScheme.onSurface);
+    final tiers = [
+      (tr.tier50.amount, tr.tier50.reward),
+      (tr.tier100.amount, tr.tier100.reward),
+      (tr.tier200.amount, tr.tier200.reward),
+      (tr.tierEvery100.amount, tr.tierEvery100.reward),
+      (tr.tier500.amount, tr.tier500.reward),
+    ];
+    final account = context.readOrNull<AuthenticationRepository>()?.effectiveCurrentUser;
+    final username = account?.username;
+    final uid = account?.uid;
+
+    final Widget accountRow;
+    if (username != null && username.isNotEmpty) {
+      accountRow = AppInsetBlock(
+        key: const ValueKey('forum-reward-account'),
+        color: colorScheme.surface,
+        padding: edgeInsetsL12T4R4B4,
+        child: Row(
+          children: [
+            Icon(Icons.person_outline, size: 20, color: colorScheme.primary),
+            sizedBoxW8H8,
+            Expanded(
+              child: Text(
+                uid == null ? tr.accountNoUid(username: username) : tr.account(username: username, uid: uid),
+                style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: tr.copyUsername,
+              onPressed: () async => _copyUsername(username),
+            ),
+          ],
+        ),
+      );
+    } else {
+      accountRow = AppNoticeBanner(key: const ValueKey('forum-reward-guest'), message: tr.notLoggedIn);
+    }
+
+    return AppInsetBlock(
+      outlined: true,
+      color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+      padding: edgeInsetsL12T4R12B12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppSectionHeader(tr.title, icon: Icons.redeem_outlined),
+          Text(tr.description, style: bodyStyle),
+          const SizedBox(height: 4),
+          for (final (amount, reward) in tiers)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 7),
+                    child: Icon(Icons.circle, size: 6, color: colorScheme.primary),
+                  ),
+                  sizedBoxW8H8,
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: amount, style: strong),
+                          TextSpan(text: tr.separator),
+                          TextSpan(text: reward),
+                        ],
+                      ),
+                      style: bodyStyle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 12),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: tr.claimTitle, style: strong),
+                TextSpan(text: tr.separator),
+                TextSpan(text: tr.claim),
+              ],
+            ),
+            style: bodyStyle,
+          ),
+          sizedBoxW8H8,
+          accountRow,
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _openForumRewardAnnouncement,
+            icon: const Icon(Icons.campaign_outlined),
+            label: FittedBox(fit: BoxFit.scaleDown, child: Text(tr.viewAnnouncement, maxLines: 1)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tr = context.t.aboutPage;
     final colorScheme = Theme.of(context).colorScheme;
     final mutedStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant);
-    // Same texts, order and actions as before; only grouped: the voluntary nature first, then the feature request
-    // block, then the donation code on a white ground so it stays scannable in the dark theme.
+    // The voluntary nature first, then the feature request block, then the forum rewards with how to claim them in
+    // the payment note, right before the donation code on a white ground so it stays scannable in the dark theme.
     return AlertDialog(
       // One line: the longer name wrapped to two lines on a narrow phone (feedback on 1.29.1).
       title: AppDialogTitle(icon: Icons.volunteer_activism_outlined, title: tr.supportDevelopment, singleLine: true),
@@ -139,6 +280,8 @@ class _SupportDevelopmentDialogState extends State<SupportDevelopmentDialog> wit
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            _buildForumReward(context),
             const SizedBox(height: 16),
             AppSectionHeader(tr.donationTitle, icon: Icons.qr_code_2_outlined),
             Center(

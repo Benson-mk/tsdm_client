@@ -61,6 +61,7 @@ class SettingsMap with SettingsMapMappable {
     this.offlineThreads = false,
     this.offlineThreadsLimit = 50,
     this.enableAppPostRenderer = false,
+    this.homepagePinnedGroup = '',
   });
 
   final String netClientAccept;
@@ -131,6 +132,10 @@ class SettingsMap with SettingsMapMappable {
   /// versions lack it.
   final bool enableAppPostRenderer;
 
+  /// Title of the pinned thread group last selected on the phone homepage, empty for the first one. Not required:
+  /// backups from older versions lack it.
+  final String homepagePinnedGroup;
+
   SettingsMap copyWithKey<T>(SettingsKeys<T> key, T? value) {
     assert(
       T == key.type || T.toString() == '${key.type}?',
@@ -194,6 +199,7 @@ class SettingsMap with SettingsMapMappable {
       SettingsKeys.offlineThreads => copyWith(offlineThreads: value as bool?),
       SettingsKeys.offlineThreadsLimit => copyWith(offlineThreadsLimit: value as int?),
       SettingsKeys.enableAppPostRenderer => copyWith(enableAppPostRenderer: value as bool?),
+      SettingsKeys.homepagePinnedGroup => copyWith(homepagePinnedGroup: value as String?),
     };
   }
 }

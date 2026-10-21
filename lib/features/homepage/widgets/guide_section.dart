@@ -127,7 +127,7 @@ class _GuideFeedCardState extends State<_GuideFeedCard> {
             child: Row(
               children: [
                 for (final module in modules)
-                  _GuideTab(
+                  HomeCardTab(
                     label: module.title,
                     selected: module == selected,
                     onTap: () => setState(() => _selectedView = module.view),
@@ -146,45 +146,6 @@ class _GuideFeedCardState extends State<_GuideFeedCard> {
           Divider(height: 1, color: colorScheme.outlineVariant),
           body,
         ],
-      ),
-    );
-  }
-}
-
-/// A module tab with an underline when selected.
-class _GuideTab extends StatelessWidget {
-  const _GuideTab({required this.label, required this.selected, required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Semantics(
-      selected: selected,
-      button: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 46),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 3),
-            ),
-          ),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
-              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
-            ),
-          ),
-        ),
       ),
     );
   }
