@@ -8,6 +8,7 @@ import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/special_thread/repository/special_thread_repository.dart';
 import 'package:tsdm_client/features/special_thread/widgets/special_form_dialog.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
@@ -71,13 +72,18 @@ class SpecialThreadCard extends StatelessWidget {
   static bool aboveContent(ThreadSpecial special) => special is RewardSpecial || special is ActivitySpecial;
 
   @override
-  Widget build(BuildContext context) => switch (special) {
-    final PollSpecial poll => PollCard(pid, fromSpecial: poll, onVoted: onReload),
-    final TradeSpecial trade => _TradeCard(trade),
-    final RewardSpecial reward => _RewardCard(reward),
-    final ActivitySpecial activity => _ActivityCard(activity, onReload: onReload, webUrl: webUrl),
-    final DebateSpecial debate => _DebateCard(debate, onReload: onReload, onJoin: onJoinDebate),
-  };
+  Widget build(BuildContext context) {
+    // A floor read back from an offline copy of the thread: the block as the page showed it, read only.
+    final offline = isOfflineFloor(context);
+    final reload = offline ? null : onReload;
+    return switch (special) {
+      final PollSpecial poll => PollCard(pid, fromSpecial: poll, onVoted: reload),
+      final TradeSpecial trade => _TradeCard(trade),
+      final RewardSpecial reward => _RewardCard(reward),
+      final ActivitySpecial activity => _ActivityCard(activity, onReload: reload, webUrl: webUrl),
+      final DebateSpecial debate => _DebateCard(debate, onReload: reload, onJoin: offline ? null : onJoinDebate),
+    };
+  }
 }
 
 /// Send the action [request] of a special block for the account in use, when it is still the account the page was
@@ -184,13 +190,15 @@ class _SpecialBestAnswerButtonState extends State<SpecialBestAnswerButton> with 
   }
 
   @override
-  Widget build(BuildContext context) => TextButton.icon(
-    onPressed: _busy ? null : _accept,
-    icon: _busy
-        ? const SizedBox(width: 16, height: 16, child: CircularIndicator())
-        : const Icon(Icons.verified_outlined),
-    label: Text(context.t.specialThread.reward.setBest),
-  );
+  Widget build(BuildContext context) => isOfflineFloor(context)
+      ? const SizedBox.shrink()
+      : TextButton.icon(
+          onPressed: _busy ? null : _accept,
+          icon: _busy
+              ? const SizedBox(width: 16, height: 16, child: CircularIndicator())
+              : const Icon(Icons.verified_outlined),
+          label: Text(context.t.specialThread.reward.setBest),
+        );
 }
 
 /// What the page prints in a floor's header for a special thread: the accepted answer of a bounty ([Post.best]),
@@ -239,7 +247,7 @@ class _SpecialFloorBadgesState extends State<SpecialFloorBadges> with _SpecialAc
     final tr = context.t.specialThread;
     final colorScheme = Theme.of(context).colorScheme;
     final post = widget.post;
-    final support = widget.onReload == null ? null : post.debateVoteRequest;
+    final support = widget.onReload == null || isOfflineFloor(context) ? null : post.debateVoteRequest;
     return Wrap(
       spacing: 6,
       runSpacing: 4,

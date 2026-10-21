@@ -13,6 +13,7 @@ import 'package:tsdm_client/features/poll/cubit/poll_cubit.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -282,6 +283,9 @@ class _PollCardState extends State<PollCard> {
     builder: (context, state) {
       final tr = context.t.pollVoting;
       final poll = state.poll;
+      // Read back from an offline copy of the thread: the results only, no vote, login or refresh.
+      final offline = isOfflineFloor(context);
+      final canVote = !offline && poll?.availability == PollAvailability.available;
       final colorScheme = Theme.of(context).colorScheme;
       final textTheme = Theme.of(context).textTheme;
       // Header: title, deadline under it, a spinner while busy. Status lines are banners, choices in the middle,
@@ -311,7 +315,7 @@ class _PollCardState extends State<PollCard> {
               ),
             if (poll != null) ...[
               if (poll.summary.isNotEmpty) Text(poll.summary, style: textTheme.bodyMedium),
-              if (poll.availability == PollAvailability.available)
+              if (canVote)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -319,7 +323,7 @@ class _PollCardState extends State<PollCard> {
                     style: textTheme.labelMedium?.copyWith(color: colorScheme.primary),
                   ),
                 ),
-              if (poll.availability == PollAvailability.available && poll.maxChoices == 1)
+              if (canVote && poll.maxChoices == 1)
                 RadioGroup<String>(
                   groupValue: state.choices.firstOrNull,
                   onChanged: (value) {
@@ -341,7 +345,7 @@ class _PollCardState extends State<PollCard> {
                 )
               else ...[
                 for (final option in poll.options)
-                  if (poll.availability == PollAvailability.available && option.id != null)
+                  if (canVote && option.id != null)
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
@@ -396,25 +400,27 @@ class _PollCardState extends State<PollCard> {
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (poll?.availability == PollAvailability.available)
+                if (canVote)
                   // Plain constructor on purpose: the only FilledButton of the card (widget tests look it up by type).
                   FilledButton(
                     onPressed: state.busy || !poll!.accepts(state.choices) ? null : _cubit.submit,
                     child: Text(tr.submit),
                   ),
-                if (poll?.availability == PollAvailability.loginRequired)
+                if (!offline && poll?.availability == PollAvailability.loginRequired)
                   TextButton(onPressed: _login, child: Text(tr.loginRequired)),
-                if (poll?.votersUrl case final voters?)
+                if (!offline)
+                  if (poll?.votersUrl case final voters?)
+                    TextButton.icon(
+                      icon: const Icon(Icons.groups_outlined),
+                      label: Text(context.t.specialThread.poll.viewVoters),
+                      onPressed: () async => context.dispatchAsUrl(voters, external: true),
+                    ),
+                if (!offline)
                   TextButton.icon(
-                    icon: const Icon(Icons.groups_outlined),
-                    label: Text(context.t.specialThread.poll.viewVoters),
-                    onPressed: () async => context.dispatchAsUrl(voters, external: true),
+                    onPressed: state.busy ? null : _cubit.load,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(tr.refresh),
                   ),
-                TextButton.icon(
-                  onPressed: state.busy ? null : _cubit.load,
-                  icon: const Icon(Icons.refresh),
-                  label: Text(tr.refresh),
-                ),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.open_in_browser_outlined),
                   label: Text(context.t.pollCard.openInBrowser),

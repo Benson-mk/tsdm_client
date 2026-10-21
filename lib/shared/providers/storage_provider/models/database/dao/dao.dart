@@ -14,6 +14,7 @@ part 'fast_rate_template.dart';
 part 'fast_reply_template.dart';
 part 'image.dart';
 part 'notification.dart';
+part 'offline_thread.dart';
 part 'replied_thread.dart';
 part 'settings.dart';
 part 'thread_visit_history.dart';

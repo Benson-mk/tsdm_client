@@ -33,6 +33,7 @@ import 'package:tsdm_client/features/settings/repositories/settings_repository.d
 import 'package:tsdm_client/features/special_thread/repository/special_thread_repository.dart';
 import 'package:tsdm_client/features/special_thread/widgets/special_form_dialog.dart';
 import 'package:tsdm_client/features/special_thread/widgets/special_thread_card.dart';
+import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/utils/special_block.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
@@ -147,6 +148,23 @@ final class _FakeSpecialRepository {
 
   late final SpecialThreadRepository repository;
   final sent = <SpecialRequest>[];
+}
+
+/// The bloc of a thread page whose floors were read back from an offline copy ([ThreadState.isOffline]).
+final class _OfflineThreadBloc extends Fake implements ThreadBloc {
+  final added = <ThreadEvent>[];
+
+  @override
+  ThreadState get state => ThreadState(tid: '1', status: ThreadStatus.success, offlineSavedAt: DateTime(2026, 10, 20));
+
+  @override
+  Stream<ThreadState> get stream => const Stream.empty();
+
+  @override
+  bool get isClosed => false;
+
+  @override
+  void add(ThreadEvent event) => added.add(event);
 }
 
 void main() {
@@ -1819,6 +1837,76 @@ void main() {
         false,
         true,
       ]);
+    });
+    testWidgets('offline copies: every card is read only, no vote, application, cancel, answer, join or support', (
+      tester,
+    ) async {
+      final bloc = _OfflineThreadBloc();
+      Widget offline(Widget child) => BlocProvider<ThreadBloc>.value(value: bloc, child: child);
+      final tr = t.specialThread;
+      final joined = <int>[];
+
+      // The same cards that offer their actions online ("G. the cards" above), under a page read back offline.
+      await pump(
+        tester,
+        offline(
+          SpecialThreadCard(_special('debate_open_member'), pid: '6297', onReload: () {}, onJoinDebate: joined.add),
+        ),
+      );
+      expect(find.text('正方觀點 AFF_925316'), findsOneWidget, reason: 'the block is still shown');
+      expect(find.text(tr.debate.voteFor(side: tr.debate.affirm)), findsNothing);
+      expect(find.text(tr.debate.join(side: tr.debate.affirm)), findsNothing);
+
+      await pump(tester, offline(SpecialThreadCard(_special('activity_open_member'), pid: '6297', onReload: () {})));
+      expect(find.text('PLACE_222088'), findsOneWidget);
+      expect(find.text(tr.activity.join), findsNothing);
+      await pump(tester, offline(SpecialThreadCard(_special('activity_applied'), pid: '6297', onReload: () {})));
+      expect(find.text(tr.activity.cancel), findsNothing);
+      expect(find.text(tr.activity.statusWaiting), findsOneWidget);
+      await pump(
+        tester,
+        offline(SpecialThreadCard(_special('activity_author_sees_pending'), pid: '6297', onReload: () {})),
+      );
+      expect(find.text(tr.activity.manage), findsNothing);
+
+      final floor = _page('debate_open_member').postList[1];
+      await pump(tester, offline(SpecialFloorBadges(floor, onReload: () {})));
+      expect(find.text('${tr.debate.affirm} · ${tr.debate.standVotes(count: 2)}'), findsOneWidget);
+      expect(find.text(tr.debate.support), findsNothing);
+
+      final best = _page('reward_open_author').postList[1].bestAnswerRequest!;
+      await pump(tester, offline(SpecialBestAnswerButton(best, onReload: () {})));
+      expect(find.text(tr.reward.setBest), findsNothing);
+
+      // The poll fed by the block: its results, no vote.
+      final cubit = PollCubit(
+        url: 'poll',
+        currentUid: () => 35,
+        repository: () =>
+            PollRepository(getPage: (_) async => _json('poll_single_before'), postForm: (_, _) async => null),
+      );
+      addTearDown(cubit.close);
+      await pump(tester, offline(PollCard('6297', controller: cubit)));
+      await tester.pumpAndSettle();
+      expect(find.text(t.pollCard.title), findsOneWidget);
+      expect(find.text(t.pollVoting.submit), findsNothing);
+      expect(find.byType(RadioListTile<String>), findsNothing);
+      expect(joined, isEmpty);
+      expect(bloc.added, isEmpty, reason: 'nothing reloads');
+
+      // Through the floors: no "set as best answer", no support, no vote on an offline page.
+      await pump(
+        tester,
+        offline(Column(children: [for (final p in _page('reward_open_author').postList) PostCard(_bare(p))])),
+      );
+      expect(find.text(tr.reward.setBest), findsNothing);
+      await pump(
+        tester,
+        offline(Column(children: [for (final p in _page('debate_open_member').postList) PostCard(_bare(p))])),
+      );
+      expect(find.byType(SpecialThreadCard), findsOneWidget);
+      expect(find.text(tr.debate.support), findsNothing);
+      expect(find.text(tr.debate.voteFor(side: tr.debate.affirm)), findsNothing);
     });
   });
 

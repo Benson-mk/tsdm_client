@@ -351,7 +351,7 @@ class MainActivity: FlutterActivity() {
                         result.success(buildResponse(statusCode, headers, body, isRedirect))
                     } catch (e: Exception) {
                         Log.e("KT_HTTP_ERROR", "failed to get: ${e.message ?: "unknown error"}")
-                        result.error("KT_HTTP_ERROR", "failed to perform http GET",e.message ?: "unknown error")
+                        result.error(HttpClient.errorCode(e), "failed to perform http GET",e.message ?: "unknown error")
                     }
                 }
             }

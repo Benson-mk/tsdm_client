@@ -4,7 +4,12 @@ part of 'models.dart';
 @MappableClass()
 final class CacheStorageInfo with CacheStorageInfoMappable {
   /// Constructor.
-  const CacheStorageInfo({required this.imageSize, required this.emojiSize, required this.logSize});
+  const CacheStorageInfo({
+    required this.imageSize,
+    required this.emojiSize,
+    required this.logSize,
+    this.offlineThreadSize = 0,
+  });
 
   /// Image cache size in bytes.
   final int imageSize;
@@ -14,13 +19,21 @@ final class CacheStorageInfo with CacheStorageInfoMappable {
 
   /// Log files size in bytes.
   final int logSize;
+
+  /// Size of the thread pages saved for reading without network, in bytes.
+  final int offlineThreadSize;
 }
 
 /// Model representing what kinds of cache to clear in a action.
 @MappableClass()
 final class CacheClearInfo with CacheClearInfoMappable {
   /// Constructor.
-  const CacheClearInfo({required this.clearImage, required this.clearEmoji, required this.clearLog});
+  const CacheClearInfo({
+    required this.clearImage,
+    required this.clearEmoji,
+    required this.clearLog,
+    this.clearOfflineThreads = false,
+  });
 
   /// Clear image cache.
   final bool clearImage;
@@ -31,9 +44,12 @@ final class CacheClearInfo with CacheClearInfoMappable {
   /// Clear historical log files.
   final bool clearLog;
 
+  /// Clear the thread pages saved for reading without network.
+  final bool clearOfflineThreads;
+
   /// Default configs for different kinds of cache.
   static const defaultCacheClearInfo = CacheClearInfo(clearImage: true, clearEmoji: false, clearLog: false);
 
   /// Any kind of cache selected.
-  bool get hasSelected => clearImage || clearEmoji || clearLog;
+  bool get hasSelected => clearImage || clearEmoji || clearLog || clearOfflineThreads;
 }

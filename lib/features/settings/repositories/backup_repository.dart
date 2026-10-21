@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
@@ -175,6 +176,10 @@ final class BackupRepository with LoggerMixin {
   /// backup, dangerous) on this device, so they are dropped on import and the cache is rebuilt from the network.
   static const cachePathTables = ['image_cache', 'user_avatar'];
 
+  /// Tables holding copies of forum pages saved on the device for reading without network: never written into a
+  /// backup (they are large, and the pages of every account on this device are in them), and dropped on import.
+  static const offlineCopyTables = ['offline_thread'];
+
   /// SQLite file header.
   static const _sqliteMagic = 'SQLite format 3\u0000';
 
@@ -195,27 +200,23 @@ final class BackupRepository with LoggerMixin {
 
   /// Make a copy of [databaseFile] for export, without credentials.
   ///
-  /// The copy is taken with `VACUUM INTO` through a separate connection, so it is a consistent snapshot even while the
-  /// app keeps using the database, and the live database is never modified: the logged in accounts on this device stay
-  /// logged in.
+  /// The copy is a consistent snapshot taken through a separate connection even while the app keeps using the
+  /// database ([_snapshot]), and the live database is never modified: the logged in accounts on this device stay
+  /// logged in. The offline copies of forum pages ([offlineCopyTables]) are never written into it.
   ///
   /// With [secretsPassword] the credentials are removed from the tables all the same, but stored encrypted with that
   /// password in [secretsTable], so another device can restore them with [unlockSecrets] and [replaceDatabase].
   Future<Uint8List> exportSanitized(File databaseFile, {String? secretsPassword}) async {
     final copy = File('${databaseFile.path}.export-${DateTime.now().microsecondsSinceEpoch}.tmp');
     try {
-      final source = sqlite3.open(databaseFile.path, mode: OpenMode.readOnly);
-      try {
-        source.execute('VACUUM INTO ?', [copy.path]);
-      } finally {
-        source.dispose();
-      }
+      _snapshot(databaseFile, copy);
       final exported = sqlite3.open(copy.path);
       var accounts = 0;
       try {
         final password = secretsPassword;
         final payload = password == null ? null : readCredentials(exported);
         stripCredentials(exported);
+        stripOfflineCopies(exported);
         if (payload != null && password != null) {
           accounts = payload.accountCount;
           _writeSecrets(exported, await _seal(payload, password));
@@ -236,6 +237,93 @@ final class BackupRepository with LoggerMixin {
         await copy.delete();
       }
     }
+  }
+
+  /// Copy [databaseFile] into the new file [copy] as `VACUUM INTO` does (every table, index and trigger, the rows, the
+  /// autoincrement counters and the schema version), except the rows of [offlineCopyTables]: those tables are created
+  /// empty, their rows (large, the forum pages of every account) are never written to the copy at all.
+  ///
+  /// The source is attached read only ([readOnlyUriOf]) and read in one transaction, a consistent snapshot while the
+  /// app keeps writing. When it can not be attached that way (a path sqlite refuses as a URI), the copy is taken with
+  /// `VACUUM INTO` as before and the offline rows are deleted from it afterwards ([stripOfflineCopies]).
+  static void _snapshot(File databaseFile, File copy) {
+    try {
+      _attachedSnapshot(databaseFile, copy);
+    } on SqliteException catch (e) {
+      talker.warning('backup: attached snapshot failed ($e), copying with VACUUM INTO');
+      if (copy.existsSync()) {
+        copy.deleteSync();
+      }
+      final source = sqlite3.open(databaseFile.path, mode: OpenMode.readOnly);
+      try {
+        source
+          ..execute('PRAGMA busy_timeout = $_busyTimeoutMs')
+          ..execute('VACUUM INTO ?', [copy.path]);
+      } finally {
+        source.dispose();
+      }
+    }
+  }
+
+  /// How long the copy waits for a write of the app to end before giving up, in milliseconds.
+  static const _busyTimeoutMs = 5000;
+
+  static void _attachedSnapshot(File databaseFile, File copy) {
+    final db = sqlite3.open(copy.path, uri: true);
+    try {
+      db
+        ..execute('PRAGMA busy_timeout = $_busyTimeoutMs')
+        ..execute('ATTACH DATABASE ? AS src', [readOnlyUriOf(databaseFile.absolute.path, windows: Platform.isWindows)])
+        ..execute('BEGIN');
+      try {
+        final objects = db.select(
+          "SELECT type, name, sql FROM src.sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' "
+          "ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, rowid",
+        );
+        for (final row in objects) {
+          final name = row['name'] as String;
+          // Created in main: the statements name no schema.
+          db.execute(row['sql'] as String);
+          if (row['type'] == 'table' && !offlineCopyTables.contains(name)) {
+            final quoted = '"${name.replaceAll('"', '""')}"';
+            db.execute('INSERT INTO main.$quoted SELECT * FROM src.$quoted');
+          }
+        }
+        if (db.select("SELECT 1 FROM src.sqlite_master WHERE name = 'sqlite_sequence'").isNotEmpty) {
+          db
+            ..execute('DELETE FROM main.sqlite_sequence')
+            ..execute('INSERT INTO main.sqlite_sequence SELECT * FROM src.sqlite_sequence');
+        }
+        final version = db.select('PRAGMA src.user_version').first.values.first! as int;
+        db
+          ..execute('COMMIT')
+          ..userVersion = version;
+      } on Object {
+        // A failed statement may have ended the transaction already.
+        if (!db.autocommit) {
+          db.execute('ROLLBACK');
+        }
+        rethrow;
+      }
+      db.execute('DETACH DATABASE src');
+    } finally {
+      db.dispose();
+    }
+  }
+
+  /// The URI sqlite opens the database file at [path] read only with (`mode=ro`), on Windows when [windows].
+  ///
+  /// `file:` with an empty authority and the path, `%`, `?` and `#` escaped: `file:///srv/app/main.db`; a drive path
+  /// becomes `file:///C:/Users/u/main.db` (sqlite drops the `/` before the drive on Windows); a UNC path keeps its two
+  /// leading slashes in the path, `file:////server/share/main.db`, as sqlite refuses an authority that is not empty
+  /// or `localhost` (what `Uri.file` gives a UNC path, `file://server/share/…`).
+  static String readOnlyUriOf(String path, {required bool windows}) {
+    var p = windows ? path.replaceAll(r'\', '/') : path;
+    if (windows && RegExp('^[A-Za-z]:').hasMatch(p)) {
+      p = '/$p';
+    }
+    final escaped = p.replaceAll('%', '%25').replaceAll('?', '%3f').replaceAll('#', '%23');
+    return 'file://$escaped?mode=ro';
   }
 
   /// Remove every credential from [db]: blank the credential columns of every account and delete the settings naming
@@ -447,6 +535,15 @@ final class BackupRepository with LoggerMixin {
     }
   }
 
+  /// Remove the offline copies of forum pages from [db], see [offlineCopyTables].
+  static void stripOfflineCopies(Database db) {
+    for (final table in offlineCopyTables) {
+      if (hasTable(db, table)) {
+        db.execute('DELETE FROM $table');
+      }
+    }
+  }
+
   /// Whether [db] has a table named [name].
   static bool hasTable(Database db, String name) =>
       db.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [name]).isNotEmpty;
@@ -550,6 +647,7 @@ final class BackupRepository with LoggerMixin {
       try {
         stripCredentials(db);
         stripCachePaths(db);
+        stripOfflineCopies(db);
         if (secrets != null) {
           final restored = applyCredentials(db, secrets);
           info('restored the logins of $restored accounts into the import copy');
