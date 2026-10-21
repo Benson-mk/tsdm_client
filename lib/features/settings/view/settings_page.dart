@@ -20,6 +20,7 @@ import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/features/local_notice/show.dart';
 import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
+import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
 import 'package:tsdm_client/features/root/stream/scroll_to_top_stream.dart';
 import 'package:tsdm_client/features/root/view/root_page.dart';
 import 'package:tsdm_client/features/settings/bloc/android_permission_cubit.dart';
@@ -37,6 +38,7 @@ import 'package:tsdm_client/features/settings/widgets/color_picker_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/font_family_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/font_scale_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/language_dialog.dart';
+import 'package:tsdm_client/features/settings/widgets/offline_threads_limit_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/proxy_settings_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/select_thread_floor_interaction_mode_dialog.dart';
 import 'package:tsdm_client/features/settings/widgets/thread_content_scale_dialog.dart';
@@ -665,6 +667,8 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final tr = context.t.settingsPage.storageSection;
     final enableAutoClearImageCache = state.settingsMap.enableAutoClearImageCache;
     final autoClearImageDurationSec = state.settingsMap.autoClearImageCacheDuration;
+    final offlineThreads = state.settingsMap.offlineThreads;
+    final offlineThreadsLimit = state.settingsMap.offlineThreadsLimit;
     Duration? autoClearImageDuration;
     if (autoClearImageDurationSec > 0) {
       autoClearImageDuration = Duration(seconds: autoClearImageDurationSec);
@@ -705,6 +709,35 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             );
             if (seconds == null || !context.mounted) return;
             context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.autoClearImageCacheDuration, seconds));
+          },
+        ),
+        SectionSwitchListTile(
+          secondary: const Icon(Icons.cloud_download_outlined),
+          title: Text(tr.offlineThreads.title),
+          subtitle: Text(tr.offlineThreads.detail),
+          value: offlineThreads,
+          onChanged: (v) async {
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.offlineThreads, v));
+            if (!v) {
+              // Off means nothing kept: what was saved goes too.
+              await appOfflineThreads.clear();
+            }
+          },
+        ),
+        SectionListTile(
+          enabled: offlineThreads,
+          leading: const Icon(Icons.format_list_numbered_outlined),
+          title: Text(tr.offlineThreads.limit.title),
+          subtitle: Text(tr.offlineThreads.limit.detail),
+          trailing: _trailingValue(context, tr.offlineThreads.limit.value(count: offlineThreadsLimit)),
+          onTap: () async {
+            final limit = await showDialog<int>(
+              context: context,
+              builder: (_) => RootPage(DialogPaths.offlineThreadsLimit, OfflineThreadsLimitDialog(offlineThreadsLimit)),
+            );
+            if (limit == null || !context.mounted) return;
+            context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.offlineThreadsLimit, limit));
+            await appOfflineThreads.trim(limit);
           },
         ),
       ],
@@ -832,20 +865,28 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           onTap: () async {
             final choice = await showExportBackupDialog(context);
             if (choice == null || !context.mounted) return;
-            final data = await const BackupRepository().exportSanitized(
-              await databaseFile,
-              secretsPassword: choice.password,
-            );
-            final stamp = DateTime.now().microsecondsSinceEpoch;
-            final name = choice.password == null
-                ? 'tsdm_client_data_$stamp.db'
-                : 'tsdm_client_data_${stamp}_accounts.db';
-            if (isDesktop) {
-              final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
-              if (filePath == null) return;
-              await File(filePath).writeAsBytes(data, flush: true);
-            } else {
-              await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
+            try {
+              final data = await const BackupRepository().exportSanitized(
+                await databaseFile,
+                secretsPassword: choice.password,
+              );
+              final stamp = DateTime.now().microsecondsSinceEpoch;
+              final name = choice.password == null
+                  ? 'tsdm_client_data_$stamp.db'
+                  : 'tsdm_client_data_${stamp}_accounts.db';
+              if (isDesktop) {
+                final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
+                if (filePath == null) return;
+                await File(filePath).writeAsBytes(data, flush: true);
+              } else {
+                await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
+              }
+            } on Object catch (e, st) {
+              // The copy failed (the database busy for too long, no space left…): say so, the data stays as it was.
+              talker.handle(e, st, 'failed to export the backup');
+              if (context.mounted) {
+                showSnackBar(context: context, message: tr.exportDataFailed);
+              }
             }
           },
         ),

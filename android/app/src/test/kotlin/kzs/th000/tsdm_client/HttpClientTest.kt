@@ -78,6 +78,35 @@ class HttpClientTest {
         }
     }
 
+    @Test fun unreachableHostsAreToldApartFromOtherFailures() = runBlocking {
+        fun codeOf(block: suspend () -> Unit): String {
+            val error = runCatching { runBlocking { block() } }.exceptionOrNull()
+            assertNotNull("the request must fail", error)
+            return HttpClient.errorCode(error as Exception)
+        }
+
+        // Nothing listens on the port any more: the connection is refused.
+        val port = MockWebServer().use { server ->
+            server.start()
+            server.port
+        }
+        assertEquals("KT_HTTP_UNREACHABLE", codeOf { HttpClient.get("http://localhost:$port/forum.php", hashMapOf()).close() })
+        // A name that never resolves (`.invalid` is reserved for that).
+        assertEquals("KT_HTTP_UNREACHABLE", codeOf { HttpClient.get("http://forum.invalid/forum.php", hashMapOf()).close() })
+
+        // Connected, then the socket closed before the answer: the forum was reached.
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()) }
+            server.start()
+            assertEquals("KT_HTTP_ERROR", codeOf { HttpClient.get(server.url("/forum.php").toString(), hashMapOf()).close() })
+        }
+
+        assertEquals("KT_HTTP_UNREACHABLE", HttpClient.errorCode(java.net.SocketTimeoutException("failed to connect to /x (port 443) after 10000ms")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(java.net.SocketTimeoutException("timeout")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(java.net.SocketException("Connection reset")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(javax.net.ssl.SSLHandshakeException("bad certificate")))
+    }
+
     @Test fun losingTheResponseAfterReceivingTheFormDoesNotResendIt() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build())

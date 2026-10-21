@@ -40,6 +40,13 @@ AppException mapException(Object error, StackTrace st) {
       error.message ?? error.error?.toString() ?? error.type.name,
       statusCode: response?.statusCode,
       headers: response?.headers,
+      // Dio reports a failed connect as a connection error or timeout; the Android channel as its own exception. A
+      // socket failing after the connect (reset, closed) is no such failure: the forum was reached.
+      connectionFailed:
+          response == null &&
+          (error.type == DioExceptionType.connectionError ||
+              error.type == DioExceptionType.connectionTimeout ||
+              error.error is HostUnreachableException),
     );
   }
   return HttpRequestFailedException(null);

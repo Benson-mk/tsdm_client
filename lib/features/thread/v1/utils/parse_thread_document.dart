@@ -38,6 +38,7 @@ final class ThreadPageInfo {
     required this.postMedals,
     required this.viewCount,
     required this.replyCount,
+    this.offlineSavedAt,
   });
 
   /// Thread id.
@@ -99,6 +100,36 @@ final class ThreadPageInfo {
 
   /// Thread reply count.
   final int? replyCount;
+
+  /// When the page was loaded from the forum, for a page read back from the offline copies because the forum could not
+  /// be reached ([asOffline]); null for a page that just came from the forum.
+  final DateTime? offlineSavedAt;
+
+  /// This page read back from an offline copy loaded at [savedAt]: without its reply form, whose form hash is from an
+  /// old session and could only send a reply over a network that is not there.
+  ThreadPageInfo asOffline(DateTime savedAt) => ThreadPageInfo(
+    tid: tid,
+    title: title,
+    fid: fid,
+    forumName: forumName,
+    currentPage: currentPage,
+    totalPages: totalPages,
+    havePermission: havePermission,
+    permissionDeniedMessage: permissionDeniedMessage,
+    needLogin: needLogin,
+    threadSoftClosed: threadSoftClosed,
+    threadClosed: threadClosed,
+    postList: postList,
+    replyParameters: null,
+    threadType: threadType,
+    isDraft: isDraft,
+    latestModAct: latestModAct,
+    breadcrumbs: breadcrumbs,
+    postMedals: postMedals,
+    viewCount: viewCount,
+    replyCount: replyCount,
+    offlineSavedAt: savedAt,
+  );
 }
 
 /// Whether the thread page says the thread accepts no more replies.

@@ -157,6 +157,18 @@ final class SmiliesRepository with LoggerMixin {
     return null;
   }
 
+  /// The table of [version] when it is kept, as [tableFor], but never asking the forum: only the saved table is read
+  /// ([preload]), and [table] tells when it arrives. For a floor read back from an offline copy of its thread, drawn
+  /// without network: without the table of its version it keeps its html.
+  SmiliesTable? savedTableFor(String version) {
+    final current = _table.value;
+    if (current != null && current.version == version) {
+      return current;
+    }
+    unawaited(preload());
+    return null;
+  }
+
   /// Make sure the table of [version] is kept, as far as the saved copy and one fetch can; the table of [version]
   /// when it is, null otherwise.
   Future<SmiliesTable?> ensure(String version) async {

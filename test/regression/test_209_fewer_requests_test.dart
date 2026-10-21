@@ -791,12 +791,14 @@ void main() {
     });
 
     // Integration review of the fewer-requests branch: the card showed the form of a page served to a guest to the
-    // account now in use, "log in to vote" for an account logged in, and asked nothing.
+    // account now in use, "log in to vote" for an account logged in, and asked nothing. Since the offline threads
+    // review (6fc17b2e+f40ce252) a failed reload for another account never puts the floors of the previous one back:
+    // no card at all until the page of Bob is loaded, then his form.
     for (final (name, dropped) in [
       ('read as a guest, then Bob logged in', false),
       ('read with the session of Alice the forum dropped, then switched to Bob', true),
     ]) {
-      testWidgets('guest floors put back after a failed reload ($name): the card asks for the form of Bob', (
+      testWidgets('guest floors after a failed reload for Bob ($name): not put back, then the form of Bob', (
         tester,
       ) async {
         final forum = _useForum(json: true);
@@ -809,8 +811,9 @@ void main() {
         await pumpThread(tester, forum);
         expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsOneWidget);
         final asked = forum.pollLoads;
+        final bloc = tester.element(_card).read<ThreadBloc>();
 
-        // The reload for Bob fails after a while: the floors read as a guest go back on screen.
+        // The reload for Bob fails after a while: the floors read before are of another account, not put back.
         forum
           ..failThreadLoads = true
           ..gate = Completer<void>();
@@ -819,10 +822,16 @@ void main() {
         forum.gate!.complete();
         forum.gate = null;
         await _settle(tester);
-        final bloc = tester.element(_card).read<ThreadBloc>();
-        expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1), reason: 'the floor is back');
+        expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 0), reason: 'not put back');
+        expect(_card, findsNothing);
         expect(forum.threadLoads, 2);
-        expect(forum.pollLoads, asked + 1, reason: 'the card asks for the form of Bob once');
+        expect(forum.pollLoads, asked, reason: 'no card, nothing asked');
+
+        // Retried: the page of Bob, his form.
+        forum.failThreadLoads = false;
+        await tester.tap(find.text(t.general.retry));
+        await _settle(tester);
+        expect(forum.threadLoads, 3);
         expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
         expect(_inCard(find.widgetWithText(TextButton, t.pollVoting.loginRequired)), findsNothing);
         await _vote(tester);
@@ -832,9 +841,10 @@ void main() {
     }
 
     // Review of 3e788556: a reload failing at once (no connection) ends before the frame that would show the page
-    // loading. The floors go back on screen without being built again: the card kept the poll of Alice for Bob, five
-    // options that did nothing (the account in use is not the one of the form).
-    testWidgets('floors put back at once after a failed reload for Bob: the same card asks for the poll of Bob once', (
+    // loading. The floors went back on screen without being built again: the card kept the poll of Alice for Bob, five
+    // options that did nothing (the account in use is not the one of the form). Since the offline threads review the
+    // floors of Alice are not put back at all for Bob.
+    testWidgets('a failed reload for Bob at once: the floors of Alice are not put back, the retry loads his form', (
       tester,
     ) async {
       final forum = _useForum(json: true);
@@ -843,7 +853,7 @@ void main() {
       final bloc = tester.element(_card).read<ThreadBloc>();
       forum.failThreadLoads = true;
 
-      // No account change: the card keeps the form of the page of Alice and asks nothing.
+      // No account change: the floor is back, the card keeps the form of the page of Alice and asks nothing.
       bloc.add(ThreadRefreshRequested());
       await _settle(tester);
       expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1), reason: 'the floor is back');
@@ -854,24 +864,26 @@ void main() {
 
       await switchToBob(tester);
       expect(forum.threadLoads, 3, reason: 'the thread page reloads for Bob, and fails at once');
-      expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 1));
-      expect(tester.state(_card), same(card), reason: 'the floor of the page of Alice, not built again');
-      expect(forum.pollLoads, 1, reason: 'the card asks for the poll of Bob once');
+      expect((bloc.state.status, bloc.state.postList.length), (ThreadStatus.failure, 0), reason: 'not put back');
+      expect(_card, findsNothing);
+      expect(forum.pollLoads, 0);
+
+      forum.failThreadLoads = false;
+      await tester.tap(find.text(t.general.retry));
+      await _settle(tester);
+      expect(forum.threadLoads, 4);
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
       await _vote(tester);
       expect(forum.votes.single['formhash'], 'hashOf1001', reason: "Bob's vote goes out with Bob's formhash");
-      expect(forum.pollLoads, 2, reason: 'and the results once');
       expect(_inCard(find.text(t.pollVoting.voted)), findsOneWidget);
-      expect(forum.threadLoads, 3);
       await _dispose(tester);
     });
 
-    testWidgets('switched to Bob under another page, the reload once shown again fails at once: the card asks once', (
+    testWidgets('switched to Bob under another page, the reload once shown again fails at once: nothing of Alice', (
       tester,
     ) async {
       final forum = _useForum(json: true);
       final router = await pumpThread(tester, forum);
-      final card = tester.state(_card);
       unawaited(router.push('/other'));
       await _settle(tester);
       forum.failThreadLoads = true;
@@ -881,8 +893,12 @@ void main() {
       router.pop();
       await _settle(tester);
       expect(forum.threadLoads, 2, reason: 'the reload for Bob once shown again, failed at once');
-      expect(tester.state(_card), same(card), reason: 'the floor of the page of Alice, not built again');
-      expect(forum.pollLoads, 1, reason: 'the card asks for the poll of Bob once');
+      expect(_card, findsNothing, reason: 'the floor of the page of Alice is not put back for Bob');
+      expect(forum.pollLoads, 0);
+
+      forum.failThreadLoads = false;
+      await tester.tap(find.text(t.general.retry));
+      await _settle(tester);
       expect(_inCard(find.byType(CheckboxListTile)), findsNWidgets(5), reason: 'open for the vote of Bob');
       await _vote(tester);
       expect(forum.votes.single['formhash'], 'hashOf1001', reason: "Bob's vote goes out with Bob's formhash");

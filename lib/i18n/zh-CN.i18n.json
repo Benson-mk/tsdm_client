@@ -437,6 +437,7 @@
       "log": "日志",
       "selectOneCache": "需要至少选择一项缓存",
       "clearSuccess": "清除成功",
+      "offlineThreadsCache": "离线帖子",
       "scheduledCleaning": {
         "title": "自动清理图片",
         "details": "应用启动时删除太久未使用的图片缓存",
@@ -450,6 +451,15 @@
           "7days": "7天",
           "15days": "15天",
           "30days": "30天"
+        }
+      },
+      "offlineThreads": {
+        "title": "离线保存看过的帖子",
+        "detail": "把看过的帖子页面存在本机，没有网络时可以再看；每个账号只看得到自己保存的内容。关闭时会删除已保存的内容",
+        "limit": {
+          "title": "最多保存的帖子数",
+          "detail": "所有账号共用这个上限，超过时先删除最久没看的帖子；每个帖子最多保存 20 页",
+          "value": "${count: int} 个帖子"
         }
       }
     },
@@ -488,6 +498,7 @@
       },
       "exportData": "导出数据",
       "exportDataDetail": "默认不含任何账号的 Cookie 与密码；可选择用自设密码加密后一并导出",
+      "exportDataFailed": "导出失败，现有数据未变更，请稍后再试",
       "backupTitle": "备份与恢复",
       "exportBackup": {
         "title": "导出数据",
@@ -770,6 +781,7 @@
       "title": "操作记录"
     },
     "softCloseHint": "帖子已关闭，回复前请注意",
+    "offlineBanner": "离线内容（${time: String} 保存）",
     "statistics": "${view: int} 查看 ${reply: int} 回复",
     "threadInfo": {
       "title": "帖子信息",

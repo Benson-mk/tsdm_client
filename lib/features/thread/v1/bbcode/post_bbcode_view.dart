@@ -8,6 +8,7 @@ import 'package:tsdm_client/extensions/int.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode.dart';
 import 'package:tsdm_client/features/thread/v1/bbcode/smilies.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/html/adaptive_color.dart';
@@ -27,7 +28,8 @@ import 'package:tsdm_client/widgets/text_widget_span.dart';
 /// before ([MunchedHtml] of [Post.data]).
 ///
 /// A floor showing smilies waits for the forum's smilies table ([SmiliesRepository], by the version its answer
-/// names) and shows the html until the table is there; without the repository in the tree it keeps the html.
+/// names) and shows the html until the table is there; without the repository in the tree it keeps the html. A floor
+/// read back from an offline copy of its thread only reads the saved table, it never asks the forum for one.
 class PostBbcodeBody extends StatefulWidget {
   /// Constructor.
   const PostBbcodeBody(this.post, {super.key});
@@ -79,7 +81,8 @@ class _PostBbcodeBodyState extends State<PostBbcodeBody> with LoggerMixin {
     SmiliesTable? table;
     final version = post.smiliesVersion;
     if (postBbcodeNeedsSmilies(post) && version != null) {
-      table = _smilies?.tableFor(version);
+      // Read back offline: the saved table only, the forum is never asked (the html when it is not there).
+      table = isOfflineFloor(context) ? _smilies?.savedTableFor(version) : _smilies?.tableFor(version);
     }
     final decision = decidePostBbcode(post, smilies: table);
     if (decision is PostBbcodeFallback) {

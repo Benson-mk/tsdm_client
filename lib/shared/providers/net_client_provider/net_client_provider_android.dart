@@ -10,9 +10,29 @@ import 'package:tsdm_client/instance.dart';
 /// Internal Dio metadata; never transmitted in an HTTP header or form body.
 const singleAttemptHttpRequestKey = 'tsdm_single_attempt';
 
+/// The host of a GET was not reached at all: no network, the name not resolved, the connection refused or timed out
+/// while connecting (`KT_HTTP_UNREACHABLE` of the Android channel, see `HttpClient.errorCode` in `HttpClient.kt`).
+///
+/// Its own type, not a [SocketException]: a socket failing after the connection was made (reset, closed while
+/// reading) means the forum was reached, and must not count as no network.
+final class HostUnreachableException implements IOException {
+  /// Constructor.
+  const HostUnreachableException(this.message);
+
+  /// What the platform said.
+  final String message;
+
+  @override
+  String toString() => 'HostUnreachableException: $message';
+}
+
 /// The method channel for [KotlinHttpClient].
 abstract class _AndroidHttpMethodChannel {
   static const _httpChannel = MethodChannel('kzs.th000.tsdm_client/httpChannel');
+
+  /// Error code of a GET whose host was not reached at all (no network, name not resolved, connection refused or timed
+  /// out while connecting), see `HttpClient.errorCode` in `HttpClient.kt`.
+  static const _unreachable = 'KT_HTTP_UNREACHABLE';
 
   static const _methodGet = 'get';
   static const _methodPost = 'postForm';
@@ -29,6 +49,12 @@ abstract class _AndroidHttpMethodChannel {
       return _KotlinHttpResponse._fromRawResp(resp);
     } on PlatformException catch (e, st) {
       talker.handle(e, st, '[KtHttp] GET failed on $url');
+      if (e.code == _unreachable) {
+        // Its own exception, as dio's connection error and connection timeout are on the other platforms, so a thread
+        // page can be read from its offline copy (see mapException); still a failed request without status for every
+        // other caller.
+        throw HostUnreachableException('${e.details ?? e.message ?? 'host unreachable'}');
+      }
       return null;
     }
   }
@@ -180,9 +206,7 @@ final class KotlinHttpClient {
     }
 
     final contentType = headers?[HttpHeaders.contentTypeHeader]?.split(';').firstOrNull ?? '';
-    if (singleAttempt &&
-        contentType != 'application/x-www-form-urlencoded' &&
-        contentType != 'application/json') {
+    if (singleAttempt && contentType != 'application/x-www-form-urlencoded' && contentType != 'application/json') {
       throw UnsupportedError('Single-attempt requests require a URL-encoded form or a JSON body');
     }
 

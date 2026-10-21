@@ -93,6 +93,16 @@ class _ClearCacheBottomSheetState extends State<_ClearCacheBottomSheet> {
                             SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearLog: v)),
                           ),
                         ),
+                        CheckboxListTile(
+                          key: const ValueKey('clear-cache-offline-threads'),
+                          secondary: const Icon(Icons.cloud_download_outlined),
+                          title: Text(tr.offlineThreadsCache),
+                          subtitle: Text(state.storageInfo!.offlineThreadSize.withSizeHint()),
+                          value: state.clearInfo.clearOfflineThreads,
+                          onChanged: (v) => context.read<SettingsCacheBloc>().add(
+                            SettingsCacheUpdateClearInfoRequested(state.clearInfo.copyWith(clearOfflineThreads: v)),
+                          ),
+                        ),
                       ],
                     ),
                   ),
