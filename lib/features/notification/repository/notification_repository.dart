@@ -5,21 +5,31 @@ import 'package:fpdart/fpdart.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/uri.dart';
+import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:universal_html/html.dart' as uh;
 
 /// One fetch of every notification kind, with the forum's clock when it was answered and the lower bound (seconds)
-/// the fetch used, after the clamp to the last three days: `window`.
-typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int window});
+/// the fetch used, after the clamp to the last three days: `window`. `servedUid` is the account the forum answered
+/// as (the `uid` of `notify`, or the user node of the notice page), null when it did not tell.
+typedef FetchedNotification = ({NotificationV2 info, DateTime? serverTime, int window, int? servedUid});
+
+/// The account a `notify` answer [json] was served to, null when it does not tell.
+int? _servedUidOfNotify(Map<String, dynamic>? json) => switch (json?['uid']) {
+  final num uid when uid > 0 => uid.toInt(),
+  _ => null,
+};
 
 /// The thread page a notice points to ([NotificationRepository.fetchNoticeThread]): built from the structured answer
 /// of the forum's app API (plugin 2.1.0, `schema: 3`), or the document of any other answer, parsed by the reader as
@@ -321,7 +331,12 @@ final class NotificationRepository with LoggerMixin {
         if (notifyCarriesLists(notify) && notifyListsUnreadNotice(notify!) && since <= (notify['time'] as int)) {
           await _markSeen(client, notify['formhash'] as String, notice: notify['time'] as int, pm: false);
         }
-        return right((info: NotificationV2.empty, serverTime: serverTime, window: since));
+        return right((
+          info: NotificationV2.empty,
+          serverTime: serverTime,
+          window: since,
+          servedUid: _servedUidOfNotify(notify),
+        ));
       case TsdmAppNothingNew() || TsdmAppFetchPages():
         break;
     }
@@ -359,7 +374,12 @@ final class NotificationRepository with LoggerMixin {
       'pm=${info.personalMessageList.length} bm=${info.broadcastMessageList.length} '
       'serverTime=${serverTime?.toIso8601String() ?? 'unknown'}',
     );
-    return right((info: info, serverTime: serverTime, window: since));
+    return right((
+      info: info,
+      serverTime: serverTime,
+      window: since,
+      servedUid: _servedUidOfNotify(notify) ?? parseLoggedUidFromDocument(noticeDoc),
+    ));
   });
 
   /// The rest of a fetch since [since] whose `notify` answer [notify] carries the lists ([notifyCarriesLists], plugin
@@ -453,7 +473,7 @@ final class NotificationRepository with LoggerMixin {
       await _markSeen(client, notify['formhash'] as String, notice: seenNotice, pm: seenPm);
     }
     // The window the conversations were kept by, in their representation: what decides that one is news.
-    return right((info: info, serverTime: serverTime, window: pmSince));
+    return right((info: info, serverTime: serverTime, window: pmSince, servedUid: _servedUidOfNotify(notify)));
   }
 
   /// The conversation list asked of `pmlist` with [client] (plugin 1.9.0), `fromApi` true; the private message page
@@ -554,6 +574,9 @@ final class NotificationRepository with LoggerMixin {
     _controller.add(const NotificationInfoStateLoading());
     return AsyncEither(() async {
       final startedAt = DateTime.now();
+      // The session the default client is bound to: the one the guest page below is about.
+      final cookie = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>() : null;
+      final asked = (uid: cookie?.userLoginInfo.uid, generation: cookie?.generation);
       final result = await fetchNotificationWith(
         getIt.get<NetClientProvider>(),
         timestamp: timestamp,
@@ -562,8 +585,14 @@ final class NotificationRepository with LoggerMixin {
       switch (result) {
         case Left(:final value):
           if (value is NotificationUserNotFound) {
-            // The forum answered the guest page to the current account's cookie: its session is dead (issue #25).
-            await _storage?.markSessionExpired(uid);
+            if (cookie == null || (asked.uid == uid && cookie.generation == asked.generation)) {
+              // The forum answered the guest page to the current account's cookie: its session is dead (issue #25).
+              await _storage?.markSessionExpired(uid);
+            } else {
+              // Asked as another account, or another session was loaded since (a login with the password, of this
+              // account too): the guest page says nothing of the session in use now.
+              info('guest page of a previous session of uid ${"$uid".obscured(4)}, nothing marked');
+            }
           }
           _controller.add(const NotificationInfoStateFailure());
           return left(value);

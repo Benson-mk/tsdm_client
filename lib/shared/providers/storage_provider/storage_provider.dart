@@ -46,6 +46,27 @@ final class NotificationGroup {
 /// last learned that its forum session is dead (null while nothing is known, see [StorageProvider.markSessionExpired]).
 typedef StoredAccount = ({UserLoginInfo user, DateTime? lastCheckin, DateTime? sessionExpiredAt});
 
+final _authCookieRe = RegExp('${cookiePrefix}_auth=([^;"\\\\\\s]*)');
+
+/// The forum session [cookie] (a cookie jar map, as stored per account) holds: the value of its auth cookie
+/// (`<prefix>_auth`), every distinct one when several hosts hold one; null when it has none.
+///
+/// A login with the password (also of the same account) stores another one; the forum renewing the other cookies
+/// of the session (`lastact`, `sid`) leaves it as it is. A cookie provider loaded from a stored row writes back into
+/// it, and records its session expired, only while the row still holds the session the provider holds
+/// ([StorageProvider.saveCookieOfSession], [StorageProvider.markSessionExpiredIfHeld]): a request of the previous
+/// session answered after the new login must not bring that session back.
+String? cookieSessionOf(Map<String, dynamic>? cookie) {
+  if (cookie == null) {
+    return null;
+  }
+  final tokens = <String>{
+    for (final value in cookie.values)
+      for (final m in _authCookieRe.allMatches('$value')) m[1]!,
+  };
+  return tokens.isEmpty ? null : (tokens.toList()..sort()).join(',');
+}
+
 /// Load all cookie info from database without any dependency except [db].
 ///
 /// Only use this function to preload cookie before initializing
@@ -168,10 +189,38 @@ class StorageProvider with LoggerMixin {
   /// Delete the user login info for the user specified by [uid], with the local marks and the offline thread pages of
   /// the account.
   Future<int> deleteUserLoginInfo(int uid) async {
+    _wroteCookieOf(uid);
+    // As every removal: a client of the account must not find its cookie in the cache any more.
+    _cookieCache.removeWhere((e, _) => e.uid == uid);
     final deleted = await CookieDao(_db).deleteCookieByUid(uid);
+    await _deleteAccountMarks(uid);
+    return deleted;
+  }
+
+  /// Settings name of the time account [uid] was last polled for notifications (`NotificationPollSlot`).
+  static String notificationPolledAtKey(int uid) => 'notificationPolledAt.$uid';
+
+  /// Settings name of the time account [uid] was last polled by the sync of all accounts the user asked for
+  /// (`NotificationPollSlot.takeForManualSync`).
+  static String notificationPolledManuallyAtKey(int uid) => 'notificationPolledManuallyAt.$uid';
+
+  /// How many times the cookie of each uid was saved or removed through this provider: a read of its row that one of
+  /// them overtook does not put what it read into the cache ([fetchCookieOfUid]).
+  final _cookieWrites = <int, int>{};
+
+  void _wroteCookieOf(int uid) {
+    _cookieWrites[uid] = (_cookieWrites[uid] ?? 0) + 1;
+  }
+
+  /// Delete the local marks of account [uid] removed from this device: the threads it replied to, its offline thread
+  /// pages and the times it was polled for notifications.
+  Future<void> _deleteAccountMarks(int uid) async {
+    _wroteCookieOf(uid);
     await RepliedThreadDao(_db).deleteByUid(uid);
     await OfflineThreadDao(_db).deleteByUid(uid);
-    return deleted;
+    final settings = SettingsDao(_db);
+    await settings.deleteByName(notificationPolledAtKey(uid));
+    await settings.deleteByName(notificationPolledManuallyAtKey(uid));
   }
 
   /*             cookie             */
@@ -181,6 +230,31 @@ class StorageProvider with LoggerMixin {
   /// The cache only follows this provider's own writes. Another isolate on the same database (the app while the
   /// Android background message service fetches, #80) removes an account without this provider noticing.
   Future<bool> hasCookieOfUid(int uid) async => await CookieDao(_db).selectCookieByUid(uid) != null;
+
+  /// The [Cookie] of [uid] read from the database, not the cache; null when the account is not stored.
+  ///
+  /// For a caller that must see what another isolate on the same database wrote (the Android background message
+  /// service renews the cookies of the accounts it polls) without reloading the whole cache of this provider. The
+  /// cache entry of [uid] is brought in line with the row (dropped when the row is gone): the account switch and the
+  /// cookie provider's check for a removed account ([getCookieByUidSync]) see what was read.
+  ///
+  /// The cookie saved or removed through this provider while the row was read (a login with the password stored a
+  /// new session of the account, the account was removed): what the cache holds since, newer than the row read, which
+  /// stays out of the cache; null when removed.
+  Future<Cookie?> fetchCookieOfUid(int uid) async {
+    final writes = _cookieWrites[uid] ?? 0;
+    final row = await CookieDao(_db).selectCookieByUid(uid);
+    if ((_cookieWrites[uid] ?? 0) != writes) {
+      return getCookieByUidSync(uid);
+    }
+    _cookieCache.removeWhere((e, _) => e.uid == uid);
+    if (row == null) {
+      return null;
+    }
+    final cookie = jsonDecode(row.cookie) as Map<String, dynamic>;
+    _cookieCache[UserLoginInfo(username: row.username, uid: row.uid)] = cookie;
+    return cookie;
+  }
 
   /// Get [Cookie] with [uid] from cookie cached saved in memory.
   ///
@@ -220,7 +294,12 @@ class StorageProvider with LoggerMixin {
   ///
   /// Required full user info and save by [uid] so that we handled some extreme
   /// situation when username or email changed.
+  ///
+  /// Stored as it is, whatever the row holds: for a session the app takes as the account's own (a login, the switch's
+  /// check, the session a page was served to). A cookie provider writing back what the forum renewed in the session it
+  /// loaded uses [saveCookieOfSession].
   Future<void> saveCookie({required String username, required int uid, required Cookie cookie}) async {
+    _wroteCookieOf(uid);
     final allCookie = getCookieByUidSync(uid) ?? <String, dynamic>{};
 
     // Combine two map together, do not directly use [cookie].
@@ -246,16 +325,53 @@ class StorageProvider with LoggerMixin {
     );
   }
 
+  /// [saveCookie] for a cookie provider that loaded the row of [uid] and writes back what the forum renewed: only while
+  /// the row still holds [session], the session the provider holds ([cookieSessionOf]). False when it does not: another
+  /// session of the account was stored meanwhile (a login with the password, of the same account too) or the account
+  /// was removed, and a request of the previous session answered late must not bring it back.
+  ///
+  /// Checked in the cache (this isolate's writes) and in the database, which the Android background message service
+  /// writes from its own isolate ([exclusively]: nothing is written between the check and the write).
+  Future<bool> saveCookieOfSession({
+    required String username,
+    required int uid,
+    required Cookie cookie,
+    required String? session,
+  }) async {
+    bool held(Cookie? stored) => stored != null && cookieSessionOf(stored) == session;
+    if (!held(getCookieByUidSync(uid))) {
+      return false;
+    }
+    return exclusively(() async {
+      final row = await CookieDao(_db).selectCookieByUid(uid);
+      if (row == null || cookieSessionOf(jsonDecode(row.cookie) as Map<String, dynamic>) != session) {
+        return false;
+      }
+      // Read again: this isolate may have stored another session while the row was read.
+      final allCookie = getCookieByUidSync(uid);
+      if (!held(allCookie)) {
+        return false;
+      }
+      _wroteCookieOf(uid);
+      allCookie!.addAll(Map.castFrom<String, dynamic, String, String>(cookie));
+      _cookieCache[UserLoginInfo(username: username, uid: uid)] = allCookie;
+      await CookieDao(_db).upsertCookie(
+        CookieCompanion(username: Value(username), uid: Value(uid), cookie: Value(jsonEncode(allCookie))),
+      );
+      return true;
+    });
+  }
+
   /// Delete cookie for [uid].
   ///
   /// The local marks ([recordRepliedThread]) and the offline thread pages ([saveOfflineThreadPage]) of the account go
   /// with it.
   Future<bool> deleteCookieByUid(int uid) async {
+    _wroteCookieOf(uid);
     // Update cookie cache.
     _cookieCache.removeWhere((e, _) => e.uid == uid);
     final affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
-    await RepliedThreadDao(_db).deleteByUid(uid);
-    await OfflineThreadDao(_db).deleteByUid(uid);
+    await _deleteAccountMarks(uid);
     return affectedRows != 0;
   }
 
@@ -306,16 +422,14 @@ class StorageProvider with LoggerMixin {
     if (targets.isEmpty) {
       return 0;
     }
+    targets.forEach(_wroteCookieOf);
     _cookieCache.removeWhere((e, _) => targets.contains(e.uid));
     final dao = CookieDao(_db);
-    final marks = RepliedThreadDao(_db);
-    final offline = OfflineThreadDao(_db);
     return _db.transaction(() async {
       var deleted = 0;
       for (final uid in targets) {
         deleted += await dao.deleteCookieByUid(uid);
-        await marks.deleteByUid(uid);
-        await offline.deleteByUid(uid);
+        await _deleteAccountMarks(uid);
       }
       return deleted;
     });
@@ -330,13 +444,19 @@ class StorageProvider with LoggerMixin {
     // final email = userInfo.email;
     final int affectedRows;
     if (uid != null) {
+      _wroteCookieOf(uid);
       _cookieCache.removeWhere((e, _) => e.uid == uid);
       affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
-      await RepliedThreadDao(_db).deleteByUid(uid);
-      await OfflineThreadDao(_db).deleteByUid(uid);
+      await _deleteAccountMarks(uid);
     } else if (username != null) {
+      // Every row of that name (the name is no key: two rows may carry it), read before anything is removed.
+      final uids = (await CookieDao(_db).selectAll()).where((e) => e.username == username).map((e) => e.uid).toList()
+        ..forEach(_wroteCookieOf);
       _cookieCache.removeWhere((e, _) => e.username == username);
       affectedRows = await CookieDao(_db).deleteCookieByUsername(username);
+      for (final uid in uids) {
+        await _deleteAccountMarks(uid);
+      }
       // } else if (email != null) {
       //   _cookieCache.removeWhere((e, _) => e.email == email);
       //   affectedRows = await CookieDao(_db).deleteCookieByEmail(email);
@@ -540,8 +660,31 @@ class StorageProvider with LoggerMixin {
   ///
   /// Call it whenever a request made with that account's cookie got the guest page. Nothing happens when the account
   /// is not stored. Cleared by [clearSessionExpired] once a login or an account switch verified the session again.
+  /// A cookie provider loaded from the row marks it with [markSessionExpiredIfHeld].
   Future<void> markSessionExpired(int uid, {DateTime? at}) async {
     final touched = await CookieDao(_db).updateSessionExpiredAt(uid, at ?? DateTime.now());
+    if (touched > 0) {
+      info('session of uid ${"$uid".obscured(4)} marked expired');
+    }
+  }
+
+  /// [markSessionExpired] for the guest page answered to [session] ([cookieSessionOf]), the session a cookie provider
+  /// loaded from the row of [uid] sent the request with: only while the row still holds it, checked in the database
+  /// ([exclusively]). The guest page answered to the previous session after a new login of the account (with the
+  /// password, of the same account too) says nothing of the new one, whichever isolate asked.
+  Future<void> markSessionExpiredIfHeld(int uid, {required String? session, DateTime? at}) async {
+    final dao = CookieDao(_db);
+    final touched = await exclusively(() async {
+      final row = await dao.selectCookieByUid(uid);
+      if (row == null) {
+        return 0;
+      }
+      if (cookieSessionOf(jsonDecode(row.cookie) as Map<String, dynamic>) != session) {
+        info('session of uid ${"$uid".obscured(4)} not marked expired: another session is stored now');
+        return 0;
+      }
+      return dao.updateSessionExpiredAt(uid, at ?? DateTime.now());
+    });
     if (touched > 0) {
       info('session of uid ${"$uid".obscured(4)} marked expired');
     }

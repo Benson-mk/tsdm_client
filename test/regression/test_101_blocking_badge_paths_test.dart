@@ -19,6 +19,7 @@ import 'package:tsdm_client/features/checkin/repository/checkin_repository.dart'
 import 'package:tsdm_client/features/home/cubit/home_cubit.dart';
 import 'package:tsdm_client/features/homepage/bloc/homepage_bloc.dart';
 import 'package:tsdm_client/features/homepage/view/homepage_page.dart';
+import 'package:tsdm_client/features/multi_user/cubit/current_account_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
@@ -42,6 +43,7 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 import 'package:tsdm_client/shared/repositories/forum_home_repository/forum_home_repository.dart';
 import 'package:tsdm_client/shared/repositories/fragments_repository/fragments_repository.dart';
 import 'package:tsdm_client/widgets/card/notice_card_v2.dart';
+import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:universal_html/html.dart' as uh;
 
 /// Every path that publishes the unread badge on screen leaves out what the local block list hides or mutes, on the
@@ -69,11 +71,19 @@ final class _Auth extends Fake implements AuthenticationRepository {
   @override
   Stream<AuthStatus> get status => _controller.stream;
 
+  /// Nothing is replayed: the stream is a plain broadcast one.
+  @override
+  AuthStatus? get latestStatus => null;
+
   @override
   int? get effectiveCurrentUid => currentUser?.uid;
 
   @override
-  AsyncVoidEither loginWithDocument(uh.Document document) => AsyncVoidEither(() async => rightVoid());
+  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs, int? epoch}) =>
+      AsyncVoidEither(() async => rightVoid());
+
+  @override
+  int get identityEpoch => 0;
 
   Future<void> close() => _controller.close();
 }
@@ -424,6 +434,49 @@ void main() {
       await settle(tester);
       return notifications;
     }
+
+    testWidgets('lists of another account than the one in use are never shown, nor counted', (tester) async {
+      // The account in use is Bob now (switched); the bloc still holds the lists it loaded for Alice.
+      var inUse = const UserLoginInfo(username: 'Bob', uid: _bob);
+      final switches = StreamController<AuthStatus>.broadcast(sync: true);
+      addTearDown(switches.close);
+      final accounts = CurrentAccountCubit(
+        currentUser: () => inUse,
+        authStatus: switches.stream,
+        accounts: const Stream.empty(),
+      );
+      addTearDown(accounts.close);
+      final notifications = _Notifications(const NotificationState(status: NotificationStatus.loading));
+      await pump(
+        tester,
+        const NotificationPage(),
+        notifications: notifications,
+        blocs: [
+          BlocProvider<AutoNotificationCubit>.value(value: auto),
+          BlocProvider<CurrentAccountCubit>.value(value: accounts),
+        ],
+      );
+      notifications.push(synced.copyWith(ownerUid: _alice.uid));
+      await settle(tester);
+      expect(
+        find.textContaining('notice 3', findRichText: true),
+        findsNothing,
+        reason: "Alice's notices while Bob is in use",
+      );
+      expect(find.byType(CenteredCircularIndicator), findsOneWidget);
+      expect((counts.state.notice, counts.state.personalMessage), (0, 0), reason: 'nor counted in the badge');
+
+      // Bob's lists arrive: shown.
+      notifications.push(synced.copyWith(ownerUid: _bob));
+      await settle(tester);
+      expect(find.textContaining('notice 3', findRichText: true), findsOneWidget);
+
+      // Switched back to Alice before her lists are in: hidden again.
+      inUse = _alice;
+      switches.add(const AuthStatusAuthed(_alice));
+      await settle(tester);
+      expect(find.textContaining('notice 3', findRichText: true), findsNothing);
+    });
 
     testWidgets('a sync result counts everything when nobody is blocked', (tester) async {
       await open(tester);

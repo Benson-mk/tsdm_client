@@ -9,6 +9,7 @@ import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/auto_sync_info.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -37,6 +38,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
     NetClientProvider Function(CookieProvider cookie)? clientFactory,
     this.gap = const Duration(seconds: 2),
     this.maxRetryAfter = const Duration(seconds: 60),
+    this.cookiesFromDatabase = false,
   }) : _storageProvider = storageProvider,
        _notificationRepository = notificationRepository,
        _clientFactory = clientFactory ?? _defaultClient;
@@ -51,6 +53,11 @@ final class NotificationSyncAllRepository with LoggerMixin {
   ///
   /// Three pages are fetched per account; the forum answered 429 when four accounts checked in at once.
   final Duration gap;
+
+  /// Whether each account's cookie is read from the database rather than the cache of the storage provider: for the
+  /// in-app round of the other accounts, which must see the cookies the background service renewed, without
+  /// reloading the app's whole cache every round.
+  final bool cookiesFromDatabase;
 
   /// Longest wait accepted from a `Retry-After` header before the one retry of a rate-limited account.
   ///
@@ -68,27 +75,74 @@ final class NotificationSyncAllRepository with LoggerMixin {
   ///
   /// The returned `finished` holds this run's results only: the progress stream is shared, and a run given up by
   /// the background service may still be writing to it while the next one runs (GitHub #173).
-  AsyncEither<NotificationSyncAllInfo> syncAll({required List<UserLoginInfo> accounts}) => AsyncEither(() async {
+  ///
+  /// With [pollInterval] (the auto sync interval, for the sync of all accounts the user asks for) each account takes
+  /// its poll first ([NotificationPollSlot.takeForManualSync], shared with the in-app auto sync and the background
+  /// message service), at [now] (the current time by default): an account one of them polled within half the
+  /// interval, at most 30 seconds ago, is not asked again (the plugin answers a second call within its interval with
+  /// 429), its result is what is stored now ([NotificationSyncResultSuccess.recent]); a poll that brought nothing is
+  /// given back. Without it (the background tick and the in-app round of the other accounts, which take the poll
+  /// themselves) every account is fetched. The pause between accounts ([gap]) is this run's own, see
+  /// [NotificationPollSlot].
+  AsyncEither<NotificationSyncAllInfo> syncAll({
+    required List<UserLoginInfo> accounts,
+    Duration? pollInterval,
+    DateTime? now,
+  }) => AsyncEither(() async {
     // Initialize each run without retaining the previous batch results.
     _currentInfo = NotificationSyncAllInfo.empty();
     _updateWaiting(accounts);
     final finished = <(UserLoginInfo, NotificationSyncResult)>[];
+    var previousAsked = false;
     for (final (index, user) in accounts.indexed) {
-      if (index > 0 && gap > Duration.zero) {
+      if (index > 0 && gap > Duration.zero && previousAsked) {
         await Future<void>.delayed(gap);
       }
       debug('sync notification for uid ${"${user.uid}".obscured(4)}');
       _updateRunning(user);
-      final result = await _syncOne(user);
-      if (result is NotificationSyncResultNotAuthorized && user.uid != null) {
-        // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
-        await _storageProvider.markSessionExpired(user.uid!);
-      }
+      final result = await _syncPolled(user, pollInterval, now);
+      previousAsked = result is! NotificationSyncResultSuccess || !result.recent;
       finished.add((user, result));
       _updateFinished(user, result);
     }
     return right(NotificationSyncAllInfo(waiting: const [], running: const [], finished: finished));
   });
+
+  /// [_syncOne] behind the poll of [user] when [interval] is given, see [syncAll].
+  Future<NotificationSyncResult> _syncPolled(UserLoginInfo user, Duration? interval, DateTime? now) async {
+    final uid = user.uid;
+    if (interval == null || uid == null) {
+      return _syncOne(user);
+    }
+    final int? slot;
+    try {
+      slot = await NotificationPollSlot.takeForManualSync(_storageProvider, uid, interval, now: now);
+      if (slot == null) {
+        debug('uid ${"$uid".obscured(4)} was polled moments ago, using what is stored');
+        final unread = await countUnreadNotification(storage: _storageProvider, uid: uid);
+        return NotificationSyncResultSuccess(
+          newNotice: 0,
+          newPersonalMessage: 0,
+          newBroadcastMessage: 0,
+          unreadNotice: unread.notice,
+          unreadPersonalMessage: unread.personalMessage,
+          unreadBroadcastMessage: unread.broadcastMessage,
+          recent: true,
+        );
+      }
+      // Anything thrown here must be reported, not escape the run.
+      // ignore: avoid_catches_without_on_clauses
+    } catch (e, st) {
+      error('poll of uid ${"$uid".obscured(4)} threw: $e', e, st);
+      return NotificationSyncResultFailed('$e');
+    }
+    final result = await _syncOne(user);
+    if (result is! NotificationSyncResultSuccess) {
+      // Nothing came of this poll: the auto sync may take the interval after all.
+      await NotificationPollSlot.release(_storageProvider, uid, slot);
+    }
+    return result;
+  }
 
   /// Fetch and store the notifications of [user] with its own client.
   ///
@@ -111,7 +165,10 @@ final class NotificationSyncAllRepository with LoggerMixin {
 
   Future<NotificationSyncResult> _syncOneUnguarded(int uid, UserLoginInfo user) async {
     final cookie = getIt.get<CookieProvider>(instanceName: ServiceKeys.empty);
-    if (!await cookie.loadCookieFromStorage(user)) {
+    final loaded = cookiesFromDatabase
+        ? await cookie.loadCookieFromDatabase(user)
+        : await cookie.loadCookieFromStorage(user);
+    if (!loaded) {
       return const NotificationSyncResultNotAuthorized();
     }
     final client = _clientFactory(cookie);
@@ -124,6 +181,10 @@ final class NotificationSyncAllRepository with LoggerMixin {
           .run();
       switch (result) {
         case Left(value: NotificationUserNotFound()):
+          // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
+          // Not when another session of the account was stored meanwhile (a login with the password, here or in the
+          // app while the background service polls): the guest page says nothing of it.
+          await _storageProvider.markSessionExpiredIfHeld(uid, session: cookie.session);
           return const NotificationSyncResultNotAuthorized();
         case Left(:final value) when _isRateLimited(value):
           final retryAfter = _retryAfter(value);
@@ -163,6 +224,7 @@ final class NotificationSyncAllRepository with LoggerMixin {
             unreadPersonalMessage: persisted.unread.personalMessage,
             unreadBroadcastMessage: persisted.unread.broadcastMessage,
             latest: autoSyncInfoOf(persisted.fresh),
+            servedUid: value.servedUid,
           );
       }
     }

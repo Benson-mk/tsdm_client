@@ -55,6 +55,7 @@ class SettingsMap with SettingsMapMappable {
     required this.threadContentScale,
     this.windowMaximized = false,
     this.enableBackgroundMessageService = false,
+    this.backgroundSyncAllAccounts = false,
     this.autoDailyRedPacket = false,
     this.highRefreshRate = true,
     this.offlineThreads = false,
@@ -100,6 +101,9 @@ class SettingsMap with SettingsMapMappable {
 
   /// Whether the Android background message service is on. Not required: backups from older versions lack it.
   final bool enableBackgroundMessageService;
+
+  /// Whether the auto sync polls every saved account. Not required: backups from older versions lack it.
+  final bool backgroundSyncAllAccounts;
   final bool enableDebugOperations;
   final String fontFamily;
   final bool enableEditorBBCodeParser;
@@ -171,6 +175,7 @@ class SettingsMap with SettingsMapMappable {
       SettingsKeys.showUnreadBroadcastMessageBadge => copyWith(showUnreadBroadcastMessageBadge: value as bool?),
       SettingsKeys.autoSyncNoticeSeconds => copyWith(autoSyncNoticeSeconds: value as int?),
       SettingsKeys.enableBackgroundMessageService => copyWith(enableBackgroundMessageService: value as bool?),
+      SettingsKeys.backgroundSyncAllAccounts => copyWith(backgroundSyncAllAccounts: value as bool?),
       SettingsKeys.enableDebugOperations => copyWith(enableDebugOperations: value as bool?),
       SettingsKeys.fontFamily => copyWith(fontFamily: value as String?),
       SettingsKeys.enableEditorBBCodeParser => copyWith(enableEditorBBCodeParser: value as bool?),

@@ -24,6 +24,73 @@ const legacyLocalNoticeChannelId = 'newNoticeChannel';
 /// One id: a newer result replaces the previous notification instead of piling up.
 const localNoticeId = 0;
 
+/// Whether the auto sync posts system notifications on this platform: Android and Windows.
+///
+/// Elsewhere nothing is shown ([showLocalNotification]), so nothing that only changes notifications is offered there
+/// (the setting to announce every logged-in account).
+bool get autoSyncPostsNotifications => isAndroid || isWindows;
+
+/// Id of the notification of account [uid] while the auto sync announces every logged-in account
+/// (`SettingsKeys.backgroundSyncAllAccounts`): one notification per account, a newer result replacing only that
+/// account's. Never [localNoticeId], nor the persistent notification of the service (`backgroundSyncNotificationId`).
+int localNoticeIdOf(int uid) => _accountIdBase | (uid & _accountIdMask);
+
+const _accountIdBase = 0x10000000;
+const _accountIdMask = 0x0FFFFFFF;
+
+/// Whether [id] is the id of an auto sync notification: [localNoticeId] or one of [localNoticeIdOf].
+bool isLocalNoticeId(int? id) => id == localNoticeId || (id != null && (id & ~_accountIdMask) == _accountIdBase);
+
+/// The account a notification is about, see [showLocalNotificationWith].
+final class LocalNoticeAccount {
+  /// Constructor.
+  const LocalNoticeAccount({required this.uid, this.username, this.named = false});
+
+  /// The account.
+  final int uid;
+
+  /// Its name, for the title of a [named] notification.
+  final String? username;
+
+  /// Whether every saved account is announced (`SettingsKeys.backgroundSyncAllAccounts`): the title names the account,
+  /// the account gets a notification of its own ([localNoticeIdOf]) and the payload names it. Otherwise the
+  /// notification is exactly what it always was, one for the account in use.
+  final bool named;
+}
+
+/// What is posted for an auto sync result: id, title, body and payload of the notification.
+typedef LocalNotificationContent = ({int id, String title, String body, String payload});
+
+/// Build the notification of [info] with the texts of [translations], about [account] when known.
+///
+/// A [LocalNoticeAccount.named] notification (every logged-in account announced) names its account in the title, has
+/// an id of its own ([localNoticeIdOf]) and a payload naming the account ([LocalNoticeKeys.openNotificationOf]): a tap
+/// opens the notice page as that account, switching to it first when another one is in use by then. Any other
+/// notification is the one it always was: one id, the plain title, the payload of the account in use
+/// ([LocalNoticeKeys.openNotification]).
+LocalNotificationContent localNotificationContentOf(
+  Translations translations,
+  NotificationAutoSyncInfo info, {
+  LocalNoticeAccount? account,
+}) {
+  final tr = translations.localNotification;
+  if (account == null || !account.named) {
+    return (
+      id: localNoticeId,
+      title: tr.notice.title,
+      body: localNotificationBodyOf(translations, info),
+      payload: LocalNoticeKeys.openNotification,
+    );
+  }
+  final username = account.username;
+  return (
+    id: localNoticeIdOf(account.uid),
+    title: username != null && username.isNotEmpty ? tr.notice.titleOf(username: username) : tr.notice.title,
+    body: localNotificationBodyOf(translations, info),
+    payload: LocalNoticeKeys.openNotificationOf(account.uid),
+  );
+}
+
 /// Windows 平台使用的系统预设提示音。
 ///
 /// 可选值见 [WindowsNotificationSound] 枚举：
@@ -118,8 +185,15 @@ Future<void> deleteLegacyLocalNoticeChannel() async {
 /// `NotificationManager.notify` is a silent no-op when the app has no notification permission (#13).
 ///
 /// Windows: shows a system toast; the IM preset sound is configured in [buildLocalNotificationDetails].
-Future<void> showLocalNotification(BuildContext context, NotificationAutoSyncInfo info) async {
-  if (!isAndroid && !isWindows) {
+///
+/// [account] is the account the result is about (the account in use for the in-app auto sync), see
+/// [localNotificationContentOf].
+Future<void> showLocalNotification(
+  BuildContext context,
+  NotificationAutoSyncInfo info, {
+  LocalNoticeAccount? account,
+}) async {
+  if (!autoSyncPostsNotifications) {
     return;
   }
   // Taken before the await below: the context must not be used across it.
@@ -131,10 +205,11 @@ Future<void> showLocalNotification(BuildContext context, NotificationAutoSyncInf
               .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
               ?.areNotificationsEnabled()
         : null;
+    final id = account != null && account.named ? localNoticeIdOf(account.uid) : localNoticeId;
     talker.info(
-      'push local notification id=$localNoticeId channel=$localNoticeChannelId enabled=$enabled: ${info.runtimeType}',
+      'push local notification id=$id channel=$localNoticeChannelId enabled=$enabled: ${info.runtimeType}',
     );
-    await showLocalNotificationWith(plugin: flnp, translations: translations, info: info);
+    await showLocalNotificationWith(plugin: flnp, translations: translations, info: info, account: account);
   } on Exception catch (e, st) {
     talker.handle(e, st, 'push local notification failed: ');
   }
@@ -144,11 +219,13 @@ Future<void> showLocalNotification(BuildContext context, NotificationAutoSyncInf
 ///
 /// The in-app auto sync calls it with the app's plugin and the widget tree's translations; the Android background
 /// message service with its own plugin instance and the locale it loaded from the settings (#80). Same channel and
-/// payload, so a tap is handled by the existing route logic in both cases.
+/// payload, so a tap is handled by the existing route logic in both cases. What is posted for [account] is
+/// [localNotificationContentOf].
 Future<void> showLocalNotificationWith({
   required FlutterLocalNotificationsPlugin plugin,
   required Translations translations,
   required NotificationAutoSyncInfo info,
+  LocalNoticeAccount? account,
 }) async {
   final tr = translations.localNotification;
   final nd = buildLocalNotificationDetails(
@@ -156,12 +233,13 @@ Future<void> showLocalNotificationWith({
     channelDescription: tr.channelDesc,
     ticker: tr.ticker,
   );
+  final content = localNotificationContentOf(translations, info, account: account);
   await plugin.show(
-    id: localNoticeId,
-    title: tr.notice.title,
-    body: localNotificationBodyOf(translations, info),
+    id: content.id,
+    title: content.title,
+    body: content.body,
     notificationDetails: nd,
-    payload: LocalNoticeKeys.openNotification,
+    payload: content.payload,
   );
 }
 
@@ -179,7 +257,7 @@ Future<void> logActiveLocalNotifications() async {
     final active = await flnp
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.getActiveNotifications();
-    final shown = active?.any((e) => e.id == localNoticeId) ?? false;
+    final shown = active?.any((e) => isLocalNoticeId(e.id)) ?? false;
     talker.debug('auto sync notification in shade: $shown');
   } on Exception catch (e, st) {
     talker.handle(e, st, 'read active notifications failed: ');

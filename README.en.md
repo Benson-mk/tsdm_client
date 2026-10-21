@@ -89,6 +89,7 @@ The package name is `com.tsdm.tsdm_client`, signed with the forum's official key
 - Foreground/background polling for new messages with system notifications; a cold start from a notification goes straight to the message centre
 - The settings page shows and requests the notification permission and battery-optimisation exemption (Android); the Debug section can send a test notification and export the logs
 - Windows: a system notification with a sound when the automatic sync finds new notices or private messages; tapping it restores the window and opens the message centre
+- Android, Windows: optional "Background notifications: all logged-in accounts": the automatic sync (while the app is open or in the tray, and the Android background message service) checks every account logged in on the device in turn, each with its own login and on its own; notifications name the account, and tapping one switches to it before opening the message centre
 - The fetch window of the automatic sync follows the forum's clock, so a wrong device clock does not skip notices or messages
 - Unread notices are tracked per device: a notice another device of the same account already fetched is still unread the first time it shows up here, until you view it here or mark all as read
 - Android: an optional background message service keeps a foreground service running and checks for new messages at the auto sync interval while the app is in the background or was cleared; it shares the database with the in-app sync, so nothing is announced twice

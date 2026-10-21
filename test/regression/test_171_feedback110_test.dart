@@ -282,11 +282,19 @@ final class _Auth extends Fake implements AuthenticationRepository {
   @override
   Stream<AuthStatus> get status => _controller.stream;
 
+  /// Nothing is replayed: the stream is a plain broadcast one.
+  @override
+  AuthStatus? get latestStatus => null;
+
   @override
   int? get effectiveCurrentUid => currentUser?.uid;
 
   @override
-  AsyncVoidEither loginWithDocument(uh.Document document) => AsyncVoidEither(() async => rightVoid());
+  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs, int? epoch}) =>
+      AsyncVoidEither(() async => rightVoid());
+
+  @override
+  int get identityEpoch => 0;
 
   Future<void> close() => _controller.close();
 }

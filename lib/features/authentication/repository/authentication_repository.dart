@@ -77,6 +77,37 @@ class AuthenticationRepository with LoggerMixin {
   /// Be aware that the data contained in stream is not the state in auth bloc.
   final _controller = BehaviorSubject<AuthStatus>();
 
+  /// The identity write in progress, the next one waits for it ([_identityWrite]).
+  Future<void> _identityQueue = Future<void>.value();
+
+  /// Bumped by every change of the session this device acts with ([_changedIdentity]): a login with the password, a
+  /// switch, a logout, a removal of the account in use, the adoption of the account a page was served to.
+  int _identityEpoch = 0;
+
+  /// The identity epoch now: a page asked now is recorded only while it is still the same
+  /// ([loginWithServedUser], [loginWithDocument]), whatever account the cookie names by then.
+  ///
+  /// The account alone did not tell: after a new login of the same account (with the password, or after a logout) a
+  /// page asked with its previous session still named it, and its guest page marked the fresh login expired, or a
+  /// page served to another account moved the fresh session into that account's row.
+  int get identityEpoch => _identityEpoch;
+
+  void _changedIdentity() => _identityEpoch++;
+
+  /// Run [action], a read-check-write of the identity this device acts as (the global cookie, the stored rows of the
+  /// accounts, the account named in the settings and [currentUser]), after every such write started before it.
+  ///
+  /// Held by the account switch, the password login, the logout and the removal of the account in use, and the
+  /// homepage's record of the account a page was served to ([loginWithServedUser], [loginWithDocument]): a switch
+  /// that loaded another account's cookie between the homepage's check and its writes saved that cookie into the row
+  /// of the account the page was served to (a tap on another account's notification at a cold start). Never call one
+  /// of them from inside another: the second would wait for the first forever.
+  Future<T> _identityWrite<T>(Future<T> Function() action) {
+    final result = _identityQueue.then((_) => action());
+    _identityQueue = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   UserLoginInfo? _authedUser;
 
   /// Cookie used in the current login session.
@@ -191,69 +222,125 @@ class AuthenticationRepository with LoggerMixin {
   /// Login with password and other parameters in [credential].
   ///
   /// Will not change authentication status if failed to login.
-  AsyncVoidEither loginWithPassword(UserCredential credential) => AsyncVoidEither(() async {
-    debug('login with passwd');
-    // Keep the current account active until another login succeeds.
+  AsyncVoidEither loginWithPassword(UserCredential credential) => AsyncVoidEither(
+    () => _identityWrite(() async {
+      debug('login with passwd');
+      // Keep the current account active until another login succeeds.
 
-    // Reuse the login session if exists.
-    if (_loginCookie == null || _loginHash == null) {
-      final hashEither = await fetchHash().run();
-      if (hashEither.isLeft()) {
-        return left(hashEither.unwrapErr());
+      // Reuse the login session if exists.
+      if (_loginCookie == null || _loginHash == null) {
+        final hashEither = await fetchHash().run();
+        if (hashEither.isLeft()) {
+          return left(hashEither.unwrapErr());
+        }
       }
-    }
-    final cookie = _loginCookie!;
-    final hash = _loginHash!;
-    // Inject cookie provider.
-    final netClient = _clientFactory(cookie);
+      final cookie = _loginCookie!;
+      final hash = _loginHash!;
+      // Inject cookie provider.
+      final netClient = _clientFactory(cookie);
 
-    // The login (`member.php`) is not a write the forum's app API answers for: sent as it is.
-    final respEither = await netClient
-        .postForm(_buildLoginUrl(hash.loginHash), data: credential.toFormData(hash), tsdmAppJson: false)
-        .run();
-    // Every login attempt requires a new form hash.
-    _loginCookie = null;
-    _loginHash = null;
-    if (respEither.isLeft()) {
-      return left(respEither.unwrapErr());
-    }
+      // The login (`member.php`) is not a write the forum's app API answers for: sent as it is.
+      final respEither = await netClient
+          .postForm(_buildLoginUrl(hash.loginHash), data: credential.toFormData(hash), tsdmAppJson: false)
+          .run();
+      // Every login attempt requires a new form hash.
+      _loginCookie = null;
+      _loginHash = null;
+      if (respEither.isLeft()) {
+        return left(respEither.unwrapErr());
+      }
 
-    final resp = respEither.unwrap();
-    if (resp.statusCode != HttpStatus.ok) {
-      return left(HttpRequestFailedException(resp.statusCode));
-    }
+      final resp = respEither.unwrap();
+      if (resp.statusCode != HttpStatus.ok) {
+        return left(HttpRequestFailedException(resp.statusCode));
+      }
 
-    final data = resp.data as String;
-    final resultEither = LoginParser.parseLoginResult(data);
-    if (resultEither.isLeft()) {
-      error('failed to login: ${resultEither.unwrapErr()}, response: ${data.truncate(300)}');
-      return left(resultEither.unwrapErr());
-    }
-    // Here we get complete user info.
-    final userInfo = resultEither.unwrap();
-    // First combine user info and cookie together.
-    await cookie.updateUserInfo(userInfo);
-    // Second, save credential in storage.
-    await cookie.saveCookieToStorage();
-    // Refresh the cookie in global cookie provider.
-    await getIt.get<CookieProvider>().loadCookieFromStorage(userInfo);
-    // Finally save authed user info and update authentication status to
-    // let auth stream subscribers update their status.
-    await _markAuthenticated(userInfo);
-    debug('end login with success');
+      final data = resp.data as String;
+      final resultEither = LoginParser.parseLoginResult(data);
+      if (resultEither.isLeft()) {
+        error('failed to login: ${resultEither.unwrapErr()}, response: ${data.truncate(300)}');
+        return left(resultEither.unwrapErr());
+      }
+      // Here we get complete user info.
+      final userInfo = resultEither.unwrap();
+      _changedIdentity();
+      // First combine user info and cookie together.
+      await cookie.updateUserInfo(userInfo);
+      // Second, save credential in storage.
+      await cookie.saveCookieToStorage();
+      // Refresh the cookie in global cookie provider.
+      await getIt.get<CookieProvider>().loadCookieFromStorage(userInfo);
+      // Finally save authed user info and update authentication status to
+      // let auth stream subscribers update their status.
+      await _markAuthenticated(userInfo);
+      debug('end login with success');
 
-    return rightVoid();
-  });
+      return rightVoid();
+    }),
+  );
 
   /// Parse logged user info from html [document].
-  AsyncVoidEither loginWithDocument(uh.Document document) => AsyncVoidEither(() async {
-    // Do NOT mark as unauthenticated here because auth with document is
-    // only used as a verification of a token that intend to be valid. It's
-    // outside the regular login progress.
-    final userInfo = _parseUserInfoFromDocument(document);
-    if (userInfo == null) {
-      debug('failed to login with document: user info not found');
-      if (_isGuestPage(document)) {
+  ///
+  /// [fetchedAs] is the account whose cookie the page was asked with (the homepage passes it). The record runs under
+  /// the identity lock ([_identityWrite]) and checks right before it writes that the cookie in use still names that
+  /// account: when it does not (switched meanwhile), the page says nothing about the account in use now and is
+  /// dropped ([IdentityChangedException]), its guest page included (it would mark the new account expired); the
+  /// caller reloads for the new account. A page served to another account than [fetchedAs] (the stored row held that
+  /// account's session) is recorded as that account, as it always was: the app follows the session the forum serves.
+  ///
+  /// [epoch] is the [identityEpoch] when the page was asked (the time of this call when not given): a page asked
+  /// before a later change of the session (a login, a switch, a logout) records nothing, its guest page marks nothing,
+  /// and the account a page was served to is adopted only while the session it was asked with is still the one.
+  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs, int? epoch}) {
+    final asked = epoch ?? _identityEpoch;
+    return AsyncVoidEither(
+      () => _identityWrite(() => _recordServedUser(fetchedAs: fetchedAs, epoch: asked, page: document)),
+    );
+  }
+
+  /// [loginWithDocument] for a page the forum's app API answered as structured fields (the homepage of plugin
+  /// 2.3.0, `schema: 5`): [user] is the account the page was served to, null for a guest or the forum's message.
+  /// [guest] tells the guest's page (served to nobody, or the login prompt) from any other page without an
+  /// account: fetched with the cookie of the account in use, the guest's page means that session is dead (issue
+  /// #25), as the guest web page does. [fetchedAs] and [epoch] as for [loginWithDocument].
+  AsyncVoidEither loginWithServedUser(UserLoginInfo? user, {required bool guest, int? fetchedAs, int? epoch}) {
+    final asked = epoch ?? _identityEpoch;
+    return AsyncVoidEither(
+      () => _identityWrite(
+        () => _recordServedUser(fetchedAs: fetchedAs, epoch: asked, served: (user: user, guest: guest)),
+      ),
+    );
+  }
+
+  /// The record of [loginWithDocument] ([page]) or [loginWithServedUser] ([served]), under the identity lock.
+  Future<Either<AppException, void>> _recordServedUser({
+    required int? fetchedAs,
+    required int epoch,
+    uh.Document? page,
+    ({UserLoginInfo? user, bool guest})? served,
+  }) async {
+    if (epoch != _identityEpoch) {
+      warning('page asked under identity epoch $epoch, now $_identityEpoch: the session changed, nothing recorded');
+      return left(IdentityChangedException());
+    }
+    if (_accountChangedSince(fetchedAs)) {
+      return left(IdentityChangedException());
+    }
+    final UserLoginInfo? user;
+    final bool guest;
+    if (page != null) {
+      // Do NOT mark as unauthenticated here because auth with document is only used as a verification of a token
+      // that intend to be valid. It's outside the regular login progress.
+      user = _parseUserInfoFromDocument(page);
+      guest = user == null && _isGuestPage(page);
+    } else {
+      final complete = served?.user;
+      user = complete != null && complete.uid != null && complete.username != null ? complete : null;
+      guest = served?.guest ?? false;
+    }
+    if (user == null) {
+      debug('failed to record the served user: user info not found');
+      if (guest) {
         // The page was fetched with the cookie of the account in use and the forum treats it as a guest: that
         // session is dead (issue #25). The account stays in use, only its expiry is recorded.
         await markCurrentSessionExpired();
@@ -261,34 +348,36 @@ class AuthenticationRepository with LoggerMixin {
       return left(LoginUserInfoNotFoundException());
     }
 
-    // Here we get complete user info.
-    await getIt.get<CookieProvider>().saveCookieToStorage();
-    await _markAuthenticated(userInfo);
-
-    debug('login with document: user $userInfo');
-    return rightVoid();
-  });
-
-  /// [loginWithDocument] for a page the forum's app API answered as structured fields (the homepage of plugin
-  /// 2.3.0, `schema: 5`): [user] is the account the page was served to, null for a guest or the forum's message.
-  /// [guest] tells the guest's page (served to nobody, or the login prompt) from any other page without an
-  /// account: fetched with the cookie of the account in use, the guest's page means that session is dead (issue
-  /// #25), as the guest web page does.
-  AsyncVoidEither loginWithServedUser(UserLoginInfo? user, {required bool guest}) => AsyncVoidEither(() async {
-    if (user == null || user.uid == null || user.username == null) {
-      debug('failed to login with served user: user info not found');
-      if (guest) {
-        await markCurrentSessionExpired();
-      }
-      return left(LoginUserInfoNotFoundException());
+    if (getIt.get<CookieProvider>().userLoginInfo.uid != user.uid) {
+      // Served to another account than the cookie in use names (its row held that account's session): the session
+      // is that account's from now on.
+      _changedIdentity();
     }
-
+    // Here we get complete user info.
     await getIt.get<CookieProvider>().saveCookieToStorage();
     await _markAuthenticated(user);
 
-    debug('login with served user: user $user');
+    debug('record the served user: user $user');
     return rightVoid();
-  });
+  }
+
+  /// Whether the cookie in use names another account than [fetchedAs], the one a page was asked as (see
+  /// [loginWithDocument]); false when the caller does not know. Read under the identity lock: nothing changes it
+  /// between this check and the record's writes.
+  bool _accountChangedSince(int? fetchedAs) {
+    if (fetchedAs == null) {
+      return false;
+    }
+    final inUse = getIt.get<CookieProvider>().userLoginInfo.uid;
+    if (inUse == fetchedAs) {
+      return false;
+    }
+    warning(
+      'page asked as uid ${"$fetchedAs".obscured(4)} while the cookie in use is uid ${"$inUse".obscured(4)} now: the '
+      'account changed meanwhile, nothing recorded',
+    );
+    return true;
+  }
 
   /// Record in storage that the forum session of the account in use ([effectiveCurrentUid]) is dead (issue #25).
   ///
@@ -311,12 +400,32 @@ class AuthenticationRepository with LoggerMixin {
   /// like after a successful logout: keeping the row left the account listed as online with nothing able to remove
   /// it. Any other page without a logged user (maintenance, an unresolved interstitial) only leaves the authed state
   /// and keeps the saved login, it says nothing about the session.
-  AsyncVoidEither logout() => AsyncVoidEither(() async {
-    if (_authedUser == null) {
+  ///
+  /// [uid] is the account to log out (the one a page shows), the account in use when this is called by default: a
+  /// switch still running when the logout was asked must not make it log out the account switched to. When the
+  /// account in use ([effectiveCurrentUid]) is another one, or none, by the time the logout runs, nothing is done
+  /// ([IdentityChangedException]).
+  ///
+  /// The account in use is logged out also before its stored session was verified ([currentUser] still null: an
+  /// offline start, a homepage that failed), as the manage accounts page offers: the forum is asked like for a
+  /// verified one, and a failed request is the caller's error instead of a success with nothing done.
+  AsyncVoidEither logout({int? uid}) {
+    final target = uid ?? effectiveCurrentUid;
+    return AsyncVoidEither(() => _identityWrite(() => _logout(target)));
+  }
+
+  Future<Either<AppException, void>> _logout(int? target) async {
+    if (target == null) {
       return rightVoid();
     }
+    final current = effectiveCurrentUid;
+    if (current != target) {
+      warning('logout of uid ${"$target".obscured(4)} asked, the account in use changed meanwhile: nothing done');
+      return left(IdentityChangedException());
+    }
+    final user = effectiveCurrentUser;
     final netClient = _currentUserClientFactory(
-      UserLoginInfo(username: _authedUser!.username, uid: _authedUser!.uid),
+      UserLoginInfo(username: user?.uid == target ? user?.username : null, uid: target),
     );
     final respEither = await netClient.get(_checkAuthUrl).run();
     if (respEither.isLeft()) {
@@ -361,22 +470,37 @@ class AuthenticationRepository with LoggerMixin {
 
     await _forgetCurrentUser();
     return rightVoid();
-  });
+  }
 
   /// Remove the current account from this device without telling the forum.
   ///
   /// Clears the cookie in memory, deletes the saved login and marks the app as unauthenticated; no request is sent,
   /// so it works offline and the forum session stays valid elsewhere. The account is [effectiveCurrentUid], so it
   /// also works when the stored session was never verified in this run; does nothing when no account is in use.
-  AsyncVoidEither forgetCurrentUser() => AsyncVoidEither(() async {
-    if (effectiveCurrentUid == null) {
-      return rightVoid();
-    }
-    await _forgetCurrentUser();
-    return rightVoid();
-  });
+  ///
+  /// [uid] is the account to remove, the account in use when this is called by default: when the account in use is
+  /// another one by the time the removal runs (a switch was still running), nothing is removed
+  /// ([IdentityChangedException]).
+  AsyncVoidEither forgetCurrentUser({int? uid}) {
+    final target = uid ?? effectiveCurrentUid;
+    return AsyncVoidEither(
+      () => _identityWrite(() async {
+        final current = effectiveCurrentUid;
+        if (target == null || current == null) {
+          return rightVoid();
+        }
+        if (current != target) {
+          warning('removal of uid ${"$target".obscured(4)} asked, the account in use changed meanwhile: nothing done');
+          return left(IdentityChangedException());
+        }
+        await _forgetCurrentUser();
+        return rightVoid();
+      }),
+    );
+  }
 
   Future<void> _forgetCurrentUser() async {
+    _changedIdentity();
     // Resolve the account before the provider forgets it.
     final uid = effectiveCurrentUid;
     getIt.get<CookieProvider>().clearUserInfoAndCookie();
@@ -389,44 +513,56 @@ class AuthenticationRepository with LoggerMixin {
   /// Switch to another user described in [userInfo].
   ///
   /// Return [SwitchUserNotAuthedException] if failed.
-  AsyncVoidEither switchUser(UserLoginInfo userInfo) => AsyncVoidEither(() async {
-    final candidate = getIt.get<CookieProvider>(instanceName: ServiceKeys.empty);
-    if (!await candidate.loadCookieFromStorage(userInfo)) {
-      return left(LoginInvalidCredentialException());
-    }
-    // Validate with an isolated session; failures must leave the active account untouched.
-    final resp = await _clientFactory(candidate).get(_checkAuthUrl).run();
-    if (resp.isLeft()) {
-      return left(resp.unwrapErr());
-    }
-    if (resp.unwrap().statusCode != HttpStatus.ok) {
-      return left(HttpRequestFailedException(resp.unwrap().statusCode));
-    }
-
-    final document = parseHtmlDocument(resp.unwrap().data as String);
-    final parsedUserInfo = _parseUserInfoFromDocument(document);
-    if (parsedUserInfo == null || parsedUserInfo.uid != userInfo.uid) {
-      error(
-        'failed to switch user to uid=${"${userInfo.uid}".obscured(4)}, '
-        'parsed uid=${"${parsedUserInfo?.uid}".obscured(4)}',
-      );
-      if (parsedUserInfo == null && userInfo.uid != null && _isGuestPage(document)) {
-        // The stored cookie of that account is dead: remember it (issue #25), the current account is untouched.
-        await getIt.get<StorageProvider>().markSessionExpired(userInfo.uid!);
+  ///
+  /// Runs under the identity lock ([_identityWrite]) from the check to the commit: a page of the previous account
+  /// recorded meanwhile could otherwise write the new account's cookie into its row.
+  AsyncVoidEither switchUser(UserLoginInfo userInfo) => AsyncVoidEither(
+    () => _identityWrite(() async {
+      final candidate = getIt.get<CookieProvider>(instanceName: ServiceKeys.empty);
+      if (!await candidate.loadCookieFromStorage(userInfo)) {
+        return left(LoginInvalidCredentialException());
       }
-      return left(SwitchUserNotAuthedException());
-    }
+      // Validate with an isolated session; failures must leave the active account untouched.
+      final resp = await _clientFactory(candidate).get(_checkAuthUrl).run();
+      if (resp.isLeft()) {
+        return left(resp.unwrapErr());
+      }
+      if (resp.unwrap().statusCode != HttpStatus.ok) {
+        return left(HttpRequestFailedException(resp.unwrap().statusCode));
+      }
 
-    // Commit the verified session before notifying authentication subscribers.
-    await candidate.saveCookieToStorage();
-    if (!await getIt.get<CookieProvider>().loadCookieFromStorage(parsedUserInfo)) {
-      return left(LoginInvalidCredentialException());
-    }
-    await _markAuthenticated(parsedUserInfo);
+      final document = parseHtmlDocument(resp.unwrap().data as String);
+      final parsedUserInfo = _parseUserInfoFromDocument(document);
+      if (parsedUserInfo == null || parsedUserInfo.uid != userInfo.uid) {
+        error(
+          'failed to switch user to uid=${"${userInfo.uid}".obscured(4)}, '
+          'parsed uid=${"${parsedUserInfo?.uid}".obscured(4)}',
+        );
+        if (parsedUserInfo == null && userInfo.uid != null && _isGuestPage(document)) {
+          // The stored cookie of that account is dead: remember it (issue #25), the current account is untouched.
+          // Only while its row holds the session checked: another one stored meanwhile says nothing of it.
+          await getIt.get<StorageProvider>().markSessionExpiredIfHeld(userInfo.uid!, session: candidate.session);
+        }
+        return left(SwitchUserNotAuthedException());
+      }
 
-    debug('login with document: user $userInfo');
-    return rightVoid();
-  });
+      // Commit the verified session before notifying authentication subscribers. Only into the row it was loaded
+      // from: the manage accounts page removes another account without waiting for the switch, and a row removed
+      // while it was checked must not come back. Nothing switched then, the account in use stays.
+      if (!await candidate.saveCookieToStoredRow()) {
+        warning('switch to uid ${"${userInfo.uid}".obscured(4)}: its saved login was removed meanwhile');
+        return left(LoginInvalidCredentialException());
+      }
+      _changedIdentity();
+      if (!await getIt.get<CookieProvider>().loadCookieFromStorage(parsedUserInfo)) {
+        return left(LoginInvalidCredentialException());
+      }
+      await _markAuthenticated(parsedUserInfo);
+
+      debug('login with document: user $userInfo');
+      return rightVoid();
+    }),
+  );
 
   /// Parse html [document], find current logged in user uid in it.
   UserLoginInfo? _parseUserInfoFromDocument(uh.Document document) {
@@ -480,6 +616,7 @@ class AuthenticationRepository with LoggerMixin {
   /// changes so that all auth stream subscribers are using the correct data in
   /// unauthenticated state.
   Future<void> _markUnauthenticated() async {
+    _changedIdentity();
     final settings = getIt.get<SettingsRepository>();
     await settings.deleteValue(SettingsKeys.loginUsername);
     await settings.deleteValue(SettingsKeys.loginUid);

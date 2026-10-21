@@ -629,6 +629,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
         personalMessageList: allPersonalMessage,
         broadcastMessageList: allBroadcastMessage,
         latestTime: latestMessageTime,
+        ownerUid: uid,
       ),
     );
   }
@@ -818,6 +819,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> with L
         // fetch of the previous account (a change of the block list reloads right after every account switch), and
         // the latest time of a success is recorded as the fetch time of the current account.
         latestTime: null,
+        ownerUid: uid,
       ),
     );
     // Also after a change of the local block list: hidden notices and muted conversations do not count.

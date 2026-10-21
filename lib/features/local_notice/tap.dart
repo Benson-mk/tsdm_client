@@ -1,12 +1,25 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rxdart/rxdart.dart' show MergeStream;
+import 'package:tsdm_client/extensions/build_context.dart';
+import 'package:tsdm_client/extensions/string.dart';
+import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
+import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
+import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/app_routes.dart';
 import 'package:tsdm_client/routes/page_stack.dart';
 import 'package:tsdm_client/routes/popup_route_observer.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
+import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
+import 'package:tsdm_client/utils/show_toast.dart';
 
 /// What the app does with a tap on the auto sync notification.
 enum LocalNoticeTapAction {
@@ -94,6 +107,176 @@ void openNoticePageInApp(BuildContext context, {PopupRouteObserver? popups}) {
     hasPopup: (popups ?? popupRouteObserver).hasPopupRoute,
   );
   talker.debug('open notice page in app: action=${action.name} top=$top');
+}
+
+/// What a tap on the notification of an account did about the account, see [openNoticePageOfAccount].
+enum LocalNoticeAccountStep {
+  /// The notification is about the account in use, names no account, or no account is in use: nothing to switch.
+  current,
+
+  /// Switched to the account of the notification, then the notice page was opened.
+  switched,
+
+  /// The account of the notification is no longer saved on this device: nothing opened, a toast says so.
+  gone,
+
+  /// The switch did not happen (it failed, the login expired, a reply was being sent, another switch ran, the sync
+  /// kept fetching): nothing opened, the switch told why.
+  notSwitched,
+}
+
+/// Switch to [account] the way the avatar menu does (PR #187): [switchAccount] with a bloc of its own.
+Future<SwitchAccountResult> _switchLikeTheMenu(BuildContext context, UserLoginInfo account) async {
+  final bloc = SwitchUserBloc(context.read<AuthenticationRepository>());
+  try {
+    return await switchAccount(context, bloc: bloc, userInfo: account);
+  } finally {
+    // The switch has ended by now (see [switchAccount]): closing the bloc stops nothing.
+    await bloc.close();
+  }
+}
+
+/// Carry out a tap on an auto sync notification about account [uid] from [context], a page under the app's providers
+/// (the home page). [uid] is null for a notification that names no account (only the account in use is announced, or
+/// the test notification of the settings page): the account in use.
+///
+/// * The account in use, no account named, or nobody logged in: [openNoticePageForTap] right away, as before.
+/// * Another account saved on this device: switch to it right away, the same way as the avatar menu's quick switch
+///   ([switchTo], [switchAccount] by default: its toasts, one switch at a time, none while a reply is being sent, the
+///   in-app sync paused around it), then open the notice page once its lists are the new account's (up to
+///   [reloadTimeout]). Every logged-in account is announced when asked to, and the account in use may have changed
+///   since any notification was posted. At a cold start the homepage may still be verifying the stored login: its
+///   answer arriving after the switch is refused under the identity lock and the homepage reloads for the new account
+///   (`AuthenticationRepository.loginWithServedUser`).
+/// * Another switch while the lists are awaited (the avatar menu) wins: the notice page is not opened.
+/// * The switch does not happen: nothing is opened, the notice page would show the account in use and not the one the
+///   notification is about.
+/// * An account no longer on this device: nothing is opened, a toast says so.
+///
+/// Returns what was done about the account, and, when the notice page was asked for, the page that was on top before
+/// and what was done ([openNoticePageForTap]). [popups] is the observer of the app's dialogs and menus
+/// ([popupRouteObserver] by default).
+Future<({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action})> openNoticePageOfAccount(
+  BuildContext context, {
+  required int? uid,
+  PopupRouteObserver? popups,
+  Future<SwitchAccountResult> Function(BuildContext context, UserLoginInfo account)? switchTo,
+  Duration reloadTimeout = const Duration(seconds: 5),
+}) async {
+  ({LocalNoticeAccountStep step, String? top, LocalNoticeTapAction? action}) open(
+    LocalNoticeAccountStep step, {
+    required bool loggedIn,
+  }) {
+    final (:top, :action) = openNoticePageForTap(
+      GoRouter.of(context),
+      loggedIn: loggedIn,
+      hasPopup: (popups ?? popupRouteObserver).hasPopupRoute,
+    );
+    return (step: step, top: top, action: action);
+  }
+
+  const notOpened = (step: LocalNoticeAccountStep.notSwitched, top: null, action: null);
+  final auth = context.read<AuthenticationRepository>();
+  // The stored session counts: when a notification cold-starts the app the home page has its first frame before the
+  // homepage fetch verified the login, and `currentUser` is still null at that point (#14).
+  final current = auth.effectiveCurrentUid;
+  if (uid == null || current == null || uid == current) {
+    return open(LocalNoticeAccountStep.current, loggedIn: current != null);
+  }
+  talker.info('notification of another account tapped: uid ${"$uid".obscured(4)}, switching to it first');
+  final account = (await getIt.get<StorageProvider>().getAllUsers()).firstWhereOrNull((e) => e.uid == uid);
+  if (!context.mounted) {
+    return notOpened;
+  }
+  if (account == null) {
+    showSnackBar(context: context, message: context.t.localNotification.accountGone);
+    return (step: LocalNoticeAccountStep.gone, top: null, action: null);
+  }
+  final result = await (switchTo ?? _switchLikeTheMenu)(context, account);
+  if (result != SwitchAccountResult.switched || !context.mounted) {
+    talker.info('notification of another account: not switched (${result.name}), notice page not opened');
+    return notOpened;
+  }
+  if (context.readOrNull<NotificationBloc>() case final bloc?) {
+    await _noticesReloadedFor(
+      bloc,
+      uid,
+      reloadTimeout,
+      inUse: () => auth.effectiveCurrentUid,
+      accountChanges: auth.status,
+    );
+    if (!context.mounted) {
+      return notOpened;
+    }
+  }
+  if (auth.effectiveCurrentUid != uid) {
+    talker.info('notification of another account: switched away meanwhile, notice page not opened');
+    return notOpened;
+  }
+  return open(LocalNoticeAccountStep.switched, loggedIn: true);
+}
+
+/// Wait up to [timeout] for the first event of [stream] that passes [test]; false when none came in time or the
+/// stream ended. The subscription and the timer end with the wait, whatever ends it.
+Future<bool> _firstWithin<T>(Stream<T> stream, bool Function(T event) test, Duration timeout) async {
+  final done = Completer<bool>();
+  void finish({required bool reached}) {
+    if (!done.isCompleted) {
+      done.complete(reached);
+    }
+  }
+
+  final timer = Timer(timeout, () => finish(reached: false));
+  final subscription = stream.listen((event) {
+    if (test(event)) {
+      finish(reached: true);
+    }
+  }, onDone: () => finish(reached: false));
+  try {
+    return await done.future;
+  } finally {
+    timer.cancel();
+    await subscription.cancel();
+  }
+}
+
+/// Wait up to [timeout] for the lists of [bloc] to be the ones of [uid], not loading; the wait also ends when the
+/// account in use ([inUse], told by [accountChanges]) is not [uid] any more: another switch won.
+///
+/// A fetch of the previous account still running ends dropped (its account is not the one in use any more, the state
+/// is reset), then the lists are rebuilt from storage for [uid]; without one they are rebuilt right away. The page
+/// shows nothing of another account meanwhile anyway ([NotificationState.ownerUid]).
+Future<void> _noticesReloadedFor(
+  NotificationBloc bloc,
+  int uid,
+  Duration timeout, {
+  required int? Function() inUse,
+  required Stream<Object?> accountChanges,
+}) async {
+  bool ready(NotificationState s) => s.ownerUid == uid && s.status != NotificationStatus.loading;
+  bool over(NotificationState s) => ready(s) || inUse() != uid;
+  if (over(bloc.state)) {
+    return;
+  }
+  Stream<Object?> changes() => MergeStream<Object?>([bloc.stream, accountChanges]);
+  final reached = _firstWithin<Object?>(changes(), (_) => over(bloc.state), timeout);
+  if (bloc.state.status == NotificationStatus.loading) {
+    // The fetch of the previous account first: the reload is skipped while one runs.
+    final previousEnded = await _firstWithin<Object?>(
+      changes(),
+      (_) => bloc.state.status != NotificationStatus.loading || inUse() != uid,
+      timeout,
+    );
+    if (!previousEnded) {
+      talker.warning('the fetch of the previous account did not end within ${timeout.inSeconds}s');
+    }
+  }
+  if (!bloc.isClosed && inUse() == uid) {
+    bloc.add(NotificationReloadFromStorageRequested());
+  }
+  if (!await reached) {
+    talker.warning('the notices of the new account were not in within ${timeout.inSeconds}s, opening the page anyway');
+  }
 }
 
 /// Location of the page on top of [router], `null` before the first route matched.

@@ -19,6 +19,8 @@ final class NotificationSyncResultSuccess extends NotificationSyncResult with No
     required this.unreadPersonalMessage,
     required this.unreadBroadcastMessage,
     this.latest,
+    this.recent = false,
+    this.servedUid,
   });
 
   /// Notices that are news to the account (not stored before, or a newer copy).
@@ -41,6 +43,15 @@ final class NotificationSyncResultSuccess extends NotificationSyncResult with No
 
   /// What a push notification would announce for this sync, null when nothing was new (see `autoSyncInfoOf`).
   final NotificationAutoSyncInfo? latest;
+
+  /// Not fetched: the auto sync (in the app or the background service) polled the account moments ago, within half its
+  /// interval and at most 30 seconds ago (`NotificationPollSlot.takeForManualSync`), and the forum is not asked twice
+  /// (it answers 429). The counts are what is stored now, what the poll brought; nothing is news here, the poll
+  /// announced it.
+  final bool recent;
+
+  /// The account the forum answered as, null when it did not tell (see `FetchedNotification`).
+  final int? servedUid;
 }
 
 /// The stored cookie of the account is gone or expired: the server answered the guest page.

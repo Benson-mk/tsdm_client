@@ -16,11 +16,21 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 /// the system holds past them.
 const backgroundSyncDeadline = Duration(minutes: 6);
 
+/// Pause between the fetches of two accounts in one tick, when every saved account is polled.
+///
+/// Same as the sync of all accounts (`NotificationSyncAllRepository.gap`): the plugin takes one call per action and
+/// account within its interval, and the forum answered 429 when several accounts asked at once. The pause is each
+/// path's own (the background tick, the in-app round, the sync of all accounts): two paths may ask at the same moment
+/// for two different accounts, which only concerns each account itself; the same account is kept from being asked
+/// twice by its poll ([NotificationPollSlot]).
+const backgroundSyncAccountGap = Duration(seconds: 2);
+
 /// The settings one background sync reads fresh from the database.
 ///
 /// The service runs in its own isolate: nothing in memory tells it about a change made in the app, so every tick
-/// reads what it needs from the settings table instead of caching a copy.
-typedef BackgroundSyncSettings = ({bool enabled, int intervalSeconds, int loginUid, String locale});
+/// reads what it needs from the settings table instead of caching a copy. `allAccounts` is
+/// `SettingsKeys.backgroundSyncAllAccounts`, see [backgroundSyncAccountsTick].
+typedef BackgroundSyncSettings = ({bool enabled, int intervalSeconds, int loginUid, String locale, bool allAccounts});
 
 /// Read [BackgroundSyncSettings] from [storage].
 Future<BackgroundSyncSettings> readBackgroundSyncSettings(StorageProvider storage) async => (
@@ -31,6 +41,9 @@ Future<BackgroundSyncSettings> readBackgroundSyncSettings(StorageProvider storag
       await storage.getInt(SettingsKeys.autoSyncNoticeSeconds.name) ?? SettingsKeys.autoSyncNoticeSeconds.defaultValue,
   loginUid: await storage.getInt(SettingsKeys.loginUid.name) ?? SettingsKeys.loginUid.defaultValue,
   locale: await storage.getString(SettingsKeys.locale.name) ?? SettingsKeys.locale.defaultValue,
+  allAccounts:
+      await storage.getBool(SettingsKeys.backgroundSyncAllAccounts.name) ??
+      SettingsKeys.backgroundSyncAllAccounts.defaultValue,
 );
 
 /// What one tick of the background message service ended with.
@@ -47,10 +60,13 @@ final class BackgroundSyncDisabled extends BackgroundSyncOutcome {
 /// Nothing was fetched this time; [reason] says why.
 final class BackgroundSyncSkipped extends BackgroundSyncOutcome {
   /// Constructor.
-  const BackgroundSyncSkipped(this.reason);
+  const BackgroundSyncSkipped(this.reason, {this.uid});
 
   /// Why the tick fetched nothing.
   final String reason;
+
+  /// The account skipped, null when the whole tick was.
+  final int? uid;
 }
 
 /// The fetch finished for settings that no longer hold: the account was switched, or auto sync was set to never,
@@ -58,10 +74,13 @@ final class BackgroundSyncSkipped extends BackgroundSyncOutcome {
 /// nothing is announced: the push would name the wrong account and open the current one's messages.
 final class BackgroundSyncStale extends BackgroundSyncOutcome {
   /// Constructor.
-  const BackgroundSyncStale(this.reason);
+  const BackgroundSyncStale(this.reason, {this.uid});
 
   /// What changed while the fetch was in flight.
   final String reason;
+
+  /// The account fetched.
+  final int? uid;
 }
 
 /// Read the network settings again and, when the app follows the system proxy, ask the platform for it.
@@ -83,13 +102,20 @@ Future<void> refreshBackgroundNetworkSettings({
   }
 }
 
-/// The current account was synced; [result] is what the shared sync produced for it.
+/// An account was synced; [result] is what the shared sync produced for it.
 final class BackgroundSyncDone extends BackgroundSyncOutcome {
   /// Constructor.
-  const BackgroundSyncDone({required this.uid, required this.result});
+  const BackgroundSyncDone({required this.uid, required this.result, this.username, this.named = false});
 
   /// The account that was synced.
   final int uid;
+
+  /// Its name as stored on this device, null when unknown.
+  final String? username;
+
+  /// Whether every saved account is announced (`SettingsKeys.backgroundSyncAllAccounts` on when the fetch came back):
+  /// the notification then names the account and is the account's own, see `LocalNoticeAccount.named`.
+  final bool named;
 
   /// Outcome of the sync of that account.
   final NotificationSyncResult result;
@@ -101,7 +127,7 @@ final class BackgroundSyncDone extends BackgroundSyncOutcome {
   };
 }
 
-/// One tick of the Android background message service (#80).
+/// One tick of the Android background message service (#80), for the account in use.
 ///
 /// Reads the settings, then fetches and stores the current account's notifications through [repository], the very
 /// path the "sync all accounts" action uses: same client (cookies, antitheft, proxy, user agent), same storage, same
@@ -126,6 +152,9 @@ final class BackgroundSyncDone extends BackgroundSyncOutcome {
 /// The settings are read again once the fetch is back: the app may have switched accounts or set auto sync to
 /// never meanwhile, and a push for an account that is no longer the current one would open the wrong messages
 /// ([BackgroundSyncStale]); the switch turned off meanwhile ends the service ([BackgroundSyncDisabled]).
+///
+/// This is the whole tick while `SettingsKeys.backgroundSyncAllAccounts` is off; [backgroundSyncAccountsTick] runs
+/// it then, and polls every saved account otherwise.
 Future<BackgroundSyncOutcome> backgroundSyncTick({
   required StorageProvider storage,
   required NotificationSyncAllRepository repository,
@@ -135,6 +164,245 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   void Function(BackgroundSyncOutcome late)? onLate,
 }) async {
   final settings = await readBackgroundSyncSettings(storage);
+  if (_notToPoll(settings) case final skipped?) {
+    return skipped;
+  }
+  if (await _prepare(prepareNetwork) case final skipped?) {
+    return skipped;
+  }
+  // The app may have logged in, out or switched accounts since the last tick.
+  await storage.refreshCookieCache();
+  final polled = await _pollAccount(
+    storage: storage,
+    repository: repository,
+    settings: settings,
+    account: UserLoginInfo(username: null, uid: settings.loginUid),
+    now: now,
+    deadline: deadline,
+    onLate: onLate,
+  );
+  return polled.outcome;
+}
+
+/// One tick of the Android background message service over the accounts it polls.
+///
+/// With `SettingsKeys.backgroundSyncAllAccounts` off this is [backgroundSyncTick] and nothing else: the account in
+/// use, exactly as before, its outcome the only one.
+///
+/// With it on, every account saved on this device is polled, one after another: the account in use first, then the
+/// others in the order they are stored. Each account is fetched as the sync of all accounts fetches it (its own
+/// client and cookie, its own stored rows, fetch bound, deleted conversations and block list, and the plugin's `seen`
+/// posted with its own form hash), and takes its own poll ([NotificationPollSlot] of its uid): an account the app
+/// polled moments ago is skipped, the others still run. Between two accounts that reached the forum the tick waits
+/// [gap] ([backgroundSyncAccountGap]); the plugin limits each action per account, the forum the bursts.
+///
+/// What goes wrong for one account stays with it: an expired session is recorded for that account only (the sync of
+/// all accounts marks it, as for the account in use; the account in use is never logged out), a failure or a 429 is
+/// its own outcome, and the next account runs. Another account whose login is known to be expired rests a day
+/// ([expiredAccountRetry]) before it is polled once more; the account in use is polled as before. A fetch given up at [deadline] ends the round
+/// though: the network the system holds would hold every account after it as long, and the next tick polls them.
+///
+/// Every outcome is handed to [onOutcome] as soon as its account is done (the service announces it then), and the
+/// list of them is returned. A notification of one of them names its account ([BackgroundSyncDone.named]); a fetch
+/// of an account that is no longer the account in use when it comes back is announced as well, since its
+/// notification opens that account. The settings are read again before each account after the first: switched off
+/// meanwhile ([BackgroundSyncDisabled], also when a fetch comes back), or back to the account in use only, the round
+/// ends there.
+Future<List<BackgroundSyncOutcome>> backgroundSyncAccountsTick({
+  required StorageProvider storage,
+  required NotificationSyncAllRepository repository,
+  Future<void> Function()? prepareNetwork,
+  DateTime? now,
+  Duration deadline = backgroundSyncDeadline,
+  Duration gap = backgroundSyncAccountGap,
+  void Function(BackgroundSyncOutcome late)? onLate,
+  FutureOr<void> Function(BackgroundSyncOutcome outcome)? onOutcome,
+}) async {
+  final outcomes = <BackgroundSyncOutcome>[];
+  Future<void> add(BackgroundSyncOutcome outcome) async {
+    outcomes.add(outcome);
+    await onOutcome?.call(outcome);
+  }
+
+  final settings = await readBackgroundSyncSettings(storage);
+  if (!settings.allAccounts) {
+    await add(
+      await backgroundSyncTick(
+        storage: storage,
+        repository: repository,
+        prepareNetwork: prepareNetwork,
+        now: now,
+        deadline: deadline,
+        onLate: onLate,
+      ),
+    );
+    return outcomes;
+  }
+  if (_notToPoll(settings) case final skipped?) {
+    await add(skipped);
+    return outcomes;
+  }
+  if (await _prepare(prepareNetwork) case final skipped?) {
+    await add(skipped);
+    return outcomes;
+  }
+  await storage.refreshCookieCache();
+  final (:accounts, :retried) = await _accountsToPoll(storage, settings.loginUid);
+  await _pollRound(
+    storage: storage,
+    repository: repository,
+    settings: settings,
+    accounts: accounts,
+    retried: retried,
+    service: true,
+    now: now,
+    deadline: deadline,
+    gap: gap,
+    waitFirst: false,
+    onLate: onLate,
+    add: add,
+  );
+  return outcomes;
+}
+
+/// The other accounts' part of the in-app auto sync (Android and Windows, while the app runs, in the tray too).
+///
+/// [repository] reads each account's cookie from the database (`cookiesFromDatabase`).
+///
+/// The in-app auto sync polls the account in use itself, through the notification page's own fetch; when
+/// `SettingsKeys.backgroundSyncAllAccounts` is on, this polls every other account saved on this device right after,
+/// the way [backgroundSyncAccountsTick] polls them: one after another through the sync of all accounts, each with its
+/// own cookie, poll slot ([NotificationPollSlot], shared with the background message service, so whichever comes
+/// first polls an account and the other skips it), rows, bound, deleted conversations, block list and form hash;
+/// [gap] before each account (the account in use was just asked), what goes wrong for one account staying with it,
+/// another account known to be expired resting a day ([expiredAccountRetry]), a fetch given up at [deadline] ending
+/// the round. The switch of the background message service plays no part here.
+///
+/// Nothing is polled when the setting is off, auto sync is set to never or nobody is logged in; the settings are read
+/// again before each account. Every outcome goes to [onOutcome] as soon as its account is done, every notification
+/// names its account ([BackgroundSyncDone.named]).
+Future<List<BackgroundSyncOutcome>> autoSyncOtherAccountsTick({
+  required StorageProvider storage,
+  required NotificationSyncAllRepository repository,
+  DateTime? now,
+  Duration deadline = backgroundSyncDeadline,
+  Duration gap = backgroundSyncAccountGap,
+  void Function(BackgroundSyncOutcome late)? onLate,
+  FutureOr<void> Function(BackgroundSyncOutcome outcome)? onOutcome,
+}) async {
+  final outcomes = <BackgroundSyncOutcome>[];
+  Future<void> add(BackgroundSyncOutcome outcome) async {
+    outcomes.add(outcome);
+    await onOutcome?.call(outcome);
+  }
+
+  final settings = await readBackgroundSyncSettings(storage);
+  if (_stopRound(settings, service: false) != null) {
+    return outcomes;
+  }
+  // The cookies are read from the database by [repository] (`cookiesFromDatabase`): the background service may have
+  // stored one the forum renewed, and the app's whole cache is not reloaded for that.
+  final (:accounts, :retried) = await _accountsToPoll(storage, settings.loginUid);
+  await _pollRound(
+    storage: storage,
+    repository: repository,
+    settings: settings,
+    accounts: accounts.skip(1).toList(),
+    retried: retried,
+    service: false,
+    now: now,
+    deadline: deadline,
+    gap: gap,
+    waitFirst: true,
+    onLate: onLate,
+    add: add,
+  );
+  return outcomes;
+}
+
+/// Poll [accounts] one after another, see [backgroundSyncAccountsTick]; [service] tells the background message
+/// service (its switch ends the round) from the in-app auto sync. [waitFirst] waits [gap] before the first account
+/// too: the account in use was just asked. [retried] are accounts marked expired polled once more
+/// ([expiredAccountRetry]): answered as themselves, their mark is cleared.
+Future<void> _pollRound({
+  required StorageProvider storage,
+  required NotificationSyncAllRepository repository,
+  required BackgroundSyncSettings settings,
+  required List<UserLoginInfo> accounts,
+  required Set<int> retried,
+  required bool service,
+  required DateTime? now,
+  required Duration deadline,
+  required Duration gap,
+  required bool waitFirst,
+  required void Function(BackgroundSyncOutcome late)? onLate,
+  required Future<void> Function(BackgroundSyncOutcome outcome) add,
+}) async {
+  var reachedForum = waitFirst;
+  for (final (index, account) in accounts.indexed) {
+    if (reachedForum && gap > Duration.zero) {
+      await Future<void>.delayed(gap);
+    }
+    if (index > 0 || waitFirst) {
+      // The app may have switched the service off, or back to the account in use only, while the round ran.
+      if (_stopRound(await readBackgroundSyncSettings(storage), service: service) case final stop?) {
+        await add(stop);
+        break;
+      }
+    }
+    final polled = await _pollAccount(
+      storage: storage,
+      repository: repository,
+      settings: settings,
+      account: account,
+      service: service,
+      now: now,
+      deadline: deadline,
+      onLate: onLate,
+    );
+    if (polled.outcome case BackgroundSyncDone(
+      :final uid,
+      result: NotificationSyncResultSuccess(:final servedUid),
+    ) when retried.contains(uid) && servedUid == uid) {
+      // The forum answered this account's cookie as this very account: the expiry recorded for it was wrong, or is
+      // over. An answer that does not name the account (or names another) leaves the mark.
+      await storage.clearSessionExpired(uid);
+    }
+    await add(polled.outcome);
+    if (polled.outcome is BackgroundSyncDisabled) {
+      break;
+    }
+    if (polled.givenUp) {
+      for (final rest in accounts.skip(index + 1)) {
+        await add(BackgroundSyncSkipped('a fetch before it was given up', uid: rest.uid));
+      }
+      break;
+    }
+    reachedForum = polled.requested;
+  }
+}
+
+/// Why a round of every account stops before the next account, null while it goes on: for the [service], its switch
+/// as well ([_notToPoll]); for the in-app auto sync, auto sync set to never or nobody logged in; for both, the setting
+/// back to the account in use only.
+BackgroundSyncOutcome? _stopRound(BackgroundSyncSettings settings, {required bool service}) {
+  if (service) {
+    if (_notToPoll(settings) case final stop?) {
+      return stop;
+    }
+  } else if (settings.intervalSeconds <= 0) {
+    return const BackgroundSyncSkipped('auto sync is off');
+  } else if (settings.loginUid <= 0) {
+    return const BackgroundSyncSkipped('not logged in');
+  }
+  if (!settings.allAccounts) {
+    return const BackgroundSyncSkipped('every account switched off during the round');
+  }
+  return null;
+}
+
+/// Why nothing is polled for [settings], null when the tick may poll.
+BackgroundSyncOutcome? _notToPoll(BackgroundSyncSettings settings) {
   if (!settings.enabled) {
     return const BackgroundSyncDisabled();
   }
@@ -144,25 +412,96 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   if (settings.loginUid <= 0) {
     return const BackgroundSyncSkipped('not logged in');
   }
-  if (prepareNetwork != null) {
-    try {
-      await prepareNetwork();
-    } on Object catch (e) {
-      return BackgroundSyncSkipped('network settings unavailable: $e');
-    }
+  return null;
+}
+
+/// Run [prepareNetwork]; what the tick ends with when it throws, null when the tick may fetch.
+Future<BackgroundSyncOutcome?> _prepare(Future<void> Function()? prepareNetwork) async {
+  if (prepareNetwork == null) {
+    return null;
   }
-  // The app may have logged in, out or switched accounts since the last tick.
-  await storage.refreshCookieCache();
+  try {
+    await prepareNetwork();
+    return null;
+  } on Object catch (e) {
+    return BackgroundSyncSkipped('network settings unavailable: $e');
+  }
+}
+
+/// How long another account whose login is known to be expired is left alone: then it is polled once more, so a
+/// mark that was wrong (a guest page the forum answered by mistake) does not mute the account for good. Still expired,
+/// the sync marks it again and it rests another day; answered as itself, its mark is cleared.
+const expiredAccountRetry = Duration(days: 1);
+
+/// The accounts a tick with every account on polls: the account in use [loginUid] first, as the in-app sync and the
+/// tick for it alone poll it (also while its login is marked expired); then every other account saved on this device
+/// with a name and a uid, as the sync of all accounts lists them, except those whose login was found expired less
+/// than [expiredAccountRetry] ago. `retried` are the other accounts polled although marked expired.
+Future<({List<UserLoginInfo> accounts, Set<int> retried})> _accountsToPoll(
+  StorageProvider storage,
+  int loginUid,
+) async {
+  final stored = (await storage.getAllUsers())
+      .where((e) => e.uid != null && e.uid! > 0 && e.username != null && e.username!.isNotEmpty)
+      .toList();
+  final expiredAt = {
+    for (final e in await storage.fetchExpiredSessions())
+      if (e.user.uid case final int uid) uid: e.sessionExpiredAt,
+  };
+  final now = DateTime.now();
+  bool resting(int uid) => switch (expiredAt[uid]) {
+    final DateTime at => now.difference(at) < expiredAccountRetry,
+    null => false,
+  };
+  final current = stored.where((e) => e.uid == loginUid).firstOrNull ?? UserLoginInfo(username: null, uid: loginUid);
+  final others = stored.where((e) => e.uid != loginUid).toList();
+  final polled = others.where((e) => !resting(e.uid!)).toList();
+  final skipped = others.length - polled.length;
+  if (skipped > 0) {
+    talker.debug('background sync: $skipped account(s) with an expired login not polled');
+  }
+  return (
+    accounts: [current, ...polled],
+    retried: {
+      for (final e in polled)
+        if (expiredAt.containsKey(e.uid)) e.uid!,
+    },
+  );
+}
+
+/// What polling one account brought: the `outcome`; whether a request was sent (`requested`, the poll was taken);
+/// whether the fetch was given up at the deadline (`givenUp`).
+typedef _Polled = ({BackgroundSyncOutcome outcome, bool requested, bool givenUp});
+
+/// Take the poll of [account], fetch and store its notifications through [repository] and tell what came of it, see
+/// [backgroundSyncTick]. [settings] are the ones the tick started with.
+Future<_Polled> _pollAccount({
+  required StorageProvider storage,
+  required NotificationSyncAllRepository repository,
+  required BackgroundSyncSettings settings,
+  required UserLoginInfo account,
+  required DateTime? now,
+  required Duration deadline,
+  required void Function(BackgroundSyncOutcome late)? onLate,
+  bool service = true,
+}) async {
+  final uid = account.uid!;
   // The app's own auto sync may have polled moments ago (GitHub #173). Taken only now, with everything a fetch
   // needs in hand: taken earlier, a tick that could not fetch kept the app from polling too.
-  final uid = settings.loginUid;
   final slot = await NotificationPollSlot.take(storage, uid, Duration(seconds: settings.intervalSeconds), now: now);
   if (slot == null) {
-    return const BackgroundSyncSkipped('polled by the app moments ago');
+    return (
+      outcome: BackgroundSyncSkipped(
+        service ? 'polled by the app moments ago' : 'polled moments ago',
+        uid: settings.allAccounts ? uid : null,
+      ),
+      requested: false,
+      givenUp: false,
+    );
   }
   var fetched = false;
   try {
-    final run = repository.syncAll(accounts: [UserLoginInfo(username: null, uid: uid)]).run();
+    final run = repository.syncAll(accounts: [account]).run();
     var timedOut = false;
     final info = await run.timeout(
       deadline,
@@ -177,15 +516,22 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
       talker.warning('background sync: no answer within ${deadline.inSeconds}s, giving up this tick');
       unawaited(
         run.then(
-          (late) async => onLate?.call(await _outcomeOf(late, storage, settings)),
+          (late) async => onLate?.call(await _outcomeOf(late, storage, settings, account, service: service)),
           onError: (Object e) => talker.warning('background sync: the fetch given up failed later: $e'),
         ),
       );
-      return BackgroundSyncSkipped('no answer within ${deadline.inSeconds}s');
+      return (
+        outcome: BackgroundSyncSkipped(
+          'no answer within ${deadline.inSeconds}s',
+          uid: settings.allAccounts ? uid : null,
+        ),
+        requested: true,
+        givenUp: true,
+      );
     }
-    final outcome = await _outcomeOf(info, storage, settings);
+    final outcome = await _outcomeOf(info, storage, settings, account, service: service);
     fetched = outcome is BackgroundSyncDone && outcome.result is NotificationSyncResultSuccess;
-    return outcome;
+    return (outcome: outcome, requested: true, givenUp: false);
   } finally {
     if (!fetched) {
       // Nothing came of this poll: the app's own sync may take the interval after all.
@@ -194,28 +540,42 @@ Future<BackgroundSyncOutcome> backgroundSyncTick({
   }
 }
 
-/// The outcome of a finished fetch, against the settings read again now (see [backgroundSyncTick]).
+/// The outcome of a finished fetch of [account], against the settings read again now (see [backgroundSyncTick]);
+/// [settings] are the ones the tick started with.
+///
+/// With every account announced (as the settings are now) a fetch is announced whichever account is in use: its
+/// notification names its account and a tap opens it as that account. Otherwise only the account in use is, as before.
+/// The switch of the background message service only counts for the [service].
 Future<BackgroundSyncOutcome> _outcomeOf(
   Either<AppException, NotificationSyncAllInfo> info,
   StorageProvider storage,
   BackgroundSyncSettings settings,
-) async {
+  UserLoginInfo account, {
+  required bool service,
+}) async {
+  final uid = account.uid!;
+  final tagged = settings.allAccounts ? uid : null;
   final after = await readBackgroundSyncSettings(storage);
-  if (!after.enabled) {
+  if (service && !after.enabled) {
     return const BackgroundSyncDisabled();
   }
-  if (after.loginUid != settings.loginUid) {
-    return const BackgroundSyncStale('account switched during the fetch');
+  if (!after.allAccounts && after.loginUid != uid) {
+    return BackgroundSyncStale(
+      uid == settings.loginUid ? 'account switched during the fetch' : 'all accounts switched off during the fetch',
+      uid: tagged,
+    );
   }
   if (after.intervalSeconds <= 0) {
-    return const BackgroundSyncStale('auto sync set to never during the fetch');
+    return BackgroundSyncStale('auto sync set to never during the fetch', uid: tagged);
   }
   return switch (info) {
-    Left(:final value) => BackgroundSyncSkipped('sync failed: $value'),
+    Left(:final value) => BackgroundSyncSkipped('sync failed: $value', uid: tagged),
     Right(:final value) => BackgroundSyncDone(
-      uid: settings.loginUid,
+      uid: uid,
+      username: account.username,
+      named: after.allAccounts,
       result:
-          value.finished.where((e) => e.$1.uid == settings.loginUid).lastOrNull?.$2 ??
+          value.finished.where((e) => e.$1.uid == uid).lastOrNull?.$2 ??
           const NotificationSyncResultFailed('no result'),
     ),
   };

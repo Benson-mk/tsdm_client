@@ -98,7 +98,7 @@ final class NotificationSyncAllCubit extends Cubit<NotificationSyncAllState> wit
       info('sync all accounts: ${accounts.length} account(s)');
       var results = const <(UserLoginInfo, NotificationSyncResult)>[];
       if (accounts.isNotEmpty) {
-        final finalInfo = await _repository.syncAll(accounts: accounts).run();
+        final finalInfo = await _repository.syncAll(accounts: accounts, pollInterval: await _pollInterval()).run();
         results = finalInfo.fold((_) => _lastInfo.finished, (info) => info.finished);
         try {
           await _publishCurrentUser();
@@ -124,6 +124,23 @@ final class NotificationSyncAllCubit extends Cubit<NotificationSyncAllState> wit
     } finally {
       _running = false;
       _autoNotificationCubit?.resume(_lockReason);
+    }
+  }
+
+  /// The auto sync interval the run takes each account's poll with, null when auto sync is set to never: nobody
+  /// else polls then. Each account the in-app auto sync or the background service polled within half of it (at most
+  /// 30 seconds ago) is not asked again, its stored result is shown ([NotificationSyncResultSuccess.recent]), and an
+  /// account this run fetched is not asked again by them within half of it either: the plugin answers a second call
+  /// within its interval with 429. An earlier run of this sync is never reused: asked again, the forum is asked again.
+  Future<Duration?> _pollInterval() async {
+    try {
+      final seconds =
+          await _storageProvider.getInt(SettingsKeys.autoSyncNoticeSeconds.name) ??
+          SettingsKeys.autoSyncNoticeSeconds.defaultValue;
+      return seconds > 0 ? Duration(seconds: seconds) : null;
+    } on Object catch (e) {
+      warning('reading the auto sync interval failed, every account is fetched: $e');
+      return null;
     }
   }
 

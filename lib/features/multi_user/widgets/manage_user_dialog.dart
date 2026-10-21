@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fpdart/fpdart.dart' show Left;
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/multi_user/bloc/switch_user_bloc.dart';
@@ -220,8 +222,13 @@ class _ManageUserDialogState extends State<_ManageUserDialog> with LoggerMixin {
         if (!context.mounted || confirmed != true) {
           return;
         }
-        final result = await context.repo<AuthenticationRepository>().forgetCurrentUser().run();
+        final result = await context.repo<AuthenticationRepository>().forgetCurrentUser(uid: userInfo.uid).run();
         if (!context.mounted) {
+          return;
+        }
+        if (result case Left(value: IdentityChangedException())) {
+          // Another account is in use by now (a switch finished meanwhile): nothing removed, the menu is stale.
+          context.pop();
           return;
         }
         if (result.isLeft()) {
@@ -265,9 +272,14 @@ class _ManageUserDialogState extends State<_ManageUserDialog> with LoggerMixin {
             builder: (_) => const PopScope(canPop: false, child: Center(child: CircularProgressIndicator())),
           ),
         );
-        final result = await repo.logout().run();
+        final result = await repo.logout(uid: userInfo.uid).run();
         navigator.pop();
         if (!context.mounted) {
+          return;
+        }
+        if (result case Left(value: IdentityChangedException())) {
+          // Another account is in use by now (a switch finished meanwhile): nobody logged out, the menu is stale.
+          context.pop();
           return;
         }
         if (result.isLeft()) {

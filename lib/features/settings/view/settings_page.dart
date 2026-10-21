@@ -477,6 +477,14 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     await _applyBackgroundSyncSettings(context);
   }
 
+  /// Let the auto sync poll every saved account, or the account in use only. The in-app auto sync reads it on its next
+  /// poll; a running background service (Android) reads the settings again and ticks right away.
+  Future<void> _toggleBackgroundSyncAllAccounts(BuildContext context, {required bool enable}) async {
+    await getIt.get<SettingsRepository>().setValue(SettingsKeys.backgroundSyncAllAccounts, enable);
+    if (!isAndroid || !context.mounted) return;
+    await _applyBackgroundSyncSettings(context);
+  }
+
   /// Reading and editing behavior: order, floor interaction, editor parser and the templates.
   Widget _buildBehaviorSection(BuildContext context, SettingsState state) {
     final tr = context.t.settingsPage.behaviorSection;
@@ -592,6 +600,27 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             subtitle: Text(tr.backgroundMessageService.detail),
             value: state.settingsMap.enableBackgroundMessageService,
             onChanged: (v) async => _toggleBackgroundSync(context, enable: v),
+          ),
+        // Only where the auto sync posts system notifications: nothing would change elsewhere.
+        if (autoSyncPostsNotifications)
+          SectionSwitchListTile(
+            key: const ValueKey('background-sync-all-accounts'),
+            secondary: const Icon(Icons.switch_account_outlined),
+            title: Text(tr.backgroundSyncAllAccounts.title),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr.backgroundSyncAllAccounts.detail),
+                Text(
+                  tr.backgroundSyncAllAccounts.seenNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            value: state.settingsMap.backgroundSyncAllAccounts,
+            onChanged: (v) async => _toggleBackgroundSyncAllAccounts(context, enable: v),
           ),
       ],
     );
