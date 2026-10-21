@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tsdm_client/constants/layout.dart';
-import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/extensions/date_time.dart';
 import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
@@ -11,6 +10,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/network_indicator_image.dart';
@@ -22,7 +22,8 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 ///
 /// As the forum's pages print them, a forum the viewer may not enter says "私密版块" where the time of its latest
 /// thread goes ([Forum.isPrivate]), and a link forum ([Forum.redirectUrl]) says "链接到外部地址" there and shows no
-/// counters; tapping a link forum opens its address in the browser, as the page opens it in a new window.
+/// counters; tapping a link forum opens its address in a browser (web addresses only), as the page opens it in a new
+/// window.
 ///
 /// [large] is for the forum lists of desktop windows (see [forumCardListLayout]): the forum picture (up to 240x120,
 /// fitted whole) and a 24px name share the card width, and the three counters are equal blocks ([ForumCardStat])
@@ -352,7 +353,18 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
     Future<void> openForum() async {
       final redirect = widget.forum.redirectUrl;
       if (redirect != null) {
-        await context.dispatchAsUrl(redirect, external: true);
+        // A browser only: the forum's own page (a link forum read from the web page) is a link of this app, which a
+        // generic launch may open in the app again (#105).
+        final uri = Uri.tryParse(redirect);
+        if (uri == null || !(uri.isScheme('http') || uri.isScheme('https')) || uri.host.isEmpty) {
+          error('link forum ${widget.forum.forumID} has no web address, not opened');
+          return;
+        }
+        try {
+          await openInExternalBrowser(uri);
+        } on Object catch (e, st) {
+          handleRaw(e, st);
+        }
         return;
       }
       await context.pushNamed(

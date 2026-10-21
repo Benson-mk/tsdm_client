@@ -404,9 +404,9 @@ List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
 /// * Before (plugin 2.3.0 to 2.8.0) the answer names the favorites by id only (`favorite_forums`); the repository
 ///   then asks the page once more with its `document` ([favoritesPanelNeedsDocument]) and the panel is read from the
 ///   page ([favoriteForumsOfDocument]).
-/// * Without either (that request failed, or the document holds no panel) each favorite is looked up among the
-///   forums of the categories, or among their subforums, which the answer lists by name only; one listed nowhere, a
-///   forum the viewer may not see, is left out of the panel but still seeded, see [favoriteForumIdsOf].
+/// * Without either (that request failed, or the document holds no panel it can read) each favorite is looked up
+///   among the forums of the categories, or among their subforums, which the answer lists by name only; one listed
+///   nowhere, a forum the viewer may not see, is left out of the panel but still seeded, see [favoriteForumIdsOf].
 List<Forum> _favoritesPanelOf(
   Map<String, dynamic> json,
   List<Map<String, dynamic>> categories,
@@ -420,11 +420,11 @@ List<Forum> _favoritesPanelOf(
     return const [];
   }
   if (json['document'] is String) {
-    final panel = favoriteForumsOfDocument(tsdmAppPageDocument(json));
+    final panel = favoriteForumsOfDocument(tsdmAppPageDocument(json), fids: favoriteIds);
     if (panel != null) {
       return panel;
     }
-    talker.info('favorite forums panel not in the document of the homepage answer, looked up in the categories');
+    talker.info('favorite forums panel not read from the document of the homepage answer, looked up in the categories');
   }
   final forums = {
     for (final g in groups)
@@ -462,67 +462,105 @@ bool favoritesPanelNeedsDocument(Map<String, dynamic> json) =>
     favoriteForumIdsOf(json).isNotEmpty;
 
 /// The forums of the "我收藏的版块" panel of the web page [document] (`div#category_0`), as the page prints them and in
-/// its order; null when the page has no panel.
+/// its order; null when the page has no panel, or none of its forums can be read.
 ///
 /// Each forum is read by the readers of the forum lists ([Forum.fromFlRowNode] for the list layout of up to three
 /// favorites, [Forum.fromFlGNode] for the grid of more): the panel's own counts, the icon, the latest thread (only its
-/// time in the grid, as the page prints). What those readers leave out is added: a forum the viewer may not enter
-/// prints "私密版块" in place of the latest thread ([Forum.isPrivate]); a link forum prints "链接到外部地址" in place
-/// of the counts and the latest thread (the grid reader gives it -1 counts, the list reader drops the row), so it has 0
-/// counts and [Forum.redirectUrl] is the forum's own page, which the forum redirects (the page prints no address).
-List<Forum>? favoriteForumsOfDocument(uh.Document document) {
+/// time in the grid, as the page prints). What those readers leave out is added:
+/// * a forum the viewer may not enter prints "私密版块" in place of the latest thread ([Forum.isPrivate]);
+/// * a link forum (its links open a new window, the latest thread is the "链接到外部地址" link, or "私密版块" for one
+///   the viewer may not enter) prints no counts: the list reader drops such a row and the grid reader gives it -1
+///   counts, so it is built from its name and icon with 0 counts, and [Forum.redirectUrl] is the forum's own page,
+///   which the forum redirects (the page prints no address);
+/// * a forum bound to a domain of its own links to that domain, without its id: it takes the id at its place in
+///   [fids] (`favorite_forums`, the panel's forums in the panel's order) when the panel has as many forums;
+/// * the list layout prints an anonymous author as text after the time ("2026-9-23 21:58 匿名"), which its reader
+///   does not take apart.
+List<Forum>? favoriteForumsOfDocument(uh.Document document, {List<int> fids = const []}) {
   final panel = document.querySelector('div#category_0');
   if (panel == null) {
     return null;
   }
-  final forums = <Forum>[];
+  final cells = <_FavoriteCell>[];
   for (final row in panel.querySelectorAll('table > tbody > tr')) {
     if (row.children.isEmpty) {
       continue;
     }
     if (row.querySelector('h2') != null) {
-      final forum = _favoriteCell(
-        () => Forum.fromFlRowNode(row),
-        title: row.querySelector('td > h2 > a'),
-        icon: row.querySelector('td.fl_icn img'),
-        slot: row.querySelector('td.fl_by > div'),
+      cells.add(
+        _FavoriteCell(
+          node: row,
+          read: Forum.fromFlRowNode,
+          title: row.querySelector('td > h2 > a'),
+          icon: row.querySelector('td.fl_icn img'),
+          slot: row.querySelector('td.fl_by > div'),
+          hasCounts: row.querySelector('td.fl_i span') != null,
+        ),
       );
-      if (forum != null) {
-        forums.add(forum);
-      }
       continue;
     }
     // The grid pads its last row with empty cells.
     for (final cell in row.querySelectorAll('td.fl_g').where((e) => e.children.isNotEmpty)) {
-      final forum = _favoriteCell(
-        () => Forum.fromFlGNode(cell),
-        title: cell.querySelector('dl > dt > a'),
-        icon: cell.querySelector('div.fl_icn_g img'),
-        // After the counts (`<em>`, none for a link forum), before what a plugin adds (`index_favforum_extra`).
-        slot: cell.querySelectorAll('dl > dd').firstWhereOrNull((e) => e.querySelector('em') == null),
+      final items = cell.querySelectorAll('dl > dd');
+      cells.add(
+        _FavoriteCell(
+          node: cell,
+          read: Forum.fromFlGNode,
+          title: cell.querySelector('dl > dt > a'),
+          icon: cell.querySelector('div.fl_icn_g img'),
+          // After the counts (`<em>`, none for a link forum), before what a plugin adds (`index_favforum_extra`).
+          slot: items.firstWhereOrNull((e) => e.querySelector('em') == null),
+          hasCounts: items.any((e) => e.querySelector('em') != null),
+        ),
       );
-      if (forum != null) {
-        forums.add(forum);
-      }
     }
   }
-  return forums;
+  final byPlace = cells.length == fids.length;
+  final forums = cells.indexed
+      .map((e) => _favoriteForumOf(e.$2, placeFid: byPlace ? fids[e.$1] : null))
+      .whereType<Forum>()
+      .toList();
+  return forums.isEmpty ? null : forums;
 }
 
-/// A forum of the favorites panel, as the reader of its layout reads it ([read]), with what the [slot] of its latest
-/// thread tells: "私密版块", or the "链接到外部地址" link of a link forum, which is built from its [title] and [icon]
-/// instead (the readers take its missing counts for a broken row).
-Forum? _favoriteCell(
-  Forum? Function() read, {
-  required uh.Element? title,
-  required uh.Element? icon,
-  required uh.Element? slot,
-}) {
-  final slotText = slot?.innerText.trim();
+/// A forum of the favorites panel as the page prints it: the row (list layout) or cell (grid) [node], the reader of
+/// its layout ([read]), its [title] link, its [icon], the [slot] of its latest thread, and whether it prints counts.
+final class _FavoriteCell {
+  const _FavoriteCell({
+    required this.node,
+    required this.read,
+    required this.title,
+    required this.icon,
+    required this.slot,
+    required this.hasCounts,
+  });
+
+  final uh.Element node;
+  final Forum? Function(uh.Element) read;
+  final uh.Element? title;
+  final uh.Element? icon;
+  final uh.Element? slot;
+  final bool hasCounts;
+}
+
+/// The forum of a [cell] of the favorites panel, see [favoriteForumsOfDocument]; [placeFid] is its id by its place in
+/// the panel, for a forum whose links do not name it.
+Forum? _favoriteForumOf(_FavoriteCell cell, {required int? placeFid}) {
+  final title = cell.title;
+  final href = title?.attributes['href'];
+  if (title != null && placeFid != null && (href?.uriQueryParameter('fid')?.parseToInt() == null)) {
+    // Bound to a domain of its own: the readers take the id from the link.
+    title.attributes['href'] = 'forum.php?mod=forumdisplay&fid=$placeFid';
+  }
+  final slotText = cell.slot?.innerText.trim();
   final private = slotText == '私密版块' || slotText == '私密版塊';
-  final link = slot?.querySelector('a');
-  if (link == null || (link.attributes['href']?.contains('tid=') ?? false)) {
-    return read()?.copyWith(isPrivate: private);
+  final slotLink = cell.slot?.querySelector('a');
+  final link =
+      (slotLink != null && !(slotLink.attributes['href']?.contains('tid=') ?? false)) ||
+      (title?.attributes['target'] == '_blank' && !cell.hasCounts);
+  if (!link) {
+    final forum = cell.read(cell.node)?.copyWith(isPrivate: private);
+    return forum == null ? null : _withAnonymousAuthor(forum, cell.slot);
   }
   final url = title?.firstHref();
   final fid = url?.uriQueryParameter('fid')?.parseToInt();
@@ -535,14 +573,40 @@ Forum? _favoriteCell(
     forumID: fid,
     url: url,
     name: name,
-    iconUrl: icon?.dataOriginalOrSrcImgUrl() ?? '',
+    iconUrl: cell.icon?.dataOriginalOrSrcImgUrl() ?? '',
     threadCount: 0,
     replyCount: 0,
     latestThreadUrl: null,
     latestThreadTime: null,
     latestThreadTimeText: null,
     threadTodayCount: null,
+    isPrivate: private,
     redirectUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+  );
+}
+
+/// [forum] with the anonymous author of its latest thread that the list layout prints as text after the time
+/// ("2026-9-23 21:58 匿名", or after the `<span title>` of a recent time) in the `<cite>` of [slot]; [forum] as it is
+/// when the author is a link (a member) or there is no latest thread.
+Forum _withAnonymousAuthor(Forum forum, uh.Element? slot) {
+  final cite = slot?.querySelector('cite');
+  if (forum.latestThreadUrl == null || cite == null || cite.querySelector('a') != null) {
+    return forum;
+  }
+  final span = cite.querySelector('span[title]');
+  if (span != null) {
+    final author = cite.innerText.trim().substring(span.innerText.trim().length).trim();
+    return author.isEmpty ? forum : forum.copyWith(latestThreadUserName: author);
+  }
+  final words = cite.innerText.trim().split(RegExp(r'\s+'));
+  if (words.length < 3) {
+    return forum;
+  }
+  final timeText = '${words[0]} ${words[1]}';
+  return forum.copyWith(
+    latestThreadTime: forum.latestThreadTime ?? timeText.parseToDateTimeUtc8(),
+    latestThreadTimeText: timeText,
+    latestThreadUserName: words.skip(2).join(' '),
   );
 }
 
