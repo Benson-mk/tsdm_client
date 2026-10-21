@@ -16,14 +16,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.41.1 (2026-10-21)
+## Latest update: 1.41.2 (2026-10-21)
 
-- Fixed "我收藏的版块" on the forums tab: subforums no longer show 0 with no icon, and forums with subforums show their own counts as on the web.
-- On the thread page each floor's nickname and user group are back when logged in; custom titles on profiles no longer show raw `&#…;` codes; debate points keep their links and formatting.
-- Dates and times follow the forum's clock as the web page does; "TA的主题" links of other members no longer open your own threads.
-- Android build number 145, installs over earlier releases and test builds.
+- The activities page is no longer empty; forum card shortcuts no longer show blank buttons; private and external-link forums are marked as on the web.
+- The thread page's reply count matches the web; blocked avatars and hot replies show as on the web, no more "#-1" or "null 楼".
+- Spaces and line breaks in posts follow the web's rules: words after bold text or links no longer stick together, `&nbsp;` indents are kept.
+- Retrying after a failed forum page load no longer lists the same threads twice.
+- Android build number 146, installs over earlier releases and test builds.
 
-[Download 1.41.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.41.1) · [Full changelog](./CHANGELOG.md)
+[Download 1.41.2](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.41.2) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
