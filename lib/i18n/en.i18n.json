@@ -472,6 +472,10 @@
         "notDetected": "Not detected · app expects ${expected}",
         "olderNote": "Some pages are parsed from the web page"
       },
+      "appPostRenderer": {
+        "title": "Render posts with the app's renderer (experimental)",
+        "detail": "With the forum API plugin 2.7.0, floors whose whole content you can see are drawn from their bbcode by the app; floors it can not draw faithfully keep the forum's web content"
+      },
       "proxySettings": {
         "title": "Proxy Settings",
         "host": "Host",
@@ -1229,6 +1233,10 @@
     }
   },
   "postCard": {
+    "contentUnavailable": "This floor's content can not be shown",
+    "bbcode": {
+      "attachmentLocked": "Not available to you: to buy, no permission, or log in first"
+    },
     "interactiveHtml": {
       "open": "Interactive content",
       "description": "Open this post’s interactive layout, forms and buttons.",

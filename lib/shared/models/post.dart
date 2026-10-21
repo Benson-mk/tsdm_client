@@ -62,6 +62,15 @@ class Post with PostMappable {
     this.pokemon,
     this.checkin,
     this.reportTarget,
+    this.messageBbcode,
+    this.messageReason,
+    this.bbcodeOff = false,
+    this.smileyOff = false,
+    this.parseUrlOff = false,
+    this.attachments = const [],
+    this.bbcodeCodes,
+    this.smiliesVersion,
+    this.customTags,
   });
 
   /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
@@ -91,6 +100,12 @@ class Post with PostMappable {
   ///
   /// The placeholder of a deleted floor of a rush thread (`deleted` 1: no author, `urls` and `group` null, every
   /// html field empty) builds an empty floor without author, content or action; `threadPageFromApi` leaves it out.
+  ///
+  /// Plugin 2.7.0 (`schema: 14`) adds the floor's bbcode for the app's own renderer, kept beside everything above:
+  /// `message` as [messageBbcode] (null when the answer withholds it, `message_reason` telling why, or has none),
+  /// `bbcodeoff` / `smileyoff` / `parseurloff` as the forum renders the floor, `attachments` (what the forum loaded
+  /// for this request), and the answer's [codes] with the floor's own switches ([PostBbcodeCodes]) and the version
+  /// of the smilies table ([smiliesVersion], the answer's `smilies_version`).
   factory Post.fromApi(
     Map<String, dynamic> p, {
     required String tid,
@@ -99,6 +114,8 @@ class Post with PostMappable {
     required int page,
     Map<String, dynamic>? pay,
     bool draft = false,
+    Object? codes,
+    String? smiliesVersion,
   }) {
     final pid = _apiInt(p['pid']);
     final postID = '$pid';
@@ -195,6 +212,21 @@ class Post with PostMappable {
       pokemon: column.pokemon,
       checkin: column.checkin,
       reportTarget: reportTarget,
+      messageBbcode: p['message'] is String ? p['message'] as String : null,
+      messageReason: p['message_reason'] is String ? p['message_reason'] as String : null,
+      bbcodeOff: _apiInt(p['bbcodeoff']) != 0,
+      smileyOff: _apiInt(p['smileyoff']) != 0,
+      parseUrlOff: _apiInt(p['parseurloff']) != 0,
+      attachments: _apiList(
+        p['attachments'],
+      ).whereType<Map<String, dynamic>>().map(PostAttachment.fromApi).whereType<PostAttachment>().toList(),
+      bbcodeCodes: PostBbcodeCodes.fromApi(codes, p),
+      smiliesVersion: smiliesVersion == null || smiliesVersion.isEmpty ? null : smiliesVersion,
+      customTags: switch (p['customtags']) {
+        final List<dynamic> tags => List.unmodifiable(tags.whereType<String>().map((e) => e.toLowerCase())),
+        final Map<String, dynamic> tags => List.unmodifiable(tags.keys.map((e) => e.toLowerCase())),
+        _ => null,
+      },
     );
   }
 
@@ -305,6 +337,47 @@ class Post with PostMappable {
   ///
   /// Null when the page context is unknown, for own posts and floors without the report link (#127).
   final PostReportTarget? reportTarget;
+
+  /// The floor's bbcode as the author wrote it (plugin 2.7.0, `message`), for the app's own renderer.
+  ///
+  /// Null when the answer has none (a web page, an older plugin) or withholds it: the forum only gives it when the
+  /// account sees the whole content on the web page ([messageReason] tells why not). [data] stays the content as the
+  /// forum printed it either way.
+  final String? messageBbcode;
+
+  /// Why [messageBbcode] is withheld (`hide`, `password`, `pay`, `locked`, `banned`, `moderate`, `json`, `html`,
+  /// `bbcodeoff`, `jammer`, `imgcontent`, `spoofed`, `deleted`, `missing`); empty when given, null when the answer has
+  /// no such field.
+  final String? messageReason;
+
+  /// The forum prints [messageBbcode] literally, tags as text (`bbcodeoff` 1).
+  final bool bbcodeOff;
+
+  /// The forum leaves smiley codes as text in this floor (`smileyoff` 1).
+  final bool smileyOff;
+
+  /// The author asked the forum's editor not to link bare urls (`parseurloff` 1). The forum does not link bare urls
+  /// when it shows a post either way; kept for reference, the app links them as its html renderer does.
+  final bool parseUrlOff;
+
+  /// The attachments of the floor the forum loaded for this request ([PostAttachment]).
+  final List<PostAttachment> attachments;
+
+  /// The forum's bbcode switches for this floor; null when the answer has none.
+  final PostBbcodeCodes? bbcodeCodes;
+
+  /// The version of the forum's smilies table the floor was rendered with (`smilies_version`); null when none.
+  final String? smiliesVersion;
+
+  /// The site's own bbcode tags the forum expands in this floor (`customtags`, for its author), such as `spoiler`;
+  /// null when the answer does not say (plugin 2.7.0), in which case the app draws none of them.
+  final List<String>? customTags;
+
+  /// The forum's app API gives nothing of this floor's content (plugin 2.7.0, `message_reason: spoofed`): the html of
+  /// another floor forged this floor's ids on the page, so the floor's own html (content, author column, poll, red
+  /// packet), last edit and rate are left out; only the author is real. The card shows a neutral line instead of an
+  /// empty floor, whichever renderer is in use.
+  bool get isSpoofed => messageReason == 'spoofed';
 
   /// Build [Post] from [element] that has attribute id "post_$postID".
   ///

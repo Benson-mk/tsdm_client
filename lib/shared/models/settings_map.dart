@@ -59,6 +59,7 @@ class SettingsMap with SettingsMapMappable {
     this.highRefreshRate = true,
     this.offlineThreads = false,
     this.offlineThreadsLimit = 50,
+    this.enableAppPostRenderer = false,
   });
 
   final String netClientAccept;
@@ -122,6 +123,10 @@ class SettingsMap with SettingsMapMappable {
   /// How many threads the offline pages are kept for. Not required: backups from older versions lack it.
   final int offlineThreadsLimit;
 
+  /// Whether floors are rendered from their bbcode by the app (experimental). Not required: backups from older
+  /// versions lack it.
+  final bool enableAppPostRenderer;
+
   SettingsMap copyWithKey<T>(SettingsKeys<T> key, T? value) {
     assert(
       T == key.type || T.toString() == '${key.type}?',
@@ -183,6 +188,7 @@ class SettingsMap with SettingsMapMappable {
       SettingsKeys.highRefreshRate => copyWith(highRefreshRate: value as bool?),
       SettingsKeys.offlineThreads => copyWith(offlineThreads: value as bool?),
       SettingsKeys.offlineThreadsLimit => copyWith(offlineThreadsLimit: value as int?),
+      SettingsKeys.enableAppPostRenderer => copyWith(enableAppPostRenderer: value as bool?),
     };
   }
 }

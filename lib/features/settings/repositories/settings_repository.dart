@@ -161,6 +161,7 @@ final class SettingsRepository with LoggerMixin {
       highRefreshRate: s.extract(_SK.highRefreshRate),
       offlineThreads: s.extract(_SK.offlineThreads),
       offlineThreadsLimit: s.extract(_SK.offlineThreadsLimit),
+      enableAppPostRenderer: s.extract(_SK.enableAppPostRenderer),
     );
   }
 

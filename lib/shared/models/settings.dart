@@ -240,6 +240,12 @@ enum SettingsKeys<T> implements Comparable<SettingsKeys<T>> {
   /// How many threads [offlineThreads] keeps, the least recently used ones going first; one thread of one account
   /// counts once whatever number of its pages are saved.
   offlineThreadsLimit<int>(name: 'offlineThreadsLimit', type: int, defaultValue: 50),
+
+  /// Render a floor from its bbcode with the app's own renderer instead of the html the forum printed (experimental).
+  ///
+  /// Only floors whose bbcode the forum's app API gives (plugin 2.7.0, the account sees the whole content) and whose
+  /// tags the app renders faithfully; every other floor keeps the forum's html. Off by default.
+  enableAppPostRenderer<bool>(name: 'enableAppPostRenderer', type: bool, defaultValue: false),
   ;
 
   const SettingsKeys({required this.name, required this.type, required this.defaultValue});

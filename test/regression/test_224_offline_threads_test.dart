@@ -51,6 +51,8 @@ import 'package:tsdm_client/features/settings/repositories/backup_repository.dar
 import 'package:tsdm_client/features/settings/repositories/settings_cache_repository.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/settings/widgets/clear_cache_bottom_sheet.dart';
+import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode_view.dart';
+import 'package:tsdm_client/features/thread/v1/bbcode/smilies.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
@@ -194,6 +196,19 @@ final class _OfflineImages implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+/// The saved smilies table of the app renderer: [saved], or none.
+final class _SmiliesStore implements SmiliesStore {
+  _SmiliesStore(this.saved);
+
+  String? saved;
+
+  @override
+  Future<String?> read() async => saved;
+
+  @override
+  Future<void> write(String data) async => saved = data;
 }
 
 /// Notification bloc holding a fixed state; the thread page only reads it.
@@ -1248,7 +1263,12 @@ void main() {
       await getIt.get<ImageCacheProvider>().dispose();
     });
 
-    Future<void> pumpThread(WidgetTester tester, {String tid = '1120'}) async {
+    Future<void> pumpThread(
+      WidgetTester tester, {
+      String tid = '1120',
+      String pageNumber = '1',
+      SmiliesRepository? smilies,
+    }) async {
       final info = NotificationInfoRepository();
       final counts = NotificationStateCubit(info);
       final cubit = UserBlockCubit(
@@ -1264,7 +1284,7 @@ void main() {
             builder: (_, _) => ThreadPage(
               threadID: tid,
               findPostID: null,
-              pageNumber: '1',
+              pageNumber: pageNumber,
               overrideReverseOrder: false,
               overrideWithExactOrder: null,
             ),
@@ -1284,6 +1304,7 @@ void main() {
             providers: [
               RepositoryProvider<AuthenticationRepository>.value(value: auth),
               RepositoryProvider<FavoriteRepository>(create: (_) => FavoriteRepository()),
+              if (smilies != null) RepositoryProvider<SmiliesRepository>.value(value: smilies),
             ],
             child: MultiBlocProvider(
               providers: [
@@ -1467,6 +1488,63 @@ void main() {
       expect(offline, isNot(contains(t.threadPage.shareToFriend.title)));
       expect(offline, contains(t.threadPage.copyTid(tid: '1120')));
       await _dispose(tester);
+    });
+
+    testWidgets('with the app renderer on, an offline copy is drawn from its bbcode, never asking for smilies', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await turnOn();
+        await settings.setValue(SettingsKeys.enableAppPostRenderer, true);
+        // Page 2 of a thread with a floor that allows smilies, saved before (plugin 2.7.0: the floors carry their
+        // bbcode). Its message is one the app draws (the forum's spoiler is a custom tag here, kept as html), without a
+        // smiley; no image in the floors: nothing is downloaded in tests.
+        final json = jsonDecode(_answer('thread_v14_smileys.json', _alice.uid!)) as Map<String, dynamic>;
+        for (final post in (json['posts'] as List).cast<Map<String, dynamic>>()) {
+          for (final field in ['author_html', 'body_html', 'signature_html']) {
+            if (post[field] case final String html) {
+              post[field] = html.replaceAll(RegExp('<img[^>]*>'), '');
+            }
+          }
+          if (post['pid'] == 5000) {
+            post['message'] = '[b]粗體[/b] 一段文字';
+          }
+        }
+        await storage.saveOfflineThreadPage(
+          uid: _alice.uid!,
+          tid: 9200046,
+          page: 2,
+          orderType: 0,
+          authorId: 0,
+          body: jsonEncode(json),
+          savedAt: DateTime(2026, 10, 21, 9),
+        );
+      });
+      await _settle(tester, rounds: 2);
+      forum.failure = _Failure.connection;
+      final table = _raw('thread_v14_smilies.json');
+
+      for (final saved in [true, false]) {
+        var fetches = 0;
+        final smilies = SmiliesRepository(
+          store: _SmiliesStore(saved ? table : null),
+          fetch: () async {
+            fetches++;
+            return null;
+          },
+        );
+        await pumpThread(tester, tid: '9200046', pageNumber: '2', smilies: smilies);
+        expect(banner, findsOneWidget);
+        expect(firstFloor(tester), '4999');
+        expect(fetches, 0, reason: 'offline: the forum is never asked for the smilies table');
+        // The floor allowing smilies: drawn from its bbcode with the saved table, its html without one.
+        expect(find.byType(PostBbcodeView), saved ? findsOneWidget : findsNothing, reason: 'table saved: $saved');
+        expect(find.textContaining('一段文字', findRichText: true), saved ? findsOneWidget : findsNothing);
+        expect(find.byType(PostCard), findsWidgets);
+        await _dispose(tester);
+        smilies.dispose();
+      }
+      expect(forum.requests.map((e) => e['page']), ['2', '2'], reason: 'only the thread page, which failed');
     });
 
     testWidgets('the purchase and the red packet need the network', (tester) async {
