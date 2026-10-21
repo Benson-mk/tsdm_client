@@ -46,6 +46,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/antitheft_interceptor.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
@@ -141,6 +142,9 @@ final class _Forum implements HttpClientAdapter {
 
   /// Actions of the forum's app API answered to a live session, by name.
   final api = <String, Map<String, dynamic>>{};
+
+  /// The cookie headers the web thread page (not the JSON mode) was asked with, in order.
+  final webThreadCookies = <String>[];
   final requests = <({String token, String path, String? action})>[];
   String held = 'alice';
   Completer<void>? hold;
@@ -181,6 +185,15 @@ final class _Forum implements HttpClientAdapter {
     }
     if (options.method == 'POST' && query['id'] == 'dsu_medalCenter:memcp' && user != null) {
       return _html('<div id="messagetext" class="alert_right"><p>操作成功</p></div>');
+    }
+    if (path.endsWith('forum.php') && query['mod'] == 'viewthread' && query['tsdmapp'] != 'json') {
+      webThreadCookies.add('${options.headers['cookie'] ?? options.headers['Cookie'] ?? ''}');
+    }
+    if (path.endsWith('forum.php') && query['mod'] == 'viewthread') {
+      // The JSON thread page without the thread (a challenge hidden in it): the web page is asked again.
+      return query['tsdmapp'] == 'json'
+          ? _json({'ok': 0, 'error': 'unknown'})
+          : _html(user == null ? _guestPage : _authedPage(user));
     }
     if (path.endsWith('forum.php')) {
       return user == null ? _html(_guestPage) : _json(_homepageOf(user));
@@ -241,6 +254,40 @@ final class _HoldCookieRead extends QueryInterceptor {
     }
     return executor.runSelect(statement, args);
   }
+}
+
+/// Holds the answers of the JSON thread page at this point of the chain while [gate] is pending (a slow cookie save, a
+/// database busy with the background service): placed right before the antitheft interceptor.
+final class _Gate extends Interceptor {
+  Completer<void>? gate;
+  int passed = 0;
+
+  @override
+  Future<void> onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) async {
+    if (response.requestOptions.uri.queryParameters['tsdmapp'] == 'json') {
+      passed++;
+      if (gate != null && !gate!.isCompleted) {
+        await gate!.future;
+      }
+    }
+    handler.next(response);
+  }
+}
+
+/// No answer: each request fails to connect once its own completer in [holds] completes.
+final class _Unreachable implements HttpClientAdapter {
+  final holds = <Completer<void>>[];
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? rs, Future<void>? cancel) async {
+    final hold = Completer<void>();
+    holds.add(hold);
+    await hold.future;
+    throw DioException.connectionError(requestOptions: options, reason: 'host unreachable');
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 Future<void> _until(bool Function() condition, {String? reason}) async {
@@ -657,6 +704,112 @@ void main() {
     expect(await tester.runAsync(() => storedToken(1000)), 'fresh');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 5));
+  });
+
+  group('a request sent again, a switch, a removal (verification round 2)', () {
+    /// A client kept with the dio [dio], a [_Gate] put right before its antitheft interceptor.
+    (NetClientProvider, _Gate) keptWithGate(_Forum forum) {
+      final dio = Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum;
+      final client = NetClientProvider.build(dio: dio);
+      final gate = _Gate();
+      dio.interceptors.insert(dio.interceptors.indexWhere((e) => e is AntitheftInterceptor), gate);
+      return (client, gate);
+    }
+
+    test('the antitheft retry of a request of the previous session is dropped, not sent with both sessions', () async {
+      final forum = _Forum()..dead.add('alice');
+      appClientsAsk(forum);
+      final auth = authWith();
+      final (client, gate) = keptWithGate(forum);
+      gate.gate = Completer<void>();
+      final thread = client.get('$baseUrl/forum.php?mod=viewthread&tid=7&tsdmapp=json').run();
+      await _until(() => gate.passed == 1, reason: 'the JSON answer past the identity guard');
+      await loginWithPassword(auth, _alice);
+      // Another request of the same kept client: the interceptors of the new session are put in place.
+      expect((await client.get('$baseUrl/home.php?mod=spacecp').run()).isRight(), isTrue);
+      gate.gate!.complete();
+      expect((await thread).getLeft().toNullable(), isA<IdentityChangedException>(), reason: 'dropped');
+      expect(
+        forum.webThreadCookies,
+        isEmpty,
+        reason: 'the web page not asked again with the previous auth cookie in front of the new one',
+      );
+      expect((globalToken(), cachedToken(1000), await storedToken(1000)), ('fresh', 'fresh', 'fresh'));
+    });
+
+    test('control: without a new login the antitheft retry goes out as before', () async {
+      final forum = _Forum();
+      appClientsAsk(forum);
+      final (client, _) = keptWithGate(forum);
+      final thread = await client.get('$baseUrl/forum.php?mod=viewthread&tid=7&tsdmapp=json').run();
+      expect(thread.isRight(), isTrue, reason: '$thread');
+      expect(forum.webThreadCookies, hasLength(1), reason: 'the web page asked once');
+      // The retry copies the cookie header of the first send (the jar adds its cookies once more): her session only.
+      expect(_authRe.allMatches(forum.webThreadCookies.single).map((m) => m[1]).toSet(), {'alice'});
+    });
+
+    test('an account removed while the switch checks it is not brought back; nothing switched', () async {
+      final forum = _Forum()
+        ..held = 'bob'
+        ..hold = Completer<void>();
+      final auth = AuthenticationRepository(
+        user: _alice,
+        clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: cookie,
+        ),
+      );
+      addTearDown(auth.dispose);
+      final epoch = auth.identityEpoch;
+      final switching = auth.switchUser(_bob).run();
+      await _until(() => forum.requests.isNotEmpty, reason: "the check of Bob's login");
+      // Removed on the manage accounts page meanwhile.
+      expect(await storage.deleteCookieByUid(1001), isTrue);
+      forum.hold!.complete();
+      expect((await switching).getLeft().toNullable(), isA<LoginInvalidCredentialException>());
+      expect(await rows(), [1000], reason: 'his row not written back');
+      expect(storage.getCookieByUidSync(1001), isNull);
+      expect((auth.currentUser?.uid, global.userLoginInfo.uid, settings.currentSettings.loginUid), (1000, 1000, 1000));
+      expect((global.session, await storedToken(1000)), ('alice', 'alice'));
+      expect(auth.identityEpoch, epoch, reason: 'the session in use did not change');
+    });
+
+    test('deleteUserLoginInfo drops the cache entry too: a late write of a client of the account does not bring it '
+        'back', () async {
+      final sync = CookieProvider.buildEmpty();
+      expect(await sync.loadCookieFromStorage(_bob), isTrue);
+      expect(await storage.deleteUserLoginInfo(1001), 1);
+      expect(storage.getCookieByUidSync(1001), isNull);
+      await sync.write(baseHost, '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=bob; Path=/;_crt=2"}}');
+      expect(await rows(), [1000]);
+      expect(storage.getCookieByUidSync(1001), isNull);
+    });
+
+    test(
+      'a failed connect of the previous session is told as it is for the same account, refused for another',
+      () async {
+        final unreachable = _Unreachable();
+        getIt.registerFactory<NetClientProvider>(
+          () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = unreachable),
+        );
+        final auth = authWith();
+        final sameAccount = getIt.get<NetClientProvider>().get('$baseUrl/forum.php?mod=viewthread&tid=7').run();
+        await _until(() => unreachable.holds.length == 1);
+        await loginWithPassword(auth, _alice);
+        unreachable.holds[0].complete();
+        expect(
+          (await sameAccount).getLeft().toNullable(),
+          isA<HttpHandshakeFailedException>().having((e) => e.connectionFailed, 'connectionFailed', isTrue),
+          reason: 'a page reads its offline copy on a failed connect',
+        );
+        final otherAccount = getIt.get<NetClientProvider>().get('$baseUrl/forum.php?mod=viewthread&tid=8').run();
+        await _until(() => unreachable.holds.length == 2);
+        // Bob in use now: the request was asked as Alice.
+        await global.loadCookieFromStorage(_bob);
+        unreachable.holds[1].complete();
+        expect((await otherAccount).getLeft().toNullable(), isA<IdentityChangedException>());
+      },
+    );
   });
 
   group('logout', () {

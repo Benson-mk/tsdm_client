@@ -546,9 +546,14 @@ class AuthenticationRepository with LoggerMixin {
         return left(SwitchUserNotAuthedException());
       }
 
+      // Commit the verified session before notifying authentication subscribers. Only into the row it was loaded
+      // from: the manage accounts page removes another account without waiting for the switch, and a row removed
+      // while it was checked must not come back. Nothing switched then, the account in use stays.
+      if (!await candidate.saveCookieToStoredRow()) {
+        warning('switch to uid ${"${userInfo.uid}".obscured(4)}: its saved login was removed meanwhile');
+        return left(LoginInvalidCredentialException());
+      }
       _changedIdentity();
-      // Commit the verified session before notifying authentication subscribers.
-      await candidate.saveCookieToStorage();
       if (!await getIt.get<CookieProvider>().loadCookieFromStorage(parsedUserInfo)) {
         return left(LoginInvalidCredentialException());
       }

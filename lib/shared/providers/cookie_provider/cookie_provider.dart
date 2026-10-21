@@ -232,6 +232,32 @@ final class CookieProvider with LoggerMixin implements Storage {
     );
   }
 
+  /// [saveCookieToStorage] for a provider loaded from a stored row ([loadCookieFromStorage]): only while the row still
+  /// holds the session this provider holds ([StorageProvider.saveCookieOfSession]). False when the account was removed
+  /// meanwhile (its row must not come back) or another session of it was stored.
+  Future<bool> saveCookieToStoredRow() async {
+    if (!_userLoginInfo.isComplete) {
+      warning('can not save user info incomplete cookie to storage');
+      return false;
+    }
+    final storage = getIt.get<StorageProvider>();
+    if (session == null) {
+      // No session to compare (only a cookie with the auth cookie reaches the database): as [saveCookieToStorage],
+      // while the account is still stored.
+      if (storage.getCookieByUidSync(_userLoginInfo.uid!) == null) {
+        return false;
+      }
+      await saveCookieToStorage();
+      return true;
+    }
+    return storage.saveCookieOfSession(
+      username: _userLoginInfo.username!,
+      uid: _userLoginInfo.uid!,
+      cookie: _cookieMap,
+      session: session,
+    );
+  }
+
   /// Delete current login user info and cookie from memory and database.
   void clearUserInfoAndCookie() {
     debug('clear user info and cookie');

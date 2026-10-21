@@ -399,9 +399,12 @@ final class _Identity {
   final int? uid;
   final int generation;
 
+  /// Whether the provider still names that account, whatever session of it it holds.
+  bool get sameAccount => provider.userLoginInfo.uid == uid;
+
   /// Whether the provider still holds that session: neither another account nor another session of the same account
   /// (a login with the password, the switch's check) was loaded since.
-  bool get current => provider.userLoginInfo.uid == uid && provider.generation == generation;
+  bool get current => sameAccount && provider.generation == generation;
 }
 
 /// The cookie interceptors of a client of the global cookie ([_IdentityGuard], [CookieManager] with its jar on
@@ -507,6 +510,14 @@ final class _IdentityGuard extends Interceptor with LoggerMixin {
 
   final _Identity _identity;
 
+  /// Key of the request's extra naming the session ([_Identity]) the request was first sent with.
+  ///
+  /// A request sent again with the same options (the antitheft interceptor's retry, through the client's dio) carries
+  /// the cookie header of its first send: sent again under another set of interceptors (another session of the
+  /// account was loaded meanwhile), it would go out with the previous auth cookie before the new one, and its answer
+  /// be taken as one to the new session.
+  static const _identityKey = 'tsdm_identity';
+
   bool get _changed => !_identity.current;
 
   DioException _dropped(RequestOptions options) => DioException(
@@ -518,11 +529,13 @@ final class _IdentityGuard extends Interceptor with LoggerMixin {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    if (_changed) {
-      warning('drop request of a previous account: ${options.method} ${options.uri.path}');
+    final firstSentAs = options.extra[_identityKey];
+    if (_changed || (firstSentAs != null && !identical(firstSentAs, _identity))) {
+      warning('drop request of a previous account or session: ${options.method} ${options.uri.path}');
       handler.reject(_dropped(options));
       return;
     }
+    options.extra = {...options.extra, _identityKey: _identity};
     handler.next(options);
   }
 
@@ -539,6 +552,12 @@ final class _IdentityGuard extends Interceptor with LoggerMixin {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (_changed && err.error is! IdentityChangedException) {
+      if (err.response == null && _identity.sameAccount) {
+        // No answer (the forum not reached, a timeout): nothing of the previous session to drop, and the failure is
+        // the same for the session of the account in use now (a page reads its offline copy on a failed connect).
+        handler.next(err);
+        return;
+      }
       // A failed answer for a previous account or session is no failure of the one in use either.
       warning('drop failed answer for a previous account or session: ${err.requestOptions.uri.path}');
       handler.reject(_dropped(err.requestOptions));

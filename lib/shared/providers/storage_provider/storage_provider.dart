@@ -190,6 +190,8 @@ class StorageProvider with LoggerMixin {
   /// the account.
   Future<int> deleteUserLoginInfo(int uid) async {
     _wroteCookieOf(uid);
+    // As every removal: a client of the account must not find its cookie in the cache any more.
+    _cookieCache.removeWhere((e, _) => e.uid == uid);
     final deleted = await CookieDao(_db).deleteCookieByUid(uid);
     await _deleteAccountMarks(uid);
     return deleted;
