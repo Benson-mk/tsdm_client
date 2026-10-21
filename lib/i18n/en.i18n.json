@@ -1163,7 +1163,9 @@
   },
   "forumCard": {
     "links": "Links",
-    "subForums": "Subreddit"
+    "subForums": "Subreddit",
+    "privateForum": "Private forum",
+    "redirectForum": "Links to an external address"
   },
   "networkList": {
     "actionRefresh": "Refresh",

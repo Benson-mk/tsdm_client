@@ -1,4 +1,6 @@
 import 'package:collection/collection.dart';
+import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/universal_html.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/homepage/models/models.dart';
@@ -20,7 +22,8 @@ const _rankBlockId = 5;
 ///
 /// The homepage tab, the topics tab and the activities page read it through the path the page needs, so that the
 /// web page is parsed as it always was and the structured answer is never parsed from a `document` (which a lean
-/// answer, `nodoc=1`, does not even carry).
+/// answer, `nodoc=1`, does not even carry), but for the "我收藏的版块" panel of a plugin before 2.8.1
+/// ([favoritesPanelNeedsDocument]).
 sealed class ForumHomePage {
   const ForumHomePage();
 
@@ -103,7 +106,8 @@ final class ForumHomeApiPage extends ForumHomePage {
 /// page, another page's answer, an older plugin's answer (`type: index` without `schema`), a failed build.
 ///
 /// The page is then built by `homepageStateFromApi` and [forumGroupsFromApi]; the `document` of the answer, when
-/// there is one, is never parsed.
+/// there is one, is never parsed, but for the "我收藏的版块" panel of a plugin before 2.8.1, which the answer names by
+/// id only ([favoritesPanelNeedsDocument]).
 Map<String, dynamic>? indexApiAnswerOf(Object? data) {
   final json = tsdmAppAnswerJson(data);
   if (json == null) {
@@ -364,11 +368,9 @@ List<PinnedThreadGroup> parsePinnedThreadGroupsFromDocument(uh.Document document
 
 /// The forum groups of a structured homepage answer [json] for the topics tab, as `buildGroupListFromDocument`
 /// reads them from the web page: the "我收藏的版块" panel first when the viewer has favorite forums
-/// (`favorite_forums`, each looked up among the forums of the categories, or among their subforums, which the page
-/// lists by name only; one listed nowhere, a forum the viewer may not see, is left out of the panel but still
-/// seeded, see [favoriteForumIdsOf]), then every category (`forum.php?gid=`) with its forums ([Forum.fromApi]: the
-/// latest thread, the subforums the forum's setting lists) and its moderators (`moderators`, the names of the page's
-/// 分区版主 row, plugin 2.4.0; none before).
+/// ([_favoritesPanelOf]), then every category (`forum.php?gid=`) with its forums ([Forum.fromApi]: the latest thread,
+/// the subforums the forum's setting lists) and its moderators (`moderators`, the names of the page's 分区版主 row,
+/// plugin 2.4.0; none before).
 List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
   final categories = _list(json['categories']);
   final groups = categories
@@ -383,15 +385,52 @@ List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
         ),
       )
       .toList();
+  final favorites = _favoritesPanelOf(json, categories, groups);
+  if (favorites.isEmpty) {
+    return groups;
+  }
+  return [
+    ForumGroup(name: '我收藏的版块', url: 'home.php?mod=space&do=favorite&type=forum', forumList: favorites),
+    ...groups,
+  ];
+}
+
+/// The forums of the "我收藏的版块" panel of a structured homepage answer [json], in the page's order; empty when the
+/// page prints no panel.
+///
+/// * Plugin 2.8.1 gives the panel as the page prints it (`favorites`, [Forum.fromApi]): each forum's own counts (the
+///   categories add the subforums into their forum's), a favorite subforum with all of its data, a forum the viewer
+///   may not enter ([Forum.isPrivate]) and a link forum ([Forum.redirectUrl]) as the page shows them.
+/// * Before (plugin 2.3.0 to 2.8.0) the answer names the favorites by id only (`favorite_forums`); the repository
+///   then asks the page once more with its `document` ([favoritesPanelNeedsDocument]) and the panel is read from the
+///   page ([favoriteForumsOfDocument]).
+/// * Without either (that request failed, or the document holds no panel it can read) each favorite is looked up
+///   among the forums of the categories, or among their subforums, which the answer lists by name only; one listed
+///   nowhere, a forum the viewer may not see, is left out of the panel but still seeded, see [favoriteForumIdsOf].
+List<Forum> _favoritesPanelOf(
+  Map<String, dynamic> json,
+  List<Map<String, dynamic>> categories,
+  List<ForumGroup> groups,
+) {
+  if (json.containsKey('favorites')) {
+    return _list(json['favorites']).where((e) => _int(e['fid']) > 0).map(Forum.fromApi).toList();
+  }
   final favoriteIds = favoriteForumIdsOf(json);
   if (favoriteIds.isEmpty) {
-    return groups;
+    return const [];
+  }
+  if (json['document'] is String) {
+    final panel = favoriteForumsOfDocument(tsdmAppPageDocument(json), fids: favoriteIds);
+    if (panel != null) {
+      return panel;
+    }
+    talker.info('favorite forums panel not read from the document of the homepage answer, looked up in the categories');
   }
   final forums = {
     for (final g in groups)
       for (final f in g.forumList) f.forumID: f,
   };
-  // A subforum is listed under its forum by id and name only: the panel shows it with those, as the page does.
+  // A subforum is listed under its forum by id and name only: the panel shows it with those.
   final subforums = {
     for (final c in categories)
       for (final f in _list(c['forums']))
@@ -405,13 +444,170 @@ List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
       '${favoriteIds.where((e) => !forums.containsKey(e) && !subforums.containsKey(e))}',
     );
   }
-  if (favorites.isEmpty) {
-    return groups;
+  return favorites;
+}
+
+/// Whether the "我收藏的版块" panel of a structured homepage answer [json] is only on the web page: the viewer has
+/// favorite forums (`favorite_forums`), the plugin is older than 2.8.1 (no `favorites`, the panel's own data) and the
+/// answer was asked lean (`nodoc=1`, no `document`).
+///
+/// The answer then names the favorites by id only, and the categories cannot stand in for the panel: their counts
+/// include the subforums', and a favorite subforum is listed there by name only, if at all. `ForumHomeRepository` asks
+/// the page once more without `nodoc=1`, and the panel is read from its `document` ([favoriteForumsOfDocument]). No
+/// such request for an answer of plugin 2.8.1, a guest's, a member's without favorites, or the forum's message.
+bool favoritesPanelNeedsDocument(Map<String, dynamic> json) =>
+    json['ok'] == 1 &&
+    !json.containsKey('favorites') &&
+    json['document'] is! String &&
+    favoriteForumIdsOf(json).isNotEmpty;
+
+/// The forums of the "我收藏的版块" panel of the web page [document] (`div#category_0`), as the page prints them and in
+/// its order; null when the page has no panel, or none of its forums can be read.
+///
+/// Each forum is read by the readers of the forum lists ([Forum.fromFlRowNode] for the list layout of up to three
+/// favorites, [Forum.fromFlGNode] for the grid of more): the panel's own counts, the icon, the latest thread (only its
+/// time in the grid, as the page prints). What those readers leave out is added:
+/// * a forum the viewer may not enter prints "私密版块" in place of the latest thread ([Forum.isPrivate]);
+/// * a link forum (its links open a new window, the latest thread is the "链接到外部地址" link, or "私密版块" for one
+///   the viewer may not enter) prints no counts: the list reader drops such a row and the grid reader gives it -1
+///   counts, so it is built from its name and icon with 0 counts, and [Forum.redirectUrl] is the forum's own page,
+///   which the forum redirects (the page prints no address);
+/// * a forum bound to a domain of its own links to that domain, without its id: it takes the id at its place in
+///   [fids] (`favorite_forums`, the panel's forums in the panel's order) when the panel has as many forums;
+/// * the list layout prints an anonymous author as text after the time ("2026-9-23 21:58 匿名"), which its reader
+///   does not take apart.
+List<Forum>? favoriteForumsOfDocument(uh.Document document, {List<int> fids = const []}) {
+  final panel = document.querySelector('div#category_0');
+  if (panel == null) {
+    return null;
   }
-  return [
-    ForumGroup(name: '我收藏的版块', url: 'home.php?mod=space&do=favorite&type=forum', forumList: favorites),
-    ...groups,
-  ];
+  final cells = <_FavoriteCell>[];
+  for (final row in panel.querySelectorAll('table > tbody > tr')) {
+    if (row.children.isEmpty) {
+      continue;
+    }
+    if (row.querySelector('h2') != null) {
+      cells.add(
+        _FavoriteCell(
+          node: row,
+          read: Forum.fromFlRowNode,
+          title: row.querySelector('td > h2 > a'),
+          icon: row.querySelector('td.fl_icn img'),
+          slot: row.querySelector('td.fl_by > div'),
+          hasCounts: row.querySelector('td.fl_i span') != null,
+        ),
+      );
+      continue;
+    }
+    // The grid pads its last row with empty cells.
+    for (final cell in row.querySelectorAll('td.fl_g').where((e) => e.children.isNotEmpty)) {
+      final items = cell.querySelectorAll('dl > dd');
+      cells.add(
+        _FavoriteCell(
+          node: cell,
+          read: Forum.fromFlGNode,
+          title: cell.querySelector('dl > dt > a'),
+          icon: cell.querySelector('div.fl_icn_g img'),
+          // After the counts (`<em>`, none for a link forum), before what a plugin adds (`index_favforum_extra`).
+          slot: items.firstWhereOrNull((e) => e.querySelector('em') == null),
+          hasCounts: items.any((e) => e.querySelector('em') != null),
+        ),
+      );
+    }
+  }
+  final byPlace = cells.length == fids.length;
+  final forums = cells.indexed
+      .map((e) => _favoriteForumOf(e.$2, placeFid: byPlace ? fids[e.$1] : null))
+      .whereType<Forum>()
+      .toList();
+  return forums.isEmpty ? null : forums;
+}
+
+/// A forum of the favorites panel as the page prints it: the row (list layout) or cell (grid) [node], the reader of
+/// its layout ([read]), its [title] link, its [icon], the [slot] of its latest thread, and whether it prints counts.
+final class _FavoriteCell {
+  const _FavoriteCell({
+    required this.node,
+    required this.read,
+    required this.title,
+    required this.icon,
+    required this.slot,
+    required this.hasCounts,
+  });
+
+  final uh.Element node;
+  final Forum? Function(uh.Element) read;
+  final uh.Element? title;
+  final uh.Element? icon;
+  final uh.Element? slot;
+  final bool hasCounts;
+}
+
+/// The forum of a [cell] of the favorites panel, see [favoriteForumsOfDocument]; [placeFid] is its id by its place in
+/// the panel, for a forum whose links do not name it.
+Forum? _favoriteForumOf(_FavoriteCell cell, {required int? placeFid}) {
+  final title = cell.title;
+  final href = title?.attributes['href'];
+  if (title != null && placeFid != null && (href?.uriQueryParameter('fid')?.parseToInt() == null)) {
+    // Bound to a domain of its own: the readers take the id from the link.
+    title.attributes['href'] = 'forum.php?mod=forumdisplay&fid=$placeFid';
+  }
+  final slotText = cell.slot?.innerText.trim();
+  final private = slotText == '私密版块' || slotText == '私密版塊';
+  final slotLink = cell.slot?.querySelector('a');
+  final link =
+      (slotLink != null && !(slotLink.attributes['href']?.contains('tid=') ?? false)) ||
+      (title?.attributes['target'] == '_blank' && !cell.hasCounts);
+  if (!link) {
+    final forum = cell.read(cell.node)?.copyWith(isPrivate: private);
+    return forum == null ? null : _withAnonymousAuthor(forum, cell.slot);
+  }
+  final url = title?.firstHref();
+  final fid = url?.uriQueryParameter('fid')?.parseToInt();
+  final name = title?.firstEndDeepText()?.trim();
+  if (url == null || fid == null || name == null) {
+    talker.error('failed to build link forum of the favorites panel: fid=$fid, name=$name');
+    return null;
+  }
+  return Forum(
+    forumID: fid,
+    url: url,
+    name: name,
+    iconUrl: cell.icon?.dataOriginalOrSrcImgUrl() ?? '',
+    threadCount: 0,
+    replyCount: 0,
+    latestThreadUrl: null,
+    latestThreadTime: null,
+    latestThreadTimeText: null,
+    threadTodayCount: null,
+    isPrivate: private,
+    redirectUrl: '$baseUrl/forum.php?mod=forumdisplay&fid=$fid',
+  );
+}
+
+/// [forum] with the anonymous author of its latest thread that the list layout prints as text after the time
+/// ("2026-9-23 21:58 匿名", or after the `<span title>` of a recent time) in the `<cite>` of [slot]; [forum] as it is
+/// when the author is a link (a member) or there is no latest thread.
+Forum _withAnonymousAuthor(Forum forum, uh.Element? slot) {
+  final cite = slot?.querySelector('cite');
+  if (forum.latestThreadUrl == null || cite == null || cite.querySelector('a') != null) {
+    return forum;
+  }
+  final span = cite.querySelector('span[title]');
+  if (span != null) {
+    final author = cite.innerText.trim().substring(span.innerText.trim().length).trim();
+    return author.isEmpty ? forum : forum.copyWith(latestThreadUserName: author);
+  }
+  final words = cite.innerText.trim().split(RegExp(r'\s+'));
+  if (words.length < 3) {
+    return forum;
+  }
+  final timeText = '${words[0]} ${words[1]}';
+  return forum.copyWith(
+    latestThreadTime: forum.latestThreadTime ?? timeText.parseToDateTimeUtc8(),
+    latestThreadTimeText: timeText,
+    latestThreadUserName: words.skip(2).join(' '),
+  );
 }
 
 /// The forums the viewer of a structured homepage answer [json] has favorited (`favorite_forums`, the ids the

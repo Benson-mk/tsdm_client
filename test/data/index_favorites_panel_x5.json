@@ -1,0 +1,391 @@
+{
+ "ok": 1,
+ "type": "index",
+ "schema": 5,
+ "api": 1,
+ "uid": 35,
+ "user": {
+  "uid": 35,
+  "username": "ag_low2",
+  "avatar": "https://www.tsdm39.com/data/avatar/noavatar.svg"
+ },
+ "favorite_forums": [
+  15,
+  2,
+  26,
+  7,
+  29,
+  28
+ ],
+ "favorites": [
+  {
+   "fid": 15,
+   "name": "GLTEST 子版塊（型別 sub）",
+   "description": "tsdmapp 2.8.1 子版塊說明",
+   "threads": 10,
+   "posts": 10,
+   "todayposts": 0,
+   "icon": "https://www.tsdm39.com/data/attachment/common/tsdmapp281_sub.png",
+   "lastpost": {
+    "tid": 9199857,
+    "subject": "1.9.0 子版发帖 758113",
+    "author": "ag_low2",
+    "authorid": 0,
+    "dateline": 1792256772
+   },
+   "redirect": "",
+   "private": 0
+  },
+  {
+   "fid": 2,
+   "name": "📢 公告 & 新手報到",
+   "description": "",
+   "threads": 47,
+   "posts": 147,
+   "todayposts": 0,
+   "icon": "",
+   "lastpost": {
+    "tid": 9200045,
+    "subject": "tsdmapp 2.7.0 自訂代碼 I 460278",
+    "author": "ag_low2",
+    "authorid": 0,
+    "dateline": 1792538396
+   },
+   "redirect": "",
+   "private": 0
+  },
+  {
+   "fid": 26,
+   "name": "BU 黑名單權限版 G",
+   "description": "",
+   "threads": 10,
+   "posts": 10,
+   "todayposts": 0,
+   "icon": "",
+   "lastpost": null,
+   "redirect": "",
+   "private": 0
+  },
+  {
+   "fid": 7,
+   "name": "神作殿堂",
+   "description": "经典神作回顾与安利推荐",
+   "threads": 27,
+   "posts": 2300,
+   "todayposts": 0,
+   "icon": "",
+   "lastpost": {
+    "tid": 9199201,
+    "subject": "ATP JSON 89328",
+    "author": "ag_low2",
+    "authorid": 0,
+    "dateline": 1790171889
+   },
+   "redirect": "",
+   "private": 0
+  },
+  {
+   "fid": 29,
+   "name": "BU 通知驗收版 H（1789171425534）",
+   "description": "",
+   "threads": 0,
+   "posts": 0,
+   "todayposts": 0,
+   "icon": "",
+   "lastpost": null,
+   "redirect": "https://example.com/tsdmapp281",
+   "private": 0
+  },
+  {
+   "fid": 28,
+   "name": "BU群組855956",
+   "description": "黑名單 lists 區驗收用（855956）",
+   "threads": 3,
+   "posts": 3,
+   "todayposts": 0,
+   "icon": "",
+   "lastpost": {
+    "tid": 9199067,
+    "subject": "BU lists ag_mid 在群組的主題（GT3-855956）",
+    "author": "ag_mid",
+    "authorid": 0,
+    "dateline": 1789167720
+   },
+   "redirect": "",
+   "private": 0
+  }
+ ],
+ "categories": [
+  {
+   "fid": 1,
+   "name": "🏠 論壇大廳",
+   "moderators": [],
+   "forums": [
+    {
+     "fid": 2,
+     "name": "📢 公告 & 新手報到",
+     "description": "",
+     "threads": 57,
+     "posts": 157,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9200045,
+      "subject": "tsdmapp 2.7.0 自訂代碼 I 460278",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1792538396
+     },
+     "subforums": []
+    },
+    {
+     "fid": 31,
+     "name": "PS 每日签到验收版",
+     "description": "",
+     "threads": 44,
+     "posts": 280,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199961,
+      "subject": "2026年10月20日签到记录贴",
+      "author": "ag_t13",
+      "authorid": 0,
+      "dateline": 1792505548
+     },
+     "subforums": []
+    },
+    {
+     "fid": 30,
+     "name": "BD 新人报到验收版",
+     "description": "",
+     "threads": 10,
+     "posts": 10,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199464,
+      "subject": "ag_low 的新人報到",
+      "author": "ag_low",
+      "authorid": 0,
+      "dateline": 1791871352
+     },
+     "subforums": []
+    }
+   ]
+  },
+  {
+   "fid": 24,
+   "name": "BU 黑名單驗收分區",
+   "moderators": [],
+   "forums": [
+    {
+     "fid": 29,
+     "name": "BU 通知驗收版 H（1789171425534）",
+     "description": "",
+     "threads": 0,
+     "posts": 0,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": null,
+     "subforums": []
+    },
+    {
+     "fid": 25,
+     "name": "BU 黑名單驗收版 F",
+     "description": "",
+     "threads": 41,
+     "posts": 169,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199885,
+      "subject": "[BD][VCB-Studio][FX战士久留美][FX Fighter Kurumi-chan][FX戦士くるみちゃん][BDRip ...",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1792315819
+     },
+     "subforums": []
+    }
+   ]
+  },
+  {
+   "fid": 3,
+   "name": "🌸 動漫番劇區",
+   "moderators": [],
+   "forums": [
+    {
+     "fid": 6,
+     "name": "新番追蹤",
+     "description": "每周新番追番、吐槽与剧情讨论",
+     "threads": 209,
+     "posts": 648,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199892,
+      "subject": "[BD][Jsum@U2][乱世千金倪亚‧利斯顿转生为娇弱千金的弑神武人华丽无双录][凶乱令嬢ニ ...",
+      "author": "神代小祈",
+      "authorid": 0,
+      "dateline": 1792376472
+     },
+     "subforums": []
+    },
+    {
+     "fid": 7,
+     "name": "神作殿堂",
+     "description": "经典神作回顾与安利推荐",
+     "threads": 27,
+     "posts": 2300,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199201,
+      "subject": "ATP JSON 89328",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1790171889
+     },
+     "subforums": []
+    },
+    {
+     "fid": 8,
+     "name": "聲優茶話會",
+     "description": "声优情报、广播剧与作品交流",
+     "threads": 74,
+     "posts": 369,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 1111,
+      "subject": "BR測1788337992968·B14·chunk20",
+      "author": "gl_bob",
+      "authorid": 0,
+      "dateline": 1788337992
+     },
+     "subforums": []
+    }
+   ]
+  },
+  {
+   "fid": 4,
+   "name": "🎮 遊戲次元",
+   "moderators": [],
+   "forums": [
+    {
+     "fid": 9,
+     "name": "手遊情報站",
+     "description": "手机游戏攻略、抽卡与情报分享",
+     "threads": 60,
+     "posts": 93,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199938,
+      "subject": "TM120版主影子 970500",
+      "author": "ag_mod",
+      "authorid": 0,
+      "dateline": 1792446011
+     },
+     "subforums": []
+    },
+    {
+     "fid": 10,
+     "name": "Galgame・美少女遊戲",
+     "description": "Galgame / 美少女游戏讨论与感想",
+     "threads": 16,
+     "posts": 37,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199941,
+      "subject": "TM目標主題 284022",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1792446315
+     },
+     "subforums": []
+    },
+    {
+     "fid": 11,
+     "name": "主機・PC 遊戲",
+     "description": "主机与 PC 游戏综合讨论",
+     "threads": 346,
+     "posts": 359,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199879,
+      "subject": "[转载][BD+GD][230201] 测试歌手 - 多网盘36845 [FLAC]",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1792293941
+     },
+     "subforums": []
+    }
+   ]
+  },
+  {
+   "fid": 5,
+   "name": "🎨 創作交流所",
+   "moderators": [],
+   "forums": [
+    {
+     "fid": 12,
+     "name": "繪圖・插畫",
+     "description": "原创绘画、插画作品与教程",
+     "threads": 187,
+     "posts": 374,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199945,
+      "subject": "《dlexport无free测试822044》[測試作者]",
+      "author": "ag_admin",
+      "authorid": 0,
+      "dateline": 1792472833
+     },
+     "subforums": []
+    },
+    {
+     "fid": 13,
+     "name": "COS・攝影",
+     "description": "Cosplay 与摄影作品分享",
+     "threads": 2,
+     "posts": 2,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199449,
+      "subject": "ag_admin 的 2026 年度分享",
+      "author": "ag_admin",
+      "authorid": 0,
+      "dateline": 1791691259
+     },
+     "subforums": []
+    },
+    {
+     "fid": 14,
+     "name": "同人創作",
+     "description": "同人小说、漫画与二次创作",
+     "threads": 7,
+     "posts": 7,
+     "todayposts": 0,
+     "icon": "",
+     "lastpost": {
+      "tid": 9199883,
+      "subject": "《测试原档65139》[八月八][1-4][青文][HyRead]",
+      "author": "ag_low2",
+      "authorid": 0,
+      "dateline": 1792302791
+     },
+     "subforums": []
+    }
+   ]
+  }
+ ],
+ "formhash": "f1f2f3f4",
+ "timeoffset": 8,
+ "checknewpm": "",
+ "document": "<div id=\"ct\" class=\"wp cl\">\n<div class=\"mn\">\n<div class=\"fl bm\">\n<div class=\"bm bmw  flg cl\">\n<div class=\"bm_h cl\">\n<span class=\"o\">\n<em id=\"category_0_img\" class=\"tg_no\" title=\"收起/展开\" onclick=\"toggle_collapse('category_0');\"></em>\n</span>\n<h2><a href=\"home.php?mod=space&amp;do=favorite&amp;type=forum\">我收藏的版块</a></h2>\n</div>\n<div id=\"category_0\" class=\"bm_c\" style=\"\">\n<table cellspacing=\"0\" cellpadding=\"0\" class=\"fl_tb\">\n<tr><td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\n<a href=\"forum.php?mod=forumdisplay&fid=15\"><img src=\"data/attachment/common/tsdmapp281_sub.png\"  align=\"left\" alt=\"GLTEST 子版塊（型別 sub）\" /></a></div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=15\">GLTEST 子版塊（型別 sub）</a></dt>\n<dd><em>主题: 10</em>, <em>帖数: 10</em></dd><dd>\n<a href=\"forum.php?mod=redirect&amp;tid=9199857&amp;goto=lastpost#lastpost\">最后发表: <span title=\"2026-10-18 01:06\">3&nbsp;天前</span></a>\n</dd>\n</dl>\n</td><td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\n<a href=\"forum.php?mod=forumdisplay&fid=2\" title=\"📢 公告 & 新手報到\"><img src=\"template/discuzx5/static//images/forum.png\" alt=\"📢 公告 & 新手報到\" /></a>\n</div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=2\">📢 公告 & 新手報到</a></dt>\n<dd><em>主题: 47</em>, <em>帖数: 147</em></dd><dd>\n<a href=\"forum.php?mod=redirect&amp;tid=9200045&amp;goto=lastpost#lastpost\">最后发表: <span title=\"2026-10-21 07:19\">9&nbsp;小时前</span></a>\n</dd>\n</dl>\n</td><td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\ntsdmapp281_private.png</div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=26\">BU 黑名單權限版 G</a></dt>\n<dd><em>主题: 10</em>, <em>帖数: 10</em></dd><dd>\n从未\n</dd>\n</dl>\n</td><td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\n<a href=\"forum.php?mod=forumdisplay&fid=7\" title=\"神作殿堂\"><img src=\"template/discuzx5/static//images/forum.png\" alt=\"神作殿堂\" /></a>\n</div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=7\">神作殿堂</a></dt>\n<dd><em>主题: 27</em>, <em>帖数: 2300</em></dd><dd>\n<a href=\"forum.php?mod=redirect&amp;tid=9199201&amp;goto=lastpost#lastpost\">最后发表: 2026-9-23 21:58</a>\n</dd>\n</dl>\n</td><td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\n<a href=\"forum.php?mod=forumdisplay&fid=29\" target=\"_blank\" title=\"BU 通知驗收版 H（1789171425534）\"><img src=\"template/discuzx5/static//images/forum.png\" alt=\"BU 通知驗收版 H（1789171425534）\" /></a>\n</div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=29\" target=\"_blank\">BU 通知驗收版 H（1789171425534）</a></dt>\n<dd>\n<a href=\"forum.php?mod=forumdisplay&fid=29\" class=\"xi2\">链接到外部地址</a>\n</dd>\n</dl>\n</td></tr>\n<tr class=\"fl_row\">\n<td class=\"fl_g\" width=\"19.9%\">\n<div class=\"fl_icn_g\">\n<a href=\"forum.php?mod=forumdisplay&fid=28\" title=\"BU群組855956\"><img src=\"template/discuzx5/static//images/forum.png\" alt=\"BU群組855956\" /></a>\n</div>\n<dl>\n<dt><a href=\"forum.php?mod=forumdisplay&fid=28\">BU群組855956</a></dt>\n<dd><em>主题: 3</em>, <em>帖数: 3</em></dd><dd>\n<a href=\"forum.php?mod=redirect&amp;tid=9199067&amp;goto=lastpost#lastpost\">最后发表: 2026-9-12 07:02</a>\n</dd>\n</dl>\n</td><td class=\"fl_g\" width=\"19.9%\"></td><td class=\"fl_g\" width=\"19.9%\"></td><td class=\"fl_g\" width=\"19.9%\"></td><td class=\"fl_g\" width=\"19.9%\"></td></tr>\n</table>\n\n</div>\n</div>\n</div>\n</div>\n</div>\n"
+}

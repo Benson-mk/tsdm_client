@@ -9,9 +9,12 @@
 /// `document` of such an answer, which a lean answer (`nodoc=1`) does not carry. An older plugin's answer (no
 /// `schema`) and the web page are kept as the document ([ForumHomeWebPage]) and parsed as before.
 ///
-/// The fixtures `index_v5_*.json` are answers of the test forum (Discuz X5.0.2 with plugin 2.3.0, 2026-10-20):
+/// The fixtures `index_v5_*.json` are answers of the test forum (Discuz X5.0.2 with plugin 2.3.0, 2026-10-20; fetched
+/// again with plugin 2.8.1 on 2026-10-21, which adds `favorites`: the tests of the panel from `favorite_forums` drop
+/// it, test_227 covers it):
 /// `index_v5_member.json` keeps a `document` on purpose, a garbage one (other numbers, another tab), to prove that
-/// path never reads it; `index_v5_guest.json` is lean. `s3_index.json` is the answer of plugin 1.3.0 to the same
+/// path never reads it (but for the favorites panel of a plugin before 2.8.1, which finds no panel in it and looks the
+/// favorites up among the categories); `index_v5_guest.json` is lean. `s3_index.json` is the answer of plugin 1.3.0 to the same
 /// page, parsed from its `document` as it always was.
 library;
 
@@ -58,9 +61,10 @@ String _raw(String name) => File('$_dir/$name').readAsStringSync();
 
 Map<String, dynamic> _json(String name) => jsonDecode(_raw(name)) as Map<String, dynamic>;
 
-/// The member's answer with [changes] applied on top (a copy).
+/// The member's answer with [changes] applied on top (a copy), as plugin 2.3.0 to 2.8.0 answers it: without the
+/// `favorites` of plugin 2.8.1 (test_227), the "我收藏的版块" panel named by `favorite_forums` only.
 Map<String, dynamic> _member([Map<String, Object?> changes = const {}]) => {
-  ..._json('index_v5_member.json'),
+  ...(_json('index_v5_member.json')..remove('favorites')),
   ...changes,
 };
 
@@ -387,7 +391,11 @@ void main() {
       expect(checkin.url, '$baseUrl/forum.php?mod=forumdisplay&fid=31');
       expect(checkin.threadCount, 44);
       expect(checkin.replyCount, 280);
-      expect(checkin.threadTodayCount, isNull, reason: 'the fixture tool pins every todayposts to 0; Forum.fromApi maps non-zero elsewhere');
+      expect(
+        checkin.threadTodayCount,
+        isNull,
+        reason: 'the fixture tool pins every todayposts to 0; Forum.fromApi maps non-zero elsewhere',
+      );
       expect(checkin.latestThreadUrl, '$baseUrl/forum.php?mod=redirect&tid=9199961&goto=lastpost');
       expect(checkin.latestThreadUserName, 'ag_t13');
       expect(checkin.latestThreadTitle, isNotEmpty);
@@ -400,7 +408,7 @@ void main() {
       expect(empty.latestThreadUserName, isNull);
       expect(favoriteForumIdsOf(_member({'favorite_forums': <Object?>[]})), isEmpty);
 
-      // The viewer of the fixture favorited one forum: the panel as the page prints it, first.
+      // The viewer of the fixture favorited one forum: the panel as the page prints it (plugin 2.8.1), first.
       final real = forumGroupsFromApi(_json('index_v5_member.json'));
       expect(favoriteForumIdsOf(_json('index_v5_member.json')), [2]);
       expect(real, hasLength(6));
@@ -471,7 +479,7 @@ void main() {
     });
 
     test('the subforums the forum lists', () {
-      final json = _json('index_v5_member.json');
+      final json = _member();
       final categories = (json['categories'] as List).cast<Map<String, dynamic>>();
       final first = categories.first['forums'] as List;
       first[0] = {
@@ -487,7 +495,8 @@ void main() {
         ('子版二', '$baseUrl/forum.php?mod=forumdisplay&fid=102'),
       ]);
 
-      // A favorite subforum: listed in the panel by its id and name, as the page lists it.
+      // A favorite subforum looked up among the categories (no `favorites`, no document with the panel): listed by
+      // its id and name, all the categories tell of it.
       json['favorite_forums'] = [102, 6];
       final panel = forumGroupsFromApi(json).first;
       expect(panel.isFavorites, isTrue);

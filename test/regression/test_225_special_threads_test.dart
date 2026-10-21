@@ -1912,8 +1912,8 @@ void main() {
     });
   });
 
-  test('the app expects plugin 2.8.0', () {
-    expect(expectedTsdmAppVersion, '2.8.0');
+  test('the app expects plugin 2.8.0 or later', () {
+    expect(compareTsdmAppVersions(expectedTsdmAppVersion, '2.8.0'), greaterThanOrEqualTo(0));
   });
 }
 

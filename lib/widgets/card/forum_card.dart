@@ -10,6 +10,7 @@ import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/utils/browser_launcher.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/network_indicator_image.dart';
@@ -18,6 +19,11 @@ import 'package:tsdm_client/widgets/network_indicator_image.dart';
 ///
 /// Header (icon, name, time of the latest thread), counters as pills, then the optional shortcuts (latest thread,
 /// links and sub forums) in inner blocks.
+///
+/// As the forum's pages print them, a forum the viewer may not enter says "私密版块" where the time of its latest
+/// thread goes ([Forum.isPrivate]), and a link forum ([Forum.redirectUrl]) says "链接到外部地址" there and shows no
+/// counters; tapping a link forum opens its address in a browser (web addresses only), as the page opens it in a new
+/// window.
 ///
 /// [large] is for the forum lists of desktop windows (see [forumCardListLayout]): the forum picture (up to 240x120,
 /// fitted whole) and a 24px name share the card width, and the three counters are equal blocks ([ForumCardStat])
@@ -329,6 +335,7 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
     final textTheme = Theme.of(context).textTheme;
     final tr = context.t.topicPage;
     final large = widget.large;
+    final isLink = widget.forum.redirectUrl != null;
 
     final shortcut = StreamBuilder(
       stream: settingsStream,
@@ -344,6 +351,22 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
     );
 
     Future<void> openForum() async {
+      final redirect = widget.forum.redirectUrl;
+      if (redirect != null) {
+        // A browser only: the forum's own page (a link forum read from the web page) is a link of this app, which a
+        // generic launch may open in the app again (#105).
+        final uri = Uri.tryParse(redirect);
+        if (uri == null || !(uri.isScheme('http') || uri.isScheme('https')) || uri.host.isEmpty) {
+          error('link forum ${widget.forum.forumID} has no web address, not opened');
+          return;
+        }
+        try {
+          await openInExternalBrowser(uri);
+        } on Object catch (e, st) {
+          handleRaw(e, st);
+        }
+        return;
+      }
       await context.pushNamed(
         ScreenPaths.forum,
         pathParameters: <String, String>{'fid': '${widget.forum.forumID}'},
@@ -359,39 +382,41 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildLargeHeader(context),
-            const SizedBox(height: 18),
-            // Three equal blocks filling the bottom of the card.
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: ForumCardStat(
-                    icon: Icons.forum_outlined,
-                    caption: _statCaption(tr.threads),
-                    value: '${widget.forum.threadCount}',
-                    tooltip: '${tr.threads}${widget.forum.threadCount}',
+            // Three equal blocks filling the bottom of the card; a link forum has no counts.
+            if (!isLink) ...[
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ForumCardStat(
+                      icon: Icons.forum_outlined,
+                      caption: _statCaption(tr.threads),
+                      value: '${widget.forum.threadCount}',
+                      tooltip: '${tr.threads}${widget.forum.threadCount}',
+                    ),
                   ),
-                ),
-                sizedBoxW12H12,
-                Expanded(
-                  child: ForumCardStat(
-                    icon: Icons.chat_outlined,
-                    caption: _statCaption(tr.posts),
-                    value: '${widget.forum.replyCount}',
-                    tooltip: '${tr.posts}${widget.forum.replyCount}',
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: ForumCardStat(
+                      icon: Icons.chat_outlined,
+                      caption: _statCaption(tr.posts),
+                      value: '${widget.forum.replyCount}',
+                      tooltip: '${tr.posts}${widget.forum.replyCount}',
+                    ),
                   ),
-                ),
-                sizedBoxW12H12,
-                Expanded(
-                  child: ForumCardStat(
-                    icon: Icons.mark_chat_unread_outlined,
-                    caption: _statCaption(tr.today),
-                    value: '${widget.forum.threadTodayCount ?? 0}',
-                    tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
+                  sizedBoxW12H12,
+                  Expanded(
+                    child: ForumCardStat(
+                      icon: Icons.mark_chat_unread_outlined,
+                      caption: _statCaption(tr.today),
+                      value: '${widget.forum.threadTodayCount ?? 0}',
+                      tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
             shortcut,
           ],
         ),
@@ -424,9 +449,9 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    if (widget.forum.latestThreadTime != null)
+                    if (_note(context) ?? widget.forum.latestThreadTime?.elapsedTillNow(context) case final line?)
                       Text(
-                        widget.forum.latestThreadTime!.elapsedTillNow(context),
+                        line,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: textTheme.labelSmall?.copyWith(color: colorScheme.secondary),
@@ -436,33 +461,41 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
               ),
             ],
           ),
-          sizedBoxW12H12,
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              AppInfoPill(
-                icon: Icons.forum_outlined,
-                label: '${widget.forum.threadCount}',
-                tooltip: '${tr.threads}${widget.forum.threadCount}',
-              ),
-              AppInfoPill(
-                icon: Icons.chat_outlined,
-                label: '${widget.forum.replyCount}',
-                tooltip: '${tr.posts}${widget.forum.replyCount}',
-              ),
-              AppInfoPill(
-                icon: Icons.mark_chat_unread_outlined,
-                label: '${widget.forum.threadTodayCount ?? 0}',
-                tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
-              ),
-            ],
-          ),
+          if (!isLink) ...[
+            sizedBoxW12H12,
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                AppInfoPill(
+                  icon: Icons.forum_outlined,
+                  label: '${widget.forum.threadCount}',
+                  tooltip: '${tr.threads}${widget.forum.threadCount}',
+                ),
+                AppInfoPill(
+                  icon: Icons.chat_outlined,
+                  label: '${widget.forum.replyCount}',
+                  tooltip: '${tr.posts}${widget.forum.replyCount}',
+                ),
+                AppInfoPill(
+                  icon: Icons.mark_chat_unread_outlined,
+                  label: '${widget.forum.threadTodayCount ?? 0}',
+                  tooltip: '${tr.today}${widget.forum.threadTodayCount ?? 0}',
+                ),
+              ],
+            ),
+          ],
           shortcut,
         ],
       ),
     );
   }
+
+  /// What the forum's pages print in place of the latest thread: "私密版块" for a forum the viewer may not enter,
+  /// "链接到外部地址" for a link forum; null for any other forum.
+  String? _note(BuildContext context) => widget.forum.isPrivate
+      ? context.t.forumCard.privateForum
+      : (widget.forum.redirectUrl != null ? context.t.forumCard.redirectForum : null);
 
   /// Picture and name of a large card, laid out from the real card width and text scale (see
   /// [forumCardLargeHeaderLayout]): side by side, or the name under the picture on narrow cards with large text.
@@ -477,15 +510,22 @@ final class _ForumCardState extends State<ForumCard> with LoggerMixin {
       overflow: TextOverflow.ellipsis,
       style: textTheme.headlineSmall?.copyWith(fontSize: 24, fontWeight: FontWeight.w600, height: 1.3),
     );
-    final time = widget.forum.latestThreadTime == null
+    final note = _note(context);
+    final time = note == null && widget.forum.latestThreadTime == null
         ? null
         : Row(
             children: [
-              Icon(Icons.schedule_outlined, size: 18, color: colorScheme.secondary),
+              Icon(
+                note == null
+                    ? Icons.schedule_outlined
+                    : (widget.forum.isPrivate ? Icons.lock_outline : Icons.open_in_new_outlined),
+                size: 18,
+                color: colorScheme.secondary,
+              ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  widget.forum.latestThreadTime!.elapsedTillNow(context),
+                  note ?? widget.forum.latestThreadTime!.elapsedTillNow(context),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.bodyLarge?.copyWith(fontSize: 16, color: colorScheme.secondary),

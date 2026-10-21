@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:collection/collection.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:tsdm_client/extensions/fp.dart';
@@ -32,6 +33,12 @@ part 'topics_state.dart';
 /// page, the `uid` of the structured answer): the cache and the stream replay may still hold the previous account's
 /// page after a switch or a logout, and that page must neither be shown nor seed the favorite forums of the new
 /// user.
+///
+/// The "我收藏的版块" panel of a plugin before 2.8.1 is only on the web page: the bloc asks the repository for it
+/// ([ForumHomeRepository.requestFavoritesPanel]) for the pages it loads itself, and the page with the panel arrives
+/// on the stream. A page another one fetched (the homepage refreshed it, checked the daily red packet, the activities
+/// page) shows the panel last read for the account instead while it names the same favorites, so those cost no
+/// request for the panel.
 class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
   /// Constructor.
   ///
@@ -86,6 +93,10 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
   /// allows one more.
   ForumHomePage? _stalePage;
 
+  /// The "我收藏的版块" panel last read from the web page (plugin before 2.8.1) and the account it was served to, see
+  /// [TopicsBloc].
+  ({int uid, ForumGroup panel})? _pagePanel;
+
   Future<void> _onTopicsLoadRequested(TopicsLoadRequested event, Emitter<TopicsState> emit) async {
     emit(state.copyWith(status: TopicsStatus.loading));
     final pageEither = await _forumHomeRepository.fetchTopicPage().run();
@@ -94,7 +105,7 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
       emit(state.copyWith(status: TopicsStatus.failed));
       return;
     }
-    _emitParsed(pageEither.unwrap(), emit);
+    _emitParsed(pageEither.unwrap(), emit, own: true);
   }
 
   Future<void> _onTopicsRefreshRequested(TopicsRefreshRequested event, Emitter<TopicsState> emit) async {
@@ -110,7 +121,7 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
       }
       return;
     }
-    _emitParsed(pageEither.unwrap(), emit);
+    _emitParsed(pageEither.unwrap(), emit, own: true);
   }
 
   void _onTopicsTabSelected(TopicsTabSelected event, Emitter<TopicsState> emit) {
@@ -121,7 +132,7 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
     if (identical(event.page, _shownPage)) {
       return;
     }
-    if (_emitParsed(event.page, emit)) {
+    if (_emitParsed(event.page, emit, own: false)) {
       _authRefreshTimer?.cancel();
       _authRefreshTimer = null;
     }
@@ -134,6 +145,7 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
       // instead of showing it.
       _forumHomeRepository.invalidate();
       _stalePage = null;
+      _pagePanel = null;
     }
     if (curr is AuthStatusNotAuthed) {
       // Logged out: the cached page still belongs to the previous user, show the guest index.
@@ -155,10 +167,11 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
     }
   }
 
-  /// Show [page] when it belongs to the current user, otherwise ignore it and fetch a fresh one once.
+  /// Show [page] when it belongs to the current user, otherwise ignore it and fetch a fresh one once. [own] tells a
+  /// page the bloc loaded itself from one another one fetched.
   ///
   /// Returns whether the page was shown.
-  bool _emitParsed(ForumHomePage page, Emitter<TopicsState> emit) {
+  bool _emitParsed(ForumHomePage page, Emitter<TopicsState> emit, {required bool own}) {
     final currentUid = _authenticationRepository.currentUser?.uid;
     final pageUid = page.servedUid;
     if (pageUid != currentUid) {
@@ -174,15 +187,17 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
       warning('forum index of user $pageUid shown to user $currentUid, favorite forums not seeded');
     }
     _shownPage = page;
-    emit(_parse(page, seedUid: pageUid));
+    emit(_parse(page, seedUid: pageUid, own: own));
     return true;
   }
 
   /// Parse the group list and seed the favorite forums cache of [seedUid] from the "我收藏的版块" panel, if any.
   ///
   /// The web page: the panel's forums are the favorites. The structured answer: `favorite_forums` names every
-  /// favorite, among them one the panel built from the categories may not list ([forumGroupsFromApi]).
-  TopicsState _parse(ForumHomePage page, {required int? seedUid}) {
+  /// favorite, among them one the panel may not list (its `favorites` since plugin 2.8.1, before that read from the
+  /// page or looked up among the categories, [forumGroupsFromApi]).
+  TopicsState _parse(ForumHomePage page, {required int? seedUid, required bool own}) {
+    final trusted = seedUid != null && seedUid == _authenticationRepository.currentUser?.uid;
     final List<ForumGroup> forumGroupList;
     final Iterable<int> favorites;
     final bool panelInPage;
@@ -193,7 +208,8 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
         // Enough to tell "the server did not render the panel" from "the parser missed it" from a log alone (#1).
         panelInPage = document.querySelector('div#ct')?.innerHtml?.contains('do=favorite&amp;type=forum') ?? false;
       case ForumHomeApiPage(:final json):
-        forumGroupList = forumGroupsFromApi(json);
+        final groups = forumGroupsFromApi(json);
+        forumGroupList = trusted ? _withPagePanel(page, groups, uid: seedUid, own: own) : groups;
         favorites = favoriteForumIdsOf(json);
         panelInPage = favorites.isNotEmpty;
     }
@@ -201,10 +217,45 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
       'forum index parsed: ${forumGroupList.length} groups ${forumGroupList.map((e) => e.name).toList()}, '
       'favorite forums $favorites, favorites panel in page: $panelInPage',
     );
-    if (seedUid != null && seedUid == _authenticationRepository.currentUser?.uid) {
+    if (trusted) {
       _favoriteRepository.seedForumFavorites(uid: seedUid, fids: favorites.map((e) => '$e'));
     }
     return state.copyWith(status: TopicsStatus.success, forumGroupList: forumGroupList);
+  }
+
+  /// The [groups] of the structured [page] served to the current user [uid], with the "我收藏的版块" panel of a plugin
+  /// before 2.8.1, which is only on the web page ([favoritesPanelNeedsDocument]):
+  ///
+  /// * a page with its document (the repository read the panel from it) is kept as the account's panel;
+  /// * a page without it shows the panel kept for the account while it names the same favorites in the same order
+  ///   (otherwise the panel looked up among the categories), and asks the repository for its own when the bloc loaded
+  ///   the page itself ([own]) or no kept panel fits.
+  List<ForumGroup> _withPagePanel(
+    ForumHomeApiPage page,
+    List<ForumGroup> groups, {
+    required int uid,
+    required bool own,
+  }) {
+    final json = page.json;
+    if (!favoritesPanelNeedsDocument(json)) {
+      if (json['document'] is String && !json.containsKey('favorites')) {
+        final panel = groups.firstWhereOrNull((e) => e.isFavorites);
+        _pagePanel = panel == null ? null : (uid: uid, panel: panel);
+      }
+      return groups;
+    }
+    final kept = _pagePanel;
+    final fits =
+        kept != null &&
+        kept.uid == uid &&
+        const ListEquality<int>().equals(kept.panel.forumList.map((e) => e.forumID).toList(), favoriteForumIdsOf(json));
+    if (own || !fits) {
+      unawaited(_forumHomeRepository.requestFavoritesPanel(page));
+    }
+    if (!fits) {
+      return groups;
+    }
+    return [kept.panel, ...groups.where((e) => !e.isFavorites)];
   }
 
   @override
