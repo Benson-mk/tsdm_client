@@ -440,6 +440,62 @@ final class _HomeForum implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// The storage of the app whose write of the row of [heldUid] waits for [hold]: [writing] tells it is waiting.
+final class _HeldStorage extends StorageProvider {
+  _HeldStorage(AppDatabase db) : super(db, {}, {});
+
+  int? heldUid;
+  final hold = Completer<void>();
+  bool writing = false;
+
+  @override
+  Future<void> saveCookie({required String username, required int uid, required Cookie cookie}) async {
+    if (uid == heldUid && !hold.isCompleted) {
+      writing = true;
+      await hold.future;
+    }
+    return super.saveCookie(username: username, uid: uid, cookie: cookie);
+  }
+}
+
+/// The password login of Alice: the login form (GET) gives the session the auth cookie [token]; the login (POST)
+/// answers once [posted] completes.
+final class _PasswordForum implements HttpClientAdapter {
+  _PasswordForum(this.posted, this.token);
+
+  final Completer<void> posted;
+  final String token;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (options.method == 'POST') {
+      await posted.future;
+      return ResponseBody.fromString(
+        "succeedhandle_login('url', 'ok', {'username':'Alice','uid':'1000'});",
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+        },
+      );
+    }
+    return ResponseBody.fromString(
+      '<div id="layer_login_login"><input name="formhash" value="newhash"></div>',
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+        'set-cookie': ['Ystv_2132_auth=$token; Path=/'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 Future<void> _settle(WidgetTester tester, {int rounds = 8}) async {
   for (var i = 0; i < rounds; i++) {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
@@ -954,8 +1010,13 @@ void main() {
     await storage.saveCookie(username: 'Bob', uid: 1001, cookie: _jar(_bob));
     await storage.saveInt(NotificationPollSlot.key(1001), 1);
     await storage.saveInt(NotificationPollSlot.manualKey(1001), 1);
+    // Two rows of the same name (the name is no key): both go, nothing throws.
+    await storage.saveCookie(username: 'Bob', uid: 1003, cookie: _jar(_bob));
+    await storage.saveInt(NotificationPollSlot.key(1003), 1);
     expect(await storage.deleteCookieByUserInfo(const UserLoginInfo(username: 'Bob', uid: null)), isTrue);
     expect(await polls(1001), [null, null]);
+    expect(await polls(1003), [null, null]);
+    expect(await storage.hasCookieOfUid(1001) || await storage.hasCookieOfUid(1003), isFalse);
   });
 
   group('in the app: the other accounts after the account in use (Android, Windows)', () {
@@ -1531,37 +1592,197 @@ void main() {
       expect(auth.currentUser, isNull);
     });
 
-    for (final spin in [
-      for (var t = 5; t <= 7; t++)
-        for (var m = 0; m <= 24; m += 2) t * 100 + m,
-    ]) {
-      test('P1b: a real switch and the record of the page race (spin $spin)', () async {
+    /// The authentication of the app, its isolated clients (the switch, the password login) answered by [forum].
+    AuthenticationRepository authWith(
+      HttpClientAdapter forum, {
+      UserLoginInfo? user,
+      NetClientProvider Function(UserLoginInfo user)? currentUserClient,
+    }) {
+      final auth = AuthenticationRepository(
+        user: user,
+        clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: cookie,
+        ),
+        currentUserClientFactory: currentUserClient,
+      );
+      addTearDown(auth.dispose);
+      return auth;
+    }
+
+    Future<List<int>> rows() async => (await storage.getAllUsers()).map((e) => e.uid!).toList()..sort();
+
+    test(
+      'P1b: the switch holds the lock while it checks Bob: the record of the page asked as Alice is refused',
+      () async {
         final forum = _SwitchForum()..hold = Completer<void>();
-        final auth = AuthenticationRepository(
-          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
-            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
-            cookie: cookie,
-          ),
-        );
-        addTearDown(auth.dispose);
+        final auth = authWith(forum);
         final switching = auth.switchUser(_bob).run();
         await _until(() => forum.requests.isNotEmpty, reason: "the check of Bob's login");
-        forum.hold!.complete();
-        for (var i = 0; i < spin ~/ 100; i++) {
+        // However many turns pass meanwhile, the record waits for the switch.
+        for (var i = 0; i < 50; i++) {
           await Future<void>.delayed(Duration.zero);
         }
-        for (var i = 0; i < spin % 100; i++) {
-          await Future<void>.value();
-        }
-        final login = await auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
+        final login = auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
+        forum.hold!.complete();
         expect((await switching).isRight(), isTrue);
-        expect(login.getLeft().toNullable(), isA<IdentityChangedException>());
-        expect(tokenIn(1000), 'alice');
-        expect(tokenIn(1001), 'bob');
-        expect(settings.currentSettings.loginUid, 1001);
-        expect(auth.currentUser?.uid, 1001);
-      });
+        expect((await login).getLeft().toNullable(), isA<IdentityChangedException>());
+        expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'));
+        expect((settings.currentSettings.loginUid, auth.currentUser?.uid), (1001, 1001));
+      },
+    );
+
+    test('P1 mutual exclusion: a switch asked while the record of the page writes waits for it', () async {
+      // The record's write of Alice's row is held: the lock is held by the record meanwhile.
+      final held = _HeldStorage(db)..heldUid = 1000;
+      await held.refreshCookieCache();
+      getIt
+        ..unregister<StorageProvider>()
+        ..registerSingleton<StorageProvider>(held);
+      final forum = _SwitchForum();
+      final auth = authWith(forum);
+      final login = auth.loginWithServedUser(_alice, guest: false, fetchedAs: 1000).run();
+      await _until(() => held.writing, reason: "the record's write of Alice's row");
+      final switching = auth.switchUser(_bob).run();
+      for (var i = 0; i < 50; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(forum.requests, isEmpty, reason: 'the switch has not begun: the record holds the lock');
+      held.hold.complete();
+      expect((await login).isRight(), isTrue, reason: 'recorded for Alice, whose cookie asked');
+      expect((await switching).isRight(), isTrue, reason: 'then switched');
+      expect(forum.requests, ['bob']);
+      expect((tokenIn(1000), tokenIn(1001)), ('alice', 'bob'));
+      expect((settings.currentSettings.loginUid, auth.currentUser?.uid), (1001, 1001));
+    });
+
+    test('A: removing the account in use, asked while a switch to Bob runs, removes nobody', () async {
+      final forum = _SwitchForum()..hold = Completer<void>();
+      final auth = authWith(forum, user: _alice);
+      final switching = auth.switchUser(_bob).run();
+      await _until(() => forum.requests.isNotEmpty, reason: "the check of Bob's login");
+      expect(auth.effectiveCurrentUid, 1000, reason: 'the page still shows Alice as the account in use');
+      final forgetting = auth.forgetCurrentUser().run();
+      final forgettingAlice = auth.forgetCurrentUser(uid: 1000).run();
+      forum.hold!.complete();
+      expect((await switching).isRight(), isTrue);
+      expect((await forgetting).getLeft().toNullable(), isA<IdentityChangedException>());
+      expect((await forgettingAlice).getLeft().toNullable(), isA<IdentityChangedException>());
+      expect(await rows(), [1000, 1001], reason: 'nobody removed');
+      expect((auth.currentUser?.uid, global.userLoginInfo.uid, settings.currentSettings.loginUid), (1001, 1001, 1001));
+    });
+
+    test('B: a logout asked while a switch to Bob runs logs nobody out', () async {
+      final forum = _SwitchForum()..hold = Completer<void>();
+      final loggedOutAs = <int?>[];
+      final auth = authWith(
+        forum,
+        user: _alice,
+        currentUserClient: (user) {
+          loggedOutAs.add(user.uid);
+          return NetClientProvider.buildNoCookie(dio: Dio()..httpClientAdapter = forum);
+        },
+      );
+      final switching = auth.switchUser(_bob).run();
+      await _until(() => forum.requests.isNotEmpty, reason: "the check of Bob's login");
+      expect(auth.currentUser?.uid, 1000, reason: 'the profile page still shows Alice');
+      final loggingOut = auth.logout().run();
+      forum.hold!.complete();
+      expect((await switching).isRight(), isTrue);
+      expect((await loggingOut).getLeft().toNullable(), isA<IdentityChangedException>());
+      expect(loggedOutAs, isEmpty, reason: 'the forum was not asked to log anybody out');
+      expect(await rows(), [1000, 1001]);
+      expect(auth.currentUser?.uid, 1001);
+    });
+
+    /// The forum of the password login: the login form (GET, giving the session's auth cookie [token]) and the login
+    /// itself (POST, held until [posted] completes) of Alice.
+    HttpClientAdapter passwordForum(Completer<void> posted, {String token = 'fresh'}) => _PasswordForum(posted, token);
+
+    for (final recordFirst in [false, true]) {
+      test(
+        "C: a guest page of Alice's old session recorded ${recordFirst ? 'before' : 'after'} her password login "
+        'leaves her not expired',
+        () async {
+          await storage.markSessionExpired(1000);
+          final posted = Completer<void>();
+          final auth = authWith(passwordForum(posted));
+          // Asked with her old session, before the login.
+          final epoch = auth.identityEpoch;
+          Future<Object?> record() async =>
+              (await auth.loginWithServedUser(null, guest: true, fetchedAs: 1000, epoch: epoch).run())
+                  .getLeft()
+                  .toNullable();
+          Object? recorded;
+          if (recordFirst) {
+            recorded = await record();
+          }
+          final login = auth
+              .loginWithPassword(
+                const UserCredential(
+                  loginField: LoginField.username,
+                  loginFieldValue: 'Alice',
+                  password: 'test',
+                  tsdmVerify: '',
+                ),
+              )
+              .run();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          final pending = recordFirst ? null : record();
+          posted.complete();
+          expect((await login).isRight(), isTrue);
+          recorded ??= await pending;
+          if (!recordFirst) {
+            expect(recorded, isA<IdentityChangedException>(), reason: 'asked before the login: says nothing of it');
+          }
+          expect(await expiredUids(), isEmpty, reason: 'the fresh login is not marked expired');
+          expect(auth.currentUser?.uid, 1000);
+        },
+      );
     }
+
+    test('D: an account removed while its cookie is read from the database stays removed', () async {
+      final sync = CookieProvider.buildEmpty();
+      final loading = sync.loadCookieFromDatabase(_bob);
+      expect(await storage.deleteCookieByUid(1001), isTrue);
+      expect(await loading, isFalse, reason: 'removed meanwhile: nothing to poll with');
+      expect(storage.getCookieByUidSync(1001), isNull, reason: 'no ghost in the cache');
+      await sync.write(baseHost, '{"/":{"Ystv_2132_auth":"Ystv_2132_auth=late; Path=/;_crt=1"}}');
+      expect(await rows(), [1000], reason: 'a late Set-Cookie does not bring the row back');
+    });
+
+    test("E: a page served to Bob, asked before Alice's password login, does not move her fresh session", () async {
+      // The corrupted row the adoption is for: Alice's row holds Bob's session.
+      await storage.saveCookie(username: 'Alice', uid: 1000, cookie: _jar(_bob));
+      await global.loadCookieFromStorage(_alice);
+      final posted = Completer<void>();
+      final auth = authWith(passwordForum(posted), user: _alice);
+      final login = auth
+          .loginWithPassword(
+            const UserCredential(
+              loginField: LoginField.username,
+              loginFieldValue: 'Alice',
+              password: 't',
+              tsdmVerify: '',
+            ),
+          )
+          .run();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // The homepage asked with the cookie in use (Alice's row, Bob's session) before the login: served to Bob.
+      final record = auth.loginWithServedUser(_bob, guest: false, fetchedAs: 1000).run();
+      posted.complete();
+      expect((await login).isRight(), isTrue);
+      expect((await record).getLeft().toNullable(), isA<IdentityChangedException>());
+      expect((auth.currentUser?.uid, settings.currentSettings.loginUid), (1000, 1000));
+      expect((tokenIn(1000), tokenIn(1001)), ('fresh', 'bob'), reason: "Alice's fresh session stays hers");
+    });
+
+    test('F: the status a new listener gets first is the very status latestStatus names', () async {
+      final auth = authWith(_SwitchForum(), user: _alice);
+      expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
+      final replayed = auth.latestStatus;
+      expect(identical(await auth.status.first, replayed), isTrue);
+    });
 
     group('homepage', () {
       late _HomeForum home;
@@ -1638,6 +1859,30 @@ void main() {
         expect((await auth.switchUser(_bob).run()).isRight(), isTrue);
         await _until(() => home.paths.where((p) => p.endsWith('forum.php')).length == 2, reason: 'reloaded for Bob');
         await _until(() => bloc.state.status != HomepageStatus.loading, reason: 'loaded');
+      });
+
+      test('a page refused while it is still the latest load asks for one refresh, and only one', () async {
+        final forum = _SwitchForum();
+        final auth = AuthenticationRepository(
+          user: _alice,
+          clientFactory: (cookie) => NetClientProvider.buildNoCookie(
+            dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+            cookie: cookie,
+          ),
+        );
+        addTearDown(auth.dispose);
+        final bloc = homepage(auth);
+        home.holds['alice'] = Completer<void>();
+        bloc.add(HomepageRefreshRequested());
+        await _until(() => home.homepageTokens.isNotEmpty, reason: "the homepage asked with Alice's session");
+        // Alice's login verified again meanwhile (a new session of the same account): no account change for the
+        // homepage, but the page asked before it says nothing of the new session.
+        expect((await auth.switchUser(_alice).run()).isRight(), isTrue);
+        home.holds['alice']!.complete();
+        await _until(() => bloc.state.status == HomepageStatus.success, reason: 'the homepage loaded again');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(home.homepageTokens, ['alice', 'alice'], reason: 'the refused page, then one refresh');
+        expect(bloc.state.status, HomepageStatus.success);
       });
 
       test("a failure of the previous account's load answered after Bob's page does not replace it", () async {

@@ -146,8 +146,16 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> with LoggerMixin {
   }
 
   Future<void> _onLogoutRequested(_Emitter emit) async {
+    // The account the page shows when the logout was asked: a switch finishing meanwhile must not log out the account
+    // switched to.
+    final logout = _authenticationRepository.logout(uid: _authenticationRepository.currentUser?.uid);
     emit(state.copyWith(status: ProfileStatus.loggingOut));
-    await _authenticationRepository.logout().match((e) {
+    await logout.match((e) {
+      if (e is IdentityChangedException) {
+        // Nobody logged out: the page follows the account in use by itself.
+        emit(state.copyWith(status: ProfileStatus.success));
+        return;
+      }
       handle(e);
       emit(state.copyWith(status: ProfileStatus.success, failedToLogoutReason: e));
     }, (_) => emit(state.copyWith(status: ProfileStatus.needLogin))).run();

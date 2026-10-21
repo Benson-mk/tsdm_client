@@ -167,6 +167,7 @@ class StorageProvider with LoggerMixin {
 
   /// Delete the user login info for the user specified by [uid], with the local marks of the account.
   Future<int> deleteUserLoginInfo(int uid) async {
+    _removals[uid] = (_removals[uid] ?? 0) + 1;
     final deleted = await CookieDao(_db).deleteCookieByUid(uid);
     await _deleteAccountMarks(uid);
     return deleted;
@@ -179,9 +180,14 @@ class StorageProvider with LoggerMixin {
   /// (`NotificationPollSlot.takeForManualSync`).
   static String notificationPolledManuallyAtKey(int uid) => 'notificationPolledManuallyAt.$uid';
 
+  /// How many times each uid was removed through this provider ([_deleteAccountMarks]): a read of its row started
+  /// before a removal does not bring it back into the cache ([fetchCookieOfUid]).
+  final _removals = <int, int>{};
+
   /// Delete the local marks of account [uid] removed from this device: the threads it replied to and the times it was
   /// polled for notifications.
   Future<void> _deleteAccountMarks(int uid) async {
+    _removals[uid] = (_removals[uid] ?? 0) + 1;
     await RepliedThreadDao(_db).deleteByUid(uid);
     final settings = SettingsDao(_db);
     await settings.deleteByName(notificationPolledAtKey(uid));
@@ -202,8 +208,14 @@ class StorageProvider with LoggerMixin {
   /// service renews the cookies of the accounts it polls) without reloading the whole cache of this provider. The
   /// cache entry of [uid] is brought in line with the row (dropped when the row is gone): the account switch and the
   /// cookie provider's check for a removed account ([getCookieByUidSync]) see what was read.
+  ///
+  /// The account removed while the row was read: null, the cache entry stays removed.
   Future<Cookie?> fetchCookieOfUid(int uid) async {
+    final removals = _removals[uid] ?? 0;
     final row = await CookieDao(_db).selectCookieByUid(uid);
+    if ((_removals[uid] ?? 0) != removals) {
+      return null;
+    }
     _cookieCache.removeWhere((e, _) => e.uid == uid);
     if (row == null) {
       return null;
@@ -281,6 +293,7 @@ class StorageProvider with LoggerMixin {
   ///
   /// The local marks of the account ([recordRepliedThread]) go with it.
   Future<bool> deleteCookieByUid(int uid) async {
+    _removals[uid] = (_removals[uid] ?? 0) + 1;
     // Update cookie cache.
     _cookieCache.removeWhere((e, _) => e.uid == uid);
     final affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
@@ -335,6 +348,9 @@ class StorageProvider with LoggerMixin {
     if (targets.isEmpty) {
       return 0;
     }
+    for (final uid in targets) {
+      _removals[uid] = (_removals[uid] ?? 0) + 1;
+    }
     _cookieCache.removeWhere((e, _) => targets.contains(e.uid));
     final dao = CookieDao(_db);
     return _db.transaction(() async {
@@ -356,15 +372,20 @@ class StorageProvider with LoggerMixin {
     // final email = userInfo.email;
     final int affectedRows;
     if (uid != null) {
+      _removals[uid] = (_removals[uid] ?? 0) + 1;
       _cookieCache.removeWhere((e, _) => e.uid == uid);
       affectedRows = await CookieDao(_db).deleteCookieByUid(uid);
       await _deleteAccountMarks(uid);
     } else if (username != null) {
+      // Every row of that name (the name is no key: two rows may carry it), read before anything is removed.
+      final uids = (await CookieDao(_db).selectAll()).where((e) => e.username == username).map((e) => e.uid).toList();
+      for (final uid in uids) {
+        _removals[uid] = (_removals[uid] ?? 0) + 1;
+      }
       _cookieCache.removeWhere((e, _) => e.username == username);
-      final row = await CookieDao(_db).selectCookieByUsername(username);
       affectedRows = await CookieDao(_db).deleteCookieByUsername(username);
-      if (row != null) {
-        await _deleteAccountMarks(row.uid);
+      for (final uid in uids) {
+        await _deleteAccountMarks(uid);
       }
       // } else if (email != null) {
       //   _cookieCache.removeWhere((e, _) => e.email == email);

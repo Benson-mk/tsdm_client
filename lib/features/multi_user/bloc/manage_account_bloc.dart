@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -68,7 +69,14 @@ final class ManageAccountBloc extends Bloc<ManageAccountEvent, ManageAccountStat
     final others = selected.where((uid) => uid != currentUid);
     var deleted = await _storageProvider.deleteCookiesByUids(others);
     if (currentUid != null && selected.contains(currentUid)) {
-      switch (await _authenticationRepository.forgetCurrentUser().run()) {
+      // The account in use when the delete was asked: a switch finished meanwhile must not make it remove the account
+      // switched to.
+      switch (await _authenticationRepository.forgetCurrentUser(uid: currentUid).run()) {
+        case Left(value: IdentityChangedException()):
+          // Nothing removed: the page lists the accounts as they are now.
+          info('the account in use changed while deleting, it was not removed');
+          emit(state.copyWith(status: ManageAccountStatus.failed, deletedCount: deleted));
+          return;
         case Left(:final value):
           handle(value);
           emit(state.copyWith(status: ManageAccountStatus.failed, deletedCount: deleted));

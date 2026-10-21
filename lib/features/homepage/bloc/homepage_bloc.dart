@@ -30,6 +30,10 @@ part 'homepage_event.dart';
 part 'homepage_state.dart';
 part 'homepage_state_from_api.dart';
 
+/// What a page was asked as: the account the global cookie named and the identity epoch
+/// (`AuthenticationRepository.identityEpoch`) when it was asked.
+typedef _AskedAs = ({int? uid, int epoch});
+
 /// Bloc for the homepage of the app.
 class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
   /// Constructor.
@@ -127,21 +131,29 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
       parsePinnedThreadGroupsFromDocument(document);
 
   /// Tell the authentication repository the account [page] was served to, as `loginWithDocument` reads it from
-  /// the web page: the structured answer names it in `user`. [fetchedAs] is the account whose cookie asked for it
-  /// ([_cookieUid] before the fetch): a page that arrives after a switch (a tap on another account's notification at
-  /// a cold start) records nothing ([IdentityChangedException]); the account change reloads the page.
-  AsyncVoidEither _loginWithPage(ForumHomePage page, {required int? fetchedAs}) => switch (page) {
-    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(document, fetchedAs: fetchedAs),
+  /// the web page: the structured answer names it in `user`. [asked] is the account whose cookie asked for it and the
+  /// identity epoch then ([_askedAs] before the fetch): a page that arrives after the session changed (a switch, a
+  /// login, a logout) records nothing ([IdentityChangedException]); the page is loaded again.
+  AsyncVoidEither _loginWithPage(ForumHomePage page, {required _AskedAs asked}) => switch (page) {
+    ForumHomeWebPage(:final document) => _authenticationRepository.loginWithDocument(
+      document,
+      fetchedAs: asked.uid,
+      epoch: asked.epoch,
+    ),
     ForumHomeApiPage(:final json) => _authenticationRepository.loginWithServedUser(
       servedUserOf(json),
       guest: indexAnswerIsGuest(json),
-      fetchedAs: fetchedAs,
+      fetchedAs: asked.uid,
+      epoch: asked.epoch,
     ),
   };
 
-  /// The account the global cookie names now, null when none (or no provider, in tests).
-  static int? _cookieUid() =>
-      getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null;
+  /// The account the global cookie names now (null when none, or no provider in tests) and the identity epoch now: what
+  /// a page asked now is asked as.
+  _AskedAs _askedAs() => (
+    uid: getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null,
+    epoch: _authenticationRepository.identityEpoch,
+  );
 
   /// The account [page] was served to, null for a guest or when it does not tell.
   static int? _servedUidOf(ForumHomePage page) => switch (page) {
@@ -149,15 +161,15 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     ForumHomeApiPage(:final json) => servedUserOf(json)?.uid,
   };
 
-  /// Record the account [page] was served to, asked as [fetchedAs], for the load of [generation]; false when the
-  /// page must not be shown: the account changed since it was asked ([IdentityChangedException]) or a newer load took
-  /// over. On a change no newer load picked up yet, a refresh for the account in use now is asked here: the page never
+  /// Record the account [page] was served to, [asked] as an account and under an identity epoch ([_askedAs]), for the
+  /// load of [generation]; false when the page must not be shown: the session changed since it was asked
+  /// ([IdentityChangedException]) or a newer load took over. On a change no newer load picked up yet, a refresh for the account in use now is asked here: the page never
   /// stays loading.
-  Future<bool> _recordAccountOf(ForumHomePage page, {required int? fetchedAs, required int generation}) async {
+  Future<bool> _recordAccountOf(ForumHomePage page, {required _AskedAs asked, required int generation}) async {
     if (generation == _pageGeneration) {
-      _loadedFor = _servedUidOf(page) ?? fetchedAs;
+      _loadedFor = _servedUidOf(page) ?? asked.uid;
     }
-    final login = await _loginWithPage(page, fetchedAs: fetchedAs).run();
+    final login = await _loginWithPage(page, asked: asked).run();
     if (login case Left(value: IdentityChangedException())) {
       debug('homepage served to the previous account, dropped');
       if (generation == _pageGeneration) {
@@ -183,8 +195,8 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
     var needLogin = false;
-    final fetchedAs = _cookieUid();
-    _loadedFor = fetchedAs;
+    final asked = _askedAs();
+    _loadedFor = asked.uid;
     final respList = (await Future.wait([
       _forumHomeRepository.fetchHomePage().mapLeft((e) {
         if (e case HttpHandshakeFailedException(:final statusCode)) {
@@ -221,7 +233,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     }
     final page = respList[0] as ForumHomePage;
     final avatarUrl = respList[1] as String;
-    if (!await _recordAccountOf(page, fetchedAs: fetchedAs, generation: generation)) {
+    if (!await _recordAccountOf(page, asked: asked, generation: generation)) {
       return;
     }
     // Parse data and change state.
@@ -234,8 +246,8 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
 
-    final fetchedAs = _cookieUid();
-    _loadedFor = fetchedAs;
+    final asked = _askedAs();
+    _loadedFor = asked.uid;
     final fetched = await _forumHomeRepository.fetchHomePage(force: true).run();
     if (generation != _pageGeneration) {
       // A newer load (an account change) took over: it shows the page.
@@ -250,7 +262,7 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         debug('failed to fetch dom: $value');
         emit(state.copyWith(status: HomepageStatus.failure));
       case Right(:final value):
-        if (!await _recordAccountOf(value, fetchedAs: fetchedAs, generation: generation)) {
+        if (!await _recordAccountOf(value, asked: asked, generation: generation)) {
           return;
         }
         final loggedUser = _authenticationRepository.currentUser;

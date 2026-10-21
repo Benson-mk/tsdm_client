@@ -290,7 +290,11 @@ final class _Auth extends Fake implements AuthenticationRepository {
   int? get effectiveCurrentUid => currentUser?.uid;
 
   @override
-  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs}) => AsyncVoidEither(() async => rightVoid());
+  AsyncVoidEither loginWithDocument(uh.Document document, {int? fetchedAs, int? epoch}) =>
+      AsyncVoidEither(() async => rightVoid());
+
+  @override
+  int get identityEpoch => 0;
 
   Future<void> close() => _controller.close();
 }
