@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/features/blocking/utils/thread_author_cache.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
@@ -366,6 +367,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       (null, final DateTime b) => b,
       (null, null) => null,
     };
+    // The thread's author the answer names with every page: a page past the first does not show the first floor, the
+    // local block list needs no extra request of the first page to tell whether the thread is hidden.
+    ThreadAuthorCache.record(info.tid ?? state.tid, info.authorUid == null ? null : '${info.authorUid}');
     final threadState = ThreadState(
       // A login or no-permission page names no thread: keep the one asked for, or the next reload (after logging in,
       // or for another account, GitHub #184 follow-up) would ask for no thread at all.

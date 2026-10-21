@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/features/profile/models/managed_forum.dart';
 import 'package:tsdm_client/features/profile/models/models.dart';
 import 'package:tsdm_client/features/profile/models/profile_medal.dart';
@@ -131,14 +132,15 @@ uh.Document profileHtmlDocumentOf(Map<String, dynamic> json) => parseHtmlDocumen
 /// page renders it unchanged:
 ///
 /// * `user` is the owner: name, uid, avatar, online, the email state (the forum has no video verification: null as on
-///   the page), the custom title and the signature html, in the one-cell table the page prints it in (empty ones are
-///   absent, as the page prints no row for them);
+///   the page), the custom title (the text the page shows, [_shownText]) and the signature html, in the one-cell
+///   table the page prints it in (empty ones are absent, as the page prints no row for them);
 /// * `stats.friends` with the uid is the friends row: the model keeps the `统计信息` fragment the page prints (the
 ///   `好友数 N` anchor to the friends page), composed here so `parseFriendsInfo` reads it as before;
 /// * `profiles` are the rows the forum prints after its privacy filter, matched by id first (`birthday`,
 ///   `constellation`, `msn`, `bio`, `field1` for the nickname, `gender`, `residecity`, `qq`), by title second (the
 ///   page's `生日`, `星座`, `MSN`, `自我介绍`, `昵称`, `性别`, `来自`/`居住地`, `QQ`); a row the forum does not print is
-///   null; the QQ number is read from the `uin=` of the value as from the page;
+///   null; each is the text the page shows ([_shownText]) but the self introduction, html the profile page renders,
+///   and the QQ number, read from the `uin=` of the value as from the page;
 /// * `medals` are the forum's medals ([ProfileMedal.fromApi]); `manage_forums` the moderated forums (null when none,
 ///   as the page prints no block then);
 /// * `checkin` is the check-in plugin's block, each field the text the page prints (`[LV.1]初来乍到`, the last check-in
@@ -176,7 +178,7 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
 
   ///////////  Basic status ///////////
 
-  final customTitle = _text(user['customstatus']);
+  final customTitle = _shownText(_text(user['customstatus']));
   // The page prints the signature in a one-cell table (`<table><tr><td>$sightml</td></tr></table>`) and the old parser
   // keeps that table; the same wrapper here, so the signature renders as before.
   final sightml = _text(user['signature_html']);
@@ -205,10 +207,17 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
     return value == null || value.trim().isEmpty ? null : value.trim();
   }
 
+  // A row shown as text: what the page shows of the html the forum prints.
+  String? textField(String id, List<String> titles) {
+    final value = field(id, titles);
+    final text = value == null ? '' : _shownText(value);
+    return text.isEmpty ? null : text;
+  }
+
   String? birthdayYear;
   String? birthdayMonth;
   String? birthdayDay;
-  final birthday = field('birthday', ['生日']);
+  final birthday = textField('birthday', ['生日']);
   if (birthday != null) {
     final match = _birthdayRe.firstMatch(birthday);
     if (match != null) {
@@ -218,7 +227,8 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
     }
   }
   final qqField = field('qq', ['QQ']);
-  final qq = qqField == null ? null : _qqRe.firstMatch(qqField)?.namedGroup('qq') ?? qqField;
+  final qqText = qqField == null ? '' : _shownText(qqField);
+  final qq = qqField == null ? null : _qqRe.firstMatch(qqField)?.namedGroup('qq') ?? (qqText.isEmpty ? null : qqText);
 
   final profileMedals = _list(json['medals']).map(ProfileMedal.fromApi).toList();
   final managedForums = _list(
@@ -324,12 +334,13 @@ Either<AppException, UserProfile> profileFromApi(Map<String, dynamic> json) {
       birthdayYear: birthdayYear,
       birthdayMonth: birthdayMonth,
       birthdayDay: birthdayDay,
-      zodiac: field('constellation', ['星座']),
-      msn: field('msn', ['MSN']),
+      zodiac: textField('constellation', ['星座']),
+      msn: textField('msn', ['MSN']),
+      // Rendered as html by the profile page, as the page parser keeps it.
       introduction: field('bio', ['自我介绍']),
-      nickname: field('field1', ['昵称']),
-      gender: field('gender', ['性别']),
-      from: field('residecity', ['来自', '居住地']),
+      nickname: textField('field1', ['昵称']),
+      gender: textField('gender', ['性别']),
+      from: textField('residecity', ['来自', '居住地']),
       qq: qq,
       profileMedals: profileMedals,
       mangedForums: managedForums.isEmpty ? null : managedForums,
@@ -378,6 +389,13 @@ String _groupFragment(Map<String, dynamic> group) {
   final name = '<font color="$color"><a href="$link" target="_blank">${_escape(title)}</a></font>';
   return icon.isEmpty ? name : '$name <img src="$icon" alt="${_escape(title)}" />';
 }
+
+/// The text the page shows for a value the forum prints as html [value] (a profile row, the custom title): the forum
+/// stores what the member typed with `&`, `<`, `>`, `"` and the characters outside the charset as entities
+/// (`spacecp/profile.php`: a custom title `…&#3109;&#3178;&#3109;` shows as `…థ౪థ`) and prints it as it is, some rows
+/// wrapped in tags (a link). Entities decoded once (a literal `&amp;lt;` stays `&lt;`, as on the page), tags dropped,
+/// trimmed: what the page parser reads from the row.
+String _shownText(String value) => (value.unescapeHtml() ?? '').trim();
 
 String _escape(String text) =>
     text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');

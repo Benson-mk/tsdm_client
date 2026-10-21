@@ -41,8 +41,9 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///
 /// * `thread` gives the id (null when the answer does not name it, so the page keeps the thread it asked for), the
 ///   title, the forum, the counts, the soft close (the lock beside the title), the draft mark, the latest moderation
-///   sentence (`modact`, the page's `div.modact`) and the type (`typeid` with `typename`, the `[type]` beside the
-///   title; none when the thread has no type);
+///   sentence (`modact`, the page's `div.modact`), the type (`typeid` with `typename`, the `[type]` beside the
+///   title; none when the thread has no type) and the thread's author (`authorid`, [ThreadPageInfo.authorUid]; none
+///   for an anonymous thread, `authorid` 0), on every page, so a page past the first tells who started the thread;
 /// * `forum.name` is the forum's name, `nav` the breadcrumbs from the group down to the forum of the thread (the
 ///   group linked as `forum.php?gid=`, a forum as `forum.php?mod=forumdisplay&fid=`), the thread itself not among
 ///   them, as the page's breadcrumb parser leaves them;
@@ -56,7 +57,8 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///   form (`fastpost` 0);
 /// * `posts` are the floors in the forum's order, hot and sticky replies included ([Post.fromApi]), with the
 ///   answer's `uid` as the account they were served to; the placeholder of a deleted floor of a rush thread
-///   (`deleted` 1) is left out, as the page parser leaves it out; since plugin 2.7.0 (`schema: 14`) each floor also
+///   (`deleted` 1) is left out, as the page parser leaves it out; the times are the forum's wall clock with the
+///   answer's `timeoffset`, as the page prints them; since plugin 2.7.0 (`schema: 14`) each floor also
 ///   keeps its bbcode, its attachments, the answer's `codes` and `smilies_version`, for the app's own renderer;
 /// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`);
 /// * since plugin 2.8.0 (`schema: 15`) `special` is the special block of the first floor (poll, goods, bounty,
@@ -113,7 +115,13 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final totalPages = json['pages'] is num ? _int(json['pages']) : pageNumber;
   final draft = _int(thread['draft']) == 1;
   final pay = thread['pay'] is Map<String, dynamic> ? _map(thread['pay']) : null;
-  final special = ThreadSpecial.fromApi(json['special'], formHash: _text(json['formhash']), viewerUid: uid);
+  final timeOffset = tsdmAppTimeOffset(json);
+  final special = ThreadSpecial.fromApi(
+    json['special'],
+    formHash: _text(json['formhash']),
+    viewerUid: uid,
+    timeOffset: timeOffset,
+  );
 
   // The placeholder a rush thread prints for a deleted floor (`deleted` 1: "无效楼层，该帖已经被删除", no author, no
   // content) is left out, as the page parser leaves out a floor without an author.
@@ -131,6 +139,7 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
       codes: json['codes'],
       smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
       threadSpecial: _int(thread['special']),
+      timeOffset: timeOffset,
     );
     post = _withSpecial(post, special, first: first);
     post = _withDebateVote(
@@ -231,6 +240,7 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
     viewCount: _int(thread['views']),
     replyCount: _int(thread['replies']),
     special: special,
+    authorUid: _int(thread['authorid']) > 0 ? _int(thread['authorid']) : null,
   );
 }
 

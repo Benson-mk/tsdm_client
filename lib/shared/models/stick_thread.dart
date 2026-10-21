@@ -25,8 +25,12 @@ class StickThread extends NormalThread with StickThreadMappable {
 
   /// Build a [StickThread] from a sticky row [t] (`displayorder` > 0) of a structured forum page answer of the forum's
   /// app API, as [NormalThread.fromApi] builds it.
-  factory StickThread.fromApi(Map<String, dynamic> t, {required int fid, required int typePrefix}) =>
-      StickThread._of(NormalThread.fromApi(t, fid: fid, typePrefix: typePrefix));
+  factory StickThread.fromApi(
+    Map<String, dynamic> t, {
+    required int fid,
+    required int typePrefix,
+    num timeOffset = 8,
+  }) => StickThread._of(NormalThread.fromApi(t, fid: fid, typePrefix: typePrefix, timeOffset: timeOffset));
 
   /// The normal thread [t] as a sticky one.
   StickThread._of(NormalThread t)

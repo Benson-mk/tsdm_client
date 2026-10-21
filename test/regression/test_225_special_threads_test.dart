@@ -1542,8 +1542,10 @@ void main() {
       final tr = t.specialThread.debate;
       await pump(tester, SpecialThreadCard(_special('debate_ended_result'), pid: '6301', onReload: () {}));
       expect(find.text(tr.winnerAffirm), findsOneWidget);
-      expect(find.textContaining('正方勝 UMPIRE_925316'), findsOneWidget);
-      expect(find.text('正方觀點 AFF_925316'), findsOneWidget);
+      // The points and the verdict as the forum renders them (`*_html`, bold here), by the html renderer.
+      expect(find.textContaining('UMPIRE_925316', findRichText: true), findsWidgets);
+      expect(find.textContaining('正方觀點 AFF_925316', findRichText: true), findsWidgets);
+      expect(find.textContaining('${tr.umpirePoint}: 正方勝'), findsNothing, reason: 'not the plain text');
       expect(find.text(tr.voteFor(side: tr.affirm)), findsNothing, reason: 'ended');
 
       final refusing = _FakeSpecialRepository({

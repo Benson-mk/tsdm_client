@@ -44,17 +44,22 @@ int? myThreadApiOwnerUid(Map<String, dynamic> json) {
 /// The thread list and the next page url of a structured answer [json] ([myThreadApiAnswerOf]) of the page [url].
 ///
 /// The same list the web page gives through `MyThread.fromTr` (and `MyThread.buildReplyListFromTr` for the
-/// replies): the rows of the page as [MyThread.fromApi] builds them, one row per reply on the reply page (`pid`,
-/// its text in `summary`; a row without a thread or a subject dropped, as the page parser drops a malformed row,
-/// [tsdmAppIsThreadRow]), and the url of the next page when the forum has one (`has_next`: the page's "下一页"
-/// link; the page paginates without a total, `pages` is 0). The forum's message (`ok` 0: a guest) is an empty
+/// replies): the rows of the page as [MyThread.fromApi] builds them, one row per reply on the reply page (`kind`
+/// `reply`: `pid`, its text in `summary`, "......" when it has none; a row without a thread or a subject dropped, as
+/// the page parser drops a malformed row, [tsdmAppIsThreadRow]), with the dates in the forum's wall clock
+/// (`timeoffset`), and the url of the next page when the forum has one (`has_next`: the page's "下一页" link; the
+/// page paginates without a total, `pages` is 0). The forum's message (`ok` 0: a guest) is an empty
 /// list, as the web page of the message parsed to one.
 (List<MyThread>, String? nextPageUrl) myThreadsFromApi(Map<String, dynamic> json, String url) {
   if (json['ok'] != 1) {
     talker.info('my thread page: the forum answered a message: ${json['message']}');
     return (const [], null);
   }
-  final threads = tsdmAppList(json['threads']).where(tsdmAppIsThreadRow).map(MyThread.fromApi).toList();
+  final timeOffset = tsdmAppTimeOffset(json);
+  final reply = json['kind'] == 'reply';
+  final threads = tsdmAppList(
+    json['threads'],
+  ).where(tsdmAppIsThreadRow).map((e) => MyThread.fromApi(e, timeOffset: timeOffset, reply: reply)).toList();
   final page = tsdmAppInt(json['page']);
   final nextPageUrl = tsdmAppInt(json['has_next']) == 1 && page > 0 ? tsdmAppListPageUrl(url, page + 1) : null;
   return (threads, nextPageUrl);

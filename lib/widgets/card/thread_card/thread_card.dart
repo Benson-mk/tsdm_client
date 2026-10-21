@@ -513,7 +513,8 @@ class MyThreadCard extends StatelessWidget {
       title: thread.title,
       forum: thread.forumName,
       stateSet: thread.stateSet,
-      publishTime: thread.latestReplyTime,
+      // The date as the forum prints it (its wall clock); the info row tells the same time relative to now.
+      publishTime: thread.latestReplyClock ?? thread.latestReplyTime,
       quotedMessage: thread.quotedMessage,
       lastReplyAuthor: thread.latestReplyAuthor,
       latestReplyTime: thread.latestReplyTime,

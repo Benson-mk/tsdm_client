@@ -18,7 +18,8 @@ final class Friend with FriendMappable {
   /// The friend of a row [row] of the structured friends answer (plugin 2.5.0, `schema: 10`, `friends[]`): the
   /// member (`uid`, `username`), the small avatar, the user group (`grouptitle`, `groupcolor`: the color the forum
   /// prints the name and the group with) and, on another member's list ([ownList] false), the credits the page
-  /// prints ("积分数: N"); the owner's own list prints none, as the page prints none there. The group icon
+  /// prints ("积分数: N"; none for 0, as `space_list` prints them only when not 0); the owner's own list prints none,
+  /// as the page prints none there. The group icon
   /// (`groupicon`, plugin 2.6.0: an absolute url, empty when the group has none) as the page prints it beside the
   /// group. Null for a member who is not there any more (`username` empty, `anonymous` 1: the page prints "匿名"
   /// without a link), as the page parser skips a row without the member's link.
@@ -32,6 +33,7 @@ final class Friend with FriendMappable {
     final groupName = tsdmAppText(row['grouptitle']).trim();
     final groupColor = tsdmAppText(row['groupcolor']).trim();
     final groupIcon = tsdmAppText(row['groupicon']).trim();
+    final credits = tsdmAppInt(row['credits']);
     return Friend(
       uid: '$uid',
       username: username,
@@ -40,7 +42,7 @@ final class Friend with FriendMappable {
       groupName: groupName.isEmpty ? null : groupName,
       groupColor: groupColor.isEmpty ? null : groupColor,
       groupIconUrl: groupIcon.isEmpty ? null : groupIcon.prependHost(),
-      credits: ownList ? null : '${tsdmAppInt(row['credits'])}',
+      credits: ownList || credits == 0 ? null : '$credits',
     );
   }
 

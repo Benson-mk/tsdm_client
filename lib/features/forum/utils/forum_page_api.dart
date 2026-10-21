@@ -86,13 +86,14 @@ ForumPageData forumPageFromApi(Map<String, dynamic> json, String fid) {
       ? null
       : parseHtmlDocument('<div id="forum_rules_$fid">$rules</div>').querySelector('div#forum_rules_$fid');
 
+  final timeOffset = tsdmAppTimeOffset(json);
   final normalThreadList = <NormalThread>[];
   final stickThreadList = <StickThread>[];
   for (final row in _list(json['threads'])) {
     if (_int(row['displayorder']) > 0) {
-      stickThreadList.add(StickThread.fromApi(row, fid: forumId, typePrefix: typePrefix));
+      stickThreadList.add(StickThread.fromApi(row, fid: forumId, typePrefix: typePrefix, timeOffset: timeOffset));
     } else {
-      normalThreadList.add(NormalThread.fromApi(row, fid: forumId, typePrefix: typePrefix));
+      normalThreadList.add(NormalThread.fromApi(row, fid: forumId, typePrefix: typePrefix, timeOffset: timeOffset));
     }
   }
   final subredditList = _list(json['subforums']).map(Forum.fromApi).toList();

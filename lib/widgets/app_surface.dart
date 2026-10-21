@@ -543,6 +543,7 @@ class AppNoticeBanner extends StatelessWidget {
     this.tone = AppNoticeTone.info,
     this.actions = const [],
     this.selectable = false,
+    this.child,
     super.key,
   });
 
@@ -551,6 +552,9 @@ class AppNoticeBanner extends StatelessWidget {
 
   /// Message.
   final String message;
+
+  /// Optional content under the message (rendered html of the forum…), before the [actions].
+  final Widget? child;
 
   /// Leading icon, chosen from [tone] when null.
   final IconData? icon;
@@ -599,6 +603,7 @@ class AppNoticeBanner extends StatelessWidget {
                   sizedBoxW4H4,
                 ],
                 if (selectable) SelectableText(message, style: messageStyle) else Text(message, style: messageStyle),
+                if (child != null) ...[sizedBoxW4H4, child!],
                 if (actions.isNotEmpty) ...[
                   sizedBoxW8H8,
                   Wrap(spacing: 8, runSpacing: 4, children: actions),

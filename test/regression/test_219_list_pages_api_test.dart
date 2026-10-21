@@ -74,6 +74,10 @@ Map<String, dynamic> _with(String name, Map<String, Object?> changes) => {..._js
 /// The forum's unix seconds as the instant the app keeps.
 DateTime _at(int seconds) => DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
 
+/// The forum's unix seconds as the forum's wall clock (+8, the `timeoffset` of the fixtures), for a time the cards
+/// show as a date.
+DateTime? _clock(int seconds) => tsdmAppWallClockTime(seconds, 8);
+
 String _page(String name) => File('test/data/$name').readAsStringSync();
 
 /// The body of a web page, as the plugin cut it into `document` before 2.0.0.
@@ -223,7 +227,7 @@ void main() {
       expect(first.author.uid, '35');
       expect(first.author.url, '$baseUrl/home.php?mod=space&uid=35');
       expect(first.author.avatarUrl, isNotNull);
-      expect(first.publishTime, _at(1792293941));
+      expect(first.publishTime, _clock(1792293941));
       expect(first.forumName, '主機・PC 遊戲');
       expect(first.forumUrl, '$baseUrl/forum.php?mod=forumdisplay&fid=11');
 
@@ -311,7 +315,7 @@ void main() {
       expect(first.latestReplyAuthor?.name, 'ag_t13');
       expect(first.latestReplyAuthor?.uid, isNull, reason: 'the list pages name no uid for the last replier');
       expect(first.latestReplyAuthor?.url, '$baseUrl/home.php?mod=space&username=ag_t13');
-      expect(first.latestReplyTime, _at(1792505548));
+      expect(first.latestReplyTime, _clock(1792505548));
       expect(first.quotedMessage, isNull);
       expect(first.threadAuthor?.name, 'ag_t12');
       expect(first.threadAuthor?.uid, '48');
@@ -418,7 +422,7 @@ void main() {
       expect(first.threadAuthor?.name, 'ag_low2');
       expect(first.threadAuthor?.uid, '35');
       expect(first.latestReplyAuthor?.name, 'ag_low2');
-      expect(first.latestReplyTime, _at(1792293941));
+      expect(first.latestReplyTime, _clock(1792293941));
       expect(first.forumName, '主機・PC 遊戲');
       expect(first.forumUrl, '$baseUrl/forum.php?mod=forumdisplay&fid=11');
 
@@ -427,17 +431,17 @@ void main() {
       final row = _row('search_v6_results.json', 9199751);
       expect(row['lastpost'], isNot(row['dateline']));
       final replied = threads.singleWhere((e) => e.threadID == '9199751');
-      expect(replied.latestReplyTime, _at(1792076503), reason: 'the publish time (dateline), not lastpost');
+      expect(replied.latestReplyTime, _clock(1792076503), reason: 'the publish time (dateline), not lastpost');
       expect(replied.latestReplyAuthor?.name, 'ag_low');
       expect(replied.latestReplyAuthor?.uid, '31');
       expect(replied.threadAuthor?.name, 'ag_low');
       expect(replied.replyCount, 7);
       final other = LatestThread.fromSearchApi({...row, 'lastposter': 'someone_else', 'lastpost': 1792300000});
       expect(other.latestReplyAuthor?.name, 'ag_low', reason: 'the author, not the last poster');
-      expect(other.latestReplyTime, _at(1792076503));
+      expect(other.latestReplyTime, _clock(1792076503));
       // The guide builder of the same row would show the last reply.
       final asGuide = LatestThread.fromApi(row);
-      expect(asGuide.latestReplyTime, _at(1792177148));
+      expect(asGuide.latestReplyTime, _clock(1792177148));
 
       final (last, nextLast) = latestThreadsFromApi(_with('search_v6_results.json', {'page': 11, 'has_next': 0}), url);
       expect(last, hasLength(20));

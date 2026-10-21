@@ -160,7 +160,16 @@ final class UserBriefProfile with UserBriefProfileMappable {
   ///
   /// [author] is the post author parsed from the post header, used as fallback of username, uid and avatar when they
   /// are not available in [element].
-  static UserBriefProfile? buildFromUserProfileNode(uh.Element element, {User? author}) {
+  ///
+  /// [groupTitle] and [groupColor] are the author's user group as the forum names it (the floor's `group` of the
+  /// forum's app API): the group when [element] prints none as text (a member's group is only the badge image, whose
+  /// `alt` the forum leaves empty), in place of the badge's file name, which is only a guess at the name.
+  static UserBriefProfile? buildFromUserProfileNode(
+    uh.Element element, {
+    User? author,
+    String? groupTitle,
+    String? groupColor,
+  }) {
     final postId = element.id.split('_').lastOrNull;
     if (postId == null) {
       talker.error('failed to build UserBriefProfile: uid not found');
@@ -203,20 +212,25 @@ final class UserBriefProfile with UserBriefProfileMappable {
     //
     // `<em><a class="stat_authortitle"><font color="blue">${GROUP_NAME}</font></a></em>`
     //
-    // The `<em>` node is not always present, fallback to the user group badge image.
+    // The `<em>` node is not always present (only the staff's, `$post['adminid']` not 0), fallback to the name the
+    // page gives the user group badge image, the group the caller knows ([groupTitle]), then the badge's file name.
     final userGroupNode = statBarNode.querySelector('em');
     final badgeImgNode = avatarNode?.querySelector('div.tsdm_norm_title img');
     final badgeAlt = badgeImgNode?.attributes['alt']?.trim();
     final badgeFileName = badgeImgNode?.attributes['src']?.split('/').lastOrNull?.split('.').firstOrNull;
+    final knownGroup = (groupTitle?.trim().isNotEmpty ?? false) ? groupTitle!.trim() : null;
     final userGroup =
-        userGroupNode?.innerText.trim() ?? ((badgeAlt?.isNotEmpty ?? false) ? badgeAlt : null) ?? badgeFileName;
-    final userGroupColorRaw = WebColors.fromString(userGroupNode?.querySelector('font')?.attributes['color']);
-    final Color? userGroupColor;
-    if (userGroupColorRaw.isValid) {
-      userGroupColor = Color(userGroupColorRaw.colorValue);
-    } else {
-      userGroupColor = null;
-    }
+        userGroupNode?.innerText.trim() ??
+        ((badgeAlt?.isNotEmpty ?? false) ? badgeAlt : null) ??
+        knownGroup ??
+        badgeFileName;
+    // The color of the printed name (a color name or `#RRGGBB`, as the forum's group setting holds it), or of the
+    // known group when that one is shown.
+    final userGroupColorValue =
+        (userGroupNode?.querySelector('font')?.attributes['color'] ??
+                (userGroupNode == null && knownGroup != null && userGroup == knownGroup ? groupColor?.trim() : null))
+            .toColor();
+    final userGroupColor = userGroupColorValue == null ? null : Color(userGroupColorValue);
 
     String? uid;
     String? title;

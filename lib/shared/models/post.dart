@@ -84,12 +84,18 @@ class Post with PostMappable {
   ///
   /// The floor's content `body_html` (the `div.pcb` of the floor, cut from the page as it is) is the `data` the content
   /// renderer gets, untouched: quotes, spoilers, hidden parts, the comment and rate blocks are all in there as on the
-  /// web page. The author column `author_html` (the `td.pls` of the floor) is parsed with the selectors of the web
-  /// page ([_parseAuthorColumn]) for what the other plugins put there: the brief profile, medals, badges, pokemon,
-  /// checkin. The rest comes from the fields:
+  /// web page. The author column `author_html` (the inside of the floor's `td.pls`) is put back in the cell the page
+  /// prints it in (`<td id="userinfo_PID" class="pls">`, the id the brief profile reads the floor's `div#ts_avatar_PID`
+  /// by: the nickname, the avatar, the group badge) and parsed with the selectors of the web page
+  /// ([_parseAuthorColumn]) for what the other plugins put there: the brief profile, medals, badges, pokemon,
+  /// checkin. The user group of the brief profile is the one the column prints as text (the staff's
+  /// `a.stat_authortitle`), else the name the page gives the badge (its `alt`), else the floor's `group` (`title`,
+  /// `color`): the page prints a member's group as its badge only, with an empty `alt`, whose file name is only a
+  /// guess at the name. The rest comes from the fields:
   ///
   /// * the author from `author` / `authorid` / `avatar`, an anonymous floor (`anonymous` 1) named "匿名" without uid,
-  ///   link or avatar; `dateline` (unix seconds) as the publish time;
+  ///   link or avatar; `dateline` (unix seconds) as the publish time, the forum's wall clock with [timeOffset] (the
+  ///   answer's `timeoffset`) as the page prints it ("发表于 2026-10-1 05:30:15"), whatever the device's zone;
   /// * `position` as the floor number (the forum's -1 of a hot reply gives none), `share_url` as the share link;
   /// * `lastedit` as the last edit (the name and the time text the page prints; none when either is empty);
   /// * the purchase lock of the first floor of a paid thread not yet bought ([pay], `thread.pay`, `need_pay` 1), the
@@ -128,6 +134,7 @@ class Post with PostMappable {
     Object? codes,
     String? smiliesVersion,
     int threadSpecial = 0,
+    num timeOffset = 8,
   }) {
     final pid = _apiInt(p['pid']);
     final postID = '$pid';
@@ -146,13 +153,16 @@ class Post with PostMappable {
 
     final authorHtml = _apiText(p['author_html']);
     final table = parseHtmlDocument(
-      '<table><tbody><tr><td class="pls">$authorHtml</td></tr></tbody></table>',
+      '<table><tbody><tr><td id="userinfo_$postID" class="pls">$authorHtml</td></tr></tbody></table>',
     ).querySelector('table')!;
+    final group = p['group'] is Map<String, dynamic> ? _apiMap(p['group']) : null;
     final column = _parseAuthorColumn(
       table,
       table.querySelector('td.pls'),
       postID: postID,
       author: author,
+      groupTitle: group == null ? null : _apiText(group['title']),
+      groupColor: group == null ? null : _apiText(group['color']),
     );
     final signatureHtml = _apiText(p['signature_html']);
 
@@ -201,7 +211,7 @@ class Post with PostMappable {
       postID: postID,
       postFloor: position > 0 ? position : null,
       author: author,
-      publishTime: _apiTime(p['dateline']),
+      publishTime: _apiWallClock(p['dateline'], timeOffset),
       data: bodyHtml,
       locked: locked,
       replyAction: allowed('reply'),
@@ -657,12 +667,15 @@ class Post with PostMappable {
   ///
   /// [scope] is the node the floor-wide selectors search: the whole `div#post_PID` of a web page
   /// ([fromPostNode]), or the table the author column of a structured answer is wrapped in ([Post.fromApi]), so that
-  /// both paths read the same selectors.
+  /// both paths read the same selectors. [groupTitle] and [groupColor] are the floor's user group of a structured
+  /// answer, for the brief profile ([UserBriefProfile.buildFromUserProfileNode]).
   static _AuthorColumn _parseAuthorColumn(
     uh.Element scope,
     uh.Element? userProfileNode, {
     required String postID,
     required User author,
+    String? groupTitle,
+    String? groupColor,
   }) {
     final avatarId = 'ts_avatar_$postID';
     // User profile
@@ -670,7 +683,12 @@ class Post with PostMappable {
     // The user info column is empty for guests (and the profile is not available), do not treat it as an error.
     UserBriefProfile? userBriefProfile;
     if (userProfileNode != null && userProfileNode.querySelector('div.tsdm_statbar') != null) {
-      userBriefProfile = UserBriefProfile.buildFromUserProfileNode(userProfileNode, author: author);
+      userBriefProfile = UserBriefProfile.buildFromUserProfileNode(
+        userProfileNode,
+        author: author,
+        groupTitle: groupTitle,
+        groupColor: groupColor,
+      );
     } else {
       talker.info('post $postID: user profile node not found, maybe not logged in');
     }

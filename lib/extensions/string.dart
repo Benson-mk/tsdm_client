@@ -95,7 +95,25 @@ extension ParseUrl on String {
     }
 
     if (mod == 'space' && queryParameters['do'] == 'thread' && queryParameters['view'] == 'me') {
-      return const RecognizedRoute(ScreenPaths.myThread);
+      // A member's own list names nobody ("我的帖子"). One that names a member (`uid`, `username`: "TA的主题" of a
+      // profile or a floor, also the account's own) is that member's list: their threads are the search by that
+      // author, the page the profile opens for them ("搜索此人的帖子"); their replies (`type=reply`) and comments
+      // have no page in the app and open as an unsupported forum link (the web page).
+      final uid = queryParameters['uid'];
+      final username = queryParameters['username'];
+      final hasUid = uid != null && uid.isNotEmpty && uid != '0';
+      final hasUsername = username != null && username.isNotEmpty;
+      if (!hasUid && !hasUsername) {
+        return const RecognizedRoute(ScreenPaths.myThread);
+      }
+      final type = queryParameters['type'];
+      if (type != null && type.isNotEmpty && type != 'thread') {
+        return null;
+      }
+      return RecognizedRoute(
+        ScreenPaths.search,
+        queryParameters: {if (hasUid) 'authorUid': uid else 'authorName': username!},
+      );
     }
 
     // Favorites list, with or without uid: home.php?mod=space[&uid=xxx]&do=favorite[&view=me][&type=thread|forum]
