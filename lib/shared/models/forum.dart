@@ -26,8 +26,9 @@ final class Forum with ForumMappable {
     this.redirectUrl,
   });
 
-  /// Build a [Forum] from a subforum [s] of a structured forum page answer of the forum's app API (plugin 2.0.0,
-  /// `schema: 2`, see `forumPageFromApi`), the expanded layout the forum page lists its subforums in.
+  /// Build a [Forum] from a forum [s] of a structured answer of the forum's app API: a subforum of the forum page
+  /// (plugin 2.0.0, `schema: 2`, see `forumPageFromApi`), the expanded layout the forum page lists its subforums in,
+  /// a forum of a category or of the "我收藏的版块" panel of the homepage (`schema: 5`).
   ///
   /// * The url is the forum's page, or the address a redirect forum points to (`redirect`, empty otherwise).
   /// * `todayposts` 0 is no count, as the page prints no `<em>` then.
@@ -35,14 +36,20 @@ final class Forum with ForumMappable {
   ///   whole subject (the page cuts it to 30 bytes, not imitated), its time (the forum's unix seconds, the real
   ///   instant) and its author with the member's url by username.
   /// * `subforums` are the forum's own subforums (the page's "子版块: a, b" row), null when there are none as the page
-  ///   has no row then; [subThreadList] is never given.
+  ///   has no row then.
+  /// * `description_html` (plugin 2.8.2: the description as the page prints it in its `p.xg2`) gives the shortcuts to
+  ///   threads the description links to ([subThreadList], the "链接" of the card), read as [fromFlRowNode] reads them
+  ///   from the page; none without it (`description` is plain text).
   /// * `redirect` makes a link forum ([redirectUrl], see [forumRedirectUrlOf]): the page prints no latest thread for
-  ///   it, so none is given whatever `lastpost` holds (plugins before 2.8.1 send one with the subforums of the forum
-  ///   page). `private` (the "我收藏的版块" panel of the homepage, plugin 2.8.1) gives [isPrivate].
+  ///   it, so none is given whatever `lastpost` holds (plugins before 2.8.2 send one with the subforums of the forum
+  ///   page). `private` (plugin 2.8.1 for the panel, 2.8.2 for the categories and the subforums) gives [isPrivate];
+  ///   without it, a subforum the viewer sees only by name (`permission` 1, plugins before 2.8.2) is one, as the page
+  ///   prints "私密版块" for it. The page prints no latest thread for such a forum either.
   factory Forum.fromApi(Map<String, dynamic> s) {
     final fid = _apiInt(s['fid']);
     final redirectUrl = forumRedirectUrlOf(_apiText(s['redirect']), fid);
-    final lastPost = redirectUrl == null && s['lastpost'] is Map<String, dynamic>
+    final isPrivate = s.containsKey('private') ? _apiInt(s['private']) == 1 : _apiInt(s['permission']) == 1;
+    final lastPost = redirectUrl == null && !isPrivate && s['lastpost'] is Map<String, dynamic>
         ? s['lastpost'] as Map<String, dynamic>
         : null;
     // An anonymous last post names no author: the page prints the forum's "匿名" in its place, without a link.
@@ -54,6 +61,10 @@ final class Forum with ForumMappable {
               .whereType<Map<String, dynamic>>()
               .map((e) => (_apiText(e['name']), '$baseUrl/forum.php?mod=forumdisplay&fid=${_apiInt(e['fid'])}'))
               .toList()
+        : const <(String, String)>[];
+    final descriptionHtml = s['description_html'];
+    final subThreadList = descriptionHtml is String && descriptionHtml.contains('tid=')
+        ? _descriptionThreadLinks(descriptionHtml)
         : const <(String, String)>[];
 
     return Forum(
@@ -75,10 +86,22 @@ final class Forum with ForumMappable {
           ? null
           : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPostAuthor)}',
       subForumList: subForumList.isEmpty ? null : subForumList,
-      isPrivate: _apiInt(s['private']) == 1,
+      subThreadList: subThreadList.isEmpty ? null : subThreadList,
+      isPrivate: isPrivate,
       redirectUrl: redirectUrl,
     );
   }
+
+  /// The links to threads (`tid=`) of a forum's description [html] (`description_html`), as [fromFlRowNode] reads the
+  /// description from the page: put in its `p.xg2` in the forum's cell, the html is parsed as the page's is (a block
+  /// in the description closes the paragraph and stays in the cell).
+  static List<(String, String)> _descriptionThreadLinks(String html) =>
+      parseHtmlDocument('<table><tbody><tr><td><p class="xg2">$html</p></td></tr></tbody></table>')
+          .querySelectorAll('td > p a')
+          .where((e) => e.attributes['href']?.contains('tid=') ?? false)
+          .map((e) => (e.firstEndDeepText(), e.attributes['href']))
+          .whereType<(String, String)>()
+          .toList();
 
   /// The address of the link forum [fid] whose `redirect` setting is [redirect], as [redirectUrl] keeps it; null when
   /// [redirect] is empty (not a link forum).

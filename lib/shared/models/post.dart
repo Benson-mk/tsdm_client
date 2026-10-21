@@ -29,6 +29,12 @@ extension _ParseExtension on uh.Element {
 String? _uidFromUrl(String? url) =>
     url?.tryParseAsUri()?.queryParameters['uid'] ?? url?.split('uid=').elementAtOrNull(1);
 
+/// Whether the author column [node] of a floor prints "头像被屏蔽" in place of the avatar: the site hides the avatars
+/// of banned authors (`<div class="avatar">头像被屏蔽</div>`, no image).
+bool _avatarBlockedIn(uh.Element? node) =>
+    node?.querySelectorAll('div.avatar').any((e) => e.querySelector('img') == null && e.innerText.trim() == '头像被屏蔽') ??
+    false;
+
 /// Post model.
 ///
 /// Each [Post] contains a reply.
@@ -77,6 +83,9 @@ class Post with PostMappable {
     this.special,
     this.bestAnswerRequest,
     this.debateVoteRequest,
+    this.avatarBlocked = false,
+    this.hot = false,
+    this.hotFloor,
   });
 
   /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
@@ -97,6 +106,9 @@ class Post with PostMappable {
   ///   link or avatar; `dateline` (unix seconds) as the publish time, the forum's wall clock with [timeOffset] (the
   ///   answer's `timeoffset`) as the page prints it ("发表于 2026-10-1 05:30:15"), whatever the device's zone;
   /// * `position` as the floor number (the forum's -1 of a hot reply gives none), `share_url` as the share link;
+  ///   `hot` (plugin 2.8.2) marks a hot reply, which the page prints "推荐" for, with the floor it really is
+  ///   (`hot_position`, 0 when the forum does not know it); `avatar_blocked` (plugin 2.8.2) is the "头像被屏蔽" the
+  ///   page prints in place of the avatar, which the answer then gives empty;
   /// * `lastedit` as the last edit (the name and the time text the page prints; none when either is empty);
   /// * the purchase lock of the first floor of a paid thread not yet bought ([pay], `thread.pay`, `need_pay` 1), the
   ///   other locks stay in the content for the renderer, as on the web page;
@@ -142,13 +154,15 @@ class Post with PostMappable {
     final position = _apiInt(p['position']);
     final authorId = _apiInt(p['authorid']);
     final anonymous = _apiInt(p['anonymous']) == 1 || authorId <= 0;
+    final avatarBlocked = _apiInt(p['avatar_blocked']) == 1;
+    final hot = _apiInt(p['hot']) == 1;
     final author = anonymous
         ? const User(name: _anonymousName, url: '')
         : User(
             name: _apiText(p['author']),
             uid: '$authorId',
             url: '$baseUrl/home.php?mod=space&uid=$authorId',
-            avatarUrl: _apiImageUrl(p['avatar']),
+            avatarUrl: avatarBlocked ? null : _apiImageUrl(p['avatar']),
           );
 
     final authorHtml = _apiText(p['author_html']);
@@ -222,7 +236,7 @@ class Post with PostMappable {
       editUrl: editUrl,
       lastEditUsername: lastEdit == null ? null : _apiText(lastEdit['username']),
       lastEditTime: lastEdit == null ? null : _apiText(lastEdit['time']),
-      userBriefProfile: column.userBriefProfile,
+      userBriefProfile: avatarBlocked ? column.userBriefProfile?.copyWith(avatarUrl: null) : column.userBriefProfile,
       shareLink: shareUrl.isEmpty ? null : shareUrl.prependHost(),
       page: page,
       isDraft: first && draft && editUrl != null,
@@ -254,6 +268,9 @@ class Post with PostMappable {
           : null,
       standVotes: threadSpecial == 5 && !first && _apiInt(p['stand_votes']) > 0 ? _apiInt(p['stand_votes']) : 0,
       best: _apiInt(p['best']) == 1,
+      avatarBlocked: avatarBlocked,
+      hot: hot,
+      hotFloor: hot && _apiInt(p['hot_position']) > 0 ? _apiInt(p['hot_position']) : null,
     );
   }
 
@@ -427,6 +444,21 @@ class Post with PostMappable {
   /// 2.8.0).
   final SpecialRequest? debateVoteRequest;
 
+  /// The page prints "头像被屏蔽" in place of the author's avatar (the site hides the avatars of banned authors and of
+  /// floors banned one by one): the card shows no avatar either, not even one kept for the author ([author] has none).
+  final bool avatarBlocked;
+
+  /// A hot reply: the forum puts it first on the first page and prints "推荐" in place of its floor number
+  /// ([postFloor] is null).
+  final bool hot;
+
+  /// The floor a [hot] reply really is (plugin 2.8.2, `hot_position`), where it is printed on its own page; null when
+  /// not known (the thread does not keep floor positions, the web page) and for any other floor.
+  final int? hotFloor;
+
+  /// The floor number to name this floor by: [postFloor], or for a [hot] reply the floor it really is ([hotFloor]).
+  int? get shownFloor => postFloor ?? hotFloor;
+
   /// Build [Post] from [element] that has attribute id "post_$postID".
   ///
   /// [reportContext] holds the ids of the page [element] was read from; without it no report target is kept.
@@ -477,8 +509,11 @@ class Post with PostMappable {
         legacyNameNode?.firstEndDeepText()?.trim() ??
         postInfoNode?.querySelector('div')?.firstEndDeepText()?.trim();
     final postAuthorUid = _uidFromUrl(postAuthorUrl);
-    final postAuthorAvatarUrl = (postInfoNode?.querySelector('div.avatar img') ?? postInfoNode?.querySelector('img'))
-        ?._lazyImageUrl();
+    // "头像被屏蔽" printed in place of the avatar: no image of the column is the avatar then.
+    final avatarBlocked = _avatarBlockedIn(userProfileNode);
+    final postAuthorAvatarUrl = avatarBlocked
+        ? null
+        : (postInfoNode?.querySelector('div.avatar img') ?? postInfoNode?.querySelector('img'))?._lazyImageUrl();
     final postAuthor = User(
       name: postAuthorName ?? '',
       uid: postAuthorUid,
@@ -551,6 +586,9 @@ class Post with PostMappable {
     final pollNode = postDataNode?.querySelector('form#poll');
 
     final postFloor = postDataNode?.querySelector('div.pi > strong > a > em')?.firstEndDeepText()?.parseToInt();
+    // A hot reply prints "推荐" where the floor number goes.
+    final hot =
+        postFloor == null && (postDataNode?.querySelector('div.pi > strong > a')?.innerText.contains('推荐') ?? false);
 
     final shareLink = postDataNode?.querySelector('div.pi > strong > a')?.attributes['href']?.prependHost();
 
@@ -641,7 +679,7 @@ class Post with PostMappable {
       editUrl: editUrl,
       lastEditUsername: lastEditUsername,
       lastEditTime: lastEditTime,
-      userBriefProfile: column.userBriefProfile,
+      userBriefProfile: avatarBlocked ? column.userBriefProfile?.copyWith(avatarUrl: null) : column.userBriefProfile,
       shareLink: shareLink,
       page: page,
       isDraft: isDraft,
@@ -658,6 +696,8 @@ class Post with PostMappable {
         context: reportContext,
         authorUid: postAuthor.uid,
       ),
+      avatarBlocked: avatarBlocked,
+      hot: hot,
     );
   }
 

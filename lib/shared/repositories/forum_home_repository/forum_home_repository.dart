@@ -31,21 +31,25 @@ import 'package:tsdm_client/utils/logger.dart';
 /// Callers that ask while a fetch is on its way for the same session share it ([fetchHomePage]): the homepage and the
 /// topics tab loading together cost one request.
 ///
-/// The "我收藏的版块" panel comes with the structured answer since plugin 2.8.1 (`favorites`). An answer of an older
-/// plugin names the viewer's favorite forums by id only; the topics tab, the only page showing the panel, then asks
-/// for it ([requestFavoritesPanel]): the page is asked once more without `nodoc=1`, in the background, and that
-/// answer, which carries the `document` the panel is read from, is published as the page. The homepage never waits
-/// for it.
+/// What an answer of an older plugin gives only on the web page is read from the page asked once more without
+/// `nodoc=1` ([fetchPageDocument]), in the background, for the page that needs it, and that answer, which carries the
+/// `document`, is published as the page:
+///
+/// * the "我收藏的版块" panel, in the structured answer since plugin 2.8.1 (`favorites`); before, the answer names the
+///   viewer's favorite forums by id only, and the topics tab, the only page showing the panel, asks for it
+///   ([requestFavoritesPanel]). The homepage never waits for it;
+/// * the activity links of 活动专区, in its forum's `description_html` since plugin 2.8.2; before, the answer gives
+///   the description as plain text, and the activities page asks for the page with its document.
 ///
 /// **Need to call dispose.**
 final class ForumHomeRepository with LoggerMixin {
   /// Constructor.
   ///
-  /// [favoritesPanelTimeout] is how long [requestFavoritesPanel] waits for the page with its document.
-  ForumHomeRepository({this.favoritesPanelTimeout = const Duration(seconds: 10)});
+  /// [documentTimeout] is how long [fetchPageDocument] waits for the page with its document.
+  ForumHomeRepository({this.documentTimeout = const Duration(seconds: 10)});
 
-  /// How long [requestFavoritesPanel] waits for the page with its document before the page stays without it.
-  final Duration favoritesPanelTimeout;
+  /// How long [fetchPageDocument] waits for the page with its document before the page stays without it.
+  final Duration documentTimeout;
 
   final _dailyRewards = DailyRewardsRepository();
 
@@ -59,8 +63,9 @@ final class ForumHomeRepository with LoggerMixin {
   Future<Either<AppException, ForumHomePage>>? _pending;
   _Session? _pendingSession;
 
-  /// The page the panel was last asked for ([requestFavoritesPanel]): asked once per page.
-  ForumHomePage? _panelAskedFor;
+  /// The page asked once more with its document ([fetchPageDocument]) and that request, on its way or done: asked once
+  /// per page, every caller asking for the same page shares it.
+  ({ForumHomeApiPage page, Future<ForumHomeApiPage?> answer})? _documentFetch;
 
   /// Every page fetched from the server, the latest one replayed to new listeners.
   final _pageSubject = BehaviorSubject<ForumHomePage>();
@@ -81,6 +86,7 @@ final class ForumHomeRepository with LoggerMixin {
     _pageSession = null;
     _pending = null;
     _pendingSession = null;
+    _documentFetch = null;
   }
 
   /// Release the stream.
@@ -134,52 +140,78 @@ final class ForumHomeRepository with LoggerMixin {
   /// Read the "我收藏的版块" panel of [page] from the web page, in the background: for the topics tab, when [page] is an
   /// answer of plugin 2.3.0 to 2.8.0 that names favorite forums without their panel ([favoritesPanelNeedsDocument]).
   ///
-  /// The page is asked once more without `nodoc=1` (the answer keeps its `document`), with the client of the session
-  /// in use, waiting at most [favoritesPanelTimeout]. That answer is cached and published on [pageStream] (the topics
-  /// tab reads the panel from it, `forumGroupsFromApi`) only when it is the structured page served to the account
-  /// [page] was served to, the session [page] was asked with is still the one in use, and [page] is still the cached
-  /// page; otherwise, or when it fails, [page] stays, and its panel is looked up among the categories.
-  ///
-  /// Nothing is asked for any other page, one that is not the cached page any more, or a page it was asked for already.
+  /// The page with its document is asked ([fetchPageDocument]); published on [pageStream], the topics tab reads the
+  /// panel from it (`forumGroupsFromApi`). When it fails, [page] stays, and its panel is looked up among the
+  /// categories. Nothing is asked for any other page.
   Future<void> requestFavoritesPanel(ForumHomePage page) async {
     if (page is! ForumHomeApiPage || !favoritesPanelNeedsDocument(page.json)) {
       return;
     }
-    final session = _sessionNow();
-    if (!identical(page, _page) || identical(page, _panelAskedFor) || session != _pageSession) {
-      return;
-    }
-    _panelAskedFor = page;
     debug('favorite forums without their panel (plugin before 2.8.1): asking the homepage with its document');
+    await fetchPageDocument(page);
+  }
+
+  /// The structured [page] once more with its `document`, for what an answer of an older plugin gives only on the web
+  /// page: the "我收藏的版块" panel before plugin 2.8.1 ([requestFavoritesPanel]), the activity links of 活动专区 before
+  /// 2.8.2 (`activitiesNeedDocument`). [page] itself when it has its document already.
+  ///
+  /// The page is asked once more without `nodoc=1` with the client of the session in use, waiting at most
+  /// [documentTimeout]; asked once per page: callers asking for the same page share the request, on its way or done.
+  /// The answer is given only when it is the structured page served to the account [page] was served to and the
+  /// session [page] was asked with is still the one in use; null otherwise, when it fails, and without asking when
+  /// [page] is not the cached page or the session changed since it was fetched. When [page] is still the cached page,
+  /// the answer is cached and published on [pageStream] in its place.
+  Future<ForumHomeApiPage?> fetchPageDocument(ForumHomeApiPage page) {
+    if (page.json['document'] is String) {
+      return Future.value(page);
+    }
+    final asked = _documentFetch;
+    if (asked != null && identical(asked.page, page)) {
+      return asked.answer;
+    }
+    final session = _sessionNow();
+    if (!identical(page, _page) || session != _pageSession) {
+      return Future.value();
+    }
+    final answer = _askPageDocument(page, session);
+    _documentFetch = (page: page, answer: answer);
+    return answer;
+  }
+
+  /// Ask the page with its document for [page], asked with [session], see [fetchPageDocument].
+  Future<ForumHomeApiPage?> _askPageDocument(ForumHomeApiPage page, _Session session) async {
     final Either<AppException, ForumHomePage> answer;
     try {
-      answer = await _askPage(getIt.get<NetClientProvider>(), withDocument: true).timeout(favoritesPanelTimeout);
+      answer = await _askPage(getIt.get<NetClientProvider>(), withDocument: true).timeout(documentTimeout);
     } on TimeoutException {
-      warning('homepage with its document timed out, panel not read');
-      return;
+      warning('homepage with its document timed out');
+      return null;
     } on Object catch (e) {
-      warning('homepage with its document failed: $e, panel not read');
-      return;
+      warning('homepage with its document failed: $e');
+      return null;
     }
     final ForumHomeApiPage full;
     switch (answer) {
       case Right(value: final ForumHomeApiPage value) when value.json['ok'] == 1 && value.servedUid == page.servedUid:
         full = value;
       case Right(:final value):
-        warning('homepage with its document is another page (served to ${value.servedUid}), panel not read');
-        return;
+        warning('homepage with its document is another page (served to ${value.servedUid}), not taken');
+        return null;
       case Left(:final value):
-        warning('homepage with its document failed: $value, panel not read');
-        return;
+        warning('homepage with its document failed: $value');
+        return null;
     }
-    if (!identical(page, _page) || _sessionNow() != session) {
-      debug('homepage with its document dropped: the page or the session changed meanwhile');
-      return;
+    if (_sessionNow() != session) {
+      debug('homepage with its document dropped: the session changed meanwhile');
+      return null;
     }
-    _page = full;
-    if (!_pageSubject.isClosed) {
-      _pageSubject.add(full);
+    if (identical(page, _page)) {
+      _page = full;
+      if (!_pageSubject.isClosed) {
+        _pageSubject.add(full);
+      }
     }
+    return full;
   }
 
   /// Fetch the topic page of app from server.

@@ -511,6 +511,8 @@ void main() {
   });
 
   group('the activities page', () {
+    // Plugin 2.8.2: the description as the page prints it is `description_html`; `description` is plain text (see
+    // test_228 for the plugins before it).
     test('the links of the description of 活动专区, as from the page; none without the forum', () {
       final json = _json('index_v5_member.json');
       final categories = (json['categories'] as List).cast<Map<String, dynamic>>();
@@ -518,7 +520,7 @@ void main() {
       forums[0] = {
         ...forums[0] as Map<String, dynamic>,
         'name': '活动专区',
-        'description':
+        'description_html':
             '<a href="forum.php?mod=viewthread&amp;tid=1">十月活动</a> | <a href="https://example.com/x">站外</a> '
             '<p align="center"><a href="forum.php?mod=viewthread&amp;tid=2">九月 活动</a></p> '
             '<a href="javascript:void(0)">no</a>',
@@ -529,7 +531,7 @@ void main() {
       expect(activities[1].url, 'https://example.com/x');
       expect(parseForumActivitiesFromApi(_json('index_v5_member.json')), isEmpty);
       expect(parseForumActivitiesFromApi(_json('index_v5_guest.json')), isEmpty);
-      forums[0] = {...forums[0] as Map<String, dynamic>, 'description': ''};
+      forums[0] = {...forums[0] as Map<String, dynamic>, 'description_html': ''};
       expect(parseForumActivitiesFromApi(json), isEmpty);
     });
   });

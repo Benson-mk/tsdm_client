@@ -44,6 +44,8 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///   sentence (`modact`, the page's `div.modact`), the type (`typeid` with `typename`, the `[type]` beside the
 ///   title; none when the thread has no type) and the thread's author (`authorid`, [ThreadPageInfo.authorUid]; none
 ///   for an anonymous thread, `authorid` 0), on every page, so a page past the first tells who started the thread;
+///   the reply count is the "回复: N" of the page's info row (`allreplies`, plugin 2.8.2: replies and comments,
+///   whatever filter the page has), `replies` before;
 /// * `forum.name` is the forum's name, `nav` the breadcrumbs from the group down to the forum of the thread (the
 ///   group linked as `forum.php?gid=`, a forum as `forum.php?mod=forumdisplay&fid=`), the thread itself not among
 ///   them, as the page's breadcrumb parser leaves them;
@@ -238,7 +240,9 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
     breadcrumbs: breadcrumbs,
     postMedals: postMedals,
     viewCount: _int(thread['views']),
-    replyCount: _int(thread['replies']),
+    // What the page's info row prints as "回复: N" (replies and comments, whatever filter the page has; plugin
+    // 2.8.2); `replies` is the count the forum changed for the pages (one author's floors…), taken before.
+    replyCount: thread['allreplies'] is num ? _int(thread['allreplies']) : _int(thread['replies']),
     special: special,
     authorUid: _int(thread['authorid']) > 0 ? _int(thread['authorid']) : null,
   );

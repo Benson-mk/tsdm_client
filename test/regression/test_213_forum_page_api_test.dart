@@ -758,7 +758,13 @@ void main() {
   });
 
   test('the fixtures carry nothing of the test forum but the pages', () {
-    final files = Directory(_dir).listSync().whereType<File>().where((f) => f.path.contains('forum_v2_')).toList();
+    // The answers of the plugin's 2.8.2 acceptance run (`forum_v2_282_*`, a link forum's address among them) are
+    // checked by test_228.
+    final files = Directory(_dir)
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.contains('forum_v2_') && !f.path.contains('forum_v2_282_'))
+        .toList();
     expect(files.length, 12);
     for (final file in files) {
       final raw = file.readAsStringSync();

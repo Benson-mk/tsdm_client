@@ -116,15 +116,18 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
       pathParameters: <String, String>{
         'username': widget.post.author.name,
         'pid': widget.post.postID,
-        'floor': '${widget.post.postFloor}',
+        'floor': '${widget.post.shownFloor}',
         'rateAction': widget.post.rateAction!,
       },
     );
   }
 
   Widget _buildAuthorRow(BuildContext context) {
-    final avatarHeroTag = 'Avatar-${widget.post.author.uid}-${widget.post.postFloor}';
-    final nameHeroTag = 'Name-${widget.post.author.name}-${widget.post.postFloor}';
+    // A hot reply prints no floor number and may be on the page twice (first as hot, then where it is): its pid tells
+    // it apart.
+    final floorTag = widget.post.postFloor ?? (widget.post.hot ? 'hot${widget.post.postID}' : null);
+    final avatarHeroTag = 'Avatar-${widget.post.author.uid}-$floorTag';
+    final nameHeroTag = 'Name-${widget.post.author.name}-$floorTag';
 
     // No thread above the card on the notice detail page.
     final knownMedals = context.readOrNull<ThreadBloc>()?.state.postMedals ?? const [];
@@ -171,7 +174,6 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     final nickname = widget.post.userBriefProfile?.nickname;
     final userGroup = widget.post.userBriefProfile?.userGroup;
     final publishTime = widget.post.publishTime;
-    final floor = widget.post.postFloor;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
@@ -183,11 +185,14 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
             child: SizedBox(
               width: 44,
               height: 44,
-              child: HeroUserAvatar(
-                avatarUrl: widget.post.author.avatarUrl,
-                username: widget.post.author.name,
-                heroTag: avatarHeroTag,
-              ),
+              // The page prints "头像被屏蔽" in place of the avatar: none is shown, not even one kept for the author.
+              child: widget.post.avatarBlocked
+                  ? _BlockedAvatar(heroTag: avatarHeroTag)
+                  : HeroUserAvatar(
+                      avatarUrl: widget.post.author.avatarUrl,
+                      username: widget.post.author.name,
+                      heroTag: avatarHeroTag,
+                    ),
             ),
           ),
           sizedBoxW12H12,
@@ -270,22 +275,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
             ),
           ),
           sizedBoxW8H8,
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Text(
-                floor == null ? '#' : '#$floor',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ),
-          ),
+          _FloorBadge(widget.post),
         ],
       ),
     );
@@ -353,7 +343,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
           if (isOfflineFloor(context)) {
             return;
           }
-          await widget.replyCallback?.call(widget.post.author, widget.post.postFloor, widget.post.replyAction);
+          await widget.replyCallback?.call(widget.post.author, widget.post.shownFloor, widget.post.replyAction);
         },
         child: child,
       ),
@@ -423,7 +413,10 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         enabled: false,
         height: 32,
         child: Text(
-          '${widget.post.author.name.truncate(10, ellipsis: true)} #${widget.post.postFloor}',
+          [
+            widget.post.author.name.truncate(10, ellipsis: true),
+            if (widget.post.shownFloor case final floor?) '#$floor',
+          ].join(' '),
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
             color: colorScheme.secondary,
             fontWeight: FontWeight.bold,
@@ -437,7 +430,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
   Future<void> _onContextMenuItemSelected(BuildContext context, _PostCardActions value) async {
     switch (value) {
       case _PostCardActions.reply:
-        await widget.replyCallback?.call(widget.post.author, widget.post.postFloor, widget.post.replyAction);
+        await widget.replyCallback?.call(widget.post.author, widget.post.shownFloor, widget.post.replyAction);
       case _PostCardActions.rate:
         if (widget.post.rateAction != null) {
           await _rateCallback.call();
@@ -632,6 +625,83 @@ class _ContentUnavailable extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The avatar of a floor whose page prints "头像被屏蔽" in place of it ([Post.avatarBlocked]): a neutral mark saying so,
+/// never an image (one kept for the author's name would show what the page hides).
+class _BlockedAvatar extends StatelessWidget {
+  const _BlockedAvatar({required this.heroTag});
+
+  /// The tag the brief profile dialog's avatar flies from.
+  final String heroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: context.t.postCard.avatarBlocked,
+      child: Semantics(
+        label: context.t.postCard.avatarBlocked,
+        child: Hero(
+          tag: heroTag,
+          child: CircleAvatar(
+            backgroundColor: colorScheme.surfaceContainerHighest,
+            child: Icon(Icons.no_accounts_outlined, color: colorScheme.outline),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The floor number at the end of a floor's header, "#N"; a hot reply ([Post.hot]) says "推荐" there as the page does,
+/// with the floor it really is when known ([Post.hotFloor]), and goes to that floor when tapped (its share link, the
+/// forum's `findpost`), as the page's "推荐" links to it.
+class _FloorBadge extends StatelessWidget {
+  const _FloorBadge(this.post);
+
+  final Post post;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final tr = context.t.postCard;
+    final String text;
+    if (post.hot) {
+      text = [tr.hotReply, if (post.hotFloor case final floor?) '#$floor'].join(' ');
+    } else {
+      text = post.postFloor == null ? '#' : '#${post.postFloor}';
+    }
+    final badge = DecoratedBox(
+      decoration: BoxDecoration(
+        color: post.hot ? colorScheme.tertiaryContainer : colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Text(
+          text,
+          style: textTheme.labelMedium?.copyWith(
+            color: post.hot ? colorScheme.onTertiaryContainer : colorScheme.onSurfaceVariant,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
+    );
+    final link = post.shareLink;
+    if (!post.hot || link == null || isOfflineFloor(context)) {
+      return badge;
+    }
+    return Tooltip(
+      message: tr.jumpToHotFloor,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async => context.dispatchAsUrl(link),
+        child: badge,
+      ),
     );
   }
 }

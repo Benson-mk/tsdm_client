@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
@@ -38,8 +40,28 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
         .match((e) {
           handle(e);
           emit(state.copyWith(status: ForumStatus.failure, pollOfferUid: null));
-        }, (v) async => emit(_mergePage(v, event.pageNumber)))
+        }, (v) async => emit(_loadedMore(v, event.pageNumber)))
         .run();
+  }
+
+  /// The state with [page], the answer to page [pageNumber] asked to go on with the list.
+  ///
+  /// The forum shows its first page when asked past its last page or past the site's limit of pages
+  /// (`threadmaxpages`), and the page tells which one it is (the web page's pagination, plugin 2.8.2's `page`): the
+  /// threads of another page than the one asked are not added (the list holds them, or they belong before it), the
+  /// list is at its end, and its last page is the one the forum names.
+  ForumState _loadedMore(ForumPageData page, int pageNumber) {
+    final answered = page.currentPage;
+    if (answered == null || answered == pageNumber || state.normalThreadList.isEmpty) {
+      return _mergePage(page, pageNumber);
+    }
+    warning('asked page $pageNumber of forum ${state.fid}, the forum answered page $answered: the list ends here');
+    return state.copyWith(
+      status: ForumStatus.success,
+      canLoadMore: false,
+      totalPages: math.min(page.totalPages ?? state.currentPage, state.currentPage),
+      pollOfferUid: page.pollOfferUid,
+    );
   }
 
   Future<void> _onForumRefreshRequested(ForumRefreshRequested event, ForumEmitter emit) async {
@@ -84,7 +106,9 @@ class ForumBloc extends Bloc<ForumEvent, ForumState> with LoggerMixin {
   }
 
   /// The state with [page] (the page [pageNumber] the repository built, from the web page or the forum's app API)
-  /// merged in.
+  /// merged in. The page shown is the one the forum answered (`currentPage`, the web page's pagination; plugin
+  /// 2.8.2's `page`, which is the first page when asked past the site's limit of pages), [pageNumber] only when the
+  /// answer does not tell.
   ForumState _mergePage(ForumPageData page, int pageNumber) {
     final allNormalThread = [...state.normalThreadList, ...page.normalThreadList];
 

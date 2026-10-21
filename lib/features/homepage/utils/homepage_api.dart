@@ -23,7 +23,7 @@ const _rankBlockId = 5;
 /// The homepage tab, the topics tab and the activities page read it through the path the page needs, so that the
 /// web page is parsed as it always was and the structured answer is never parsed from a `document` (which a lean
 /// answer, `nodoc=1`, does not even carry), but for the "我收藏的版块" panel of a plugin before 2.8.1
-/// ([favoritesPanelNeedsDocument]).
+/// ([favoritesPanelNeedsDocument]) and the activity links of a plugin before 2.8.2 (`activitiesNeedDocument`).
 sealed class ForumHomePage {
   const ForumHomePage();
 
@@ -107,7 +107,8 @@ final class ForumHomeApiPage extends ForumHomePage {
 ///
 /// The page is then built by `homepageStateFromApi` and [forumGroupsFromApi]; the `document` of the answer, when
 /// there is one, is never parsed, but for the "我收藏的版块" panel of a plugin before 2.8.1, which the answer names by
-/// id only ([favoritesPanelNeedsDocument]).
+/// id only ([favoritesPanelNeedsDocument]), and the activity links of a plugin before 2.8.2, which gives the
+/// description of 活动专区 as plain text (`activitiesNeedDocument`).
 Map<String, dynamic>? indexApiAnswerOf(Object? data) {
   final json = tsdmAppAnswerJson(data);
   if (json == null) {
@@ -369,8 +370,9 @@ List<PinnedThreadGroup> parsePinnedThreadGroupsFromDocument(uh.Document document
 /// The forum groups of a structured homepage answer [json] for the topics tab, as `buildGroupListFromDocument`
 /// reads them from the web page: the "我收藏的版块" panel first when the viewer has favorite forums
 /// ([_favoritesPanelOf]), then every category (`forum.php?gid=`) with its forums ([Forum.fromApi]: the latest thread,
-/// the subforums the forum's setting lists) and its moderators (`moderators`, the names of the page's 分区版主 row,
-/// plugin 2.4.0; none before).
+/// the subforums the forum's setting lists; since plugin 2.8.2 a link forum, a forum the viewer may not enter and
+/// the links to threads of the description, as the page prints them) and its moderators (`moderators`, the names of
+/// the page's 分区版主 row, plugin 2.4.0; none before).
 List<ForumGroup> forumGroupsFromApi(Map<String, dynamic> json) {
   final categories = _list(json['categories']);
   final groups = categories

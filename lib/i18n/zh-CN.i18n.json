@@ -1348,7 +1348,10 @@
     "share": "复制分享链接",
     "openInBrowser": "在浏览器中打开",
     "copyText": "复制文字",
-    "copyPid": "复制pid（${pid: String}）"
+    "copyPid": "复制pid（${pid: String}）",
+    "avatarBlocked": "头像被屏蔽",
+    "hotReply": "推荐",
+    "jumpToHotFloor": "跳到该楼"
   },
   "postReport": {
     "menu": "举报",
