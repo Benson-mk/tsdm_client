@@ -27,6 +27,11 @@ import 'package:tsdm_client/utils/logger.dart';
 /// answer, whose `document` holds the blocks of the page) is kept as its document ([ForumHomeWebPage]), parsed as
 /// the web page always was.
 ///
+/// The "我收藏的版块" panel comes with the structured answer since plugin 2.8.1 (`favorites`). An answer of an older
+/// plugin names the viewer's favorite forums by id only: when it names any, the page is asked once more without
+/// `nodoc=1` and that answer, which carries the `document` the panel is read from, is the page
+/// ([_withFavoritesPanel]).
+///
 /// **Need to call dispose.**
 final class ForumHomeRepository with LoggerMixin {
   final _dailyRewards = DailyRewardsRepository();
@@ -82,13 +87,19 @@ final class ForumHomeRepository with LoggerMixin {
   /// The topics tab shows the same `forum.php` as the homepage, so this is the same cache and the same fetch.
   AsyncEither<ForumHomePage> fetchTopicPage({bool force = false}) => fetchHomePage(force: force);
 
+  /// The [homePage] asked in the JSON mode without [tsdmAppNodocQuery]: the answer keeps its `document`.
+  static const _homePageWithDocument = '$homePage?$tsdmAppJsonQuery';
+
   /// Ask [client] for the [homePage] once: the structured answer of plugin 2.3.0 ([indexApiAnswerOf]), or the
-  /// document of any other answer.
+  /// document of any other answer. Lean (`nodoc=1`), or with its `document` when [withDocument].
   ///
   /// An answer without a page ([tsdmAppAnswerWithoutPage]: the plugin failed to build it, or an empty body) is a
   /// failed request, not a forum without boards.
-  static Future<Either<AppException, ForumHomePage>> _askPage(NetClientProvider client) async {
-    switch (await client.get(withTsdmAppJson(homePage)).run()) {
+  static Future<Either<AppException, ForumHomePage>> _askPage(
+    NetClientProvider client, {
+    bool withDocument = false,
+  }) async {
+    switch (await client.get(withDocument ? _homePageWithDocument : withTsdmAppJson(homePage)).run()) {
       case Left(:final value):
         return left(value);
       case Right(:final value):
@@ -124,7 +135,7 @@ final class ForumHomeRepository with LoggerMixin {
     // JSON mode of the forum's app API when the forum has it (see TsdmAppApi); the web page otherwise.
     final first = await _askPage(client);
     if (first.isLeft()) return first;
-    final page = first.unwrap();
+    var page = first.unwrap();
     bool isCurrent() => cookie?.userLoginInfo.uid == uid;
     final refresh = await _dailyRewards.processFields(
       servedUid: page.servedUid,
@@ -154,12 +165,41 @@ final class ForumHomeRepository with LoggerMixin {
       // Not recursive: one best-effort reload updates the balance and removes the claimed packet entry.
       try {
         final updated = await _askPage(client);
-        if (updated.isRight() && isCurrent() && updated.unwrap().servedUid == uid) return updated;
+        if (updated.isRight() && isCurrent() && updated.unwrap().servedUid == uid) page = updated.unwrap();
       } on Object {
         warning('daily rewards homepage reload failed; keep the original page');
       }
     }
+    if (isCurrent()) page = await _withFavoritesPanel(client, page);
     if (!isCurrent()) return left(IdentityChangedException());
-    return first;
+    return right(page);
   });
+
+  /// [page], or when it is an answer of plugin 2.3.0 to 2.8.0 that names favorite forums without their panel
+  /// ([favoritesPanelNeedsDocument]), the page asked once more with its `document` through the same [client], from
+  /// which the topics tab reads the panel (`forumGroupsFromApi`). That answer is the page only when it is the
+  /// structured page served to the same account; otherwise [page] stays, and its panel is looked up among the
+  /// categories as before.
+  ///
+  /// The one request more is made only then: an answer of plugin 2.8.1 carries the panel (`favorites`), and a guest
+  /// or a member without favorite forums has none.
+  Future<ForumHomePage> _withFavoritesPanel(NetClientProvider client, ForumHomePage page) async {
+    if (page is! ForumHomeApiPage || !favoritesPanelNeedsDocument(page.json)) {
+      return page;
+    }
+    debug('favorite forums without their panel (plugin before 2.8.1): asking the homepage with its document');
+    try {
+      switch (await _askPage(client, withDocument: true)) {
+        case Right(value: final ForumHomeApiPage full) when full.json['ok'] == 1 && full.servedUid == page.servedUid:
+          return full;
+        case Right(:final value):
+          warning('homepage with its document is another page (served to ${value.servedUid}), panel not read');
+        case Left(:final value):
+          warning('homepage with its document failed: $value, panel not read');
+      }
+    } on Object catch (e) {
+      warning('homepage with its document failed: $e, panel not read');
+    }
+    return page;
+  }
 }

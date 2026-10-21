@@ -237,7 +237,7 @@ abstract final class TsdmAppApi {
 /// the lean answers it asks for (`nodoc=1`), are what that plugin gives. An older plugin answers less; the app then
 /// parses those pages from the web page (or the blocks of the answer) as before. Shown on the settings page beside
 /// the version the forum's plugin last named ([TsdmAppApi.pluginInfo]).
-const expectedTsdmAppVersion = '2.8.0';
+const expectedTsdmAppVersion = '2.8.1';
 
 /// What the forum's plugin tells about itself in the answer of an action: `status` and `notify` name their `version`
 /// since plugin 1.0.0 (1.9.0 for `notify`), and 2.3.0 adds `nodoc: 1` to `status` when it takes [tsdmAppNodocQuery].

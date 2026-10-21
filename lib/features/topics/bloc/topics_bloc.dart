@@ -181,7 +181,8 @@ class TopicsBloc extends Bloc<TopicsEvent, TopicsState> with LoggerMixin {
   /// Parse the group list and seed the favorite forums cache of [seedUid] from the "我收藏的版块" panel, if any.
   ///
   /// The web page: the panel's forums are the favorites. The structured answer: `favorite_forums` names every
-  /// favorite, among them one the panel built from the categories may not list ([forumGroupsFromApi]).
+  /// favorite, among them one the panel may not list (its `favorites` since plugin 2.8.1, before that read from the
+  /// page or looked up among the categories, [forumGroupsFromApi]).
   TopicsState _parse(ForumHomePage page, {required int? seedUid}) {
     final List<ForumGroup> forumGroupList;
     final Iterable<int> favorites;

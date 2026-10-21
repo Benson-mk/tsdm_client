@@ -22,6 +22,8 @@ final class Forum with ForumMappable {
     this.latestThreadTitle,
     this.latestThreadUserName,
     this.latestThreadUserUrl,
+    this.isPrivate = false,
+    this.redirectUrl,
   });
 
   /// Build a [Forum] from a subforum [s] of a structured forum page answer of the forum's app API (plugin 2.0.0,
@@ -34,6 +36,8 @@ final class Forum with ForumMappable {
   ///   instant) and its author with the member's url by username.
   /// * `subforums` are the forum's own subforums (the page's "子版块: a, b" row), null when there are none as the page
   ///   has no row then; [subThreadList] is never given.
+  /// * `redirect` gives [redirectUrl] too, the address resolved on the forum; `private` (the "我收藏的版块" panel of
+  ///   the homepage, plugin 2.8.1) gives [isPrivate].
   factory Forum.fromApi(Map<String, dynamic> s) {
     final fid = _apiInt(s['fid']);
     final redirect = _apiText(s['redirect']);
@@ -67,6 +71,8 @@ final class Forum with ForumMappable {
           ? null
           : '$baseUrl/home.php?mod=space&username=${Uri.encodeComponent(lastPostAuthor)}',
       subForumList: subForumList.isEmpty ? null : subForumList,
+      isPrivate: _apiInt(s['private']) == 1,
+      redirectUrl: redirect.isEmpty ? null : Uri.parse('$baseUrl/').resolve(redirect).toString(),
     );
   }
 
@@ -116,6 +122,17 @@ final class Forum with ForumMappable {
 
   /// Url of the latest thread.
   final String? latestThreadUserUrl;
+
+  /// Whether the viewer may not enter the forum and the page prints "私密版块" in place of its latest thread (a forum
+  /// the site still lists to those who may not enter, `hideprivate` off).
+  final bool isPrivate;
+
+  /// The address a link forum (the page prints "链接到外部地址" in place of its counts and latest thread) leads to,
+  /// opened in the browser as the page opens it in a new window; null for any other forum.
+  ///
+  /// The `redirect` of the forum's app API; read from the web page, which prints no address, the forum's own page,
+  /// which the forum redirects to it.
+  final String? redirectUrl;
 
   /// Is current forum in expanded layout when parsing from server side
   /// html document.
