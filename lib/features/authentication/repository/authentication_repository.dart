@@ -533,7 +533,8 @@ class AuthenticationRepository with LoggerMixin {
         );
         if (parsedUserInfo == null && userInfo.uid != null && _isGuestPage(document)) {
           // The stored cookie of that account is dead: remember it (issue #25), the current account is untouched.
-          await getIt.get<StorageProvider>().markSessionExpired(userInfo.uid!);
+          // Only while its row holds the session checked: another one stored meanwhile says nothing of it.
+          await getIt.get<StorageProvider>().markSessionExpiredIfHeld(userInfo.uid!, session: candidate.session);
         }
         return left(SwitchUserNotAuthedException());
       }

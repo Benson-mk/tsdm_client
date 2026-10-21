@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
+import 'package:tsdm_client/extensions/string.dart';
 import 'package:tsdm_client/extensions/uri.dart';
 import 'package:tsdm_client/features/authentication/utils/logged_user_parser.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
@@ -13,6 +14,7 @@ import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart'
 import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
@@ -572,6 +574,9 @@ final class NotificationRepository with LoggerMixin {
     _controller.add(const NotificationInfoStateLoading());
     return AsyncEither(() async {
       final startedAt = DateTime.now();
+      // The session the default client is bound to: the one the guest page below is about.
+      final cookie = getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>() : null;
+      final asked = (uid: cookie?.userLoginInfo.uid, generation: cookie?.generation);
       final result = await fetchNotificationWith(
         getIt.get<NetClientProvider>(),
         timestamp: timestamp,
@@ -580,8 +585,14 @@ final class NotificationRepository with LoggerMixin {
       switch (result) {
         case Left(:final value):
           if (value is NotificationUserNotFound) {
-            // The forum answered the guest page to the current account's cookie: its session is dead (issue #25).
-            await _storage?.markSessionExpired(uid);
+            if (cookie == null || (asked.uid == uid && cookie.generation == asked.generation)) {
+              // The forum answered the guest page to the current account's cookie: its session is dead (issue #25).
+              await _storage?.markSessionExpired(uid);
+            } else {
+              // Asked as another account, or another session was loaded since (a login with the password, of this
+              // account too): the guest page says nothing of the session in use now.
+              info('guest page of a previous session of uid ${"$uid".obscured(4)}, nothing marked');
+            }
           }
           _controller.add(const NotificationInfoStateFailure());
           return left(value);

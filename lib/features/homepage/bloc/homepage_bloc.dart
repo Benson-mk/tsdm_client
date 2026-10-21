@@ -195,6 +195,9 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     // Clear data.
     emit(const HomepageState(status: HomepageStatus.loading));
     var needLogin = false;
+    // A request dropped: the account or its session changed while it was on its way (a login with the password of
+    // the same account too, which reloads nothing by itself).
+    var identityChanged = false;
     final asked = _askedAs();
     _loadedFor = asked.uid;
     final respList = (await Future.wait([
@@ -205,6 +208,8 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
           }
         } else if (e case LoginUserInfoNotFoundException()) {
           needLogin = true;
+        } else if (e case IdentityChangedException()) {
+          identityChanged = true;
         } else {
           handle(e);
         }
@@ -213,6 +218,8 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         switch (e) {
           case LoginUserInfoNotFoundException() || ProfileNeedLoginException():
             needLogin = true;
+          case IdentityChangedException():
+            identityChanged = true;
           default:
             handle(e);
         }
@@ -220,6 +227,11 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
     ])).where((e) => e.isRight()).map((e) => e.unwrap()).toList();
     if (generation != _pageGeneration) {
       // A newer load (an account change) took over: it shows the page.
+      return;
+    }
+    if (identityChanged) {
+      // Load it for the session in use now.
+      add(HomepageRefreshRequested());
       return;
     }
     if (respList.length != 2) {
@@ -272,6 +284,11 @@ class HomepageBloc extends Bloc<HomepageEvent, HomepageState> with LoggerMixin {
         }
         final d2 = await _profileRepository.fetchProfile(force: true).run();
         if (generation != _pageGeneration) {
+          return;
+        }
+        if (d2 case Left(value: IdentityChangedException())) {
+          // The session changed while the profile was fetched: load the page for the one in use now.
+          add(HomepageRefreshRequested());
           return;
         }
         if (d2.isLeft()) {

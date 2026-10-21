@@ -114,14 +114,31 @@ final class CookieProvider with LoggerMixin implements Storage {
   /// Info of the user currently login.
   UserLoginInfo _userLoginInfo;
 
-  /// Whether [_cookieMap] mirrors a row of the cookie table, loaded through [loadCookieFromStorage] or
-  /// [CookieProvider.build].
+  /// Whether [_cookieMap] mirrors a row of the cookie table, loaded through [loadCookieFromStorage],
+  /// [loadCookieFromDatabase] or [CookieProvider.build], or stored by this provider.
   ///
-  /// Such a provider must not bring its row back once the user removed the account: the per-account clients of auto
-  /// check-in keep running after a removal on the manage accounts page, the global provider keeps serving the
-  /// current account until its session is verified, and every `Set-Cookie` they receive lands in [_syncCookie]. A
-  /// provider that got its identity from a login ([updateUserInfo]) still creates its row.
+  /// Such a provider must not bring its row back once the user removed the account, nor write its session back over
+  /// another one stored since (a login with the password, of the same account too): the per-account clients of auto
+  /// check-in and of the sync of all accounts keep running after a removal on the manage accounts page or a new
+  /// login, the global provider keeps serving the current account while the new login is stored, and every
+  /// `Set-Cookie` they receive lands in [_syncCookie]. A provider that got its identity from a login
+  /// ([updateUserInfo]) still creates its row, and mirrors it from then on.
   bool _mirrorsStoredRow = false;
+
+  /// Bumped whenever this provider starts holding another session: a stored row loaded ([loadCookieFromStorage],
+  /// [loadCookieFromDatabase]), the cookies cleared ([clearUserInfoAndCookie]).
+  ///
+  /// A client built on this provider (`NetClientProvider.build`) sends, reads and saves its cookies only while the
+  /// provider still holds the session it first read them under: after a new login of the same account (with the
+  /// password, or the switch's check) a request of the previous session answered late must not write that session
+  /// over the new one, here and in the stored row. The account alone ([userLoginInfo]) did not tell.
+  int _generation = 0;
+
+  /// The session generation of this provider, see [_generation].
+  int get generation => _generation;
+
+  /// The forum session this provider holds ([cookieSessionOf]), the one its requests are sent with.
+  String? get session => cookieSessionOf(_cookieMap);
 
   /// Info of the user this cookie belongs to.
   UserLoginInfo get userLoginInfo => _userLoginInfo;
@@ -133,7 +150,7 @@ final class CookieProvider with LoggerMixin implements Storage {
     _mirrorsStoredRow = false;
     if (_userLoginInfo.isComplete) {
       debug('complete user info updated, sync cookie');
-      await _syncCookie();
+      await _syncCookie(held: session);
     }
   }
 
@@ -176,6 +193,7 @@ final class CookieProvider with LoggerMixin implements Storage {
     _userLoginInfo = userInfo;
     _cookieMap = stripServerFlagCookies(Map.castFrom(databaseCookie));
     _mirrorsStoredRow = true;
+    _generation++;
     return true;
   }
 
@@ -195,6 +213,7 @@ final class CookieProvider with LoggerMixin implements Storage {
     _userLoginInfo = userInfo;
     _cookieMap = stripServerFlagCookies(Map.castFrom(databaseCookie));
     _mirrorsStoredRow = true;
+    _generation++;
     return true;
   }
 
@@ -218,6 +237,7 @@ final class CookieProvider with LoggerMixin implements Storage {
     _userLoginInfo = const UserLoginInfo(username: null, uid: null);
     _cookieMap = {};
     _mirrorsStoredRow = false;
+    _generation++;
   }
 
   /// Save cookie in database.
@@ -229,7 +249,10 @@ final class CookieProvider with LoggerMixin implements Storage {
   /// happen.
   ///
   /// Return false if user info is incomplete.
-  Future<bool> _syncCookie() async {
+  ///
+  /// [held] is the session this provider held before the change ([session]): a provider mirroring a stored row writes
+  /// into it only while the row still holds that session ([StorageProvider.saveCookieOfSession]).
+  Future<bool> _syncCookie({required String? held}) async {
     // Do not save cookie if we don't know which user it belongs to.
     // This shall not happen.
     if (!_userLoginInfo.isComplete) {
@@ -243,11 +266,23 @@ final class CookieProvider with LoggerMixin implements Storage {
     }
 
     final storage = getIt.get<StorageProvider>();
-    if (_mirrorsStoredRow && storage.getCookieByUidSync(_userLoginInfo.uid!) == null) {
-      // The account was removed after this provider loaded it: keep the cookie in memory for the request in flight
-      // but do not recreate the row.
-      info('account ${"${_userLoginInfo.uid}".obscured(4)} was removed, only keep cookie in memory');
-      return false;
+    if (_mirrorsStoredRow) {
+      // The account was removed after this provider loaded it, or another session of it was stored since (a login
+      // with the password): keep the cookie in memory for the request in flight but neither recreate the row nor
+      // write the previous session over the new one.
+      final saved = await storage.saveCookieOfSession(
+        username: _userLoginInfo.username!,
+        uid: _userLoginInfo.uid!,
+        cookie: _cookieMap,
+        session: held,
+      );
+      if (!saved) {
+        info(
+          'account ${"${_userLoginInfo.uid}".obscured(4)} was removed or holds another session now, only keep cookie '
+          'in memory',
+        );
+      }
+      return saved;
     }
 
     await storage.saveCookie(
@@ -255,6 +290,10 @@ final class CookieProvider with LoggerMixin implements Storage {
       uid: _userLoginInfo.uid!,
       cookie: _cookieMap,
     );
+    // The row holds this session now: what the forum renews in it later is written back only while it still does.
+    // The window between storing a new login and loading it into the global provider is covered too: an answer of
+    // the previous session landing then is not written over the new one.
+    _mirrorsStoredRow = true;
 
     return true;
   }
@@ -296,6 +335,7 @@ final class CookieProvider with LoggerMixin implements Storage {
 
   @override
   Future<void> delete(String key) async {
+    final held = session;
     _cookieMap.remove(key);
     // If user cookie is empty, delete that item from database.
     if (_cookieMap.isEmpty) {
@@ -305,7 +345,7 @@ final class CookieProvider with LoggerMixin implements Storage {
       );
       await _deleteUserCookie();
     } else {
-      await _syncCookie();
+      await _syncCookie(held: held);
     }
   }
 
@@ -332,11 +372,12 @@ final class CookieProvider with LoggerMixin implements Storage {
     if ((_cookieMap[key]?.contains('${cookiePrefix}_auth') ?? false) && !value.contains('${cookiePrefix}_auth')) {
       return;
     }
+    final held = session;
     _cookieMap[key] = value;
     if (value.contains('_nofavfid')) {
       _cookieMap = stripServerFlagCookies(_cookieMap);
     }
-    await _syncCookie();
+    await _syncCookie(held: held);
 
     // Check points changes events.
     if (key == '.domains') {

@@ -81,13 +81,21 @@ final class AutoCheckinRepository with LoggerMixin {
   });
 
   /// Check in [userInfo], trying again after each 429 up to [retryDelays] times.
+  ///
+  /// "Not authorized" means the forum answered the guest page to this account's cookie: its session is recorded as
+  /// expired (issue #25) so the manage accounts page can say so, unless another session of the account was stored
+  /// meanwhile (a login with the password): the guest page says nothing of it.
   Future<CheckinResult> _checkinWithRetry(UserLoginInfo userInfo, CheckinFeeling feeling, String message) async {
-    final client = await _prepareCheckin(userInfo);
-    if (client == null) {
+    final cookie = await _prepareCheckin(userInfo);
+    if (cookie == null) {
       return const CheckinResultNotAuthorized();
     }
+    final client = _clientFactory(cookie);
     for (var attempt = 0; ; attempt++) {
       final result = await doCheckin(client, feeling, message).run();
+      if (result is CheckinResultNotAuthorized && userInfo.uid != null) {
+        await _storageProvider.markSessionExpiredIfHeld(userInfo.uid!, session: cookie.session);
+      }
       if (result case CheckinResultWebRequestFailed(
         statusCode: HttpStatus.tooManyRequests,
         :final retryAfterSeconds,
@@ -112,14 +120,14 @@ final class AutoCheckinRepository with LoggerMixin {
     return told > _maxRetryAfter ? _maxRetryAfter : told;
   }
 
-  /// The client of [userInfo], null when its cookie is not stored any more.
-  Future<NetClientProvider?> _prepareCheckin(UserLoginInfo userInfo) async {
+  /// The cookie of [userInfo], null when it is not stored any more.
+  Future<CookieProvider?> _prepareCheckin(UserLoginInfo userInfo) async {
     final cookieProvider = getIt.get<CookieProvider>(instanceName: ServiceKeys.empty);
     final loaded = await cookieProvider.loadCookieFromStorage(userInfo);
     if (!loaded) {
       return null;
     }
-    return _clientFactory(cookieProvider);
+    return cookieProvider;
   }
 
   /// Update status: [userInfoList] is in unauthenticated state.
@@ -146,13 +154,10 @@ final class AutoCheckinRepository with LoggerMixin {
   /// Update status: [userInfo] ends up with failure in checkin progress.
   ///
   /// "Already checked in" still records the time: the account checked in from somewhere else today. "Not
-  /// authorized" means the forum answered the guest page to this account's cookie: its session is recorded as
-  /// expired (issue #25) so the manage accounts page can say so.
+  /// authorized" was recorded as an expired session already ([_checkinWithRetry]).
   Future<void> _updateFailure(UserLoginInfo userInfo, CheckinResult checkinResult) async {
     if (checkinResult is CheckinResultAlreadyChecked) {
       await _storageProvider.updateLastCheckinTime(userInfo.uid!, DateTime.now()).run();
-    } else if (checkinResult is CheckinResultNotAuthorized) {
-      await _storageProvider.markSessionExpired(userInfo.uid!);
     }
     _currentInfo = _currentInfo.copyWith(
       running: _currentInfo.running.where((e) => e != userInfo).toList(),

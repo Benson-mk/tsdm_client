@@ -102,10 +102,6 @@ final class NotificationSyncAllRepository with LoggerMixin {
       _updateRunning(user);
       final result = await _syncPolled(user, pollInterval, now);
       previousAsked = result is! NotificationSyncResultSuccess || !result.recent;
-      if (result is NotificationSyncResultNotAuthorized && user.uid != null) {
-        // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
-        await _storageProvider.markSessionExpired(user.uid!);
-      }
       finished.add((user, result));
       _updateFinished(user, result);
     }
@@ -185,6 +181,10 @@ final class NotificationSyncAllRepository with LoggerMixin {
           .run();
       switch (result) {
         case Left(value: NotificationUserNotFound()):
+          // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
+          // Not when another session of the account was stored meanwhile (a login with the password, here or in the
+          // app while the background service polls): the guest page says nothing of it.
+          await _storageProvider.markSessionExpiredIfHeld(uid, session: cookie.session);
           return const NotificationSyncResultNotAuthorized();
         case Left(:final value) when _isRateLimited(value):
           final retryAfter = _retryAfter(value);

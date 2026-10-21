@@ -104,8 +104,10 @@ final class NetClientProvider with LoggerMixin {
   /// ## Parameters
   ///
   /// * [userLoginInfo] is the account this client acts for, the current account by default. The client is bound to
-  ///   that account: once another account becomes current, pending requests of this client are dropped and their
-  ///   cookies are neither read nor saved, see [_IdentityGuard] and [_IdentityScopedStorage].
+  ///   that account and to the session the cookie provider holds when the client first reads its cookies
+  ///   (`CookieProvider.generation`): once another account becomes current, or another session of the same account
+  ///   is loaded (a login with the password), pending requests of this client are dropped and their cookies are
+  ///   neither read nor saved, see [_IdentityGuard] and [_IdentityScopedStorage].
   /// * Set [forceDesktop] to false when desire server response with a mobile
   ///   layout page.
   factory NetClientProvider.build({Dio? dio, UserLoginInfo? userLoginInfo, bool forceDesktop = true}) {
@@ -113,9 +115,9 @@ final class NetClientProvider with LoggerMixin {
     if (!isWeb) {
       talker.debug('build client with cookie');
       final cookie = getIt.get<CookieProvider>();
-      final identity = userLoginInfo?.uid ?? cookie.userLoginInfo.uid;
-      final cookieJar = PersistCookieJar(ignoreExpires: true, storage: _IdentityScopedStorage(cookie, identity));
-      d.interceptors.add(_IdentityGuard(cookie, identity));
+      final identity = _Identity(cookie, userLoginInfo?.uid ?? cookie.userLoginInfo.uid);
+      final cookieJar = PersistCookieJar(ignoreExpires: true, storage: _IdentityScopedStorage(identity));
+      d.interceptors.add(_IdentityGuard(identity));
       d.interceptors.add(_DropServerFlagCookies());
       d.interceptors.add(CookieManager(cookieJar));
       if (forceDesktop) {
@@ -350,29 +352,61 @@ final class NetClientProvider with LoggerMixin {
   );
 }
 
-/// Cookie storage of one account.
+/// The account a client was built for, and the session generation of the shared [CookieProvider] its cookies were
+/// first read under.
 ///
-/// Reads and writes reach the shared [CookieProvider] only while that account is still the current one. After a
-/// switch, a client built for the previous account neither sends its cookies nor saves the cookies of a late answer
-/// into the new account.
+/// Bound at the first read rather than when the client was built: the jar keeps what it read in memory, so a client
+/// that read the cookies of a session goes on sending them, while a client built earlier (a page keeps one) that
+/// reads them only after a new login of the same account sends the new session as any other client does.
+final class _Identity {
+  _Identity(this.provider, this.uid);
+
+  final CookieProvider provider;
+  final int? uid;
+
+  /// The session generation the client's cookies were read under, null before the first read.
+  int? _generation;
+
+  /// Bind the client to the session the provider holds now, at its first cookie read.
+  void bind() {
+    _generation ??= provider.generation;
+  }
+
+  /// Whether the provider still holds the session of that account: neither another account nor another session of
+  /// the same account (a login with the password, the switch's check) was loaded since the client read its cookies.
+  bool get current => provider.userLoginInfo.uid == uid && (_generation ?? provider.generation) == provider.generation;
+}
+
+/// Cookie storage of one account's session.
+///
+/// Reads and writes reach the shared [CookieProvider] only while it still holds the session of that account the
+/// client read its cookies under ([_Identity]). After a switch, a client built for the previous account neither sends
+/// its cookies nor saves the cookies of a late answer into the new account; after a new login of the same account, a
+/// client of the previous session does not write that session over the new one (any answer may carry a
+/// `Set-Cookie`, and the jar writes back every cookie of the host it loaded, the previous auth cookie included).
 final class _IdentityScopedStorage with LoggerMixin implements Storage {
-  _IdentityScopedStorage(this._provider, this._uid);
+  _IdentityScopedStorage(this._identity);
 
-  final CookieProvider _provider;
-  final int? _uid;
+  final _Identity _identity;
 
-  bool get _current => _provider.userLoginInfo.uid == _uid;
+  CookieProvider get _provider => _identity.provider;
+
+  bool get _current => _identity.current;
 
   @override
   Future<void> init(bool persistSession, bool ignoreExpires) => _provider.init(persistSession, ignoreExpires);
 
   @override
-  Future<String?> read(String key) async => _current ? _provider.read(key) : null;
+  Future<String?> read(String key) async {
+    _identity.bind();
+    return _current ? _provider.read(key) : null;
+  }
 
   @override
   Future<void> write(String key, String value) async {
+    _identity.bind();
     if (!_current) {
-      warning('drop cookie write of a client bound to a previous account');
+      warning('drop cookie write of a client bound to a previous account or session');
       return;
     }
     await _provider.write(key, value);
@@ -393,17 +427,18 @@ final class _IdentityScopedStorage with LoggerMixin implements Storage {
   }
 }
 
-/// Drops requests and answers of a client whose account is no longer the current one.
+/// Drops requests and answers of a client whose account is no longer the current one, or whose session is no longer
+/// the one in use ([_Identity]).
 ///
 /// A request started as account A must not go out as account B (reply, rate, favorite with A's form hash but B's
-/// cookies), and an answer for A must not land on B's screen.
+/// cookies), and an answer for A must not land on B's screen. An answer to the previous session of A after a new
+/// login of A says nothing of the new session: its guest page must not mark the new login expired.
 final class _IdentityGuard extends Interceptor with LoggerMixin {
-  _IdentityGuard(this._provider, this._uid);
+  _IdentityGuard(this._identity);
 
-  final CookieProvider _provider;
-  final int? _uid;
+  final _Identity _identity;
 
-  bool get _changed => _provider.userLoginInfo.uid != _uid;
+  bool get _changed => !_identity.current;
 
   DioException _dropped(RequestOptions options) => DioException(
     requestOptions: options,
@@ -425,11 +460,22 @@ final class _IdentityGuard extends Interceptor with LoggerMixin {
   @override
   void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
     if (_changed) {
-      warning('drop answer for a previous account: ${response.requestOptions.uri.path}');
+      warning('drop answer for a previous account or session: ${response.requestOptions.uri.path}');
       handler.reject(_dropped(response.requestOptions), true);
       return;
     }
     handler.next(response);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (_changed && err.error is! IdentityChangedException) {
+      // A failed answer for a previous account or session is no failure of the one in use either.
+      warning('drop failed answer for a previous account or session: ${err.requestOptions.uri.path}');
+      handler.reject(_dropped(err.requestOptions));
+      return;
+    }
+    handler.next(err);
   }
 }
 
