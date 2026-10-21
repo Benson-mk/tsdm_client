@@ -16,13 +16,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/Carinoasd/tsdm_client" alt="license"/></a>
 </p>
 
-## Latest update: 1.41.0 (2026-10-21)
+## Latest update: 1.41.1 (2026-10-21)
 
-- The phone homepage has a new layout: the forum's pinned groups are tabs of one card, listing one group at a time, so the page is much shorter; the app remembers the group you picked last.
-- 1.40.0: structured pages with the forum's API plugin 2.x, special thread cards, background notifications for every logged-in account, offline copies of the threads you read, and more; see the changelog.
-- Android build number 144, installs over earlier releases and test builds.
+- Fixed "我收藏的版块" on the forums tab: subforums no longer show 0 with no icon, and forums with subforums show their own counts as on the web.
+- On the thread page each floor's nickname and user group are back when logged in; custom titles on profiles no longer show raw `&#…;` codes; debate points keep their links and formatting.
+- Dates and times follow the forum's clock as the web page does; "TA的主题" links of other members no longer open your own threads.
+- Android build number 145, installs over earlier releases and test builds.
 
-[Download 1.41.0](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.41.0) · [Full changelog](./CHANGELOG.md)
+[Download 1.41.1](https://github.com/Carinoasd/tsdm_client/releases/tag/v1.41.1) · [Full changelog](./CHANGELOG.md)
 
 ## What it is
 
