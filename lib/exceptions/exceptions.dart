@@ -129,8 +129,9 @@ final class HttpHandshakeFailedException extends AppException with HttpHandshake
   final Headers? headers;
 
   /// The forum was never reached: no network, the connection refused, or it timed out while connecting (dio's
-  /// connection error and connection timeout, a socket exception). Not set for an answer with an error status, a
-  /// timeout while the answer was coming, or a failed TLS handshake.
+  /// connection error and connection timeout, the Android channel's `HostUnreachableException`). Not set for an answer
+  /// with an error status, a timeout while the answer was coming, a socket failing after the connect, or a failed TLS
+  /// handshake.
   final bool connectionFailed;
 }
 

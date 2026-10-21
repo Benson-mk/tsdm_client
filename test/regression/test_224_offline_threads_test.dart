@@ -65,6 +65,7 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider_android.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
@@ -88,13 +89,15 @@ String _answer(String name, int uid) {
   return jsonEncode(json);
 }
 
-/// The forum's message refusing a thread to a member: no permission (or no such thread).
-final String _denied = jsonEncode({
+/// The forum's message [message] (a refusal of the thread by default: the read permission) as served to [uid]: the
+/// plugin names the account in its messages since 2.2.0.
+String _message(int? uid, {String message = '抱歉，本帖要求阅读权限高于 20 才能浏览', int login = 0}) => jsonEncode({
   'ok': 0,
   'api': 1,
   'error': 'message',
-  'message': '抱歉，本帖要求阅读权限高于 20 才能浏览',
-  'login': 0,
+  'message': message,
+  'login': login,
+  'uid': uid ?? 0,
   'schema': 3,
 });
 
@@ -103,8 +106,11 @@ enum _Failure {
   /// Dio's connection error: no network.
   connection,
 
-  /// A socket exception from the adapter (the Android channel reports an unreachable host so).
-  socket,
+  /// The Android channel's report of a host it could not reach.
+  unreachable,
+
+  /// A socket failing after the connect: the forum was reached.
+  reset,
 
   /// Timed out while connecting.
   connectTimeout,
@@ -126,6 +132,9 @@ final class _Forum implements HttpClientAdapter {
   /// How requests fail, null to answer them.
   _Failure? failure;
 
+  /// The status of the answers.
+  int status = 200;
+
   /// Called when a request arrives, before it is answered or failed.
   void Function()? onRequest;
 
@@ -146,8 +155,10 @@ final class _Forum implements HttpClientAdapter {
     switch (failure) {
       case _Failure.connection:
         throw DioException.connectionError(requestOptions: options, reason: 'offline');
-      case _Failure.socket:
-        throw const SocketException('Network is unreachable');
+      case _Failure.unreachable:
+        throw const HostUnreachableException('Unable to resolve host');
+      case _Failure.reset:
+        throw const SocketException('Connection reset by peer');
       case _Failure.connectTimeout:
         throw DioException.connectionTimeout(timeout: const Duration(seconds: 10), requestOptions: options);
       case _Failure.receiveTimeout:
@@ -163,7 +174,7 @@ final class _Forum implements HttpClientAdapter {
       case null:
         return ResponseBody.fromString(
           answer(query),
-          200,
+          status,
           headers: {
             Headers.contentTypeHeader: [contentType],
           },
@@ -246,6 +257,10 @@ void main() {
     storage = StorageProvider(db, {}, {});
     settings = SettingsRepository(storage);
     await settings.init();
+    // The accounts stored on this device: a page is only saved for one of them.
+    for (final uid in [31, 35, 36]) {
+      await storage.saveCookie(username: 'u$uid', uid: uid, cookie: {'Ystv_2132_auth': 'x$uid'});
+    }
     current = _alice.uid;
     forum = _Forum()..answer = (_) => _answer('thread_v3_plain.json', current ?? 0);
     TsdmAppApi.reset();
@@ -395,7 +410,7 @@ void main() {
       await copies.pendingWrites;
       final row = (await saved()).single;
 
-      for (final failure in [_Failure.connection, _Failure.socket, _Failure.connectTimeout]) {
+      for (final failure in [_Failure.connection, _Failure.unreachable, _Failure.connectTimeout]) {
         forum.failure = failure;
         final offline = _right(await load(repo));
         expect(offline.offlineSavedAt, row.savedAt, reason: '$failure');
@@ -415,6 +430,8 @@ void main() {
       expect(_left(await load(repo)), isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', 500));
       forum.failure = _Failure.receiveTimeout;
       expect(_left(await load(repo)), isA<HttpHandshakeFailedException>());
+      forum.failure = _Failure.reset;
+      expect(_left(await load(repo)), isA<HttpHandshakeFailedException>(), reason: 'reached, then reset');
 
       forum
         ..failure = null
@@ -511,7 +528,7 @@ void main() {
       expect(await saved(), hasLength(4));
 
       current = _alice.uid;
-      forum.answer = (_) => _denied;
+      forum.answer = (_) => _message(current);
       final denied = _right(await load(repo));
       expect(denied.havePermission, isFalse);
       await copies.pendingWrites;
@@ -608,8 +625,7 @@ void main() {
         forum.answer = (_) => _answer('thread_v3_plain.json', current ?? 0);
         _right(await load(repo));
         await copies.pendingWrites;
-        forum.answer = (_) =>
-            jsonEncode({'ok': 0, 'api': 1, 'error': 'message', 'message': message, 'login': login, 'schema': 3});
+        forum.answer = (_) => _message(current, message: message, login: login);
         _right(await load(repo));
         await copies.pendingWrites;
         return (await saved()).length;
@@ -648,15 +664,23 @@ void main() {
       _right(await load(repo));
       await copies.pendingWrites;
       forum.contentType = 'text/html; charset=utf-8';
-      String messagePage(String text) =>
-          '<html><body><div id="messagetext" class="alert_error"><p>$text</p></div></body></html>';
+      // The message page names the account it was served to in its head script, as every Discuz page does.
+      String messagePage(String text, {int uid = 35}) =>
+          '<html><head><script type="text/javascript">var discuz_uid = \'$uid\';</script></head><body> '
+          '<div id="messagetext" class="alert_error"><p>$text</p></div></body></html>';
+      const deleted = '\n  抱歉，指定的主題不存在或已被刪除或正在被審核  \n';
 
       forum.answer = (_) => messagePage('抱歉，您的请求太频繁，请稍后再试');
       expect(_right(await load(repo)).havePermission, isFalse);
       await copies.pendingWrites;
       expect(await saved(), hasLength(1));
 
-      forum.answer = (_) => messagePage('\n  抱歉，指定的主題不存在或已被刪除或正在被審核  \n');
+      forum.answer = (_) => messagePage(deleted, uid: 36);
+      expect(_right(await load(repo)).havePermission, isFalse);
+      await copies.pendingWrites;
+      expect(await saved(), hasLength(1), reason: 'served to another account');
+
+      forum.answer = (_) => messagePage(deleted);
       expect(_right(await load(repo)).havePermission, isFalse);
       await copies.pendingWrites;
       expect(await saved(), isEmpty);
@@ -690,6 +714,111 @@ void main() {
       expect(rows.where((e) => e.tid == 2 || e.uid == 36), hasLength(2), reason: 'other threads keep theirs');
     });
 
+    test(
+      'a deleted thread answered with 404 and its message deletes the saved pages, the load fails as before',
+      () async {
+        final copies = offlineCopies();
+        final repo = ThreadRepository(offline: copies);
+        _right(await load(repo));
+        await copies.pendingWrites;
+
+        // Any other message with 404 keeps them.
+        forum
+          ..status = 404
+          ..answer = (_) => _message(current, message: '抱歉，您的请求太频繁，请稍后再试');
+        expect(_left(await load(repo)), isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', 404));
+        await copies.pendingWrites;
+        expect(await saved(), hasLength(1));
+
+        forum.answer = (_) => _message(current, message: '抱歉，指定的主题不存在或已被删除或正在被审核');
+        expect(_left(await load(repo)), isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', 404));
+        await copies.pendingWrites;
+        expect(await saved(), isEmpty);
+
+        // Off: the 404 is the same failure, nothing read.
+        await settings.setValue(SettingsKeys.offlineThreads, false);
+        expect(_left(await load(repo)), isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', 404));
+      },
+    );
+
+    test('a refusal served to another account than the one of the copies deletes nothing', () async {
+      final copies = offlineCopies();
+      final repo = ThreadRepository(offline: copies);
+      _right(await load(repo));
+      await copies.pendingWrites;
+      forum.answer = (_) => _message(_bob.uid);
+      expect(_right(await load(repo)).havePermission, isFalse);
+      await copies.pendingWrites;
+      expect(await saved(), hasLength(1));
+      forum.answer = (_) => _message(null);
+      _right(await load(repo));
+      await copies.pendingWrites;
+      expect(await saved(), hasLength(1), reason: 'a message naming no account');
+    });
+
+    test('a write handed over is dropped when the setting is off or the account gone by the time it runs', () async {
+      final copies = offlineCopies();
+      const key = OfflineThreadKey(uid: 35, tid: 1, page: 1, orderType: 0, authorId: 0);
+      await settings.setValue(SettingsKeys.offlineThreads, false);
+      copies.save(key, 'page');
+      await copies.pendingWrites;
+      expect(await saved(), isEmpty, reason: 'off by then');
+
+      await turnOn();
+      await storage.deleteCookieByUid(35);
+      copies.save(key, 'page');
+      await copies.pendingWrites;
+      expect(await saved(), isEmpty, reason: 'the account was removed meanwhile');
+
+      copies.save(const OfflineThreadKey(uid: 36, tid: 1, page: 1, orderType: 0, authorId: 0), 'page');
+      await copies.pendingWrites;
+      expect((await saved()).single.uid, 36);
+    });
+
+    test('an account change while offline never leaves the previous account on screen when the reload fails', () async {
+      final copies = offlineCopies();
+      ThreadBloc open() => ThreadBloc(
+        tid: '9199345',
+        pid: null,
+        onlyVisibleUid: null,
+        reverseOrder: null,
+        exactOrder: null,
+        threadRepository: ThreadRepository(offline: copies),
+        currentUid: () => current,
+      );
+      for (final next in <int?>[null, _bob.uid]) {
+        current = _alice.uid;
+        await storage.clearOfflineThreads();
+        forum.failure = null;
+        final bloc = open()..add(ThreadRefreshRequested());
+        await bloc.stream.firstWhere((s) => s.status == ThreadStatus.success);
+        await copies.pendingWrites;
+        forum.failure = _Failure.connection;
+        bloc.add(ThreadRefreshRequested());
+        await bloc.stream.firstWhere((s) => s.status == ThreadStatus.success);
+        expect(bloc.state.isOffline, isTrue);
+        expect(bloc.state.floorsUid, _alice.uid);
+
+        // The same account: a failed reload puts its floors back, as before.
+        bloc.add(const ThreadJumpPageRequested(2));
+        await bloc.stream.firstWhere((s) => s.status == ThreadStatus.failure);
+        expect(bloc.state.postList, isNotEmpty);
+        expect(bloc.state.isOffline, isTrue);
+
+        // Forgotten (a guest now) or switched to Bob, who saved nothing: the reload fails.
+        current = next;
+        bloc.add(ThreadRefreshRequested());
+        await bloc.stream.firstWhere((s) => s.status == ThreadStatus.failure);
+        expect(bloc.state.postList, isEmpty, reason: 'next: $next');
+        expect(bloc.state.isOffline, isFalse);
+        expect(bloc.state.title, isNull);
+        expect(bloc.state.replyParameters, isNull);
+        expect(bloc.state.floorsUid, next);
+        expect(bloc.state.tid, '9199345', reason: 'the thread asked for stays');
+        await bloc.close();
+      }
+    });
+
     test('a saved page that can not be built is not shown', () async {
       await storage.saveOfflineThreadPage(
         uid: 35,
@@ -697,7 +826,7 @@ void main() {
         page: 1,
         orderType: 0,
         authorId: 0,
-        body: _denied,
+        body: _message(35),
         savedAt: DateTime(2026, 10, 20),
       );
       forum.failure = _Failure.connection;
@@ -722,7 +851,7 @@ void main() {
   group('a failure to reach the forum is told apart', () {
     RequestOptions options() => RequestOptions(path: '$baseUrl/forum.php');
 
-    test('connection error, connection timeout and socket exception; not the others', () {
+    test('connection error, connection timeout and an unreachable host; not the others', () {
       bool offline(Object error) => isNoNetworkFailure(mapException(error, StackTrace.current));
 
       expect(offline(DioException.connectionError(requestOptions: options(), reason: 'x')), isTrue);
@@ -730,7 +859,12 @@ void main() {
         offline(DioException.connectionTimeout(timeout: const Duration(seconds: 1), requestOptions: options())),
         isTrue,
       );
-      expect(offline(DioException(requestOptions: options(), error: const SocketException('x'))), isTrue);
+      expect(offline(DioException(requestOptions: options(), error: const HostUnreachableException('x'))), isTrue);
+      expect(
+        offline(DioException(requestOptions: options(), error: const SocketException('Connection reset by peer'))),
+        isFalse,
+        reason: 'a socket failing after the connect: the forum was reached',
+      );
 
       expect(
         offline(DioException.receiveTimeout(timeout: const Duration(seconds: 1), requestOptions: options())),
@@ -760,6 +894,35 @@ void main() {
         mapException(DioException.connectionError(requestOptions: options(), reason: 'x'), StackTrace.current),
         isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', isNull),
       );
+    });
+  });
+
+  group('storage', () {
+    test('the body is the last column and the eviction and the size read the index only', () async {
+      final columns = await db.customSelect('PRAGMA table_info(offline_thread)').get();
+      expect(columns.last.read<String>('name'), 'body');
+      Future<String> plan(String sql) async =>
+          (await db.customSelect('EXPLAIN QUERY PLAN $sql').get()).map((e) => e.read<String>('detail')).join('; ');
+      expect(
+        await plan('SELECT uid, tid FROM offline_thread GROUP BY uid, tid ORDER BY MAX(last_used_at) DESC LIMIT 2'),
+        contains('COVERING INDEX offline_thread_recent'),
+      );
+      expect(await plan('SELECT SUM(size) FROM offline_thread'), contains('COVERING INDEX offline_thread_recent'));
+      expect(
+        await plan(
+          'SELECT rowid FROM offline_thread WHERE uid = 1 AND tid = 2 ORDER BY last_used_at DESC LIMIT 20',
+        ),
+        contains('COVERING INDEX offline_thread_recent'),
+      );
+    });
+
+    test('the app shares one instance, a new one where none is registered', () {
+      final first = appOfflineThreads;
+      expect(identical(first, appOfflineThreads), isFalse);
+      final shared = OfflineThreadRepository();
+      getIt.registerSingleton<OfflineThreadRepository>(shared);
+      expect(appOfflineThreads, same(shared));
+      expect(appOfflineThreads, same(shared));
     });
   });
 
@@ -825,11 +988,24 @@ void main() {
         forumName: 'a forum',
         visitTime: DateTime(2026, 10, 20),
       );
+      // An autoincrement table whose counter is past its rows: the copy keeps the counter.
+      final sticker = await fileStorage.addCustomImage(url: 'https://example.com/a.png');
+      await fileStorage.deleteCustomImage(await fileStorage.addCustomImage(url: 'https://example.com/b.png'));
       final bytes = await const BackupRepository().exportSanitized(file);
       final exportedFile = File('${dir.path}/exported.db')..writeAsBytesSync(bytes);
       final exported = sqlite.sqlite3.open(exportedFile.path, mode: sqlite.OpenMode.readOnly);
-      expect(exported.select('SELECT count(*) AS c FROM offline_thread').first['c'], 0);
+      expect(exported.select('SELECT count(*) AS c FROM offline_thread').first['c'], 0, reason: 'the table, empty');
       expect(exported.select('SELECT count(*) AS c FROM thread_visit_history').first['c'], 1);
+      expect(exported.select('SELECT id FROM custom_image').map((e) => e['id']), [sticker]);
+      expect(exported.select("SELECT seq FROM sqlite_sequence WHERE name = 'custom_image'").first['seq'], sticker + 1);
+      expect(exported.userVersion, fileDb.schemaVersion);
+      String schemaOf(sqlite.Database d) => d
+          .select("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
+          .map((e) => '${e['type']} ${e['name']}')
+          .join('\n');
+      final live = sqlite.sqlite3.open(file.path, mode: sqlite.OpenMode.readOnly);
+      expect(schemaOf(exported), schemaOf(live), reason: 'every table and index');
+      live.dispose();
       exported.dispose();
 
       final imported = sqlite.sqlite3.open(file.path);
@@ -1179,6 +1355,27 @@ void main() {
       expect(banner, findsNothing);
       expect(replyBar, findsOneWidget);
       expect(threadBloc(tester).state.isOffline, isFalse);
+      await _dispose(tester);
+    });
+
+    testWidgets('removing the account while reading offline drops its floors when the reload fails', (tester) async {
+      await tester.runAsync(turnOn);
+      await pumpThread(tester);
+      await savedPages(tester, 1);
+      forum.failure = _Failure.connection;
+      await jump(tester, 1);
+      expect(banner, findsOneWidget);
+      expect(page1, findsWidgets);
+
+      // Removed from this device (works offline): the page reloads as a guest, who has no copy, and fails.
+      final result = await tester.runAsync(() => auth.forgetCurrentUser().run());
+      expect(result!.isRight(), isTrue);
+      await _settle(tester);
+      expect(banner, findsNothing, reason: "the previous account's copy is not shown to a guest");
+      expect(page1, findsNothing);
+      expect(find.byType(PostCard), findsNothing);
+      expect(find.text(t.general.retry), findsOneWidget);
+      expect(await tester.runAsync(saved), isEmpty, reason: 'its pages went with it');
       await _dispose(tester);
     });
 

@@ -175,7 +175,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   int? _shownOwner;
 
   /// Saves the pages loaded here while the setting is on, and reads them back without network.
-  final _offline = OfflineThreadRepository();
+  final OfflineThreadRepository _offline = appOfflineThreads;
 
   /// The bloc of this page, created by the provider in [build]; kept to reload the page for another account.
   ThreadBloc? _threadBloc;

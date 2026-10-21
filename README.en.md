@@ -62,6 +62,7 @@ The package name is `com.tsdm.tsdm_client`, signed with the forum's official key
 - Home: forum statistics, the four digest modules (hot, digest, latest replies, latest posts) and the "grab the sofa" entry, each opening its full list
 - Forum groups: the boards of every group with their moderators; "My favourite boards" follows the favourites set on the website
 - Boards and threads: thread lists, floors, comments, ratings, purchases, attachments, spoilers, @ mentions, and a "replied" mark on threads you answered
+- Save viewed threads offline (off by default, in the settings): the saved pages open again without network, only for the account that saved them, with the actions that need the network hidden
 - Favourite or unfavourite a board from its page; the favourites page has "Threads" and "Boards" tabs
 - Share a thread with a friend: pick someone from your friend list and send the title and link as a private message
 - Notices, private messages, chat and public messages; plain-text URLs in notices are tappable; friend requests show up as notices

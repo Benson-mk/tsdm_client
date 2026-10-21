@@ -190,9 +190,30 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
       },
       from14To15: (m, schema) async {
         info('migrating database schema from 14 to 15...');
-        // Thread pages saved for reading without network. Drift writes `CREATE TABLE IF NOT EXISTS`: the step runs
-        // again safely when the background service isolate opened the file together with the app (see from13To14).
+        // Thread pages saved for reading without network, and the index of their eviction. The step runs again safely
+        // when the background service isolate opened the file together with the app (see from13To14): drift writes
+        // `CREATE TABLE IF NOT EXISTS`, the index is created only when missing.
         await m.create(schema.offlineThread);
+        final index = schema.offlineThreadRecent;
+        final existing = await schema.database
+            .customSelect(
+              "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?",
+              variables: [
+                Variable.withString(index.entityName),
+              ],
+            )
+            .get();
+        if (existing.isEmpty) {
+          try {
+            await m.create(index);
+          } on Object catch (e) {
+            // Created by the other connection between the check and here.
+            if (!'$e'.contains('already exists')) {
+              rethrow;
+            }
+            info('${index.entityName} created by another connection');
+          }
+        }
         info('migrating database schema from 14 to 15... ok!');
       },
     ),

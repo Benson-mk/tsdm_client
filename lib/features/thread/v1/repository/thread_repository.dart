@@ -1,5 +1,6 @@
 import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
 
+import 'package:dio/dio.dart' show Options;
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
@@ -143,6 +144,19 @@ class ThreadRepository {
       onlyVisibleUid: onlyVisibleUid,
       reverseOrder: reverseOrder,
       exactOrder: exactOrder,
+      // A deleted thread comes with 404: its message may still be a refusal that deletes the copies.
+      onNotFound: offline != null && uid != null && askedTid != null
+          ? (body) {
+              try {
+                final read = _readThreadPage(body, pageNumber: pageNumber, readViewer: true).toNullable();
+                if (read != null && read.viewerUid == uid && forumRefusesThread(read.page)) {
+                  offline.forgetThread(uid: uid, tid: askedTid);
+                }
+              } on Object catch (_) {
+                // Not a page: nothing refused.
+              }
+            }
+          : null,
     ).run();
 
     switch (answer) {
@@ -189,7 +203,8 @@ class ThreadRepository {
         if (read case Right(value: final v) when offline != null && uid != null) {
           final page = v.page;
           final pageTid = askedTid ?? int.tryParse(page.tid ?? '');
-          if (pageTid != null && forumRefusesThread(page)) {
+          // Refused to the account the copies are of (the answer names it; plugin 2.2.0 and the web page do).
+          if (pageTid != null && v.viewerUid == uid && forumRefusesThread(page)) {
             offline.forgetThread(uid: uid, tid: pageTid);
           } else if (pageTid != null && page.havePermission && !page.needLogin && page.postList.isNotEmpty) {
             // Only what the forum served to this account: not the guest page of a session that expired.
@@ -321,6 +336,7 @@ class ThreadRepository {
     required String? onlyVisibleUid,
     required bool? reverseOrder,
     required int? exactOrder,
+    void Function(Object? body)? onNotFound,
   }) => AsyncEither(() async {
     assert(tid != null || pid != null, 'tid and pid MUST not be null at the same time');
 
@@ -358,12 +374,28 @@ class ThreadRepository {
 
     // With the forum's app API the page comes back as JSON without header, footer and sidebar (see TsdmAppApi);
     // the url kept for sharing and reloading stays the plain one.
-    final respEither = await getIt.get<NetClientProvider>().get(withTsdmAppJson(_threadUrl!)).run();
+    //
+    // Discuz answers a thread that does not exist (deleted, or waiting for moderation) with HTTP 404 and its message:
+    // with [onNotFound] that answer is read too and handed to it; the load fails all the same.
+    final respEither = await getIt
+        .get<NetClientProvider>()
+        .get(
+          withTsdmAppJson(_threadUrl!),
+          options: onNotFound == null
+              ? null
+              : Options(validateStatus: (s) => s != null && ((s >= 200 && s < 300) || s == HttpStatus.notFound)),
+        )
+        .run();
     if (respEither.isLeft()) {
       return left(respEither.unwrapErr());
     }
 
     final resp = respEither.unwrap();
+    if (resp.statusCode == HttpStatus.notFound && onNotFound != null) {
+      onNotFound(resp.data);
+      // The failure of a 404 as without [onNotFound] (dio's bad response, see mapException).
+      return left(HttpHandshakeFailedException('Http status error [404]', statusCode: 404, headers: resp.headers));
+    }
     if (resp.statusCode != HttpStatus.ok) {
       return left(HttpRequestFailedException(resp.statusCode));
     }

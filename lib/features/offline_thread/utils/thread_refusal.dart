@@ -9,6 +9,11 @@ import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart'
 /// maintenance, the antitheft challenge, a page without the floors asked for (`post_not_found`), the login prompt, a
 /// message a forum administrator wrote. A priced forum or thread is no message: the forum redirects to the forum page,
 /// or prints the purchase lock in the first floor.
+///
+/// A forum with the `permmsg` plugin shows the custom message of the forum (written by its administrators) instead of
+/// `forum_permforum_disallow`, and the admin's custom message of the other permission checks stays custom: such a
+/// refusal is not recognized, the copies stay (the safe side: nothing is deleted by mistake). The plugin's answers
+/// carry no language key for a page message, only its text.
 const offlineThreadRefusals = <String, List<String>>{
   // The thread does not exist, was deleted, or waits for moderation.
   'thread_nonexistence': ['抱歉，指定的主题不存在或已被删除或正在被审核', '抱歉，指定的主題不存在或已被刪除或正在被審核'],

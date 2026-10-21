@@ -12,7 +12,11 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.BufferedSink
+import java.net.ConnectException
+import java.net.NoRouteToHostException
 import java.net.ProxySelector
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
 object HttpClient {
@@ -56,6 +60,19 @@ object HttpClient {
             key.equals("Accept", ignoreCase = true) && value.startsWith("image/")
         }
         return wantsImage || headers.keys.any { it.equals("X-Pm-Formhash", ignoreCase = true) }
+    }
+
+    // Error code of a failed request for the Dart side: "KT_HTTP_UNREACHABLE" when the host was not reached at all (no
+    // network, the name not resolved, the connection refused or timed out while connecting), so the app can read a
+    // saved copy of a thread page instead; "KT_HTTP_ERROR" for every other failure, a socket that fails after the
+    // connect included (the forum was reached).
+    fun errorCode(e: Exception): String {
+        val unreachable = e is UnknownHostException ||
+            e is ConnectException ||
+            e is NoRouteToHostException ||
+            // Android's socket says so when the connect timed out; a read timeout is "timeout" or "Read timed out".
+            (e is SocketTimeoutException && e.message?.startsWith("failed to connect") == true)
+        return if (unreachable) "KT_HTTP_UNREACHABLE" else "KT_HTTP_ERROR"
     }
 
     suspend fun get(url: String, headers: HashMap<String, String>): Response {

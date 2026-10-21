@@ -6,7 +6,9 @@ import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
+import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_medal_menu_info.dart';
 import 'package:universal_html/html.dart' as uh;
@@ -28,7 +30,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
     required bool? reverseOrder,
     required int? exactOrder,
     required ThreadRepository threadRepository,
+    int? Function()? currentUid,
   }) : _threadRepository = threadRepository,
+       _currentUid = currentUid ?? _requestAccountUid,
        super(
          ThreadState(
            tid: tid,
@@ -48,6 +52,39 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
   }
 
   final ThreadRepository _threadRepository;
+
+  /// The account the requests of the page go out as now, null for a guest ([ThreadState.floorsUid]).
+  final int? Function() _currentUid;
+
+  /// The account of the global cookie, the one every request of the page is sent as.
+  static int? _requestAccountUid() =>
+      getIt.isRegistered<CookieProvider>() ? getIt.get<CookieProvider>().userLoginInfo.uid : null;
+
+  /// The state of the load begun for account [uid] that failed with the floors [previousPosts] on screen before it
+  /// ([changes] applied on top).
+  ///
+  /// The floors come back, with their offline mark, only when they were loaded for the same account. Floors of another
+  /// account are dropped with everything else their page told (title, forum, reply form): a reload for the account in
+  /// use after a switch or a removal must never leave the previous account's floors on screen, read back offline or
+  /// not, when it fails (no network).
+  ThreadState _failedState(int? uid, {List<Post>? previousPosts, ThreadState Function(ThreadState)? changes}) {
+    final apply = changes ?? (ThreadState s) => s;
+    if (state.floorsUid == uid) {
+      return apply(state.copyWith(status: ThreadStatus.failure, postList: previousPosts ?? state.postList));
+    }
+    debug('drop the floors of a previous account after a failed reload');
+    return apply(
+      ThreadState(
+        tid: state.tid,
+        pid: state.pid,
+        onlyVisibleUid: state.onlyVisibleUid,
+        reverseOrder: state.reverseOrder,
+        exactOrder: state.exactOrder,
+        status: ThreadStatus.failure,
+        floorsUid: uid,
+      ),
+    );
+  }
 
   /// Number of the latest load that replaces the floors on screen: refresh, jump, only one author, all authors, order
   /// (the reload for another account is a refresh or a jump, see ThreadPage).
@@ -91,6 +128,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
   Future<void> _onThreadLoadMoreRequested(ThreadLoadMoreRequested event, ThreadEmitter emit) async {
     // Appends to the floors of the current load: begins none of its own.
     final load = _pageLoad;
+    final uid = _currentUid();
     if (state.status == ThreadStatus.failure) {
       // Restoring from failure.
       emit(state.copyWith(status: ThreadStatus.loading));
@@ -110,11 +148,11 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               return;
             }
             handle(e);
-            emit(state.copyWith(status: ThreadStatus.failure));
+            emit(_failedState(uid));
           },
           (v) {
             if (_isCurrent(load)) {
-              _stateOf(v).map((v) => emit(v)).run();
+              _stateOf(v, uid: uid).map((v) => emit(v)).run();
             }
           },
         )
@@ -123,7 +161,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
 
   Future<void> _onThreadRefreshRequested(ThreadRefreshRequested event, ThreadEmitter emit) async {
     final load = _beginPageLoad();
-    // Keep the posts: when the reload fails they go back on screen instead of a bare retry button.
+    final uid = _currentUid();
+    // Keep the posts: when the reload fails they go back on screen instead of a bare retry button (for the same
+    // account only, see _failedState).
     final previousPosts = state.postList;
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
@@ -140,11 +180,11 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               return;
             }
             handle(e);
-            emit(state.copyWith(status: ThreadStatus.failure, postList: previousPosts));
+            emit(_failedState(uid, previousPosts: previousPosts));
           },
           (v) {
             if (_isCurrent(load)) {
-              _stateOf(v).map((v) => emit(v)).run();
+              _stateOf(v, uid: uid).map((v) => emit(v)).run();
             }
           },
         )
@@ -153,7 +193,9 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
 
   Future<void> _onThreadJumpPageRequested(ThreadJumpPageRequested event, ThreadEmitter emit) async {
     final load = _beginPageLoad();
-    // Keep the posts: when the reload fails they go back on screen instead of a bare retry button.
+    final uid = _currentUid();
+    // Keep the posts: when the reload fails they go back on screen instead of a bare retry button (for the same
+    // account only, see _failedState).
     final previousPosts = state.postList;
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
@@ -171,11 +213,11 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               return;
             }
             handle(e);
-            emit(state.copyWith(status: ThreadStatus.failure, postList: previousPosts));
+            emit(_failedState(uid, previousPosts: previousPosts));
           },
           (v) {
             if (_isCurrent(load)) {
-              _stateOf(v).map((v) => emit(v)).run();
+              _stateOf(v, uid: uid).map((v) => emit(v)).run();
             }
           },
         )
@@ -188,6 +230,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
 
   Future<void> _onThreadOnlyViewAuthorRequested(ThreadOnlyViewAuthorRequested event, ThreadEmitter emit) async {
     final load = _beginPageLoad();
+    final uid = _currentUid();
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     await _threadRepository
         .fetchThreadPage(
@@ -211,11 +254,11 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               'failed to load thread page: '
               'fid=${state.tid}, pageNumber=1 : $e',
             );
-            emit(state.copyWith(status: ThreadStatus.failure, onlyVisibleUid: event.uid));
+            emit(_failedState(uid, changes: (s) => s.copyWith(onlyVisibleUid: event.uid)));
           },
           (v) {
             if (_isCurrent(load)) {
-              _stateOf(v).map((v) => emit(v.copyWith(onlyVisibleUid: event.uid))).run();
+              _stateOf(v, uid: uid).map((v) => emit(v.copyWith(onlyVisibleUid: event.uid))).run();
             }
           },
         )
@@ -224,6 +267,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
 
   Future<void> _onThreadViewAllAuthorsRequested(ThreadViewAllAuthorsRequested event, ThreadEmitter emit) async {
     final load = _beginPageLoad();
+    final uid = _currentUid();
     emit(state.copyWith(status: ThreadStatus.loading, postList: []));
     // Switching from "only view specified author" to "view all authors"
     // will have more posts and pages so there is no page number overflow
@@ -246,12 +290,13 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               'failed to load thread page:'
               ' fid=${state.tid}, pageNumber=1 : $e',
             );
-            emit(state.copyWith(status: ThreadStatus.failure));
+            emit(_failedState(uid));
           },
           (v) {
             if (_isCurrent(load)) {
               _stateOf(
                 v,
+                uid: uid,
                 clearOnlyVisibleUid: true,
               ).map((v) => emit(v.copyWith(onlyVisibleUid: state.onlyVisibleUid))).run();
             }
@@ -262,6 +307,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
 
   Future<void> _onThreadChangeViewOrderRequested(ThreadChangeViewOrderRequested event, ThreadEmitter emit) async {
     final load = _beginPageLoad();
+    final uid = _currentUid();
     emit(
       state.copyWith(
         status: ThreadStatus.loading,
@@ -291,11 +337,12 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
               'failed to load thread page: '
               'fid=${state.tid}, pageNumber=1 : $e',
             );
-            emit(state.copyWith(status: ThreadStatus.failure, reverseOrder: state.reverseOrder));
+            final reverseOrder = state.reverseOrder;
+            emit(_failedState(uid, changes: (s) => s.copyWith(reverseOrder: reverseOrder)));
           },
           (v) {
             if (_isCurrent(load)) {
-              _stateOf(v).map((v) => emit(v.copyWith(reverseOrder: state.reverseOrder))).run();
+              _stateOf(v, uid: uid).map((v) => emit(v.copyWith(reverseOrder: state.reverseOrder))).run();
             }
           },
         )
@@ -306,8 +353,12 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
   /// parsed from the web page, or read back from its offline copy).
   ///
   /// Appended to floors on screen, the offline mark of either stays: the oldest time the page was saved.
-  IO<ThreadState> _stateOf(ThreadPageInfo info, {bool? clearOnlyVisibleUid}) => IO(() {
-    final previousOffline = state.postList.isEmpty ? null : state.offlineSavedAt;
+  ///
+  /// [uid] is the account the load was begun for ([ThreadState.floorsUid]): floors on screen of another account are
+  /// never appended to.
+  IO<ThreadState> _stateOf(ThreadPageInfo info, {required int? uid, bool? clearOnlyVisibleUid}) => IO(() {
+    final previousPosts = state.floorsUid == uid ? state.postList : const <Post>[];
+    final previousOffline = previousPosts.isEmpty ? null : state.offlineSavedAt;
     final offlineSavedAt = switch ((previousOffline, info.offlineSavedAt)) {
       (final DateTime a, final DateTime b) => a.isBefore(b) ? a : b,
       (final DateTime a, null) => a,
@@ -332,7 +383,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       needLogin: info.needLogin,
       threadSoftClosed: info.threadSoftClosed,
       threadClosed: info.threadClosed,
-      postList: [...state.postList, ...info.postList],
+      postList: [...previousPosts, ...info.postList],
       threadType: info.threadType,
       onlyVisibleUid: (clearOnlyVisibleUid ?? false) ? null : state.onlyVisibleUid,
       reverseOrder: state.reverseOrder,
@@ -344,6 +395,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       viewCount: info.viewCount,
       replyCount: info.replyCount,
       offlineSavedAt: offlineSavedAt,
+      floorsUid: uid,
     );
 
     return threadState;

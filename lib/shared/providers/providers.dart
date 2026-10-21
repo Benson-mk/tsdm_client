@@ -1,4 +1,5 @@
 import 'package:system_network_proxy/system_network_proxy.dart';
+import 'package:tsdm_client/features/offline_thread/repository/offline_thread_repository.dart';
 import 'package:tsdm_client/features/pokemon/repository/adventure_cache.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/instance.dart';
@@ -60,7 +61,9 @@ Future<void> initProviders() async {
     ..registerFactory(NetClientProvider.build)
     ..registerFactory(NetClientProvider.buildNoCookie, instanceName: ServiceKeys.noCookie)
     ..registerSingleton(NetErrorSaver())
-    ..registerSingleton(AdventureCache());
+    ..registerSingleton(AdventureCache())
+    // One write queue for every thread page, the settings and the cache sheet.
+    ..registerSingleton(OfflineThreadRepository());
   await getIt.allReady();
 
   getIt.registerSingleton(

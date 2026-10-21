@@ -53,7 +53,8 @@ final class OfflineThreadDao extends DatabaseAccessor<AppDatabase> with _$Offlin
         .write(OfflineThreadCompanion(lastUsedAt: Value(time.millisecondsSinceEpoch)));
   }
 
-  /// Every saved page, without the bodies, for tests and checks.
+  /// Every saved page with its body, for `StorageProvider.fetchAllOfflineThreadPages` (tests only): the app never
+  /// reads every body at once.
   Future<List<OfflineThreadEntity>> selectAll() async => select(offlineThread).get();
 
   /// Delete every saved page of thread [tid] for user [uid].
@@ -66,7 +67,7 @@ final class OfflineThreadDao extends DatabaseAccessor<AppDatabase> with _$Offlin
   /// Delete all saved pages.
   Future<int> deleteAll() async => delete(offlineThread).go();
 
-  /// Total size of the saved bodies in bytes.
+  /// Total size of the saved bodies in bytes, read from the index ([OfflineThread] keeps `size` in it), not the rows.
   Future<int> totalSize() async {
     final sum = offlineThread.size.sum();
     final row = await (selectOnly(offlineThread)..addColumns([sum])).getSingle();
@@ -102,6 +103,8 @@ final class OfflineThreadDao extends DatabaseAccessor<AppDatabase> with _$Offlin
 
   /// Keep the [limit] most recently used threads (one thread being one account and one tid, whatever its pages);
   /// delete the pages of the others. Returns the number of pages deleted.
+  ///
+  /// The threads are ranked from the index alone; only the pages deleted are touched.
   Future<int> keepRecentThreads(int limit) async {
     if (limit < 0) {
       return 0;

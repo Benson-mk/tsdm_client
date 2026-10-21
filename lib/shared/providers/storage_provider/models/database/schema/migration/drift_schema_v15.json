@@ -696,16 +696,6 @@
             "dsl_features": []
           },
           {
-            "name": "body",
-            "getter_name": "body",
-            "moor_type": "string",
-            "nullable": false,
-            "customConstraints": null,
-            "default_dart": null,
-            "default_client_dart": null,
-            "dsl_features": []
-          },
-          {
             "name": "size",
             "getter_name": "size",
             "moor_type": "int",
@@ -729,6 +719,16 @@
             "name": "last_used_at",
             "getter_name": "lastUsedAt",
             "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "body",
+            "getter_name": "body",
+            "moor_type": "string",
             "nullable": false,
             "customConstraints": null,
             "default_dart": null,
@@ -1173,6 +1173,37 @@
           "username"
         ]
       }
+    },
+    {
+      "id": 14,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "offline_thread_recent",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "uid",
+            "order_by": null
+          },
+          {
+            "column": "tid",
+            "order_by": null
+          },
+          {
+            "column": "last_used_at",
+            "order_by": null
+          },
+          {
+            "column": "size",
+            "order_by": null
+          }
+        ]
+      }
     }
   ],
   "fixed_sql": [
@@ -1253,7 +1284,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"offline_thread\" (\"uid\" INTEGER NOT NULL, \"tid\" INTEGER NOT NULL, \"page\" INTEGER NOT NULL, \"order_type\" INTEGER NOT NULL, \"author_id\" INTEGER NOT NULL, \"body\" TEXT NOT NULL, \"size\" INTEGER NOT NULL, \"saved_at\" INTEGER NOT NULL, \"last_used_at\" INTEGER NOT NULL, PRIMARY KEY (\"uid\", \"tid\", \"page\", \"order_type\", \"author_id\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"offline_thread\" (\"uid\" INTEGER NOT NULL, \"tid\" INTEGER NOT NULL, \"page\" INTEGER NOT NULL, \"order_type\" INTEGER NOT NULL, \"author_id\" INTEGER NOT NULL, \"size\" INTEGER NOT NULL, \"saved_at\" INTEGER NOT NULL, \"last_used_at\" INTEGER NOT NULL, \"body\" TEXT NOT NULL, PRIMARY KEY (\"uid\", \"tid\", \"page\", \"order_type\", \"author_id\"));"
         }
       ]
     },
@@ -1299,6 +1330,15 @@
         {
           "dialect": "sqlite",
           "sql": "CREATE TABLE IF NOT EXISTS \"user_avatar\" (\"username\" TEXT NOT NULL, \"cache_name\" TEXT NOT NULL, \"image_url\" TEXT NULL, PRIMARY KEY (\"username\"));"
+        }
+      ]
+    },
+    {
+      "name": "offline_thread_recent",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX offline_thread_recent ON offline_thread (uid, tid, last_used_at, size)"
         }
       ]
     }

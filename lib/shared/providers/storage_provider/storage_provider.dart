@@ -6,7 +6,7 @@ import 'package:drift/drift.dart';
 // Only for unwrapping the sqlite error that the database isolate sends back, see `isDatabaseBusy`.
 // ignore: experimental_member_use
 import 'package:drift/remote.dart' show DriftRemoteException;
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart' show setEquals, visibleForTesting;
 import 'package:fpdart/fpdart.dart';
 import 'package:sqlite3/common.dart' show SqliteException;
 import 'package:tsdm_client/constants/constants.dart';
@@ -601,7 +601,11 @@ class StorageProvider with LoggerMixin {
 
   /// Save the answer [body] of page [page] of thread [tid] as served to user [uid], asked with [orderType] and
   /// [authorId] (0 when not asked), loaded at [savedAt]; replaces the page saved before.
-  Future<void> saveOfflineThreadPage({
+  ///
+  /// With [onlyStoredAccount], nothing is written unless the account [uid] is still stored on this device, checked in
+  /// the same transaction: a page whose account was removed while its write waited never comes back (the removal
+  /// deletes the account's row before its pages). Returns whether the page was written.
+  Future<bool> saveOfflineThreadPage({
     required int uid,
     required int tid,
     required int page,
@@ -609,19 +613,26 @@ class StorageProvider with LoggerMixin {
     required int authorId,
     required String body,
     required DateTime savedAt,
-  }) async => OfflineThreadDao(_db).upsert(
-    OfflineThreadCompanion(
-      uid: Value(uid),
-      tid: Value(tid),
-      page: Value(page),
-      orderType: Value(orderType),
-      authorId: Value(authorId),
-      body: Value(body),
-      size: Value(utf8.encode(body).length),
-      savedAt: Value(savedAt),
-      lastUsedAt: Value(savedAt.millisecondsSinceEpoch),
-    ),
-  );
+    bool onlyStoredAccount = false,
+  }) async => _db.transaction(() async {
+    if (onlyStoredAccount && await CookieDao(_db).selectCookieByUid(uid) == null) {
+      return false;
+    }
+    await OfflineThreadDao(_db).upsert(
+      OfflineThreadCompanion(
+        uid: Value(uid),
+        tid: Value(tid),
+        page: Value(page),
+        orderType: Value(orderType),
+        authorId: Value(authorId),
+        body: Value(body),
+        size: Value(utf8.encode(body).length),
+        savedAt: Value(savedAt),
+        lastUsedAt: Value(savedAt.millisecondsSinceEpoch),
+      ),
+    );
+    return true;
+  });
 
   /// The saved page of the key ([saveOfflineThreadPage]), null when none; a page found is marked used at [usedAt].
   Future<OfflineThreadEntity?> fetchOfflineThreadPage({
@@ -647,7 +658,8 @@ class StorageProvider with LoggerMixin {
     return entity;
   }
 
-  /// Every saved offline thread page of every user.
+  /// Every saved offline thread page of every user, with the bodies. Tests only.
+  @visibleForTesting
   Future<List<OfflineThreadEntity>> fetchAllOfflineThreadPages() async => OfflineThreadDao(_db).selectAll();
 
   /// Delete every saved page of thread [tid] for user [uid].

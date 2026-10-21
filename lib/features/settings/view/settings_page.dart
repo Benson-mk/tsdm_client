@@ -720,7 +720,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.offlineThreads, v));
             if (!v) {
               // Off means nothing kept: what was saved goes too.
-              await OfflineThreadRepository().clear();
+              await appOfflineThreads.clear();
             }
           },
         ),
@@ -737,7 +737,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             );
             if (limit == null || !context.mounted) return;
             context.read<SettingsBloc>().add(SettingsValueChanged(SettingsKeys.offlineThreadsLimit, limit));
-            await OfflineThreadRepository().trim(limit);
+            await appOfflineThreads.trim(limit);
           },
         ),
       ],

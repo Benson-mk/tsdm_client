@@ -199,21 +199,16 @@ final class BackupRepository with LoggerMixin {
 
   /// Make a copy of [databaseFile] for export, without credentials.
   ///
-  /// The copy is taken with `VACUUM INTO` through a separate connection, so it is a consistent snapshot even while the
-  /// app keeps using the database, and the live database is never modified: the logged in accounts on this device stay
-  /// logged in.
+  /// The copy is a consistent snapshot taken through a separate connection even while the app keeps using the
+  /// database ([_snapshot]), and the live database is never modified: the logged in accounts on this device stay
+  /// logged in. The offline copies of forum pages ([offlineCopyTables]) are never written into it.
   ///
   /// With [secretsPassword] the credentials are removed from the tables all the same, but stored encrypted with that
   /// password in [secretsTable], so another device can restore them with [unlockSecrets] and [replaceDatabase].
   Future<Uint8List> exportSanitized(File databaseFile, {String? secretsPassword}) async {
     final copy = File('${databaseFile.path}.export-${DateTime.now().microsecondsSinceEpoch}.tmp');
     try {
-      final source = sqlite3.open(databaseFile.path, mode: OpenMode.readOnly);
-      try {
-        source.execute('VACUUM INTO ?', [copy.path]);
-      } finally {
-        source.dispose();
-      }
+      _snapshot(databaseFile, copy);
       final exported = sqlite3.open(copy.path);
       var accounts = 0;
       try {
@@ -240,6 +235,54 @@ final class BackupRepository with LoggerMixin {
       if (copy.existsSync()) {
         await copy.delete();
       }
+    }
+  }
+
+  /// Copy [databaseFile] into the new file [copy] as `VACUUM INTO` does (every table, index and trigger, the rows, the
+  /// autoincrement counters and the schema version), except the rows of [offlineCopyTables]: those tables are created
+  /// empty, their rows (large, the forum pages of every account) are never written to the copy at all.
+  ///
+  /// The source is attached read only and read in one transaction, a consistent snapshot while the app keeps writing.
+  static void _snapshot(File databaseFile, File copy) {
+    final db = sqlite3.open(copy.path, uri: true);
+    try {
+      final source = Uri.file(
+        databaseFile.absolute.path,
+        windows: Platform.isWindows,
+      ).replace(queryParameters: {'mode': 'ro'}).toString();
+      db
+        ..execute('ATTACH DATABASE ? AS src', [source])
+        ..execute('BEGIN');
+      try {
+        final objects = db.select(
+          "SELECT type, name, sql FROM src.sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' "
+          "ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, rowid",
+        );
+        for (final row in objects) {
+          final name = row['name'] as String;
+          // Created in main: the statements name no schema.
+          db.execute(row['sql'] as String);
+          if (row['type'] == 'table' && !offlineCopyTables.contains(name)) {
+            final quoted = '"${name.replaceAll('"', '""')}"';
+            db.execute('INSERT INTO main.$quoted SELECT * FROM src.$quoted');
+          }
+        }
+        if (db.select("SELECT 1 FROM src.sqlite_master WHERE name = 'sqlite_sequence'").isNotEmpty) {
+          db
+            ..execute('DELETE FROM main.sqlite_sequence')
+            ..execute('INSERT INTO main.sqlite_sequence SELECT * FROM src.sqlite_sequence');
+        }
+        final version = db.select('PRAGMA src.user_version').first.values.first! as int;
+        db
+          ..execute('COMMIT')
+          ..userVersion = version;
+      } on Object {
+        db.execute('ROLLBACK');
+        rethrow;
+      }
+      db.execute('DETACH DATABASE src');
+    } finally {
+      db.dispose();
     }
   }
 

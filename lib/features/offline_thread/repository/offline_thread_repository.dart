@@ -51,6 +51,12 @@ final class OfflineThreadKey {
   String toString() => 'OfflineThreadKey(tid=$tid, page=$page, ordertype=$orderType, authorid=$authorId)';
 }
 
+/// The app's offline thread pages: the one instance registered in `initProviders`, so every page, the settings and the
+/// cache sheet share one write queue; a new instance where none is registered (tests of other features), which reads
+/// and writes nothing while the setting is off.
+OfflineThreadRepository get appOfflineThreads =>
+    getIt.isRegistered<OfflineThreadRepository>() ? getIt.get<OfflineThreadRepository>() : OfflineThreadRepository();
+
 /// A saved page read back: the answer of the forum as it came, and when it was loaded.
 typedef OfflineThreadPage = ({String body, DateTime savedAt});
 
@@ -127,14 +133,17 @@ class OfflineThreadRepository with LoggerMixin {
   /// and the [limit] most recently used threads.
   void save(OfflineThreadKey key, Object? data) {
     final now = DateTime.now();
-    final limit = this.limit;
     _queue('save $key', () async {
+      // Checked again when the write runs: the setting may have been turned off (and the pages cleared) meanwhile.
+      if (!enabled) {
+        return;
+      }
       // Encoded in the queue: a failure here is logged like any other, the page loaded all the same.
       final body = bodyOf(data);
       if (body == null || body.isEmpty) {
         return;
       }
-      await _store.saveOfflineThreadPage(
+      final written = await _store.saveOfflineThreadPage(
         uid: key.uid,
         tid: key.tid,
         page: key.page,
@@ -142,7 +151,14 @@ class OfflineThreadRepository with LoggerMixin {
         authorId: key.authorId,
         body: body,
         savedAt: now,
+        // The account may have been logged out or removed while the write waited: its pages are gone, keep it so.
+        onlyStoredAccount: true,
       );
+      if (!written) {
+        debug('offline threads: account of $key no longer stored, page dropped');
+        return;
+      }
+      final limit = this.limit;
       final pages = await _store.trimOfflineThreadPages(uid: key.uid, tid: key.tid, limit: pagesPerThread);
       if (pages > 0) {
         debug('offline threads: evicted $pages pages of thread ${key.tid} beyond $pagesPerThread');

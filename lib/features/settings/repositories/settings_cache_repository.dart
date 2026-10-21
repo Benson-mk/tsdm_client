@@ -14,7 +14,7 @@ class SettingsCacheRepository {
 
   final OfflineThreadRepository? _offlineThreads;
 
-  OfflineThreadRepository get _offline => _offlineThreads ?? OfflineThreadRepository();
+  OfflineThreadRepository get _offline => _offlineThreads ?? appOfflineThreads;
 
   /// Clear all cache.
   Future<void> clearCache(CacheClearInfo clearInfo) async {

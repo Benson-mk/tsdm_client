@@ -165,6 +165,33 @@ void main() {
     await db.close();
   });
 
+  test(
+    'upgrade from 13 to 15 in one go keeps stored notices and adds the offline thread table with its index',
+    () async {
+      final verifier = SchemaVerifier(GeneratedHelper());
+      final schema = await verifier.schemaAt(13);
+      schema.rawDatabase
+        ..execute(
+          'INSERT INTO notice (uid, nid, timestamp, data, already_read) VALUES (1000, 1984, 100, '
+          '\'<a href="home.php?mod=space&uid=2000">x</a>\', 0)',
+        )
+        ..execute(
+          'INSERT INTO thread_visit_history (uid, tid, username, thread_title, fid, forum_name, visit_time) '
+          "VALUES (1000, 42, 'Alice', 'a thread', 4, 'a forum', 1760000000)",
+        );
+      final db = AppDatabase(schema.newConnection());
+      await verifier.migrateAndValidate(db, 15);
+      expect((await db.select(db.notice).get()).single.nid, 1984);
+      expect((await db.select(db.threadVisitHistory).get()).single.threadTitle, 'a thread');
+      expect(await db.select(db.offlineThread).get(), isEmpty);
+      final index = await db
+          .customSelect("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'offline_thread_recent'")
+          .getSingle();
+      expect(index.read<String>('sql'), contains('(uid, tid, last_used_at, size)'));
+      await db.close();
+    },
+  );
+
   test('the 14 to 15 step runs again safely when another connection already created the table', () async {
     final verifier = SchemaVerifier(GeneratedHelper());
     // The table is there but the version is still 14: the background service isolate and the app opening the file

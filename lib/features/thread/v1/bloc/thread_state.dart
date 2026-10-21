@@ -47,6 +47,7 @@ class ThreadState with ThreadStateMappable {
     this.viewCount,
     this.replyCount,
     this.offlineSavedAt,
+    this.floorsUid,
   });
 
   /// Status.
@@ -173,4 +174,8 @@ class ThreadState with ThreadStateMappable {
 
   /// Whether floors on screen came from the offline copies ([offlineSavedAt]).
   bool get isOffline => offlineSavedAt != null;
+
+  /// The account the floors on screen were loaded for (null: a guest). A load for another account that fails never
+  /// puts them back on screen, nor appends to them.
+  final int? floorsUid;
 }
