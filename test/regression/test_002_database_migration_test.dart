@@ -192,6 +192,18 @@ void main() {
     },
   );
 
+  test('a database at schema 15 without the eviction index (a development build) gets it on open', () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final schema = await verifier.schemaAt(15);
+    schema.rawDatabase.execute('DROP INDEX offline_thread_recent');
+    final db = AppDatabase(schema.newConnection());
+    final index = await db
+        .customSelect("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'offline_thread_recent'")
+        .get();
+    expect(index, hasLength(1));
+    await db.close();
+  });
+
   test('the 14 to 15 step runs again safely when another connection already created the table', () async {
     final verifier = SchemaVerifier(GeneratedHelper());
     // The table is there but the version is still 14: the background service isolate and the app opening the file

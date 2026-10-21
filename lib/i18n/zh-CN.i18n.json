@@ -494,6 +494,7 @@
       },
       "exportData": "导出数据",
       "exportDataDetail": "默认不含任何账号的 Cookie 与密码；可选择用自设密码加密后一并导出",
+      "exportDataFailed": "导出失败，现有数据未变更，请稍后再试",
       "backupTitle": "备份与恢复",
       "exportBackup": {
         "title": "导出数据",

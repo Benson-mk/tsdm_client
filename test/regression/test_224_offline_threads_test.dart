@@ -735,9 +735,24 @@ void main() {
         await copies.pendingWrites;
         expect(await saved(), isEmpty);
 
-        // Off: the 404 is the same failure, nothing read.
+        // The very failure the user sees with the setting off: the same exception, the same error for the error card.
+        getIt.get<NetErrorSaver>().clear();
+        final on = _left(await load(repo)) as HttpHandshakeFailedException;
+        final savedOn = getIt.get<NetErrorSaver>().error();
         await settings.setValue(SettingsKeys.offlineThreads, false);
+        getIt.get<NetErrorSaver>().clear();
+        final off = _left(await load(repo)) as HttpHandshakeFailedException;
+        expect(off.statusCode, 404);
+        expect((on.message, on.statusCode, on.connectionFailed), (off.message, off.statusCode, off.connectionFailed));
+        expect(savedOn, isNotNull);
+        expect(savedOn, getIt.get<NetErrorSaver>().error());
+
+        // An empty 404 (or a JSON one without the page) is never asked again as the web page by the antitheft check.
+        await turnOn();
+        forum.answer = (_) => '';
+        final before = forum.requests.length;
         expect(_left(await load(repo)), isA<HttpHandshakeFailedException>().having((e) => e.statusCode, 'status', 404));
+        expect(forum.requests.length, before + 1, reason: 'one request');
       },
     );
 
@@ -898,6 +913,60 @@ void main() {
   });
 
   group('storage', () {
+    test('a page is written for a stored account only, replacing the one saved before, in one statement', () async {
+      Future<bool> write(int uid, String body, DateTime at) => storage.saveOfflineThreadPage(
+        uid: uid,
+        tid: 1,
+        page: 1,
+        orderType: 0,
+        authorId: 0,
+        body: body,
+        savedAt: at,
+        onlyStoredAccount: true,
+      );
+      expect(await write(35, 'first', DateTime(2026, 10, 20, 8, 30)), isTrue);
+      expect(await write(35, '第二版', DateTime(2026, 10, 21, 9, 45, 12)), isTrue);
+      final row = (await saved()).single;
+      expect((row.body, row.size, row.savedAt), ('第二版', 9, DateTime(2026, 10, 21, 9, 45, 12)));
+      expect(row.lastUsedAt, DateTime(2026, 10, 21, 9, 45, 12).millisecondsSinceEpoch);
+
+      expect(await write(99, 'nobody', DateTime(2026, 10, 20)), isFalse, reason: 'never stored here');
+      await storage.deleteCookieByUid(36);
+      expect(await write(36, 'removed', DateTime(2026, 10, 20)), isFalse, reason: 'removed');
+      expect((await saved()).map((e) => e.uid), [35]);
+    });
+
+    test('the read only URI sqlite accepts for a POSIX, a drive letter and a UNC path', () {
+      expect(BackupRepository.readOnlyUriOf('/srv/app/main.db', windows: false), 'file:///srv/app/main.db?mode=ro');
+      expect(
+        BackupRepository.readOnlyUriOf(r'C:\Users\u\db\mainV2.db', windows: true),
+        'file:///C:/Users/u/db/mainV2.db?mode=ro',
+      );
+      expect(
+        BackupRepository.readOnlyUriOf(r'\\server\share\u\mainV2.db', windows: true),
+        'file:////server/share/u/mainV2.db?mode=ro',
+        reason: 'no authority: sqlite refuses one that is not empty or localhost',
+      );
+      expect(
+        BackupRepository.readOnlyUriOf('/tmp/a b/x?y#z%.db', windows: false),
+        'file:///tmp/a b/x%3fy%23z%25.db?mode=ro',
+      );
+
+      // Attached as sqlite reads it: the rows of a file whose path has every escaped character, and no write.
+      final dir = Directory.systemTemp.createTempSync('tsdm uri ?#%');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final path = '${dir.path}/main.db';
+      sqlite.sqlite3.open(path)
+        ..execute('CREATE TABLE t (v)')
+        ..execute('INSERT INTO t VALUES (42)')
+        ..dispose();
+      final db = sqlite.sqlite3.open(':memory:', uri: true)
+        ..execute('ATTACH DATABASE ? AS src', [BackupRepository.readOnlyUriOf(path, windows: false)]);
+      expect(db.select('SELECT v FROM src.t').single['v'], 42);
+      expect(() => db.execute('INSERT INTO src.t VALUES (1)'), throwsA(isA<sqlite.SqliteException>()));
+      db.dispose();
+    });
+
     test('the body is the last column and the eviction and the size read the index only', () async {
       final columns = await db.customSelect('PRAGMA table_info(offline_thread)').get();
       expect(columns.last.read<String>('name'), 'body');

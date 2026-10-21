@@ -1,6 +1,6 @@
 import 'dart:io' if (dart.libaray.js) 'package:web/web.dart';
 
-import 'package:dio/dio.dart' show Options;
+import 'package:dio/dio.dart' show DioException, Options;
 import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
@@ -14,6 +14,7 @@ import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:universal_html/html.dart' as uh;
 import 'package:universal_html/parsing.dart';
 
@@ -393,8 +394,16 @@ class ThreadRepository {
     final resp = respEither.unwrap();
     if (resp.statusCode == HttpStatus.notFound && onNotFound != null) {
       onNotFound(resp.data);
-      // The failure of a 404 as without [onNotFound] (dio's bad response, see mapException).
-      return left(HttpHandshakeFailedException('Http status error [404]', statusCode: 404, headers: resp.headers));
+      // The very failure of a 404 without [onNotFound]: dio's bad response, mapped the same way, kept for the error
+      // card and logged as the error handler of the client does.
+      final refused = DioException.badResponse(
+        statusCode: HttpStatus.notFound,
+        requestOptions: resp.requestOptions,
+        response: resp,
+      );
+      talker.error('${refused.requestOptions.uri} ${refused.type}: error: ${refused.error}, status code: 404');
+      getIt.get<NetErrorSaver>().save(refused.message);
+      return left(mapException(refused, StackTrace.current));
     }
     if (resp.statusCode != HttpStatus.ok) {
       return left(HttpRequestFailedException(resp.statusCode));

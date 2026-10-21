@@ -494,6 +494,7 @@
       },
       "exportData": "匯出資料",
       "exportDataDetail": "預設不含任何帳號的 Cookie 與密碼；可選擇用自設密碼加密後一併匯出",
+      "exportDataFailed": "匯出失敗，現有資料未變更，請稍後再試",
       "backupTitle": "備份與還原",
       "exportBackup": {
         "title": "匯出資料",

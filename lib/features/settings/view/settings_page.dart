@@ -856,20 +856,28 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           onTap: () async {
             final choice = await showExportBackupDialog(context);
             if (choice == null || !context.mounted) return;
-            final data = await const BackupRepository().exportSanitized(
-              await databaseFile,
-              secretsPassword: choice.password,
-            );
-            final stamp = DateTime.now().microsecondsSinceEpoch;
-            final name = choice.password == null
-                ? 'tsdm_client_data_$stamp.db'
-                : 'tsdm_client_data_${stamp}_accounts.db';
-            if (isDesktop) {
-              final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
-              if (filePath == null) return;
-              await File(filePath).writeAsBytes(data, flush: true);
-            } else {
-              await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
+            try {
+              final data = await const BackupRepository().exportSanitized(
+                await databaseFile,
+                secretsPassword: choice.password,
+              );
+              final stamp = DateTime.now().microsecondsSinceEpoch;
+              final name = choice.password == null
+                  ? 'tsdm_client_data_$stamp.db'
+                  : 'tsdm_client_data_${stamp}_accounts.db';
+              if (isDesktop) {
+                final filePath = await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name);
+                if (filePath == null) return;
+                await File(filePath).writeAsBytes(data, flush: true);
+              } else {
+                await FilePicker.platform.saveFile(dialogTitle: tr.exportData, fileName: name, bytes: data);
+              }
+            } on Object catch (e, st) {
+              // The copy failed (the database busy for too long, no space left…): say so, the data stays as it was.
+              talker.handle(e, st, 'failed to export the backup');
+              if (context.mounted) {
+                showSnackBar(context: context, message: tr.exportDataFailed);
+              }
             }
           },
         ),

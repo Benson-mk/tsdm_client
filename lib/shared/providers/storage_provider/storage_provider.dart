@@ -602,9 +602,9 @@ class StorageProvider with LoggerMixin {
   /// Save the answer [body] of page [page] of thread [tid] as served to user [uid], asked with [orderType] and
   /// [authorId] (0 when not asked), loaded at [savedAt]; replaces the page saved before.
   ///
-  /// With [onlyStoredAccount], nothing is written unless the account [uid] is still stored on this device, checked in
-  /// the same transaction: a page whose account was removed while its write waited never comes back (the removal
-  /// deletes the account's row before its pages). Returns whether the page was written.
+  /// With [onlyStoredAccount], nothing is written unless the account [uid] is still stored on this device, checked by
+  /// the write itself (one statement): a page whose account was removed while its write waited never comes back (the
+  /// removal deletes the account's row before its pages). Returns whether the page was written.
   Future<bool> saveOfflineThreadPage({
     required int uid,
     required int tid,
@@ -614,11 +614,23 @@ class StorageProvider with LoggerMixin {
     required String body,
     required DateTime savedAt,
     bool onlyStoredAccount = false,
-  }) async => _db.transaction(() async {
-    if (onlyStoredAccount && await CookieDao(_db).selectCookieByUid(uid) == null) {
-      return false;
+  }) async {
+    final dao = OfflineThreadDao(_db);
+    final size = utf8.encode(body).length;
+    if (onlyStoredAccount) {
+      return dao.upsertForStoredAccount(
+        uid: uid,
+        tid: tid,
+        page: page,
+        orderType: orderType,
+        authorId: authorId,
+        size: size,
+        savedAt: savedAt,
+        lastUsedAt: savedAt.millisecondsSinceEpoch,
+        body: body,
+      );
     }
-    await OfflineThreadDao(_db).upsert(
+    await dao.upsert(
       OfflineThreadCompanion(
         uid: Value(uid),
         tid: Value(tid),
@@ -626,13 +638,13 @@ class StorageProvider with LoggerMixin {
         orderType: Value(orderType),
         authorId: Value(authorId),
         body: Value(body),
-        size: Value(utf8.encode(body).length),
+        size: Value(size),
         savedAt: Value(savedAt),
         lastUsedAt: Value(savedAt.millisecondsSinceEpoch),
       ),
     );
     return true;
-  });
+  }
 
   /// The saved page of the key ([saveOfflineThreadPage]), null when none; a page found is marked used at [usedAt].
   Future<OfflineThreadEntity?> fetchOfflineThreadPage({

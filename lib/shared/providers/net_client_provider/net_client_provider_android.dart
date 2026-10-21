@@ -31,7 +31,7 @@ abstract class _AndroidHttpMethodChannel {
   static const _httpChannel = MethodChannel('kzs.th000.tsdm_client/httpChannel');
 
   /// Error code of a GET whose host was not reached at all (no network, name not resolved, connection refused or timed
-  /// out while connecting), see `httpGetErrorCode` in `MainActivity.kt`.
+  /// out while connecting), see `HttpClient.errorCode` in `HttpClient.kt`.
   static const _unreachable = 'KT_HTTP_UNREACHABLE';
 
   static const _methodGet = 'get';
@@ -50,8 +50,9 @@ abstract class _AndroidHttpMethodChannel {
     } on PlatformException catch (e, st) {
       talker.handle(e, st, '[KtHttp] GET failed on $url');
       if (e.code == _unreachable) {
-        // Told apart from other failures as on the other platforms (dio's connection error), so a thread page can be
-        // read from its offline copy; still a failed request without status for every other caller.
+        // Its own exception, as dio's connection error and connection timeout are on the other platforms, so a thread
+        // page can be read from its offline copy (see mapException); still a failed request without status for every
+        // other caller.
         throw HostUnreachableException('${e.details ?? e.message ?? 'host unreachable'}');
       }
       return null;

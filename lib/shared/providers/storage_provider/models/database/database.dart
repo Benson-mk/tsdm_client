@@ -41,6 +41,22 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
     onCreate: (m) async {
       await m.createAll();
     },
+    // The eviction index of the offline thread pages: a development build at the unreleased shape of schema 15 has the
+    // table without it. Looked up on every open (a read, no lock taken when it is there) and created when missing, so
+    // no build depends on the step.
+    beforeOpen: (details) async {
+      final index = offlineThreadRecent;
+      final present = await customSelect(
+        "SELECT name FROM sqlite_master WHERE name IN ('offline_thread', ?)",
+        variables: [Variable.withString(index.entityName)],
+      ).map((row) => row.read<String>('name')).get();
+      if (!present.contains('offline_thread') || present.contains(index.entityName)) {
+        return;
+      }
+      final create = index.createStatementsByDialect[SqlDialect.sqlite]!;
+      await customStatement(create.replaceFirst('CREATE INDEX ', 'CREATE INDEX IF NOT EXISTS '));
+      info('created the missing index ${index.entityName}');
+    },
     onUpgrade: stepByStep(
       from1To2: (m, schema) async {
         info('migrating database schema from 1 to 2...');

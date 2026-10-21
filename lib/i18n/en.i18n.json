@@ -494,6 +494,7 @@
       },
       "exportData": "Export data",
       "exportDataDetail": "Without cookies and passwords by default; optionally include them, encrypted with a password of your own",
+      "exportDataFailed": "Export failed; nothing was changed, try again later",
       "backupTitle": "Backup and restore",
       "exportBackup": {
         "title": "Export data",

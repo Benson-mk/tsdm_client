@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
 
@@ -242,16 +243,37 @@ final class BackupRepository with LoggerMixin {
   /// autoincrement counters and the schema version), except the rows of [offlineCopyTables]: those tables are created
   /// empty, their rows (large, the forum pages of every account) are never written to the copy at all.
   ///
-  /// The source is attached read only and read in one transaction, a consistent snapshot while the app keeps writing.
+  /// The source is attached read only ([readOnlyUriOf]) and read in one transaction, a consistent snapshot while the
+  /// app keeps writing. When it can not be attached that way (a path sqlite refuses as a URI), the copy is taken with
+  /// `VACUUM INTO` as before and the offline rows are deleted from it afterwards ([stripOfflineCopies]).
   static void _snapshot(File databaseFile, File copy) {
+    try {
+      _attachedSnapshot(databaseFile, copy);
+    } on SqliteException catch (e) {
+      talker.warning('backup: attached snapshot failed ($e), copying with VACUUM INTO');
+      if (copy.existsSync()) {
+        copy.deleteSync();
+      }
+      final source = sqlite3.open(databaseFile.path, mode: OpenMode.readOnly);
+      try {
+        source
+          ..execute('PRAGMA busy_timeout = $_busyTimeoutMs')
+          ..execute('VACUUM INTO ?', [copy.path]);
+      } finally {
+        source.dispose();
+      }
+    }
+  }
+
+  /// How long the copy waits for a write of the app to end before giving up, in milliseconds.
+  static const _busyTimeoutMs = 5000;
+
+  static void _attachedSnapshot(File databaseFile, File copy) {
     final db = sqlite3.open(copy.path, uri: true);
     try {
-      final source = Uri.file(
-        databaseFile.absolute.path,
-        windows: Platform.isWindows,
-      ).replace(queryParameters: {'mode': 'ro'}).toString();
       db
-        ..execute('ATTACH DATABASE ? AS src', [source])
+        ..execute('PRAGMA busy_timeout = $_busyTimeoutMs')
+        ..execute('ATTACH DATABASE ? AS src', [readOnlyUriOf(databaseFile.absolute.path, windows: Platform.isWindows)])
         ..execute('BEGIN');
       try {
         final objects = db.select(
@@ -277,13 +299,31 @@ final class BackupRepository with LoggerMixin {
           ..execute('COMMIT')
           ..userVersion = version;
       } on Object {
-        db.execute('ROLLBACK');
+        // A failed statement may have ended the transaction already.
+        if (!db.autocommit) {
+          db.execute('ROLLBACK');
+        }
         rethrow;
       }
       db.execute('DETACH DATABASE src');
     } finally {
       db.dispose();
     }
+  }
+
+  /// The URI sqlite opens the database file at [path] read only with (`mode=ro`), on Windows when [windows].
+  ///
+  /// `file:` with an empty authority and the path, `%`, `?` and `#` escaped: `file:///srv/app/main.db`; a drive path
+  /// becomes `file:///C:/Users/u/main.db` (sqlite drops the `/` before the drive on Windows); a UNC path keeps its two
+  /// leading slashes in the path, `file:////server/share/main.db`, as sqlite refuses an authority that is not empty
+  /// or `localhost` (what `Uri.file` gives a UNC path, `file://server/share/…`).
+  static String readOnlyUriOf(String path, {required bool windows}) {
+    var p = windows ? path.replaceAll(r'\', '/') : path;
+    if (windows && RegExp('^[A-Za-z]:').hasMatch(p)) {
+      p = '/$p';
+    }
+    final escaped = p.replaceAll('%', '%25').replaceAll('?', '%3f').replaceAll('#', '%23');
+    return 'file://$escaped?mode=ro';
   }
 
   /// Remove every credential from [db]: blank the credential columns of every account and delete the settings naming

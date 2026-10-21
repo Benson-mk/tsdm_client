@@ -25,6 +25,45 @@ final class OfflineThreadDao extends DatabaseAccessor<AppDatabase> with _$Offlin
     await into(offlineThread).insertOnConflictUpdate(companion);
   }
 
+  /// Insert or replace the page, only while the account `uid` is stored on this device (a row in the cookie table).
+  ///
+  /// One statement, so the write lock is taken once and the busy timeout of the connection covers it: a check followed
+  /// by a write in a deferred transaction would fail at once while another connection (the Android background service)
+  /// holds the lock, the upgrade from the read lock not being retried. Returns whether the page was written.
+  Future<bool> upsertForStoredAccount({
+    required int uid,
+    required int tid,
+    required int page,
+    required int orderType,
+    required int authorId,
+    required int size,
+    required DateTime savedAt,
+    required int lastUsedAt,
+    required String body,
+  }) async {
+    // The upsert clause of an INSERT … SELECT needs the WHERE of the SELECT (sqlite's parsing rule), which it has.
+    final written = await customUpdate(
+      'INSERT INTO offline_thread (uid, tid, page, order_type, author_id, size, saved_at, last_used_at, body) '
+      'SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 WHERE EXISTS (SELECT 1 FROM cookie WHERE uid = ?1) '
+      'ON CONFLICT (uid, tid, page, order_type, author_id) DO UPDATE SET '
+      'size = excluded.size, saved_at = excluded.saved_at, last_used_at = excluded.last_used_at, body = excluded.body',
+      variables: [
+        Variable.withInt(uid),
+        Variable.withInt(tid),
+        Variable.withInt(page),
+        Variable.withInt(orderType),
+        Variable.withInt(authorId),
+        Variable.withInt(size),
+        Variable<DateTime>(savedAt),
+        Variable.withInt(lastUsedAt),
+        Variable.withString(body),
+      ],
+      updates: {offlineThread},
+      updateKind: UpdateKind.insert,
+    );
+    return written > 0;
+  }
+
   /// The saved page of the key, null when none.
   Future<OfflineThreadEntity?> selectPage({
     required int uid,
