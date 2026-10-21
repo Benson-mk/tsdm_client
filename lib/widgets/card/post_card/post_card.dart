@@ -12,7 +12,10 @@ import 'package:tsdm_client/features/post/models/models.dart';
 import 'package:tsdm_client/features/post_report/view/post_report_dialog.dart';
 import 'package:tsdm_client/features/profile/widgets/secondary_title_badge.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
+import 'package:tsdm_client/features/special_thread/widgets/special_thread_card.dart';
+import 'package:tsdm_client/features/thread/v1/bbcode/post_bbcode_view.dart';
 import 'package:tsdm_client/features/thread/v1/bloc/thread_bloc.dart';
+import 'package:tsdm_client/features/thread/v1/utils/offline_floor.dart';
 import 'package:tsdm_client/features/thread/v1/widgets/interactive_post_entry.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/routes/screen_paths.dart';
@@ -87,7 +90,7 @@ enum _PostCardActions {
 /// Usually inside a ThreadPage.
 class PostCard extends StatefulWidget {
   /// Constructor.
-  const PostCard(this.post, {this.replyCallback, this.onEdited, super.key});
+  const PostCard(this.post, {this.replyCallback, this.onEdited, this.onJoinDebate, super.key});
 
   /// [Post] model to show.
   final Post post;
@@ -98,6 +101,9 @@ class PostCard extends StatefulWidget {
 
   /// Called after a successful edit, before reloading, so the thread can retain this floor as its scroll target.
   final VoidCallback? onEdited;
+
+  /// Reply on side `stand` of a debate thread (the debate card's "加入正方／反方"); null where the account cannot reply.
+  final void Function(int stand)? onJoinDebate;
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -227,6 +233,12 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                   ].join(' · '),
                   style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
                 ),
+                // What the page prints in the floor's header of a special thread: the accepted answer of a bounty, the
+                // floor's side in a debate (plugin 2.8.0).
+                if (SpecialFloorBadges.any(widget.post)) ...[
+                  sizedBoxW4H4,
+                  SpecialFloorBadges(widget.post, onReload: _specialReload(context)),
+                ],
                 // Badges the forum renders in this floor's author column: the user group badge and the secondary title
                 // of this author. Nothing about the current account is used here. They wrap below each other on narrow
                 // windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
@@ -291,12 +303,18 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
 
   Widget _buildPostBody(BuildContext context) {
     final interactionMode = context.read<SettingsBloc>().state.settingsMap.threadFloorInteractionMode;
+    // The experimental app renderer draws the floor from its bbcode where it can (off by default: the html as before).
+    final appRenderer = context.select<SettingsBloc, bool>((e) => e.state.settingsMap.enableAppPostRenderer);
     final child = Row(
       children: [
         Expanded(
           child: Padding(
             padding: edgeInsetsL16R16,
-            child: MunchedHtml(widget.post.data),
+            child: widget.post.isSpoofed
+                ? const _ContentUnavailable()
+                : appRenderer
+                ? PostBbcodeBody(widget.post)
+                : MunchedHtml(widget.post.data),
           ),
         ),
       ],
@@ -332,6 +350,9 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
       ),
       ThreadFloorInteractionMode.tapToReply => GestureDetector(
         onTap: () async {
+          if (isOfflineFloor(context)) {
+            return;
+          }
           await widget.replyCallback?.call(widget.post.author, widget.post.postFloor, widget.post.replyAction);
         },
         child: child,
@@ -342,6 +363,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
   List<PopupMenuEntry<_PostCardActions>> _buildContextMenuEntries(BuildContext context) {
     final threadBloc = context.readOrNull<ThreadBloc>();
     final onlyVisibleUid = threadBloc?.state.onlyVisibleUid;
+    // Read back from an offline copy: nothing that needs the network.
+    final online = !isOfflineFloor(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     PopupMenuItem<_PostCardActions> item(_PostCardActions value, IconData icon, String text, {Color? color}) =>
@@ -362,8 +385,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     // share and copy, then report on its own in the error color.
     final groups = <List<PopupMenuEntry<_PostCardActions>>>[
       [
-        item(_PostCardActions.reply, Icons.reply_outlined, context.t.postCard.reply),
-        if (widget.post.rateAction != null)
+        if (online) item(_PostCardActions.reply, Icons.reply_outlined, context.t.postCard.reply),
+        if (online && widget.post.rateAction != null)
           item(_PostCardActions.rate, Icons.rate_review_outlined, context.t.postCard.rate),
       ],
       [
@@ -373,7 +396,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         // Viewing specified author now, can switch to view all authors mode.
         if (threadBloc != null && onlyVisibleUid != null)
           item(_PostCardActions.viewAllAuthors, Icons.group_outlined, context.t.postCard.viewAllAuthors),
-        if (widget.post.editUrl != null) item(_PostCardActions.edit, Icons.edit_outlined, context.t.postCard.edit),
+        if (online && widget.post.editUrl != null)
+          item(_PostCardActions.edit, Icons.edit_outlined, context.t.postCard.edit),
       ],
       [
         if (widget.post.shareLink != null) ...[
@@ -388,7 +412,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         ],
       ],
       [
-        if (widget.post.reportTarget != null)
+        if (online && widget.post.reportTarget != null)
           item(_PostCardActions.report, Icons.flag_outlined, context.t.postReport.menu, color: colorScheme.error),
       ],
     ];
@@ -484,8 +508,34 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
     }
   }
 
+  /// Reload the page of this floor after an action of the thread's special block (a vote, an application, accepting
+  /// an answer…), keeping this floor as the scroll target as after an edit; null without a thread page above (the
+  /// post of a notice) and on a floor read back from an offline copy ([isOfflineFloor]), where the special cards offer
+  /// no action: they show what the page showed, read only.
+  VoidCallback? _specialReload(BuildContext context) {
+    final threadBloc = context.readOrNull<ThreadBloc>();
+    if (threadBloc == null || isOfflineFloor(context)) {
+      return null;
+    }
+    final onEdited = widget.onEdited;
+    final page = widget.post.page;
+    return () {
+      if (threadBloc.isClosed) {
+        return;
+      }
+      onEdited?.call();
+      threadBloc.add(ThreadJumpPageRequested(page));
+    };
+  }
+
   Widget _buildContextMenuRow(BuildContext context) => Row(
     children: [
+      // Accepting this floor as the answer of the bounty, for the thread's author (plugin 2.8.0).
+      if ((widget.post.bestAnswerRequest, _specialReload(context)) case (final request?, final reload?))
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: SpecialBestAnswerButton(request, onReload: reload),
+        ),
       const Spacer(),
       // The floor's action menu, at the end of the floor: muted rounded button, the icon stays the usual "more" so it
       // reads like the other menus of the app.
@@ -517,10 +567,30 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         // Post body
         sizedBoxW12H12,
         InteractivePostEntry(data: widget.post.data, postId: widget.post.postID),
+        // The special block of the thread (plugin 2.8.0), where the web page prints it: the bounty and the activity
+        // before the content, the poll, the goods and the debate after it. Its html is cut out of the content.
+        if (widget.post.special case final special? when SpecialThreadCard.aboveContent(special))
+          SpecialThreadCard(
+            special,
+            pid: widget.post.postID,
+            onReload: _specialReload(context),
+            onJoinDebate: isOfflineFloor(context) ? null : widget.onJoinDebate,
+            webUrl: widget.post.shareLink,
+          ),
         _buildPostBody(context),
         // 红包 if any.
         if (widget.post.locked.isNotEmpty) ...widget.post.locked.where((e) => e.isValid()).map(LockedCard.new),
-        if (widget.post.poll case final poll?) PollCard(widget.post.postID, fromPage: poll),
+        if (widget.post.special case final special?) ...[
+          if (!SpecialThreadCard.aboveContent(special))
+            SpecialThreadCard(
+              special,
+              pid: widget.post.postID,
+              onReload: _specialReload(context),
+              onJoinDebate: isOfflineFloor(context) ? null : widget.onJoinDebate,
+              webUrl: widget.post.shareLink,
+            ),
+        ] else if (widget.post.poll case final poll?)
+          PollCard(widget.post.postID, fromPage: poll),
         if (widget.post.packetUrl != null) ...[
           sizedBoxW12H12,
           PacketCard(widget.post.packetUrl!, allTaken: widget.post.packetAllTaken),
@@ -542,4 +612,26 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
   // Add mixin and return true to avoid post list shaking when scrolling.
   @override
   bool get wantKeepAlive => true;
+}
+
+/// The content of a floor the forum's app API gives nothing of ([Post.isSpoofed]): a neutral line, not an empty floor.
+class _ContentUnavailable extends StatelessWidget {
+  const _ContentUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.outline;
+    return Row(
+      children: [
+        Icon(Icons.visibility_off_outlined, size: 18, color: color),
+        sizedBoxW8H8,
+        Expanded(
+          child: Text(
+            context.t.postCard.contentUnavailable,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          ),
+        ),
+      ],
+    );
+  }
 }

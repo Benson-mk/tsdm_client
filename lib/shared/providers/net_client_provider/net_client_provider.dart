@@ -40,6 +40,13 @@ AppException mapException(Object error, StackTrace st) {
       error.message ?? error.error?.toString() ?? error.type.name,
       statusCode: response?.statusCode,
       headers: response?.headers,
+      // Dio reports a failed connect as a connection error or timeout; the Android channel as its own exception. A
+      // socket failing after the connect (reset, closed) is no such failure: the forum was reached.
+      connectionFailed:
+          response == null &&
+          (error.type == DioExceptionType.connectionError ||
+              error.type == DioExceptionType.connectionTimeout ||
+              error.error is HostUnreachableException),
     );
   }
   return HttpRequestFailedException(null);
@@ -177,11 +184,30 @@ final class NetClientProvider with LoggerMixin {
   /// [options] apply to this request only, e.g. a `validateStatus` that keeps the body of an error answer. An AJAX
   /// request (`inajax=1`) carries `X-Requested-With: XMLHttpRequest` as the forum's own scripts send it, unless
   /// [options] sets the header.
-  AsyncEither<Response<dynamic>> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) =>
-      AsyncEither.tryCatch(
-        () async => _dio.get<dynamic>(path, queryParameters: queryParameters, options: _withAjaxHeader(path, options)),
-        mapException,
-      );
+  ///
+  /// [singleAttempt] marks a GET that writes (the forum's AJAX menus: a debate vote): no transport retry and no
+  /// redirect follow up, as [postForm] does for a form, so it is never sent twice.
+  AsyncEither<Response<dynamic>> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    bool singleAttempt = false,
+  }) => AsyncEither.tryCatch(
+    () async => _dio.get<dynamic>(
+      path,
+      queryParameters: queryParameters,
+      options: _withAjaxHeader(
+        path,
+        singleAttempt
+            ? (options ?? Options()).copyWith(
+                followRedirects: false,
+                extra: {...?options?.extra, singleAttemptHttpRequestKey: true},
+              )
+            : options,
+      ),
+    ),
+    mapException,
+  );
 
   /// Make a GET request to the given [uri].
   AsyncEither<Response<dynamic>> getUri(Uri uri) =>

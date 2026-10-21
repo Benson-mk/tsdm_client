@@ -10,9 +10,29 @@ import 'package:tsdm_client/instance.dart';
 /// Internal Dio metadata; never transmitted in an HTTP header or form body.
 const singleAttemptHttpRequestKey = 'tsdm_single_attempt';
 
+/// The host of a GET was not reached at all: no network, the name not resolved, the connection refused or timed out
+/// while connecting (`KT_HTTP_UNREACHABLE` of the Android channel, see `HttpClient.errorCode` in `HttpClient.kt`).
+///
+/// Its own type, not a [SocketException]: a socket failing after the connection was made (reset, closed while
+/// reading) means the forum was reached, and must not count as no network.
+final class HostUnreachableException implements IOException {
+  /// Constructor.
+  const HostUnreachableException(this.message);
+
+  /// What the platform said.
+  final String message;
+
+  @override
+  String toString() => 'HostUnreachableException: $message';
+}
+
 /// The method channel for [KotlinHttpClient].
 abstract class _AndroidHttpMethodChannel {
   static const _httpChannel = MethodChannel('kzs.th000.tsdm_client/httpChannel');
+
+  /// Error code of a GET whose host was not reached at all (no network, name not resolved, connection refused or timed
+  /// out while connecting), see `HttpClient.errorCode` in `HttpClient.kt`.
+  static const _unreachable = 'KT_HTTP_UNREACHABLE';
 
   static const _methodGet = 'get';
   static const _methodPost = 'postForm';
@@ -20,15 +40,29 @@ abstract class _AndroidHttpMethodChannel {
   static const _methodPostJson = 'postJson';
 
   /// Make a GET request.
-  static Future<_KotlinHttpResponse?> _get({required String url, required Map<String, String> headers}) async {
+  static Future<_KotlinHttpResponse?> _get({
+    required String url,
+    required Map<String, String> headers,
+    bool singleAttempt = false,
+  }) async {
     try {
-      final resp = await _httpChannel.invokeMethod<Map<Object?, Object?>>(_methodGet, {'url': url, 'headers': headers});
+      final resp = await _httpChannel.invokeMethod<Map<Object?, Object?>>(_methodGet, {
+        'url': url,
+        'headers': headers,
+        'singleAttempt': singleAttempt,
+      });
       if (resp == null) {
         return null;
       }
       return _KotlinHttpResponse._fromRawResp(resp);
     } on PlatformException catch (e, st) {
       talker.handle(e, st, '[KtHttp] GET failed on $url');
+      if (e.code == _unreachable) {
+        // Its own exception, as dio's connection error and connection timeout are on the other platforms, so a thread
+        // page can be read from its offline copy (see mapException); still a failed request without status for every
+        // other caller.
+        throw HostUnreachableException('${e.details ?? e.message ?? 'host unreachable'}');
+      }
       return null;
     }
   }
@@ -154,11 +188,15 @@ final class _KotlinHttpResponse {
 /// Note that this class is not derived form `dart:http:BaseClient`, unlike `cronet_http`, because we want to keep
 /// multiple header structure as `Map<String, List<String>>` instead of `Map<String, String>`.
 final class KotlinHttpClient {
-  Future<_KotlinHttpResponse> _get(Uri url, {Map<String, String>? headers}) async {
+  Future<_KotlinHttpResponse> _get(Uri url, {Map<String, String>? headers, bool singleAttempt = false}) async {
     if (!Platform.isAndroid) {
       throw http.ClientException('Only available on Android');
     }
-    final rawResp = await _AndroidHttpMethodChannel._get(url: url.toString(), headers: headers ?? {});
+    final rawResp = await _AndroidHttpMethodChannel._get(
+      url: url.toString(),
+      headers: headers ?? {},
+      singleAttempt: singleAttempt,
+    );
     if (rawResp == null) {
       throw http.ClientException('null raw response');
     }
@@ -180,9 +218,7 @@ final class KotlinHttpClient {
     }
 
     final contentType = headers?[HttpHeaders.contentTypeHeader]?.split(';').firstOrNull ?? '';
-    if (singleAttempt &&
-        contentType != 'application/x-www-form-urlencoded' &&
-        contentType != 'application/json') {
+    if (singleAttempt && contentType != 'application/x-www-form-urlencoded' && contentType != 'application/json') {
       throw UnsupportedError('Single-attempt requests require a URL-encoded form or a JSON body');
     }
 
@@ -237,6 +273,7 @@ class KotlinHttpClientAdapter implements HttpClientAdapter {
         options.uri,
         headers: Map.from(options.headers.filter((v) => v is String))
           ..removeWhere((k, v) => k.toLowerCase() == HttpHeaders.acceptEncodingHeader),
+        singleAttempt: options.extra[singleAttemptHttpRequestKey] == true,
       ),
       'POST' => _client._post(
         options.uri,

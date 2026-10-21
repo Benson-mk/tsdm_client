@@ -1,0 +1,17 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792543830,
+ "uid": 35,
+ "formhash": "f1f2f3f4",
+ "type": "result",
+ "schema": 13,
+ "kind": "redirect",
+ "message": "",
+ "message_key": "thread_poll_succeed",
+ "url": "forum.php?mod=viewthread&tid=9200368",
+ "handlekey": "",
+ "values": {},
+ "login": 0,
+ "alert": ""
+}

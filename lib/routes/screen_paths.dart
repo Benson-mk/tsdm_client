@@ -392,6 +392,9 @@ class DialogPaths {
   /// Common dialog to show question.
   static const String question = '/dialog/question';
 
+  /// Dialog to fill a form of a special thread (the activity's application, its cancel).
+  static const String specialThreadForm = '/dialog/specialThreadForm';
+
   /// Dialog to let user copy contents.
   static const String copyContent = '/dialog/copyContent';
 
@@ -406,6 +409,9 @@ class DialogPaths {
 
   /// Dialog to select the duration consider an image cache as outdated.
   static const String autoClearImageCacheDuration = '/dialog/autoClearImageDialogDuration';
+
+  /// Dialog to select how many threads the offline copies are kept for.
+  static const String offlineThreadsLimit = '/dialog/offlineThreadsLimit';
 
   /// Dialog to show help message of thread card.
   static const String threadCardHelp = '/dialog/threadCardHelp';

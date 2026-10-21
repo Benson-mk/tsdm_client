@@ -78,6 +78,35 @@ class HttpClientTest {
         }
     }
 
+    @Test fun unreachableHostsAreToldApartFromOtherFailures() = runBlocking {
+        fun codeOf(block: suspend () -> Unit): String {
+            val error = runCatching { runBlocking { block() } }.exceptionOrNull()
+            assertNotNull("the request must fail", error)
+            return HttpClient.errorCode(error as Exception)
+        }
+
+        // Nothing listens on the port any more: the connection is refused.
+        val port = MockWebServer().use { server ->
+            server.start()
+            server.port
+        }
+        assertEquals("KT_HTTP_UNREACHABLE", codeOf { HttpClient.get("http://localhost:$port/forum.php", hashMapOf()).close() })
+        // A name that never resolves (`.invalid` is reserved for that).
+        assertEquals("KT_HTTP_UNREACHABLE", codeOf { HttpClient.get("http://forum.invalid/forum.php", hashMapOf()).close() })
+
+        // Connected, then the socket closed before the answer: the forum was reached.
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()) }
+            server.start()
+            assertEquals("KT_HTTP_ERROR", codeOf { HttpClient.get(server.url("/forum.php").toString(), hashMapOf()).close() })
+        }
+
+        assertEquals("KT_HTTP_UNREACHABLE", HttpClient.errorCode(java.net.SocketTimeoutException("failed to connect to /x (port 443) after 10000ms")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(java.net.SocketTimeoutException("timeout")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(java.net.SocketException("Connection reset")))
+        assertEquals("KT_HTTP_ERROR", HttpClient.errorCode(javax.net.ssl.SSLHandshakeException("bad certificate")))
+    }
+
     @Test fun losingTheResponseAfterReceivingTheFormDoesNotResendIt() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build())
@@ -92,6 +121,31 @@ class HttpClientTest {
             val request = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
             assertEquals("POST", request.method)
             assertTrue(requireNotNull(request.body).utf8().contains("banknum=12"))
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test fun singleAttemptGetIsNotReplayedNorRedirected() = runBlocking {
+        // A GET that writes (a debate vote) is sent once: a lost response is reported, a redirect is not followed.
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build())
+            server.enqueue(MockResponse(body = "Would be a second vote"))
+            server.start()
+            try {
+                HttpClient.get(server.url("/vote?stand=1").toString(), hashMapOf(), singleAttempt = true).close()
+                fail("The lost response must be reported to the caller")
+            } catch (_: IOException) {
+                // The forum may have counted the vote: only reading the page tells.
+            }
+            assertEquals(1, server.requestCount)
+        }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/replay").build())
+            server.enqueue(MockResponse(body = "Must not be requested"))
+            server.start()
+            HttpClient.get(server.url("/vote?stand=1").toString(), hashMapOf(), singleAttempt = true).use {
+                assertEquals(302, it.code)
+            }
             assertEquals(1, server.requestCount)
         }
     }

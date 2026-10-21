@@ -236,6 +236,21 @@ enum SettingsKeys<T> implements Comparable<SettingsKeys<T>> {
   ///
   /// Some vendor systems keep apps that do not ask at 60Hz on 90/120Hz screens (GitHub #182). Android only.
   highRefreshRate<bool>(name: 'highRefreshRate', type: bool, defaultValue: true),
+
+  /// Save the thread pages the user loads to read them again without network.
+  ///
+  /// Off by default: nothing is stored and the thread page behaves as before. Turning it off deletes what was saved.
+  offlineThreads<bool>(name: 'offlineThreads', type: bool, defaultValue: false),
+
+  /// How many threads [offlineThreads] keeps, the least recently used ones going first; one thread of one account
+  /// counts once whatever number of its pages are saved.
+  offlineThreadsLimit<int>(name: 'offlineThreadsLimit', type: int, defaultValue: 50),
+
+  /// Render a floor from its bbcode with the app's own renderer instead of the html the forum printed (experimental).
+  ///
+  /// Only floors whose bbcode the forum's app API gives (plugin 2.7.0, the account sees the whole content) and whose
+  /// tags the app renders faithfully; every other floor keeps the forum's html. Off by default.
+  enableAppPostRenderer<bool>(name: 'enableAppPostRenderer', type: bool, defaultValue: false),
   ;
 
   const SettingsKeys({required this.name, required this.type, required this.defaultValue});

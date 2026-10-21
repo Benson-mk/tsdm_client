@@ -442,6 +442,7 @@
       "log": "Log",
       "selectOneCache": "Need to select at least one kind of cache",
       "clearSuccess": "Cleared successfully",
+      "offlineThreadsCache": "Offline threads",
       "scheduledCleaning": {
         "title": "Auto clear image",
         "details": "Clear long time not used image cache when app start",
@@ -456,6 +457,15 @@
           "15days": "15 days",
           "30days": "30 days"
         }
+      },
+      "offlineThreads": {
+        "title": "Save viewed threads offline",
+        "detail": "Keep the thread pages you open on this device to read them again without network; each account only sees its own copies. Turning it off deletes them",
+        "limit": {
+          "title": "Threads to keep",
+          "detail": "Shared by all accounts; the threads not read for the longest time are deleted first. Each thread keeps at most 20 pages",
+          "value": "${count: int} threads"
+        }
       }
     },
     "advancedSection": {
@@ -466,6 +476,10 @@
         "detected": "Plugin ${seen} · app expects ${expected}",
         "notDetected": "Not detected · app expects ${expected}",
         "olderNote": "Some pages are parsed from the web page"
+      },
+      "appPostRenderer": {
+        "title": "Render posts with the app's renderer (experimental)",
+        "detail": "With the forum API plugin 2.7.0, floors whose whole content you can see are drawn from their bbcode by the app; floors it can not draw faithfully keep the forum's web content"
       },
       "proxySettings": {
         "title": "Proxy Settings",
@@ -489,6 +503,7 @@
       },
       "exportData": "Export data",
       "exportDataDetail": "Without cookies and passwords by default; optionally include them, encrypted with a password of your own",
+      "exportDataFailed": "Export failed; nothing was changed, try again later",
       "backupTitle": "Backup and restore",
       "exportBackup": {
         "title": "Export data",
@@ -771,6 +786,7 @@
       "title": "Operation Log"
     },
     "softCloseHint": "Thread is closed, be attention before posting",
+    "offlineBanner": "Offline copy (saved ${time: String})",
     "statistics": "${view: int} views ${reply: int} count",
     "threadInfo": {
       "title": "Thread info",
@@ -1223,6 +1239,10 @@
     }
   },
   "postCard": {
+    "contentUnavailable": "This floor's content can not be shown",
+    "bbcode": {
+      "attachmentLocked": "Not available to you: to buy, no permission, or log in first"
+    },
     "interactiveHtml": {
       "open": "Interactive content",
       "description": "Open this post’s interactive layout, forms and buttons.",
@@ -2431,5 +2451,137 @@
     "switchBusy": "Notifications are syncing, try again in a moment",
     "moreAccounts": "${count} more account(s)",
     "replyBusy": "A reply is being sent, switch accounts once it is done"
+  },
+  "specialThread": {
+    "refused": "The forum did not accept it.",
+    "done": "Done.",
+    "unknown": "Could not tell whether it went through. The thread is reloaded to show the forum's state.",
+    "accountChanged": "The account changed since this page was loaded. Refresh the thread first.",
+    "openInBrowser": "Open in browser",
+    "submit": "Submit",
+    "poll": {
+      "single": "Single choice",
+      "multiple": "Multiple choice, up to $max",
+      "voters": "$count voters",
+      "afterResult": "Results show after you vote",
+      "separator": ", ",
+      "ended": "The poll has ended",
+      "deadline": "Ends at $time",
+      "overt": "Others can see what you vote for.",
+      "viewVoters": "View voters"
+    },
+    "reward": {
+      "title": "Bounty",
+      "price": "$price $credit",
+      "resolved": "Resolved",
+      "unresolved": "Open",
+      "bestAnswer": "Best answer",
+      "anonymous": "Anonymous",
+      "hiddenContent": "Hidden content",
+      "hiddenLocked": "Replies in this thread are shown to their authors only.",
+      "hiddenOther": "The answer's content is not shown; read it on its floor.",
+      "jumpToFloor": "Go to the floor",
+      "setBestHint": "Accept an answer with “Set as best answer” on its floor.",
+      "setBest": "Set as best answer",
+      "setBestConfirmTitle": "Set as best answer",
+      "setBestConfirm": "Accept this floor as the best answer? The bounty goes to its author and the choice cannot be changed.",
+      "badge": "Best answer",
+      "hiddenHide": "The answer has hidden content; read it on its floor.",
+      "hiddenPassword": "The answer is password protected; read it on its floor.",
+      "hiddenBanned": "The answer's author is banned; its content is not shown.",
+      "hiddenModerate": "The answer is waiting for moderation.",
+      "hiddenFormat": "The app cannot quote this answer; read it on its floor.",
+      "hiddenSpoofed": "The answer's floor cannot be shown."
+    },
+    "activity": {
+      "title": "Activity",
+      "type": "Type",
+      "time": "Time",
+      "timeRange": "$from to $to",
+      "place": "Place",
+      "gender": "Gender",
+      "genderAny": "Anyone",
+      "genderMale": "Male",
+      "genderFemale": "Female",
+      "cost": "Cost per person",
+      "costValue": "$cost yuan",
+      "places": "Places",
+      "placesUnlimited": "Unlimited",
+      "applied": "Applied",
+      "appliedValue": "$count ($verified accepted, $pending waiting)",
+      "remaining": "Places left",
+      "deadline": "Applications close",
+      "credit": "Credit taken",
+      "creditValue": "$amount $credit",
+      "creditNotEnough": "You do not have enough $credit to apply.",
+      "closed": "Applications are closed.",
+      "statusWaiting": "You applied; the organizer has not accepted it yet.",
+      "statusAccepted": "Your application was accepted.",
+      "statusComplete": "The organizer asks you to complete your application.",
+      "join": "Join",
+      "complete": "Complete my application",
+      "cancel": "Cancel my application",
+      "cancelTitle": "Cancel the application",
+      "cancelReason": "Reason (optional)",
+      "manage": "Manage applications",
+      "accepted": "Accepted ($count)",
+      "waiting": "Waiting ($count)",
+      "more": "More applicants",
+      "selfPay": "Pays own way",
+      "pays": "Pays $amount yuan",
+      "applyTitle": "Apply",
+      "required": "Required",
+      "payValue": "Amount (yuan)",
+      "needsWeb": "This application asks for fields the app cannot fill. Apply on the web page.",
+      "fillRequired": "Fill in the required fields first.",
+      "applyOnWeb": "Apply in the browser"
+    },
+    "debate": {
+      "title": "Debate",
+      "affirm": "Affirmative",
+      "nega": "Negative",
+      "neutral": "Neutral",
+      "votes": "$count votes",
+      "debaters": "$count debaters",
+      "voteFor": "Support $side",
+      "voted": "Your vote",
+      "voteConfirmTitle": "Vote",
+      "voteConfirm": "Support the $side side? A vote cannot be changed.",
+      "endTime": "Ends at $time",
+      "ended": "The debate has ended",
+      "umpire": "Umpire: $name",
+      "winnerAffirm": "The affirmative side wins",
+      "winnerNega": "The negative side wins",
+      "winnerDraw": "A draw",
+      "umpirePoint": "Umpire's view",
+      "bestDebater": "Best debater: $name",
+      "umpireAction": "Umpire",
+      "standVotes": "$count supporters",
+      "join": "Join the $side side",
+      "joinHint": "Replying on the $side side",
+      "replySide": "Your side",
+      "fixedSide": "You reply on the $side side, as with your first reply",
+      "support": "Support",
+      "supportConfirmTitle": "Support this floor",
+      "supportConfirm": "Support this floor's side? A floor can only be supported once.",
+      "sideKeptNote": "If you already replied on a side, the forum keeps that side."
+    },
+    "trade": {
+      "title": "Goods",
+      "count": "$count goods",
+      "noGoods": "There are no goods on this counter.",
+      "removed": "This goods has been deleted.",
+      "recommended": "Recommended",
+      "qualityNew": "New",
+      "qualityUsed": "Second hand",
+      "remain": "$days d $hours h left",
+      "ended": "Trading ended",
+      "price": "$price yuan",
+      "credit": "$credit $unit",
+      "manage": "Sort goods",
+      "add": "Add goods",
+      "openHint": "Buying, quantity and shipping are on the goods page in the browser."
+    },
+    "already": "Done already."
   }
 }

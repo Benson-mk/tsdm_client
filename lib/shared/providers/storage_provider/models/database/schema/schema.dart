@@ -10,6 +10,7 @@ part 'fast_rate_template.dart';
 part 'fast_reply_template.dart';
 part 'image.dart';
 part 'notice.dart';
+part 'offline_thread.dart';
 part 'personal_message.dart';
 part 'replied_thread.dart';
 part 'settings.dart';

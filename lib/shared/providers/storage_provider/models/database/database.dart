@@ -21,6 +21,7 @@ part 'database.g.dart';
     FastReplyTemplate,
     Image,
     Notice,
+    OfflineThread,
     PersonalMessage,
     RepliedThread,
     Settings,
@@ -33,12 +34,28 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+    },
+    // The eviction index of the offline thread pages: a development build at the unreleased shape of schema 15 has the
+    // table without it. Looked up on every open (a read, no lock taken when it is there) and created when missing, so
+    // no build depends on the step.
+    beforeOpen: (details) async {
+      final index = offlineThreadRecent;
+      final present = await customSelect(
+        "SELECT name FROM sqlite_master WHERE name IN ('offline_thread', ?)",
+        variables: [Variable.withString(index.entityName)],
+      ).map((row) => row.read<String>('name')).get();
+      if (!present.contains('offline_thread') || present.contains(index.entityName)) {
+        return;
+      }
+      final create = index.createStatementsByDialect[SqlDialect.sqlite]!;
+      await customStatement(create.replaceFirst('CREATE INDEX ', 'CREATE INDEX IF NOT EXISTS '));
+      info('created the missing index ${index.entityName}');
     },
     onUpgrade: stepByStep(
       from1To2: (m, schema) async {
@@ -186,6 +203,34 @@ final class AppDatabase extends _$AppDatabase with LoggerMixin {
           }
         }
         info('migrating database schema from 13 to 14... ok!');
+      },
+      from14To15: (m, schema) async {
+        info('migrating database schema from 14 to 15...');
+        // Thread pages saved for reading without network, and the index of their eviction. The step runs again safely
+        // when the background service isolate opened the file together with the app (see from13To14): drift writes
+        // `CREATE TABLE IF NOT EXISTS`, the index is created only when missing.
+        await m.create(schema.offlineThread);
+        final index = schema.offlineThreadRecent;
+        final existing = await schema.database
+            .customSelect(
+              "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?",
+              variables: [
+                Variable.withString(index.entityName),
+              ],
+            )
+            .get();
+        if (existing.isEmpty) {
+          try {
+            await m.create(index);
+          } on Object catch (e) {
+            // Created by the other connection between the check and here.
+            if (!'$e'.contains('already exists')) {
+              rethrow;
+            }
+            info('${index.entityName} created by another connection');
+          }
+        }
+        info('migrating database schema from 14 to 15... ok!');
       },
     ),
   );

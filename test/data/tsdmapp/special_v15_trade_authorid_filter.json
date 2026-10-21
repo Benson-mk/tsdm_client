@@ -1,0 +1,149 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792543831,
+ "uid": 32,
+ "formhash": "f1f2f3f4",
+ "checknewpm": "",
+ "type": "thread",
+ "schema": 15,
+ "codes": {
+  "allowsmilies": 1,
+  "allowbbcode": 1,
+  "allowimgcode": 1,
+  "allowhtml": 0,
+  "allowmediacode": 1,
+  "jammer": 0,
+  "maxsmilies": 10,
+  "imgwhitelist": {
+   "enabled": 0,
+   "domains": []
+  }
+ },
+ "smilies_version": "1071fed373e93cf2a184c2ef81938b99",
+ "timeoffset": 8,
+ "thread": {
+  "tid": 9200374,
+  "fid": 2,
+  "subject": "tsdmapp 2.8.0 商品 T1 222088",
+  "authorid": 32,
+  "author": "ag_admin",
+  "anonymous": 0,
+  "dateline": 1792537600,
+  "views": 100,
+  "replies": 2,
+  "readperm": 0,
+  "price": 0,
+  "special": 2,
+  "closed": 0,
+  "digest": 0,
+  "displayorder": 0,
+  "typeid": 0,
+  "typename": "",
+  "sortid": 0,
+  "sortname": "",
+  "moved": 0,
+  "soft_closed": 0,
+  "draft": 0,
+  "pay": null,
+  "modact": ""
+ },
+ "forum": {
+  "fid": 2,
+  "name": "📢 公告 & 新手報到"
+ },
+ "nav": [
+  {
+   "fid": 1,
+   "name": "🏠 論壇大廳",
+   "type": "group"
+  },
+  {
+   "fid": 2,
+   "name": "📢 公告 & 新手報到",
+   "type": "forum"
+  }
+ ],
+ "page": 1,
+ "pages": 1,
+ "ppp": 10,
+ "ordertype": 0,
+ "authorid": 32,
+ "reply": {
+  "allowed": 0,
+  "fastpost": 1,
+  "fastpost_allowed": 1,
+  "posttime": "1700000000",
+  "subject": "",
+  "action": "forum.php?mod=post&action=reply&fid=2&tid=9200374&extra=page%3D1&replysubmit=yes&infloat=yes&handlekey=fastpost"
+ },
+ "menus_html": [],
+ "posts": [
+  {
+   "pid": 5795,
+   "position": 1,
+   "deleted": 0,
+   "first": 1,
+   "authorid": 32,
+   "author": "ag_admin",
+   "anonymous": 0,
+   "dateline": 1792537600,
+   "invisible": 0,
+   "avatar": "https://www.tsdm39.com/data/avatar/noavatar.svg",
+   "share_url": "forum.php?mod=viewthread&tid=9200374",
+   "group": {
+    "gid": 1,
+    "title": "管理员",
+    "color": "",
+    "icon": ""
+   },
+   "lastedit": null,
+   "can": {
+    "reply": 0,
+    "edit": 1,
+    "rate": 1,
+    "report": 0
+   },
+   "urls": {
+    "reply": "forum.php?mod=post&action=reply&fid=2&tid=9200374&reppost=5795&extra=page%3D1&page=1",
+    "edit": "forum.php?mod=post&action=edit&fid=2&tid=9200374&pid=5795&page=1",
+    "rate": "forum.php?mod=misc&action=rate&tid=9200374&pid=5795",
+    "report": "misc.php?mod=report&rtype=post&rid=5795&tid=9200374&fid=2"
+   },
+   "signature_html": "<a href=\"https://www.tsdm39.com/forum.php?mod=viewthread&amp;tid=9\" target=\"_blank\">簽名裡的舊網域連結</a>",
+   "poll_html": "",
+   "packet_html": "",
+   "rate": null,
+   "author_html": "\r\n<div id=\"favatar5795\" class=\"pls cl favatar\">\r\n<div class=\"pi\">\r\n<div class=\"authi\"><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xw1\">ag_admin</a>\r\n</div>\r\n</div>\r\n<div class=\"p_pop blk bui card_gender_0\" id=\"userinfo5795\" style=\"display: none; margin-top: -11px;\">\r\n<div class=\"m z\">\r\n<div id=\"userinfo5795_ma\"></div>\r\n</div>\r\n<div class=\"i y\">\r\n<div>\r\n<strong><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xi2\">ag_admin</a></strong>\r\n<em>当前在线</em>\r\n</div><dl class=\"cl\">\r\n<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl><div class=\"imicn\">\r\n<a href=\"http://\" target=\"_blank\" title=\"查看个人网站\"><img src=\"static/image/common/forumlink.gif\" alt=\"查看个人网站\" /></a><a href=\"home.php?mod=space&amp;uid=32&amp;do=profile\" target=\"_blank\" title=\"查看详细资料\"><img src=\"static/image/common/userinfo.gif\" alt=\"查看详细资料\" /></a>\r\n</div>\r\n<div id=\"avatarfeed\"><span id=\"threadsortswait\"></span></div>\r\n</div>\r\n</div>\r\n<div>\r\n<div class=\"avatar\" onmouseover=\"showauthor(this, 'userinfo5795')\"><a href=\"home.php?mod=space&amp;uid=32\" class=\"avtm\" target=\"_blank\"><img data-src=\"./data/avatar/noavatar.svg\" class=\"_avt user_avatar\"></a></div>\r\n</div>\r\n<div class=\"qdsmile\"><li><center>TA的每日心情</center><table><tr><th><a href=\"forum.php?mod=forumdisplay&amp;fid=4\"><img onmouseover=\"showMenu({'ctrlid':this.id});\" id=\"heart_5795\" src=\"source/plugin/dsu_paulsign/img/1/kx.gif\" alt=\"\"></a></th><th><font size=\"5px\">开心</font></th></tr></table><div style=\"display:none\" id=\"heart_5795_menu\" class=\"p_pop h_pop tsqd\">管理员今天也来签到了</div><p style=\"margin:0\">签到天数: 1天[LV.1]初来乍到</p></li></div><div class=\"tns xg2\"><table cellspacing=\"0\" cellpadding=\"0\"><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=thread&view=me&from=space\" class=\"xi2\">248</a></p>主题</th><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=reply&view=me&from=space\" class=\"xi2\">67</a></p>回帖</th><td><p><a href=\"home.php?mod=space&uid=32&do=profile\" class=\"xi2\">1196</a></p>积分</td></table></div>\r\n\r\n<p><em><a href=\"home.php?mod=spacecp&amp;ac=usergroup&amp;gid=1\" target=\"_blank\">管理员</a></em></p>\r\n\r\n\r\n<p><span><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star1 fic4 fc-l\" title=\"Rank: 9\"></i></span></p>\r\n\r\n\r\n\r\n<dl class=\"pil cl\">\r\n\t<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl>\r\n\r\n<dl class=\"pil cl\"></dl><p class=\"cp_pls cl\">\r\n<a href=\"forum.php?mod=topicadmin&amp;action=getip&amp;fid=2&amp;tid=9200374&amp;pid=5795\" onclick=\"ajaxmenu(this, 0, 0, 2);doane(event)\">IP</a>\r\n<a href=\"?app=admin&frames=yes&action=members&operation=search&uid=32&submit=yes\" target=\"_blank\">编辑</a>\r\n<a href=\"?app=admin&action=members&operation=ban&username=ag_admin&frames=yes\" target=\"_blank\">禁止</a>\r\n<a href=\"forum.php?mod=modcp&amp;action=thread&amp;op=post&amp;do=search&amp;searchsubmit=1&amp;users=ag_admin\" target=\"_blank\">帖子</a>\r\n<a href=\"forum.php?mod=ajax&amp;action=quickclear&amp;uid=32\" onclick=\"showWindow('qclear_32', this.href, 'get', 0)\">清理</a>\r\n</p>\r\n</div>\r\n",
+   "body_html": "\r\n \r\n<div class=\"pcbs\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td class=\"t_f\" id=\"postmessage_5795\">\r\nTRADE_T1_INTRO_222088 櫃台說明</td></tr></table>\r\n\r\n<div class=\"trdc xs1\">\r\n<em>商品数: </em>\r\n<a href=\"forum.php?mod=misc&amp;action=tradeorder&amp;tid=9200374\" onclick=\"showWindow('tradeorder', this.href)\">柜台商品管理</a>\r\n<span class=\"pipe\">|</span>\r\n<a href=\"javascript:;\" onclick=\"window.open('home.php?mod=space&uid=32&do=trade&view=tradelog','','');return false;\">交易记录</a>\r\n</div>\r\n<div class=\"locked\">本柜台无商品</div>\r\n\r\n</div>\r\n<div id=\"comment_5795\" class=\"cm\">\r\n</div>\r\n\r\n<div id=\"post_rate_div_5795\"></div>\r\n",
+   "message": "TRADE_T1_INTRO_222088 櫃台說明",
+   "message_reason": "",
+   "bbcodeoff": 1,
+   "smileyoff": 1,
+   "parseurloff": 0,
+   "allowsmilies": 1,
+   "allowbbcode": 1,
+   "allowimgcode": 1,
+   "allowmediacode": 1,
+   "attachments": [],
+   "customtags": [],
+   "stand": 0,
+   "stand_votes": 0,
+   "best": 0
+  }
+ ],
+ "special": {
+  "type": "trade",
+  "count": 0,
+  "credit_unit": {
+   "id": 2,
+   "title": "天使币",
+   "unit": ""
+  },
+  "can_manage": 1,
+  "manage_url": "forum.php?mod=misc&action=tradeorder&tid=9200374",
+  "can_add": 0,
+  "add_url": "",
+  "goods": []
+ }
+}

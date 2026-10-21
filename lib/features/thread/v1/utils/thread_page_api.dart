@@ -4,6 +4,7 @@ import 'package:tsdm_client/constants/url.dart';
 import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/features/thread/v1/utils/special_block.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_medal_menu_info.dart';
@@ -55,8 +56,16 @@ Map<String, dynamic>? threadApiAnswerOf(Object? data) {
 ///   form (`fastpost` 0);
 /// * `posts` are the floors in the forum's order, hot and sticky replies included ([Post.fromApi]), with the
 ///   answer's `uid` as the account they were served to; the placeholder of a deleted floor of a rush thread
-///   (`deleted` 1) is left out, as the page parser leaves it out;
-/// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`).
+///   (`deleted` 1) is left out, as the page parser leaves it out; since plugin 2.7.0 (`schema: 14`) each floor also
+///   keeps its bbcode, its attachments, the answer's `codes` and `smilies_version`, for the app's own renderer;
+/// * `menus_html` are the medal menus of the page, parsed as the page's (`PostMedalMenuItem`);
+/// * since plugin 2.8.0 (`schema: 15`) `special` is the special block of the first floor (poll, goods, bounty,
+///   activity, debate: [ThreadSpecial], null when the answer has none or names another type), kept on the page and
+///   on the first floor ([Post.special]), whose content then leaves out what the forum's template of the block
+///   printed ([bodyHtmlWithoutSpecialBlock]): the app shows the block as its own card. The floors the account may
+///   accept as the answer of a bounty (`special.set_best.pids`) carry the request doing it
+///   ([Post.bestAnswerRequest]); each floor's side in a debate and the accepted answer come with the floor
+///   ([Post.fromApi]). Without `special` every floor is exactly what it was.
 ///
 /// The forum's message (`ok` 0): `login` 1 is the login prompt of a guest (`needLogin`), 0 a member without
 /// permission (`havePermission` false, the message text as the denied message, as the page's `#messagetext p`);
@@ -104,23 +113,54 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
   final totalPages = json['pages'] is num ? _int(json['pages']) : pageNumber;
   final draft = _int(thread['draft']) == 1;
   final pay = thread['pay'] is Map<String, dynamic> ? _map(thread['pay']) : null;
+  final special = ThreadSpecial.fromApi(json['special'], formHash: _text(json['formhash']), viewerUid: uid);
 
   // The placeholder a rush thread prints for a deleted floor (`deleted` 1: "无效楼层，该帖已经被删除", no author, no
   // content) is left out, as the page parser leaves out a floor without an author.
-  final postList = _list(json['posts'])
-      .where((p) => _int(p['deleted']) != 1)
-      .map(
-        (p) => Post.fromApi(
-          p,
-          tid: tid ?? '',
-          fid: fid ?? 0,
-          viewerUid: uid,
-          page: currentPage,
-          pay: pay,
-          draft: draft,
-        ),
-      )
-      .toList();
+  final bestAnswerForm = special == null ? _rewardBestAnswerFormOf(thread, viewerUid: uid, page: currentPage) : null;
+  final postList = _list(json['posts']).where((p) => _int(p['deleted']) != 1).map((p) {
+    final first = _int(p['first']) == 1;
+    var post = Post.fromApi(
+      p,
+      tid: tid ?? '',
+      fid: fid ?? 0,
+      viewerUid: uid,
+      page: currentPage,
+      pay: pay,
+      draft: draft,
+      codes: json['codes'],
+      smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
+      threadSpecial: _int(thread['special']),
+    );
+    post = _withSpecial(post, special, first: first);
+    post = _withDebateVote(
+      post,
+      special,
+      tid: tidValue,
+      viewerUid: uid,
+      debate: _int(thread['special']) == 5,
+      closed: _int(thread['closed']) != 0,
+    );
+    // A page without the bounty's block (another page than the first): the thread's author accepts on the floors the
+    // forum's own form takes ([_rewardBestAnswerFormOf]).
+    if (bestAnswerForm != null &&
+        !first &&
+        _int(p['invisible']) == 0 &&
+        _int(p['anonymous']) == 0 &&
+        _int(p['authorid']) > 0 &&
+        _int(p['authorid']) != uid) {
+      final request = rewardBestAnswerRequest(
+        bestAnswerForm,
+        _int(p['pid']),
+        formHash: _text(json['formhash']),
+        viewerUid: uid,
+      );
+      if (request != null) {
+        post = post.copyWith(bestAnswerRequest: request);
+      }
+    }
+    return post;
+  }).toList();
 
   final typeId = _int(thread['typeid']);
   final typeName = _text(thread['typename']);
@@ -134,6 +174,9 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
           postTime: reply['posttime'] is String ? _text(reply['posttime']) : null,
           formHash: formHash,
           subject: _text(reply['subject']),
+          debate: _int(thread['special']) == 5,
+          debateStand: _int(thread['special']) == 5 ? _debateStandOf(reply, special) : null,
+          viewerUid: uid > 0 ? uid : null,
         )
       : null;
 
@@ -187,7 +230,119 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
     postMedals: postMedals,
     viewCount: _int(thread['views']),
     replyCount: _int(thread['replies']),
+    special: special,
   );
+}
+
+/// [post] with what the page's [special] block gives it: the [first] floor the block itself, its content without the
+/// forum's html of the block; a floor the account may accept as the answer of a bounty the request doing it.
+Post _withSpecial(Post post, ThreadSpecial? special, {required bool first}) {
+  if (special == null) {
+    return post;
+  }
+  final pid = int.tryParse(post.postID) ?? 0;
+  if (first) {
+    if (post.isSpoofed) {
+      // The plugin gives no block for a forged first floor; nothing of it is shown either way.
+      return post;
+    }
+    return post.copyWith(
+      special: special,
+      data: bodyHtmlWithoutSpecialBlock(post.data, special, pid: post.postID),
+    );
+  }
+  if (special case final RewardSpecial reward when pid > 0) {
+    if (reward.bestAnswerRequest(pid) case final request?) {
+      return post.copyWith(bestAnswerRequest: request);
+    }
+  }
+  return post;
+}
+
+/// [post] with the support of its side in a [debate] ([Post.debateVoteRequest]): the page prints "支持 N" on every
+/// floor taking a side; the app offers it to an account that is not the floor's author ([viewerUid], none for a
+/// guest), in a thread not [closed] and a debate not ended, the forum refusing anything else anyway. The action is
+/// the block's `vote_post`; a page without the block (another page than the first, only one author's floors) has the
+/// forum's own link of the floor ([_debateVotePostOf]), the same action.
+Post _withDebateVote(
+  Post post,
+  ThreadSpecial? special, {
+  required int tid,
+  required int viewerUid,
+  required bool debate,
+  required bool closed,
+}) {
+  if (!debate || closed || viewerUid <= 0 || (post.stand != 1 && post.stand != 2) || post.author.uid == '$viewerUid') {
+    return post;
+  }
+  final template = switch (special) {
+    final DebateSpecial block => block.ended ? null : block.votePost,
+    null => tid > 0 ? _debateVotePostOf(tid) : null,
+    _ => null,
+  };
+  final request = debateVotePostRequest(template, int.tryParse(post.postID) ?? 0, viewerUid: viewerUid);
+  return request == null ? post : post.copyWith(debateVoteRequest: request);
+}
+
+/// The forum's "设为最佳答案" form for the floors of an open bounty of the account in use ([viewerUid]), on a page
+/// without the bounty's block (plugin 2.8.0 gives `set_best` with the first floor only): the thread's author of a
+/// bounty not resolved yet (`thread.price` above 0) posts the page's `form#modactions` (`optgroup`, `operation`,
+/// `listextra`, `page` of page [page]) to `bestanswer` for a floor, as on the first page. Null otherwise; a moderator
+/// accepting an old bounty does it on the first page or the web page, the forum refusing anything else anyway.
+RewardSetBest? _rewardBestAnswerFormOf(Map<String, dynamic> thread, {required int viewerUid, required int page}) {
+  final tid = _int(thread['tid']);
+  if (_int(thread['special']) != 3 ||
+      _int(thread['price']) <= 0 ||
+      viewerUid <= 0 ||
+      _int(thread['authorid']) != viewerUid ||
+      tid <= 0) {
+    return null;
+  }
+  return RewardSetBest(
+    actionTemplate: 'forum.php?mod=misc&action=bestanswer&tid=$tid&pid={pid}&from=&bestanswersubmit=yes',
+    method: 'POST',
+    fields: {'optgroup': '', 'operation': '', 'listextra': 'page%3D$page', 'page': '$page'},
+    pids: const [],
+  );
+}
+
+/// The forum's "支持" link of a floor of debate [tid] (`viewthread_node`), as plugin 2.8.0 gives it in `vote_post`.
+SpecialActionTemplate _debateVotePostOf(int tid) => SpecialActionTemplate(
+  actionTemplate: 'forum.php?mod=misc&action=debatevote&tid=$tid&pid={pid}',
+  method: 'GET',
+  fields: const {'inajax': '1'},
+);
+
+/// The side of the debate the account took, as the page tells it: `reply.stand` (the forum's `firststand` on every
+/// debate page, 0 none taken), or on the first page of an answer without it `special.reply_stand` (0 none taken
+/// too); null when the page does not tell (another page of an answer without `reply.stand`).
+int? _debateStandOf(Map<String, dynamic> reply, ThreadSpecial? special) {
+  if (reply['stand'] is num) {
+    final stand = _int(reply['stand']);
+    return stand == 1 || stand == 2 ? stand : 0;
+  }
+  return special is DebateSpecial ? special.replyStand : null;
+}
+
+/// The reply parameters of a page just read ([next]) keeping the side of a debate the account took that an earlier
+/// page of the same thread told ([previous]), when this page does not tell it ([ReplyParameters.debateStand] null:
+/// an answer without `reply.stand`, past the first page).
+///
+/// Only a side taken (1 or 2) is kept, which the forum keeps for every later reply; "none taken yet" is not, the
+/// account may have replied on a side since. Only for the same account ([ReplyParameters.viewerUid]): the side of one
+/// account sent with another's reply would bind that one to it for good.
+ReplyParameters? withKnownDebateStand(ReplyParameters? next, ReplyParameters? previous) {
+  if (next == null ||
+      previous == null ||
+      !next.debate ||
+      next.debateStand != null ||
+      previous.tid != next.tid ||
+      next.viewerUid == null ||
+      previous.viewerUid != next.viewerUid) {
+    return next;
+  }
+  final stand = previous.debateStand;
+  return stand == 1 || stand == 2 ? next.copyWith(debateStand: stand) : next;
 }
 
 /// The account a structured answer [json] ([threadApiAnswerOf]) was served to: its `uid`, null for a guest (0) and

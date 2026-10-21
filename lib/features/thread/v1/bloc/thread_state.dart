@@ -46,6 +46,8 @@ class ThreadState with ThreadStateMappable {
     this.postMedals = const [],
     this.viewCount,
     this.replyCount,
+    this.offlineSavedAt,
+    this.floorsUid,
   });
 
   /// Status.
@@ -165,4 +167,15 @@ class ThreadState with ThreadStateMappable {
 
   /// Total count of replies in thread.
   final int? replyCount;
+
+  /// Floors on screen came from the offline copies because the forum could not be reached: when the oldest of those
+  /// pages was loaded. Null while every floor came from the forum. Actions that need the network are not offered then.
+  final DateTime? offlineSavedAt;
+
+  /// Whether floors on screen came from the offline copies ([offlineSavedAt]).
+  bool get isOffline => offlineSavedAt != null;
+
+  /// The account the floors on screen were loaded for (null: a guest). A load for another account that fails never
+  /// puts them back on screen, nor appends to them.
+  final int? floorsUid;
 }

@@ -102,6 +102,12 @@ final class AntitheftInterceptor extends Interceptor with LoggerMixin {
   Future<void> onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) async {
     final data = response.data;
     final options = response.requestOptions;
+    if (response.statusCode == 404) {
+      // Only a request that takes a 404 as an answer gets here (the thread page reading the message of a deleted
+      // thread): no challenge, and the web page is never asked again for its empty or JSON body.
+      handler.next(response);
+      return;
+    }
     if (hidesChallenge(options, data)) {
       await _askWebPage(response, handler);
       return;

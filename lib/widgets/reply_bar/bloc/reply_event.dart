@@ -48,8 +48,12 @@ final class ReplyThreadClosed extends ReplyEvent with ReplyThreadClosedMappable 
 @MappableClass()
 final class ReplyToPostRequested extends ReplyEvent with ReplyToPostRequestedMappable {
   /// Constructor.
-  const ReplyToPostRequested({required this.replyParameters, required this.replyAction, required this.replyMessage})
-    : super();
+  const ReplyToPostRequested({
+    required this.replyParameters,
+    required this.replyAction,
+    required this.replyMessage,
+    this.stand,
+  }) : super();
 
   /// Parameters used in posting the reply data.
   final ReplyParameters replyParameters;
@@ -59,19 +63,25 @@ final class ReplyToPostRequested extends ReplyEvent with ReplyToPostRequestedMap
 
   /// Message to reply.
   final String replyMessage;
+
+  /// The side the reply takes in a debate (0 neutral, 1 affirmative, 2 negative); null for any other thread.
+  final int? stand;
 }
 
 /// User required to reply to a thread.
 @MappableClass()
 final class ReplyToThreadRequested extends ReplyEvent with ReplyToThreadRequestedMappable {
   /// Constructor.
-  const ReplyToThreadRequested({required this.replyParameters, required this.replyMessage}) : super();
+  const ReplyToThreadRequested({required this.replyParameters, required this.replyMessage, this.stand}) : super();
 
   /// Parameters used in posting the reply data.
   final ReplyParameters replyParameters;
 
   /// Message to reply.
   final String replyMessage;
+
+  /// The side the reply takes in a debate (0 neutral, 1 affirmative, 2 negative); null for any other thread.
+  final int? stand;
 }
 
 /// This event is used to reset the state of flag needClearText in state.

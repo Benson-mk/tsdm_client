@@ -340,9 +340,10 @@ class MainActivity: FlutterActivity() {
             HTTP_GET -> {
                 val url = call.argument<String>("url")!!
                 val headers = call.argument<HashMap<String, String>>("headers")!!
+                val singleAttempt = call.argument<Boolean>("singleAttempt") ?: false
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val resp = HttpClient.get(url, headers)
+                        val resp = HttpClient.get(url, headers, singleAttempt = singleAttempt)
                         val statusCode = resp.code
                         val headers = HashMap(resp.headers.toMultimap())
                         val body = resp.body.bytes()
@@ -350,7 +351,7 @@ class MainActivity: FlutterActivity() {
                         result.success(buildResponse(statusCode, headers, body, isRedirect))
                     } catch (e: Exception) {
                         Log.e("KT_HTTP_ERROR", "failed to get: ${e.message ?: "unknown error"}")
-                        result.error("KT_HTTP_ERROR", "failed to perform http GET",e.message ?: "unknown error")
+                        result.error(HttpClient.errorCode(e), "failed to perform http GET",e.message ?: "unknown error")
                     }
                 }
             }

@@ -442,6 +442,7 @@
       "log": "日志",
       "selectOneCache": "需要至少选择一项缓存",
       "clearSuccess": "清除成功",
+      "offlineThreadsCache": "离线帖子",
       "scheduledCleaning": {
         "title": "自动清理图片",
         "details": "应用启动时删除太久未使用的图片缓存",
@@ -456,6 +457,15 @@
           "15days": "15天",
           "30days": "30天"
         }
+      },
+      "offlineThreads": {
+        "title": "离线保存看过的帖子",
+        "detail": "把看过的帖子页面存在本机，没有网络时可以再看；每个账号只看得到自己保存的内容。关闭时会删除已保存的内容",
+        "limit": {
+          "title": "最多保存的帖子数",
+          "detail": "所有账号共用这个上限，超过时先删除最久没看的帖子；每个帖子最多保存 20 页",
+          "value": "${count: int} 个帖子"
+        }
       }
     },
     "advancedSection": {
@@ -466,6 +476,10 @@
         "detected": "插件 ${seen} · 应用预期 ${expected}",
         "notDetected": "未检测到 · 应用预期 ${expected}",
         "olderNote": "部分页面将按网页解析"
+      },
+      "appPostRenderer": {
+        "title": "用 App 渲染器显示帖子（实验）",
+        "detail": "论坛接口插件 2.7.0 起，看得到完整内容的楼层改用帖子原文（bbcode）由 App 自己显示；App 画不准的楼层照旧显示论坛的网页内容"
       },
       "proxySettings": {
         "title": "代理设置",
@@ -489,6 +503,7 @@
       },
       "exportData": "导出数据",
       "exportDataDetail": "默认不含任何账号的 Cookie 与密码；可选择用自设密码加密后一并导出",
+      "exportDataFailed": "导出失败，现有数据未变更，请稍后再试",
       "backupTitle": "备份与恢复",
       "exportBackup": {
         "title": "导出数据",
@@ -771,6 +786,7 @@
       "title": "操作记录"
     },
     "softCloseHint": "帖子已关闭，回复前请注意",
+    "offlineBanner": "离线内容（${time: String} 保存）",
     "statistics": "${view: int} 查看 ${reply: int} 回复",
     "threadInfo": {
       "title": "帖子信息",
@@ -1223,6 +1239,10 @@
     }
   },
   "postCard": {
+    "contentUnavailable": "此楼内容无法显示",
+    "bbcode": {
+      "attachmentLocked": "无法查看：需要购买、权限不足或要先登录"
+    },
     "interactiveHtml": {
       "open": "互动内容",
       "description": "打开此楼层的互动排版、表单和按钮。",
@@ -2431,5 +2451,137 @@
     "switchBusy": "正在同步通知，请稍后再试",
     "moreAccounts": "另外 ${count} 个账号",
     "replyBusy": "正在发送回复，发送完成后再切换账号"
+  },
+  "specialThread": {
+    "refused": "论坛没有接受这次操作。",
+    "done": "已完成。",
+    "unknown": "未能确认结果，已重新载入帖子，请以论坛显示的状态为准。",
+    "accountChanged": "载入此页后已切换账号，请先刷新帖子。",
+    "openInBrowser": "在浏览器中打开",
+    "submit": "提交",
+    "poll": {
+      "single": "单选投票",
+      "multiple": "多选投票，最多可选 $max 项",
+      "voters": "共有 $count 人参与投票",
+      "afterResult": "投票后结果可见",
+      "separator": "，",
+      "ended": "投票已经结束",
+      "deadline": "投票截止：$time",
+      "overt": "其他人可看到您的投票项目。",
+      "viewVoters": "查看投票参与人"
+    },
+    "reward": {
+      "title": "悬赏",
+      "price": "$price $credit",
+      "resolved": "已解决",
+      "unresolved": "未解决",
+      "bestAnswer": "最佳答案",
+      "anonymous": "匿名",
+      "hiddenContent": "隐藏内容",
+      "hiddenLocked": "此帖的回复仅作者可见。",
+      "hiddenOther": "最佳答案的内容不显示，请到该楼查看。",
+      "jumpToFloor": "跳到该楼",
+      "setBestHint": "在回答的楼层点「设为最佳答案」即可采纳。",
+      "setBest": "设为最佳答案",
+      "setBestConfirmTitle": "设为最佳答案",
+      "setBestConfirm": "要采纳这一楼为最佳答案吗？悬赏会付给该楼作者，设定后不能更改。",
+      "badge": "最佳答案",
+      "hiddenHide": "最佳答案含有隐藏内容，请到该楼查看。",
+      "hiddenPassword": "最佳答案是密码帖，请到该楼查看。",
+      "hiddenBanned": "最佳答案的作者已被禁言，内容不显示。",
+      "hiddenModerate": "最佳答案仍在审核中。",
+      "hiddenFormat": "App 无法摘录这则答案，请到该楼查看。",
+      "hiddenSpoofed": "最佳答案那一楼的内容无法显示。"
+    },
+    "activity": {
+      "title": "活动",
+      "type": "活动类型",
+      "time": "开始时间",
+      "timeRange": "$from 至 $to",
+      "place": "活动地点",
+      "gender": "性别",
+      "genderAny": "不限",
+      "genderMale": "男",
+      "genderFemale": "女",
+      "cost": "每人花销",
+      "costValue": "$cost 元",
+      "places": "名额",
+      "placesUnlimited": "不限",
+      "applied": "已报名人数",
+      "appliedValue": "$count 人（已通过 $verified、待审核 $pending）",
+      "remaining": "剩余名额",
+      "deadline": "报名截止",
+      "credit": "报名扣除",
+      "creditValue": "$amount $credit",
+      "creditNotEnough": "你的${credit}不足，不能报名。",
+      "closed": "活动已截止报名。",
+      "statusWaiting": "你已报名，等待发起者审核。",
+      "statusAccepted": "你的报名已通过。",
+      "statusComplete": "发起者要求你完善报名资料。",
+      "join": "我要参加",
+      "complete": "完善资料",
+      "cancel": "取消报名",
+      "cancelTitle": "取消报名",
+      "cancelReason": "取消理由（选填）",
+      "manage": "管理报名",
+      "accepted": "已通过（$count 人）",
+      "waiting": "暂未通过（$count 人）",
+      "more": "查看更多报名者",
+      "selfPay": "自付",
+      "pays": "支付 $amount 元",
+      "applyTitle": "报名",
+      "required": "必填",
+      "payValue": "支付金额（元）",
+      "needsWeb": "这个活动的报名表有 App 无法填写的栏位，请在网页上报名。",
+      "fillRequired": "请先填写必填栏位。",
+      "applyOnWeb": "在浏览器报名"
+    },
+    "debate": {
+      "title": "辩论",
+      "affirm": "正方",
+      "nega": "反方",
+      "neutral": "中立",
+      "votes": "$count 票",
+      "debaters": "辩手 $count 人",
+      "voteFor": "支持${side}",
+      "voted": "你已投票",
+      "voteConfirmTitle": "投票",
+      "voteConfirm": "要支持${side}吗？投票后不能更改。",
+      "endTime": "结束时间：$time",
+      "ended": "辩论已结束",
+      "umpire": "裁判：$name",
+      "winnerAffirm": "正方获胜",
+      "winnerNega": "反方获胜",
+      "winnerDraw": "双方平手",
+      "umpirePoint": "裁判观点",
+      "bestDebater": "最佳辩手：$name",
+      "umpireAction": "裁判操作",
+      "standVotes": "支持 $count",
+      "join": "加入${side}",
+      "joinHint": "以${side}身份发言",
+      "replySide": "发言观点",
+      "fixedSide": "你的观点是${side}（与你第一次发言相同）",
+      "support": "支持",
+      "supportConfirmTitle": "支持这一楼",
+      "supportConfirm": "要支持这一楼的观点吗？每一楼只能支持一次。",
+      "sideKeptNote": "若你已在某一方发言，论坛会沿用那一方。"
+    },
+    "trade": {
+      "title": "商品",
+      "count": "共 $count 件商品",
+      "noGoods": "本柜台无商品。",
+      "removed": "此商品已被删除。",
+      "recommended": "推荐",
+      "qualityNew": "全新",
+      "qualityUsed": "二手",
+      "remain": "剩余 $days 天 $hours 小时",
+      "ended": "成交结束",
+      "price": "$price 元",
+      "credit": "$credit $unit",
+      "manage": "商品排序",
+      "add": "添加商品",
+      "openHint": "购买、数量与运费在浏览器的商品页办理。"
+    },
+    "already": "之前已经完成。"
   }
 }

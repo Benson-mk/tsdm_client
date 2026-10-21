@@ -38,6 +38,8 @@ final class ThreadPageInfo {
     required this.postMedals,
     required this.viewCount,
     required this.replyCount,
+    this.special,
+    this.offlineSavedAt,
   });
 
   /// Thread id.
@@ -99,6 +101,42 @@ final class ThreadPageInfo {
 
   /// Thread reply count.
   final int? replyCount;
+
+  /// The special block of the thread (poll, goods, bounty, activity, debate) the page's first floor holds, as the
+  /// forum's app API gives it (plugin 2.8.0); null on another page, for a web page or an older plugin. The first floor
+  /// carries it too ([Post.special]).
+  final ThreadSpecial? special;
+
+  /// When the page was loaded from the forum, for a page read back from the offline copies because the forum could not
+  /// be reached ([asOffline]); null for a page that just came from the forum.
+  final DateTime? offlineSavedAt;
+
+  /// This page read back from an offline copy loaded at [savedAt]: without its reply form, whose form hash is from an
+  /// old session and could only send a reply over a network that is not there.
+  ThreadPageInfo asOffline(DateTime savedAt) => ThreadPageInfo(
+    tid: tid,
+    title: title,
+    fid: fid,
+    forumName: forumName,
+    currentPage: currentPage,
+    totalPages: totalPages,
+    havePermission: havePermission,
+    permissionDeniedMessage: permissionDeniedMessage,
+    needLogin: needLogin,
+    threadSoftClosed: threadSoftClosed,
+    threadClosed: threadClosed,
+    postList: postList,
+    replyParameters: null,
+    threadType: threadType,
+    isDraft: isDraft,
+    latestModAct: latestModAct,
+    breadcrumbs: breadcrumbs,
+    postMedals: postMedals,
+    viewCount: viewCount,
+    replyCount: replyCount,
+    special: special,
+    offlineSavedAt: savedAt,
+  );
 }
 
 /// Whether the thread page says the thread accepts no more replies.
