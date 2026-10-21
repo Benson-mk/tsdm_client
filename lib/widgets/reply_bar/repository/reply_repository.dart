@@ -105,10 +105,14 @@ final class ReplyRepository with LoggerMixin {
   }
 
   /// Reply to a post.
+  ///
+  /// [stand] is the side the reply takes in a debate (0 neutral, 1 affirmative, 2 negative), sent as the reply
+  /// window's `stand` select; none for any other thread.
   AsyncEither<PostedReply> replyToPost({
     required ReplyParameters replyParameters,
     required String replyAction,
     required String replyMessage,
+    int? stand,
   }) => AsyncEither(() async {
     final netClient = getIt.get<NetClientProvider>();
     final replyWindowUrl = withTsdmAppJsonWrite('${replyAction.prependHost()}$replyPostWindowSuffix');
@@ -190,6 +194,7 @@ final class ReplyRepository with LoggerMixin {
       'subject': subject ?? '',
       // TODO: Support reply with rich text.
       'message': toOfficialMentions(replyMessage),
+      'stand': ?stand?.toString(),
     };
 
     final respEither2 = await netClient
@@ -228,47 +233,55 @@ final class ReplyRepository with LoggerMixin {
   /// * **HttpRequestFailedException** when http request failed.
   /// * **ReplyToThreadResultFailedException** when reply finished but no
   /// successful result found in response, carrying the server's reason.
-  AsyncEither<PostedReply> replyToThread({required ReplyParameters replyParameters, required String replyMessage}) =>
-      AsyncEither(() async {
-        final formData = <String, String>{
-          'message': toOfficialMentions(replyMessage),
-          'usesig': '1',
-          'formhash': replyParameters.formHash,
-          'subject': replyParameters.subject,
-        };
-        // Only apply post time when not null.
-        if (replyParameters.postTime != null) {
-          formData['posttime'] = replyParameters.postTime.toString();
-        }
-        final respEither = await getIt
-            .get<NetClientProvider>()
-            .postForm(formatReplyThreadUrl(replyParameters.fid, replyParameters.tid), data: formData)
-            .run();
-        if (respEither.isLeft()) {
-          return left(respEither.unwrapErr());
-        }
+  ///
+  /// [stand] is the side the reply takes in a debate (0 neutral, 1 affirmative, 2 negative), sent as the fast reply
+  /// form's `stand` select (the page's "加入正方／反方" opens the reply with it); none for any other thread. The forum
+  /// keeps the side of the account's first reply for every later one.
+  AsyncEither<PostedReply> replyToThread({
+    required ReplyParameters replyParameters,
+    required String replyMessage,
+    int? stand,
+  }) => AsyncEither(() async {
+    final formData = <String, String>{
+      'message': toOfficialMentions(replyMessage),
+      'usesig': '1',
+      'formhash': replyParameters.formHash,
+      'subject': replyParameters.subject,
+      'stand': ?stand?.toString(),
+    };
+    // Only apply post time when not null.
+    if (replyParameters.postTime != null) {
+      formData['posttime'] = replyParameters.postTime.toString();
+    }
+    final respEither = await getIt
+        .get<NetClientProvider>()
+        .postForm(formatReplyThreadUrl(replyParameters.fid, replyParameters.tid), data: formData)
+        .run();
+    if (respEither.isLeft()) {
+      return left(respEither.unwrapErr());
+    }
 
-        final resp = respEither.unwrap();
-        if (resp.statusCode != HttpStatus.ok) {
-          return left(HttpRequestFailedException(resp.statusCode));
-        }
-        if (_replyResultOf(resp.data) case final result?) {
-          if (!result.stored) {
-            error('reply to thread rejected by server: ${result.reason}');
-            return left(ReplyToThreadResultFailedException(result.reason));
-          }
-          info('reply to thread stored (app api)');
-          return right(postedReplyOfUrl(result.url));
-        }
-        final data = tsdmAppAnswerText(resp.data);
-        if (!_isReplyStored(data)) {
-          final reason = _serverMessage(data);
-          error('reply to thread rejected by server: $reason');
-          return left(ReplyToThreadResultFailedException(reason));
-        }
-        info('reply to thread stored: ${_storedMessage(data)?.length ?? 0} chars');
-        return right(postedReplyOf(data));
-      });
+    final resp = respEither.unwrap();
+    if (resp.statusCode != HttpStatus.ok) {
+      return left(HttpRequestFailedException(resp.statusCode));
+    }
+    if (_replyResultOf(resp.data) case final result?) {
+      if (!result.stored) {
+        error('reply to thread rejected by server: ${result.reason}');
+        return left(ReplyToThreadResultFailedException(result.reason));
+      }
+      info('reply to thread stored (app api)');
+      return right(postedReplyOfUrl(result.url));
+    }
+    final data = tsdmAppAnswerText(resp.data);
+    if (!_isReplyStored(data)) {
+      final reason = _serverMessage(data);
+      error('reply to thread rejected by server: $reason');
+      return left(ReplyToThreadResultFailedException(reason));
+    }
+    info('reply to thread stored: ${_storedMessage(data)?.length ?? 0} chars');
+    return right(postedReplyOf(data));
+  });
 
   /// Reply personalMessage in history page.
   AsyncVoidEither replyHistoryPersonalMessage({

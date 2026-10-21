@@ -1,4 +1,7 @@
 import 'package:tsdm_client/constants/url.dart';
+import 'package:tsdm_client/extensions/date_time.dart';
+import 'package:tsdm_client/i18n/strings.g.dart';
+import 'package:tsdm_client/shared/models/models.dart';
 import 'package:universal_html/html.dart' as uh;
 
 /// Server-reported availability of an ordinary Discuz poll.
@@ -25,7 +28,7 @@ enum PollAvailability {
 /// One option and its result, only when the server actually supplies it.
 final class PollOption {
   /// Constructor.
-  const PollOption({required this.label, this.id, this.result});
+  const PollOption({required this.label, this.id, this.result, this.image});
 
   /// Submission identifier; absent when the server doesn't offer a choice.
   final String? id;
@@ -35,6 +38,9 @@ final class PollOption {
 
   /// Original visible result. Never inferred from missing markup.
   final String? result;
+
+  /// The image of an image poll's choice (absolute url), when the forum's app API gives it (plugin 2.8.0).
+  final String? image;
 }
 
 /// A snapshot of a poll, including a session-bound form that is never persisted.
@@ -49,6 +55,7 @@ final class ForumPoll {
     this.maxChoices,
     this.action,
     this.formHash,
+    this.votersUrl,
   });
 
   /// Current permission/state.
@@ -74,6 +81,10 @@ final class ForumPoll {
 
   /// CSRF token from the same page/session.
   final String? formHash;
+
+  /// The forum's page of the voters (plugin 2.8.0, `voters_url`), when the forum links it for the account; opened in
+  /// the browser.
+  final String? votersUrl;
 
   /// Whether [ids] is a valid selection for this exact form.
   bool accepts(Set<String> ids) =>
@@ -164,5 +175,72 @@ ForumPoll parseForumPoll(uh.Document document, {required bool loggedIn}) {
     maxChoices: maximum,
     action: validAction ? uri.toString() : null,
     formHash: hash,
+  );
+}
+
+/// The poll of the forum's app API (plugin 2.8.0, the thread page's `special`, [PollSpecial]) as the card shows it, for
+/// an account [loggedIn] to whom the page was served (false: a guest page, or the page of another account).
+///
+/// The same [ForumPoll] [parseForumPoll] reads from `form#poll`, from the fields instead of the form: the choices in
+/// the forum's order with their number, the results only when the account may see them (`votes`/`percent` null
+/// until a vote of a poll showing its results after one), the limit of a multiple choice poll (`maxchoices`, the
+/// number of choices when the forum names none), the summary, the end and the public vote notice in the app's
+/// words. It is open for votes ([PollAvailability.available]) only when the forum says the account may vote
+/// (`can_vote`) and gives the form, whose action is the forum's `votepoll` (sent with `inajax=1`, as the page's
+/// ajaxpost); otherwise `why` tells it: voted, closed (also an archived thread), no permission. A form the app does
+/// not recognize fails closed ([PollAvailability.unsupported]).
+ForumPoll forumPollFromSpecial(PollSpecial special, {required bool loggedIn}) {
+  final tr = t.specialThread.poll;
+  final options = List<PollOption>.unmodifiable([
+    for (final choice in special.choices)
+      PollOption(
+        id: '${choice.id}',
+        label: choice.no > 0 ? '${choice.no}. ${choice.text}' : choice.text,
+        result: choice.votes == null || choice.percent == null
+            ? null
+            : '${choice.percent!.toStringAsFixed(2)}% (${choice.votes})',
+        image: choice.image?.small ?? choice.image?.big,
+      ),
+  ]);
+  final maximum = special.multiple ? (special.maxChoices > 0 ? special.maxChoices : options.length) : 1;
+  final summary = [
+    if (special.multiple) tr.multiple(max: maximum) else tr.single,
+    tr.voters(count: special.voters),
+    if (special.afterResult) tr.afterResult,
+  ].join(tr.separator);
+  final expiration = special.expiration;
+  final deadline = special.expired
+      ? tr.ended
+      : (expiration == null ? '' : tr.deadline(time: expiration.yyyyMMDDHHMM()));
+  final action = special.voteUrl;
+  final valid =
+      action != null &&
+      special.form?.method == 'POST' &&
+      options.isNotEmpty &&
+      options.every((e) => e.label.isNotEmpty) &&
+      maximum > 0;
+  final PollAvailability availability;
+  if (!loggedIn) {
+    availability = PollAvailability.loginRequired;
+  } else if (special.canVote && special.form != null) {
+    availability = valid && special.formHash.isNotEmpty ? PollAvailability.available : PollAvailability.unsupported;
+  } else if (special.voted || special.why == 'voted') {
+    availability = PollAvailability.voted;
+  } else if (special.why == 'nopermission') {
+    availability = PollAvailability.denied;
+  } else {
+    // `closed` (closed thread, the vote ended), or an archived thread the forum takes no vote in.
+    availability = PollAvailability.closed;
+  }
+  return ForumPoll(
+    availability: availability,
+    options: options,
+    summary: summary,
+    deadline: deadline,
+    notice: special.overt && availability == PollAvailability.available ? tr.overt : '',
+    maxChoices: maximum,
+    action: valid ? action : null,
+    formHash: special.formHash.isEmpty ? null : special.formHash,
+    votersUrl: special.canViewVoters ? special.votersUrl : null,
   );
 }

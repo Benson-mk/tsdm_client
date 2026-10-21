@@ -71,6 +71,12 @@ class Post with PostMappable {
     this.bbcodeCodes,
     this.smiliesVersion,
     this.customTags,
+    this.stand,
+    this.standVotes = 0,
+    this.best = false,
+    this.special,
+    this.bestAnswerRequest,
+    this.debateVoteRequest,
   });
 
   /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
@@ -106,6 +112,11 @@ class Post with PostMappable {
   /// `bbcodeoff` / `smileyoff` / `parseurloff` as the forum renders the floor, `attachments` (what the forum loaded
   /// for this request), and the answer's [codes] with the floor's own switches ([PostBbcodeCodes]) and the version
   /// of the smilies table ([smiliesVersion], the answer's `smilies_version`).
+  ///
+  /// Plugin 2.8.0 (`schema: 15`) adds what the page prints in the floor's header for a special thread: the side of a
+  /// floor of a debate ([stand], with its supporters [standVotes]; only when [threadSpecial], the thread's `special`,
+  /// is 5 and the floor is not the first) and the accepted answer of a bounty ([best]). The special block of the first
+  /// floor and the accepting of an answer are added by `threadPageFromApi`, which reads the answer's `special`.
   factory Post.fromApi(
     Map<String, dynamic> p, {
     required String tid,
@@ -116,6 +127,7 @@ class Post with PostMappable {
     bool draft = false,
     Object? codes,
     String? smiliesVersion,
+    int threadSpecial = 0,
   }) {
     final pid = _apiInt(p['pid']);
     final postID = '$pid';
@@ -227,6 +239,11 @@ class Post with PostMappable {
         final Map<String, dynamic> tags => List.unmodifiable(tags.keys.map((e) => e.toLowerCase())),
         _ => null,
       },
+      stand: threadSpecial == 5 && !first && p['stand'] is num && const {0, 1, 2}.contains(_apiInt(p['stand']))
+          ? _apiInt(p['stand'])
+          : null,
+      standVotes: threadSpecial == 5 && !first && _apiInt(p['stand_votes']) > 0 ? _apiInt(p['stand_votes']) : 0,
+      best: _apiInt(p['best']) == 1,
     );
   }
 
@@ -378,6 +395,27 @@ class Post with PostMappable {
   /// packet), last edit and rate are left out; only the author is real. The card shows a neutral line instead of an
   /// empty floor, whichever renderer is in use.
   bool get isSpoofed => messageReason == 'spoofed';
+
+  /// The side the floor takes in a debate (plugin 2.8.0, `stand`): 0 neutral, 1 affirmative, 2 negative; null when
+  /// the floor takes none (the thread is no debate, the first floor, an older plugin).
+  final int? stand;
+
+  /// The supporters of the floor's side in a debate (`stand_votes`, the page's "支持 N"); 0 otherwise.
+  final int standVotes;
+
+  /// The floor is the accepted answer of a bounty (`best`; the forum tells it on the first page only).
+  final bool best;
+
+  /// The special block of the thread (poll, goods, bounty, activity, debate), on the first floor only, when the page
+  /// gave it (plugin 2.8.0); its html is then cut out of [data] (see `threadPageFromApi`).
+  final ThreadSpecial? special;
+
+  /// Accepting this floor as the answer of the bounty, when the account may (the thread's author, plugin 2.8.0).
+  final SpecialRequest? bestAnswerRequest;
+
+  /// Supporting this floor's side in a debate (the page's "支持 N"), for an account that is not its author (plugin
+  /// 2.8.0).
+  final SpecialRequest? debateVoteRequest;
 
   /// Build [Post] from [element] that has attribute id "post_$postID".
   ///

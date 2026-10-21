@@ -340,9 +340,10 @@ class MainActivity: FlutterActivity() {
             HTTP_GET -> {
                 val url = call.argument<String>("url")!!
                 val headers = call.argument<HashMap<String, String>>("headers")!!
+                val singleAttempt = call.argument<Boolean>("singleAttempt") ?: false
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val resp = HttpClient.get(url, headers)
+                        val resp = HttpClient.get(url, headers, singleAttempt = singleAttempt)
                         val statusCode = resp.code
                         val headers = HashMap(resp.headers.toMultimap())
                         val body = resp.body.bytes()

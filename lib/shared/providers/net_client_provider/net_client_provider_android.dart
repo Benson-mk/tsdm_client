@@ -40,9 +40,17 @@ abstract class _AndroidHttpMethodChannel {
   static const _methodPostJson = 'postJson';
 
   /// Make a GET request.
-  static Future<_KotlinHttpResponse?> _get({required String url, required Map<String, String> headers}) async {
+  static Future<_KotlinHttpResponse?> _get({
+    required String url,
+    required Map<String, String> headers,
+    bool singleAttempt = false,
+  }) async {
     try {
-      final resp = await _httpChannel.invokeMethod<Map<Object?, Object?>>(_methodGet, {'url': url, 'headers': headers});
+      final resp = await _httpChannel.invokeMethod<Map<Object?, Object?>>(_methodGet, {
+        'url': url,
+        'headers': headers,
+        'singleAttempt': singleAttempt,
+      });
       if (resp == null) {
         return null;
       }
@@ -180,11 +188,15 @@ final class _KotlinHttpResponse {
 /// Note that this class is not derived form `dart:http:BaseClient`, unlike `cronet_http`, because we want to keep
 /// multiple header structure as `Map<String, List<String>>` instead of `Map<String, String>`.
 final class KotlinHttpClient {
-  Future<_KotlinHttpResponse> _get(Uri url, {Map<String, String>? headers}) async {
+  Future<_KotlinHttpResponse> _get(Uri url, {Map<String, String>? headers, bool singleAttempt = false}) async {
     if (!Platform.isAndroid) {
       throw http.ClientException('Only available on Android');
     }
-    final rawResp = await _AndroidHttpMethodChannel._get(url: url.toString(), headers: headers ?? {});
+    final rawResp = await _AndroidHttpMethodChannel._get(
+      url: url.toString(),
+      headers: headers ?? {},
+      singleAttempt: singleAttempt,
+    );
     if (rawResp == null) {
       throw http.ClientException('null raw response');
     }
@@ -261,6 +273,7 @@ class KotlinHttpClientAdapter implements HttpClientAdapter {
         options.uri,
         headers: Map.from(options.headers.filter((v) => v is String))
           ..removeWhere((k, v) => k.toLowerCase() == HttpHeaders.acceptEncodingHeader),
+        singleAttempt: options.extra[singleAttemptHttpRequestKey] == true,
       ),
       'POST' => _client._post(
         options.uri,

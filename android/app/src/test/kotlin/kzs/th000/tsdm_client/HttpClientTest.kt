@@ -125,6 +125,31 @@ class HttpClientTest {
         }
     }
 
+    @Test fun singleAttemptGetIsNotReplayedNorRedirected() = runBlocking {
+        // A GET that writes (a debate vote) is sent once: a lost response is reported, a redirect is not followed.
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build())
+            server.enqueue(MockResponse(body = "Would be a second vote"))
+            server.start()
+            try {
+                HttpClient.get(server.url("/vote?stand=1").toString(), hashMapOf(), singleAttempt = true).close()
+                fail("The lost response must be reported to the caller")
+            } catch (_: IOException) {
+                // The forum may have counted the vote: only reading the page tells.
+            }
+            assertEquals(1, server.requestCount)
+        }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/replay").build())
+            server.enqueue(MockResponse(body = "Must not be requested"))
+            server.start()
+            HttpClient.get(server.url("/vote?stand=1").toString(), hashMapOf(), singleAttempt = true).use {
+                assertEquals(302, it.code)
+            }
+            assertEquals(1, server.requestCount)
+        }
+    }
+
     @Test fun ordinaryFormsKeepTheirExisting503RetryBehavior() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse.Builder().code(503).addHeader("Retry-After", "0").build())

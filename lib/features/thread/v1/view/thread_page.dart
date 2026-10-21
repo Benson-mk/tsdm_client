@@ -51,6 +51,7 @@ import 'package:tsdm_client/widgets/card/post_card/post_card.dart';
 import 'package:tsdm_client/widgets/indicator.dart';
 import 'package:tsdm_client/widgets/list_app_bar/list_app_bar.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
+import 'package:tsdm_client/widgets/reply_bar/debate_stand_selector.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 import 'package:tsdm_client/widgets/reply_bar/reply_bar.dart';
 import 'package:tsdm_client/widgets/reply_bar/repository/reply_repository.dart';
@@ -206,6 +207,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   /// one. A page asking to log in reloads as well: the new account may see the thread. A load still pending for the
   /// previous account (opening, refresh, jump, load more) is superseded by the reload and dropped (see [ThreadBloc]).
   void _reloadForAccount() {
+    // The side chosen for a debate reply was the previous account's choice.
+    _replyBarController.debateStand = null;
     final bloc = _threadBloc;
     if (!mounted || bloc == null || bloc.isClosed) {
       return;
@@ -593,6 +596,16 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
       ..requestFocus();
   }
 
+  /// Reply to the thread on side [stand] of the debate (the debate card's "加入正方／反方"): the reply bar with the side
+  /// chosen, as the page's "加入" opens the reply window with it.
+  void _joinDebate(int stand) {
+    _replyBarController
+      ..replyAction = null
+      ..debateStand = stand
+      ..setHintText(context.t.specialThread.debate.joinHint(side: debateSideName(context, stand)))
+      ..requestFocus();
+  }
+
   Widget _buildContent(BuildContext context, ThreadState state) {
     final tr = context.t.threadPage;
     if (_scrollToPidOnReload != null) {
@@ -643,6 +656,7 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
                     post,
                     replyCallback: replyPostCallback,
                     onEdited: () => _scrollToPidOnReload = post.postID,
+                    onJoinDebate: state.replyParameters == null || state.threadClosed ? null : _joinDebate,
                   ),
                 ),
                 useDivider: true,

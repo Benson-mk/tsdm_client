@@ -57,5 +57,20 @@ seen by a moderator; floors whose ids another floor's html forged (`spoofed`); a
 `[index]` and an attachment id with a leading zero) and `thread_v14_smilies.json` (the `smilies` action) are copied from the plugin's 2.7.0
 contract samples and scrubbed the same way (host, name, `formhash`, `reply.posttime` → `1700000000`, `thread.views`
 → `100`). `forum_v2_fid29_pending.json` is hand-written (the pending-application
-message). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
+message).
+
+`special_v15_*.json` (the thread page with the special block of the first floor, `schema: 15`, plugin 2.8.0: polls
+single and multiple, results shown after a vote, voted, expired, an image poll, a guest, the author, a moderator, a
+banned and a forged first floor; goods seen by the author, a member, a moderator, a guest and with only one author's
+floors; bounties open (the author, a member, a guest) and resolved, the accepted answer hidden from the viewer
+(replies only the author sees, `[hide]`, `[password]`, a banned author) or seen by the author or a moderator,
+anonymous; activities open, applied, accepted, asked to complete, closed, with credit enough or not, seen by the
+author and a guest; debates open (a member, a guest, the umpire), voted, ended with the umpire's verdict, without an
+end time, without the first floor, page 2 for a member who argued on a side and for one who never replied, with the
+side taken in `reply.stand`) are copied from the plugin's 2.8.0 contract samples and scrubbed the same way (host,
+name, `formhash`, `reply.posttime` → `1700000000`, `thread.views` → `100`); only the cases the tests use are kept.
+`special_v15_*_action.json` are the results (`type: result`, plugin 2.6.0) of the real actions of the same run: a poll
+vote, an activity application and its cancel, a best answer and a debate vote;
+`special_v15_reward_bestanswer_refused_action.json` is the forum's refusal of a second best answer, from the plugin's
+acceptance run (`evidence/special280.json`). On the profile answers the tool also pins the viewer-dependent values: `activity.lastvisit`/`lastactivity`
 (and the same rows in `profile_html`), `checkin.last` (and the check-in row), the IP ports. Everything else must not be edited by hand; change the plugin or the tool instead.

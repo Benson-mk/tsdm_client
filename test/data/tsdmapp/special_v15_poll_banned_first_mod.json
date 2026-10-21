@@ -1,0 +1,173 @@
+{
+ "ok": 1,
+ "api": 1,
+ "time": 1792543830,
+ "uid": 70,
+ "formhash": "f1f2f3f4",
+ "checknewpm": "",
+ "type": "thread",
+ "schema": 15,
+ "codes": {
+  "allowsmilies": 1,
+  "allowbbcode": 1,
+  "allowimgcode": 1,
+  "allowhtml": 0,
+  "allowmediacode": 0,
+  "jammer": 0,
+  "maxsmilies": 10,
+  "imgwhitelist": {
+   "enabled": 0,
+   "domains": []
+  }
+ },
+ "smilies_version": "1071fed373e93cf2a184c2ef81938b99",
+ "timeoffset": 8,
+ "thread": {
+  "tid": 9200372,
+  "fid": 2,
+  "subject": "tsdmapp 2.8.0 屏蔽首樓的投票 P5 222088",
+  "authorid": 32,
+  "author": "ag_admin",
+  "anonymous": 0,
+  "dateline": 1792537000,
+  "views": 100,
+  "replies": 0,
+  "readperm": 0,
+  "price": 0,
+  "special": 1,
+  "closed": 0,
+  "digest": 0,
+  "displayorder": 0,
+  "typeid": 0,
+  "typename": "",
+  "sortid": 0,
+  "sortname": "",
+  "moved": 0,
+  "soft_closed": 0,
+  "draft": 0,
+  "pay": null,
+  "modact": ""
+ },
+ "forum": {
+  "fid": 2,
+  "name": "📢 公告 & 新手報到"
+ },
+ "nav": [
+  {
+   "fid": 1,
+   "name": "🏠 論壇大廳",
+   "type": "group"
+  },
+  {
+   "fid": 2,
+   "name": "📢 公告 & 新手報到",
+   "type": "forum"
+  }
+ ],
+ "page": 1,
+ "pages": 1,
+ "ppp": 10,
+ "ordertype": 0,
+ "authorid": 0,
+ "reply": {
+  "allowed": 1,
+  "fastpost": 1,
+  "fastpost_allowed": 1,
+  "posttime": "1700000000",
+  "subject": "",
+  "action": "forum.php?mod=post&action=reply&fid=2&tid=9200372&extra=page%3D1&replysubmit=yes&infloat=yes&handlekey=fastpost"
+ },
+ "menus_html": [],
+ "posts": [
+  {
+   "pid": 5792,
+   "position": 1,
+   "deleted": 0,
+   "first": 1,
+   "authorid": 32,
+   "author": "ag_admin",
+   "anonymous": 0,
+   "dateline": 1792537000,
+   "invisible": 0,
+   "avatar": "https://www.tsdm39.com/data/avatar/noavatar.svg",
+   "share_url": "forum.php?mod=viewthread&tid=9200372",
+   "group": {
+    "gid": 1,
+    "title": "管理员",
+    "color": "",
+    "icon": ""
+   },
+   "lastedit": null,
+   "can": {
+    "reply": 1,
+    "edit": 1,
+    "rate": 1,
+    "report": 1
+   },
+   "urls": {
+    "reply": "forum.php?mod=post&action=reply&fid=2&tid=9200372&reppost=5792&extra=page%3D1&page=1",
+    "edit": "forum.php?mod=post&action=edit&fid=2&tid=9200372&pid=5792&page=1",
+    "rate": "forum.php?mod=misc&action=rate&tid=9200372&pid=5792",
+    "report": "misc.php?mod=report&rtype=post&rid=5792&tid=9200372&fid=2"
+   },
+   "signature_html": "<a href=\"https://www.tsdm39.com/forum.php?mod=viewthread&amp;tid=9\" target=\"_blank\">簽名裡的舊網域連結</a>",
+   "poll_html": "<form id=\"poll\" name=\"poll\" method=\"post\" autocomplete=\"off\" action=\"forum.php?mod=misc&amp;action=votepoll&amp;fid=2&amp;tid=9200372&amp;pollsubmit=yes&amp;quickforward=yes\" onsubmit=\"if($('post_5792')) {ajaxpost('poll', 'post_5792', 'post_5792');return false}\">\r\n<input type=\"hidden\" name=\"formhash\" value=\"f1f2f3f4\" />\r\n<div class=\"pinf\">\r\n<strong>单选投票</strong>, 共有 1 人参与投票\r\n</div>\r\n\r\n\r\n\r\n<div class=\"pcht\">\r\n\r\n<table summary=\"poll panel\" cellspacing=\"0\" cellpadding=\"0\" width=\"100%\">\r\n<tr>\r\n<td class=\"pvt\">\r\n<label for=\"option_1\">1. &nbsp;P5_HIDDEN_OPTION_222088</label>\r\n</td>\r\n<td class=\"pvts\"></td>\r\n</tr>\r\n\r\n<tr>\r\n<td>\r\n<div class=\"pbg\">\r\n<div class=\"pbr\" style=\"width: 100%; background-color:#E92725\"></div>\r\n</div>\r\n</td>\r\n<td>100.00% <em style=\"color:#E92725\">(1)</em></td>\r\n</tr>\r\n<tr>\r\n<td class=\"pvt\">\r\n<label for=\"option_2\">2. &nbsp;P5 二</label>\r\n</td>\r\n<td class=\"pvts\"></td>\r\n</tr>\r\n\r\n<tr>\r\n<td>\r\n<div class=\"pbg\">\r\n<div class=\"pbr\" style=\"width: 8px; background-color:#F27B21\"></div>\r\n</div>\r\n</td>\r\n<td>0.00% <em style=\"color:#F27B21\">(0)</em></td>\r\n</tr>\r\n<tr>\r\n<td colspan=\"2\">\r\n<span class=\"pollshare_box\" style=\"display:inline-block;vertical-align:middle;margin-right:10px;\"><button type=\"button\" class=\"pn\" id=\"pollshare_btn\" onclick=\"pollshare_copy();return false;\"><span>複製投票結果</span></button><textarea id=\"pollshare_text\" readonly=\"readonly\" wrap=\"off\" style=\"display:none;width:100%;min-width:320px;height:150px;margin-top:8px;font-family:monospace;font-size:12px;\">[b][color=White][backcolor=Orange]P5_HIDDEN_OPTION_222088[/backcolor][/color][/b]\nP5 二</textarea></span><script type=\"text/javascript\">\nfunction pollshare_copy() {\n\tvar box = document.getElementById('pollshare_text');\n\tvar btn = document.getElementById('pollshare_btn');\n\tif(!box || !btn) { return; }\n\n\tfunction flash(msg) {\n\t\tbtn.innerHTML = '<span>' + msg + '</span>';\n\t\tsetTimeout(function() {\n\t\t\tbtn.innerHTML = '<span>複製投票結果</span>';\n\t\t}, 2000);\n\t}\n\t// 降級路徑：把內容攤開讓使用者自己複製。\n\t// 不可靜默失敗——按了沒反應比按了跳提示更糟。\n\tfunction manual() {\n\t\tbox.style.display = 'block';\n\t\tbox.focus();\n\t\tbox.select();\n\t\tbtn.innerHTML = '<span>請手動複製 ↓</span>';\n\t}\n\n\t// 現代路徑。注意 navigator.clipboard 只在安全內容（HTTPS 或 localhost）\n\t// 才存在，一般 HTTP 站台會直接落到底下的舊路徑。\n\tif(navigator.clipboard && navigator.clipboard.writeText) {\n\t\tnavigator.clipboard.writeText(box.value).then(function() {\n\t\t\tflash('已複製');\n\t\t}, manual);\n\t\treturn;\n\t}\n\n\t// 舊路徑：execCommand 需要元素可見且被選取才會成功。\n\ttry {\n\t\tbox.style.display = 'block';\n\t\tbox.focus();\n\t\tbox.select();\n\t\tif(document.execCommand('copy')) {\n\t\t\tbox.style.display = 'none';\n\t\t\tflash('已複製');\n\t\t\treturn;\n\t\t}\n\t} catch(e) {}\n\n\tmanual();\n}\n</script>您已经投过票，谢谢您的参与\r\n</td>\r\n</tr>\r\n</table>\r\n\r\n</div>\r\n</form>",
+   "packet_html": "",
+   "rate": null,
+   "author_html": "\r\n<div id=\"favatar5792\" class=\"pls cl favatar\">\r\n<div class=\"pi\">\r\n<div class=\"authi\"><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xw1\">ag_admin</a>\r\n</div>\r\n</div>\r\n<div class=\"p_pop blk bui card_gender_0\" id=\"userinfo5792\" style=\"display: none; margin-top: -11px;\">\r\n<div class=\"m z\">\r\n<div id=\"userinfo5792_ma\"></div>\r\n</div>\r\n<div class=\"i y\">\r\n<div>\r\n<strong><a href=\"home.php?mod=space&amp;uid=32\" target=\"_blank\" class=\"xi2\">ag_admin</a></strong>\r\n<em>当前在线</em>\r\n</div><dl class=\"cl\">\r\n<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl><div class=\"imicn\">\r\n<a href=\"http://\" target=\"_blank\" title=\"查看个人网站\"><img src=\"static/image/common/forumlink.gif\" alt=\"查看个人网站\" /></a><a href=\"home.php?mod=space&amp;uid=32&amp;do=profile\" target=\"_blank\" title=\"查看详细资料\"><img src=\"static/image/common/userinfo.gif\" alt=\"查看详细资料\" /></a>\r\n</div>\r\n<div id=\"avatarfeed\"><span id=\"threadsortswait\"></span></div>\r\n</div>\r\n</div>\r\n<div>\r\n<div class=\"avatar\" onmouseover=\"showauthor(this, 'userinfo5792')\"><a href=\"home.php?mod=space&amp;uid=32\" class=\"avtm\" target=\"_blank\"><img data-src=\"./data/avatar/noavatar.svg\" class=\"_avt user_avatar\"></a></div>\r\n</div>\r\n<div class=\"qdsmile\"><li><center>TA的每日心情</center><table><tr><th><a href=\"forum.php?mod=forumdisplay&amp;fid=4\"><img onmouseover=\"showMenu({'ctrlid':this.id});\" id=\"heart_5792\" src=\"source/plugin/dsu_paulsign/img/1/kx.gif\" alt=\"\"></a></th><th><font size=\"5px\">开心</font></th></tr></table><div style=\"display:none\" id=\"heart_5792_menu\" class=\"p_pop h_pop tsqd\">管理员今天也来签到了</div><p style=\"margin:0\">签到天数: 1天[LV.1]初来乍到</p></li></div><div class=\"tns xg2\"><table cellspacing=\"0\" cellpadding=\"0\"><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=thread&view=me&from=space\" class=\"xi2\">248</a></p>主题</th><th><p><a href=\"home.php?mod=space&uid=32&do=thread&type=reply&view=me&from=space\" class=\"xi2\">67</a></p>回帖</th><td><p><a href=\"home.php?mod=space&uid=32&do=profile\" class=\"xi2\">1196</a></p>积分</td></table></div>\r\n\r\n<p><em><a href=\"home.php?mod=spacecp&amp;ac=usergroup&amp;gid=1\" target=\"_blank\">管理员</a></em></p>\r\n\r\n\r\n<p><span><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star3 fic4 fc-l\" title=\"Rank: 9\"></i><i class=\"fico-star1 fic4 fc-l\" title=\"Rank: 9\"></i></span></p>\r\n\r\n\r\n\r\n<dl class=\"pil cl\">\r\n\t<dt>积分</dt><dd><a href=\"home.php?mod=space&uid=32&do=profile\" target=\"_blank\" class=\"xi2\">1196</a></dd>\r\n</dl>\r\n\r\n<dl class=\"pil cl\"></dl><ul class=\"xl xl2 o cl\">\r\n<li class=\"pm2\"><a href=\"home.php?mod=spacecp&amp;ac=pm&amp;op=showmsg&amp;handlekey=showmsg_32&amp;touid=32&amp;pmid=0&amp;daterange=2&amp;pid=5792&amp;tid=9200372\" onclick=\"showWindow('sendpm', this.href);\" title=\"发消息\" class=\"xi2\">发消息</a></li>\r\n</ul>\r\n<p class=\"cp_pls cl\">\r\n<a href=\"forum.php?mod=topicadmin&amp;action=getip&amp;fid=2&amp;tid=9200372&amp;pid=5792\" onclick=\"ajaxmenu(this, 0, 0, 2);doane(event)\">IP</a>\r\n<a href=\"forum.php?mod=modcp&amp;action=member&amp;op=ban&amp;uid=32\" target=\"_blank\">禁止</a>\r\n<a href=\"forum.php?mod=modcp&amp;action=thread&amp;op=post&amp;do=search&amp;searchsubmit=1&amp;users=ag_admin\" target=\"_blank\">帖子</a>\r\n</p>\r\n</div>\r\n",
+   "body_html": "\r\n<div class=\"locked\">提示: <em>该帖被管理员或版主屏蔽，只有管理员或有管理权限的成员可见</em></div>\r\n \r\n<div class=\"pcbs\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td class=\"t_f\" id=\"postmessage_5792\">POLL_P5_BODY_222088 首樓單帖屏蔽</td></tr></table>\r\n\r\n<script type=\"text/javascript\">\r\n</script>\r\n\r\n<form id=\"poll\" name=\"poll\" method=\"post\" autocomplete=\"off\" action=\"forum.php?mod=misc&amp;action=votepoll&amp;fid=2&amp;tid=9200372&amp;pollsubmit=yes&amp;quickforward=yes\" onsubmit=\"if($('post_5792')) {ajaxpost('poll', 'post_5792', 'post_5792');return false}\">\r\n<input type=\"hidden\" name=\"formhash\" value=\"f1f2f3f4\" />\r\n<div class=\"pinf\">\r\n<strong>单选投票</strong>, 共有 1 人参与投票\r\n</div>\r\n\r\n\r\n\r\n<div class=\"pcht\">\r\n\r\n<table summary=\"poll panel\" cellspacing=\"0\" cellpadding=\"0\" width=\"100%\">\r\n<tr>\r\n<td class=\"pvt\">\r\n<label for=\"option_1\">1. &nbsp;P5_HIDDEN_OPTION_222088</label>\r\n</td>\r\n<td class=\"pvts\"></td>\r\n</tr>\r\n\r\n<tr>\r\n<td>\r\n<div class=\"pbg\">\r\n<div class=\"pbr\" style=\"width: 100%; background-color:#E92725\"></div>\r\n</div>\r\n</td>\r\n<td>100.00% <em style=\"color:#E92725\">(1)</em></td>\r\n</tr>\r\n<tr>\r\n<td class=\"pvt\">\r\n<label for=\"option_2\">2. &nbsp;P5 二</label>\r\n</td>\r\n<td class=\"pvts\"></td>\r\n</tr>\r\n\r\n<tr>\r\n<td>\r\n<div class=\"pbg\">\r\n<div class=\"pbr\" style=\"width: 8px; background-color:#F27B21\"></div>\r\n</div>\r\n</td>\r\n<td>0.00% <em style=\"color:#F27B21\">(0)</em></td>\r\n</tr>\r\n<tr>\r\n<td colspan=\"2\">\r\n<span class=\"pollshare_box\" style=\"display:inline-block;vertical-align:middle;margin-right:10px;\"><button type=\"button\" class=\"pn\" id=\"pollshare_btn\" onclick=\"pollshare_copy();return false;\"><span>複製投票結果</span></button><textarea id=\"pollshare_text\" readonly=\"readonly\" wrap=\"off\" style=\"display:none;width:100%;min-width:320px;height:150px;margin-top:8px;font-family:monospace;font-size:12px;\">[b][color=White][backcolor=Orange]P5_HIDDEN_OPTION_222088[/backcolor][/color][/b]\nP5 二</textarea></span><script type=\"text/javascript\">\nfunction pollshare_copy() {\n\tvar box = document.getElementById('pollshare_text');\n\tvar btn = document.getElementById('pollshare_btn');\n\tif(!box || !btn) { return; }\n\n\tfunction flash(msg) {\n\t\tbtn.innerHTML = '<span>' + msg + '</span>';\n\t\tsetTimeout(function() {\n\t\t\tbtn.innerHTML = '<span>複製投票結果</span>';\n\t\t}, 2000);\n\t}\n\t// 降級路徑：把內容攤開讓使用者自己複製。\n\t// 不可靜默失敗——按了沒反應比按了跳提示更糟。\n\tfunction manual() {\n\t\tbox.style.display = 'block';\n\t\tbox.focus();\n\t\tbox.select();\n\t\tbtn.innerHTML = '<span>請手動複製 ↓</span>';\n\t}\n\n\t// 現代路徑。注意 navigator.clipboard 只在安全內容（HTTPS 或 localhost）\n\t// 才存在，一般 HTTP 站台會直接落到底下的舊路徑。\n\tif(navigator.clipboard && navigator.clipboard.writeText) {\n\t\tnavigator.clipboard.writeText(box.value).then(function() {\n\t\t\tflash('已複製');\n\t\t}, manual);\n\t\treturn;\n\t}\n\n\t// 舊路徑：execCommand 需要元素可見且被選取才會成功。\n\ttry {\n\t\tbox.style.display = 'block';\n\t\tbox.focus();\n\t\tbox.select();\n\t\tif(document.execCommand('copy')) {\n\t\t\tbox.style.display = 'none';\n\t\t\tflash('已複製');\n\t\t\treturn;\n\t\t}\n\t} catch(e) {}\n\n\tmanual();\n}\n</script>您已经投过票，谢谢您的参与\r\n</td>\r\n</tr>\r\n</table>\r\n\r\n</div>\r\n</form>\r\n\r\n</div>\r\n<div id=\"comment_5792\" class=\"cm\">\r\n</div>\r\n\r\n<div id=\"post_rate_div_5792\"></div>\r\n",
+   "message": "POLL_P5_BODY_222088 首樓單帖屏蔽",
+   "message_reason": "",
+   "bbcodeoff": 1,
+   "smileyoff": 1,
+   "parseurloff": 0,
+   "allowsmilies": 1,
+   "allowbbcode": 1,
+   "allowimgcode": 1,
+   "allowmediacode": 1,
+   "attachments": [],
+   "customtags": [],
+   "stand": 0,
+   "stand_votes": 0,
+   "best": 0
+  }
+ ],
+ "special": {
+  "type": "poll",
+  "multiple": 0,
+  "maxchoices": 1,
+  "image": 0,
+  "overt": 0,
+  "voters": 1,
+  "expiration": 0,
+  "expired": 0,
+  "results_visible": 1,
+  "after_result": 0,
+  "voted": 1,
+  "can_vote": 0,
+  "why": "voted",
+  "can_view_voters": 0,
+  "voters_url": "",
+  "choices": [
+   {
+    "id": 270,
+    "no": 1,
+    "text": "P5_HIDDEN_OPTION_222088",
+    "html": "P5_HIDDEN_OPTION_222088",
+    "votes": 1,
+    "percent": 100,
+    "image": null
+   },
+   {
+    "id": 271,
+    "no": 2,
+    "text": "P5 二",
+    "html": "P5 二",
+    "votes": 0,
+    "percent": 0,
+    "image": null
+   }
+  ],
+  "form": null
+ }
+}
