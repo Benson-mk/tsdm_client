@@ -475,11 +475,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     await _applyBackgroundSyncSettings(context);
   }
 
-  /// Poll every saved account in the background, or the account in use only. A running service reads the settings
-  /// again and ticks right away, so the other accounts are polled without waiting for the next interval.
+  /// Let the auto sync poll every saved account, or the account in use only. The in-app auto sync reads it on its next
+  /// poll; a running background service (Android) reads the settings again and ticks right away.
   Future<void> _toggleBackgroundSyncAllAccounts(BuildContext context, {required bool enable}) async {
     await getIt.get<SettingsRepository>().setValue(SettingsKeys.backgroundSyncAllAccounts, enable);
-    if (!context.mounted) return;
+    if (!isAndroid || !context.mounted) return;
     await _applyBackgroundSyncSettings(context);
   }
 
@@ -599,17 +599,26 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             value: state.settingsMap.enableBackgroundMessageService,
             onChanged: (v) async => _toggleBackgroundSync(context, enable: v),
           ),
-        if (isAndroid)
+        // Only where the auto sync posts system notifications: nothing would change elsewhere.
+        if (autoSyncPostsNotifications)
           SectionSwitchListTile(
             key: const ValueKey('background-sync-all-accounts'),
             secondary: const Icon(Icons.switch_account_outlined),
             title: Text(tr.backgroundSyncAllAccounts.title),
-            subtitle: Text(tr.backgroundSyncAllAccounts.detail),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr.backgroundSyncAllAccounts.detail),
+                Text(
+                  tr.backgroundSyncAllAccounts.seenNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
             value: state.settingsMap.backgroundSyncAllAccounts,
-            // A setting of the background message service: offered while it is on.
-            onChanged: state.settingsMap.enableBackgroundMessageService
-                ? (v) async => _toggleBackgroundSyncAllAccounts(context, enable: v)
-                : null,
+            onChanged: (v) async => _toggleBackgroundSyncAllAccounts(context, enable: v),
           ),
       ],
     );

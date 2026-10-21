@@ -24,7 +24,13 @@ const legacyLocalNoticeChannelId = 'newNoticeChannel';
 /// One id: a newer result replaces the previous notification instead of piling up.
 const localNoticeId = 0;
 
-/// Id of the notification of account [uid] while the background message service announces every saved account
+/// Whether the auto sync posts system notifications on this platform: Android and Windows.
+///
+/// Elsewhere nothing is shown ([showLocalNotification]), so nothing that only changes notifications is offered there
+/// (the setting to announce every logged-in account).
+bool get autoSyncPostsNotifications => isAndroid || isWindows;
+
+/// Id of the notification of account [uid] while the auto sync announces every logged-in account
 /// (`SettingsKeys.backgroundSyncAllAccounts`): one notification per account, a newer result replacing only that
 /// account's. Never [localNoticeId], nor the persistent notification of the service (`backgroundSyncNotificationId`).
 int localNoticeIdOf(int uid) => _accountIdBase | (uid & _accountIdMask);
@@ -178,7 +184,7 @@ Future<void> showLocalNotification(
   NotificationAutoSyncInfo info, {
   LocalNoticeAccount? account,
 }) async {
-  if (!isAndroid && !isWindows) {
+  if (!autoSyncPostsNotifications) {
     return;
   }
   // Taken before the await below: the context must not be used across it.

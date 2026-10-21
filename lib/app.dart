@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:rxdart/rxdart.dart' show Rx;
 import 'package:tsdm_client/constants/layout.dart';
 import 'package:tsdm_client/extensions/build_context.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_bridge_cubit.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_events.dart';
+import 'package:tsdm_client/features/background_sync/other_accounts_auto_sync.dart';
 import 'package:tsdm_client/features/blocking/cubit/user_block_cubit.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
 import 'package:tsdm_client/features/blocking/widgets/user_block_failure_listener.dart';
@@ -306,6 +308,27 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
               NotificationSyncAllRepository(storageProvider: getIt(), notificationRepository: context.repo()),
           dispose: (repo) async => repo.dispose(),
         ),
+        // The other logged-in accounts, polled by the in-app auto sync when asked to; only where it posts system
+        // notifications.
+        if (autoSyncPostsNotifications)
+          RepositoryProvider<OtherAccountsAutoSync>(
+            create: (context) => OtherAccountsAutoSync(
+              storage: getIt(),
+              repository: NotificationSyncAllRepository(
+                storageProvider: getIt(),
+                notificationRepository: context.repo(),
+                // One account per call: the round spaces the accounts itself.
+                gap: Duration.zero,
+              ),
+              announce: (done) => showLocalNotificationWith(
+                plugin: flnp,
+                translations: t,
+                info: done.latest!,
+                account: LocalNoticeAccount(uid: done.uid, username: done.username, named: done.named),
+              ),
+            ),
+            dispose: (others) async => others.dispose(),
+          ),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -318,10 +341,12 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
           BlocProvider(create: (context) => NotificationStateCubit(context.repo())),
           BlocProvider(
             create: (context) {
+              final others = autoSyncPostsNotifications ? context.repo<OtherAccountsAutoSync>() : null;
               final bloc = AutoNotificationCubit(
                 authenticationRepository: context.repo(),
                 notificationRepository: context.repo(),
                 storageProvider: getIt(),
+                afterPoll: others == null ? null : () => unawaited(others.poll()),
               );
               if (widget.autoSyncNoticeSeconds > 0) {
                 bloc.start(Duration(seconds: widget.autoSyncNoticeSeconds));
@@ -388,13 +413,17 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
               notificationBloc: context.read<NotificationBloc>(),
             ),
           ),
-          if (isAndroid)
-            // What the background message service stored shows up in the app without waiting for its own sync (#80).
+          if (autoSyncPostsNotifications)
+            // What the background message service (#80) and the in-app sync of the other accounts stored shows up in
+            // the app without waiting for its own sync: the account switched to meanwhile may be the one synced.
             BlocProvider(
               create: (context) {
                 final auth = context.repo<AuthenticationRepository>();
+                final others = context.repo<OtherAccountsAutoSync>().synced;
                 return BackgroundSyncBridgeCubit(
-                  events: FlutterBackgroundService().on(BackgroundSyncEvents.synced),
+                  events: isAndroid
+                      ? Rx.merge([FlutterBackgroundService().on(BackgroundSyncEvents.synced), others])
+                      : others,
                   notificationBloc: context.read<NotificationBloc>(),
                   infoRepository: context.repo(),
                   currentUid: () => auth.effectiveCurrentUid,
@@ -573,8 +602,7 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
                   listenWhen: (prev, curr) => curr != null && prev != curr,
                   listener: (context, state) async {
                     // The in-app sync announces the account in use; the notification carries it so a tap after a
-                    // switch opens it as that account. Named like the background service names every account when
-                    // that service polls them all.
+                    // switch opens it as that account. Named like the other accounts' when every account is polled.
                     final user = context.repo<AuthenticationRepository>().currentUser;
                     final s = getIt.get<SettingsRepository>().currentSettings;
                     await showLocalNotification(
@@ -585,7 +613,7 @@ class _AppState extends State<App> with WindowListener, WidgetsBindingObserver, 
                           : LocalNoticeAccount(
                               uid: user!.uid!,
                               username: user.username,
-                              named: s.enableBackgroundMessageService && s.backgroundSyncAllAccounts,
+                              named: s.backgroundSyncAllAccounts,
                             ),
                     );
                   },

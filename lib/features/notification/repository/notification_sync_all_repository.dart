@@ -9,6 +9,7 @@ import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/utils/auto_sync_info.dart';
 import 'package:tsdm_client/features/notification/utils/fetch_bound.dart';
+import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
 import 'package:tsdm_client/instance.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
@@ -68,18 +69,31 @@ final class NotificationSyncAllRepository with LoggerMixin {
   ///
   /// The returned `finished` holds this run's results only: the progress stream is shared, and a run given up by
   /// the background service may still be writing to it while the next one runs (GitHub #173).
-  AsyncEither<NotificationSyncAllInfo> syncAll({required List<UserLoginInfo> accounts}) => AsyncEither(() async {
+  ///
+  /// With [pollInterval] (the auto sync interval, for the sync of all accounts the user asks for) each account takes
+  /// its poll first ([NotificationPollSlot], shared with the in-app auto sync and the background message service), at
+  /// [now] (the current time by default): an account one of them polled within half the interval is not asked again
+  /// (the plugin answers a second call within its interval with 429), its result is what is stored now
+  /// ([NotificationSyncResultSuccess.recent]); a poll that brought nothing is given back. Without it (the background
+  /// tick, which takes the poll itself) every account is fetched.
+  AsyncEither<NotificationSyncAllInfo> syncAll({
+    required List<UserLoginInfo> accounts,
+    Duration? pollInterval,
+    DateTime? now,
+  }) => AsyncEither(() async {
     // Initialize each run without retaining the previous batch results.
     _currentInfo = NotificationSyncAllInfo.empty();
     _updateWaiting(accounts);
     final finished = <(UserLoginInfo, NotificationSyncResult)>[];
+    var previousAsked = false;
     for (final (index, user) in accounts.indexed) {
-      if (index > 0 && gap > Duration.zero) {
+      if (index > 0 && gap > Duration.zero && previousAsked) {
         await Future<void>.delayed(gap);
       }
       debug('sync notification for uid ${"${user.uid}".obscured(4)}');
       _updateRunning(user);
-      final result = await _syncOne(user);
+      final result = await _syncPolled(user, pollInterval, now);
+      previousAsked = result is! NotificationSyncResultSuccess || !result.recent;
       if (result is NotificationSyncResultNotAuthorized && user.uid != null) {
         // The forum answered the guest page to this account's cookie: remember the session is dead (issue #25).
         await _storageProvider.markSessionExpired(user.uid!);
@@ -89,6 +103,42 @@ final class NotificationSyncAllRepository with LoggerMixin {
     }
     return right(NotificationSyncAllInfo(waiting: const [], running: const [], finished: finished));
   });
+
+  /// [_syncOne] behind the poll of [user] when [interval] is given, see [syncAll].
+  Future<NotificationSyncResult> _syncPolled(UserLoginInfo user, Duration? interval, DateTime? now) async {
+    final uid = user.uid;
+    if (interval == null || uid == null) {
+      return _syncOne(user);
+    }
+    final int? slot;
+    try {
+      slot = await NotificationPollSlot.take(_storageProvider, uid, interval, now: now);
+      if (slot == null) {
+        debug('uid ${"$uid".obscured(4)} was polled moments ago, using what is stored');
+        final unread = await countUnreadNotification(storage: _storageProvider, uid: uid);
+        return NotificationSyncResultSuccess(
+          newNotice: 0,
+          newPersonalMessage: 0,
+          newBroadcastMessage: 0,
+          unreadNotice: unread.notice,
+          unreadPersonalMessage: unread.personalMessage,
+          unreadBroadcastMessage: unread.broadcastMessage,
+          recent: true,
+        );
+      }
+      // Anything thrown here must be reported, not escape the run.
+      // ignore: avoid_catches_without_on_clauses
+    } catch (e, st) {
+      error('poll of uid ${"$uid".obscured(4)} threw: $e', e, st);
+      return NotificationSyncResultFailed('$e');
+    }
+    final result = await _syncOne(user);
+    if (result is! NotificationSyncResultSuccess) {
+      // Nothing came of this poll: the auto sync may take the interval after all.
+      await NotificationPollSlot.release(_storageProvider, uid, slot);
+    }
+    return result;
+  }
 
   /// Fetch and store the notifications of [user] with its own client.
   ///

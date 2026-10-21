@@ -7,6 +7,10 @@ import 'package:tsdm_client/shared/providers/storage_provider/storage_provider.d
 /// time of the last poll is kept in the shared database: whoever comes within half an interval of the other one
 /// skips, so each interval is polled once whatever the two timers' phase. What one poller fetches reaches the other:
 /// the service's rows are reloaded by the app, the app's rows are found by the service's next fetch.
+///
+/// Every account has its own poll: with every logged-in account polled (`backgroundSyncAllAccounts`) the other
+/// accounts are shared the same way between the app and the service, and the sync of all accounts the user asks for
+/// takes each account's poll too (an account polled moments ago shows what is stored instead of being asked again).
 abstract final class NotificationPollSlot {
   /// Settings name of the last poll time of [uid], in milliseconds since epoch.
   static String key(int uid) => 'notificationPolledAt.$uid';

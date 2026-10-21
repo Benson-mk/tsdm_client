@@ -384,7 +384,8 @@
       },
       "backgroundSyncAllAccounts": {
         "title": "背景通知：所有已登入帳號",
-        "detail": "後台訊息接收也檢查這台裝置上其他已登入的帳號，各自用自己的登入；通知會標出帳號，點通知時先切換到該帳號再開啟通知頁（僅安卓）"
+        "detail": "App 的自動同步（電腦版縮到系統匣時也算）與安卓的後台訊息接收也檢查這台裝置上其他已登入的帳號，各自用自己的登入；通知會標出帳號，點通知時先切換到該帳號再開啟通知頁",
+        "seenNote": "檢查其他帳號時，論壇會把它們的提醒標成已讀（網頁上的紅點會消失），和打開通知頁一樣"
       },
       "notificationPermission": {
         "title": "通知權限",
@@ -857,6 +858,7 @@
         "waiting": "等待中",
         "running": "同步中",
         "success": "新提醒 ${notice}，新私訊 ${pm}，新公用訊息 ${bm}；未讀 ${unreadNotice}/${unreadPm}/${unreadBm}",
+        "recent": "剛同步過，沿用已存的結果；未讀 ${unreadNotice}/${unreadPm}/${unreadBm}",
         "notAuthed": "登入已失效，請重新登入",
         "rateLimited": "論壇限制了請求頻率（429），請稍後再試",
         "failed": "失敗：${message}"

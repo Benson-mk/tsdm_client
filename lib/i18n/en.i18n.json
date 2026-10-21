@@ -384,7 +384,8 @@
       },
       "backgroundSyncAllAccounts": {
         "title": "Background notifications: all logged-in accounts",
-        "detail": "The background message service also checks the other accounts logged in on this device, each with its own login; notifications name the account, and tapping one switches to it before opening the notifications (Android only)"
+        "detail": "The app's auto sync (also while the desktop app is in the tray) and the Android background message service also check the other accounts logged in on this device, each with its own login; notifications name the account, and tapping one switches to it before opening the notifications",
+        "seenNote": "Checking the other accounts marks their reminders read on the website (the red dot goes away), as opening the notice page would"
       },
       "notificationPermission": {
         "title": "Notification permission",
@@ -857,6 +858,7 @@
         "waiting": "Waiting",
         "running": "Syncing",
         "success": "New notices ${notice}, new PMs ${pm}, new broadcasts ${bm}; unread ${unreadNotice}/${unreadPm}/${unreadBm}",
+        "recent": "Synced moments ago, the stored result is shown; unread ${unreadNotice}/${unreadPm}/${unreadBm}",
         "notAuthed": "Login expired, sign in again",
         "rateLimited": "The forum rate-limited the request (429), try again later",
         "failed": "Failed: ${message}"

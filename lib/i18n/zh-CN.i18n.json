@@ -384,7 +384,8 @@
       },
       "backgroundSyncAllAccounts": {
         "title": "后台通知：所有已登录账号",
-        "detail": "后台消息接收也检查此设备上其他已登录的账号，各自用自己的登录；通知会标出账号，点通知时先切换到该账号再打开通知页（仅安卓）"
+        "detail": "App 的自动同步（电脑版缩到托盘时也算）与安卓的后台消息接收也检查此设备上其他已登录的账号，各自用自己的登录；通知会标出账号，点通知时先切换到该账号再打开通知页",
+        "seenNote": "检查其他账号时，论坛会把它们的提醒标成已读（网页上的红点会消失），和打开通知页一样"
       },
       "notificationPermission": {
         "title": "通知权限",
@@ -857,6 +858,7 @@
         "waiting": "等待中",
         "running": "同步中",
         "success": "新提醒 ${notice}，新私信 ${pm}，新公共消息 ${bm}；未读 ${unreadNotice}/${unreadPm}/${unreadBm}",
+        "recent": "刚同步过，沿用已存的结果；未读 ${unreadNotice}/${unreadPm}/${unreadBm}",
         "notAuthed": "登录已失效，请重新登录",
         "rateLimited": "论坛限制了请求频率（429），请稍后再试",
         "failed": "失败：${message}"

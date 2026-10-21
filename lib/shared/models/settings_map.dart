@@ -99,8 +99,7 @@ class SettingsMap with SettingsMapMappable {
   /// Whether the Android background message service is on. Not required: backups from older versions lack it.
   final bool enableBackgroundMessageService;
 
-  /// Whether the background message service polls every saved account. Not required: backups from older versions
-  /// lack it.
+  /// Whether the auto sync polls every saved account. Not required: backups from older versions lack it.
   final bool backgroundSyncAllAccounts;
   final bool enableDebugOperations;
   final String fontFamily;

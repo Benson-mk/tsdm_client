@@ -21,6 +21,13 @@ class NotificationSyncAllPage extends StatelessWidget {
     final tr = context.t.noticePage.syncAllPage.user;
     return switch (result) {
       NotificationSyncResultSuccess(
+        recent: true,
+        :final unreadNotice,
+        :final unreadPersonalMessage,
+        :final unreadBroadcastMessage,
+      ) =>
+        tr.recent(unreadNotice: unreadNotice, unreadPm: unreadPersonalMessage, unreadBm: unreadBroadcastMessage),
+      NotificationSyncResultSuccess(
         :final newNotice,
         :final newPersonalMessage,
         :final newBroadcastMessage,

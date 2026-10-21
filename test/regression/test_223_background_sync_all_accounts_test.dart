@@ -30,16 +30,21 @@ import 'package:tsdm_client/features/authentication/repository/authentication_re
 import 'package:tsdm_client/features/authentication/repository/models/models.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_service.dart';
 import 'package:tsdm_client/features/background_sync/background_sync_tick.dart';
+import 'package:tsdm_client/features/background_sync/other_accounts_auto_sync.dart';
 import 'package:tsdm_client/features/blocking/repository/user_block_repository.dart';
 import 'package:tsdm_client/features/local_notice/keys.dart';
 import 'package:tsdm_client/features/local_notice/show.dart';
 import 'package:tsdm_client/features/local_notice/tap.dart';
 import 'package:tsdm_client/features/multi_user/utils/switch_account.dart';
+import 'package:tsdm_client/features/notification/bloc/auto_notification_cubit.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
+import 'package:tsdm_client/features/notification/bloc/notification_sync_all_cubit.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
+import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
 import 'package:tsdm_client/features/notification/utils/poll_slot.dart';
+import 'package:tsdm_client/features/notification/view/notification_sync_all_page.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
 import 'package:tsdm_client/i18n/strings.g.dart';
@@ -462,8 +467,12 @@ void main() {
       expect(tw.settingsPage.behaviorSection.backgroundSyncAllAccounts.title, '背景通知：所有已登入帳號');
       expect(cn.settingsPage.behaviorSection.backgroundSyncAllAccounts.title, '后台通知：所有已登录账号');
       expect(en.settingsPage.behaviorSection.backgroundSyncAllAccounts.title, contains('all logged-in accounts'));
+      expect(tw.settingsPage.behaviorSection.backgroundSyncAllAccounts.seenNote, contains('已讀'));
+      expect(en.settingsPage.behaviorSection.backgroundSyncAllAccounts.seenNote, contains('read on the website'));
       for (final tr in [tw, cn, en]) {
         expect(tr.settingsPage.behaviorSection.backgroundSyncAllAccounts.detail, isNotEmpty);
+        expect(tr.settingsPage.behaviorSection.backgroundSyncAllAccounts.seenNote, isNotEmpty);
+        expect(tr.noticePage.syncAllPage.user.recent(unreadNotice: 1, unreadPm: 2, unreadBm: 3), contains('1/2/3'));
         expect(tr.localNotification.accountGone, isNotEmpty);
         expect(tr.localNotification.notice.titleOf(username: 'Bob'), contains('Bob'));
       }
@@ -636,7 +645,11 @@ void main() {
       expect(outcomes.cast<BackgroundSyncDone>()[1].latest, isNull, reason: 'nothing announced for Bob');
       expect(forum.of('bob'), ['notify'], reason: 'one question, answered "login"');
       expect(await expiredUids(), {1001}, reason: 'recorded for Bob only, as for the account in use');
-      expect(await storage.getInt(NotificationPollSlot.key(1001)), 0, reason: 'a poll that brought nothing is given back');
+      expect(
+        await storage.getInt(NotificationPollSlot.key(1001)),
+        0,
+        reason: 'a poll that brought nothing is given back',
+      );
       // Alice is still the account in use, her login and rows untouched.
       expect(settings.currentSettings.loginUid, 1000);
       expect(await storage.hasCookieOfUid(1000), isTrue);
@@ -706,7 +719,10 @@ void main() {
       await loggedIn(allAccounts: true);
       final at = _nextTick();
       // Bob was polled ten seconds ago (half an interval is thirty).
-      await storage.saveInt(NotificationPollSlot.key(1001), at.subtract(const Duration(seconds: 10)).millisecondsSinceEpoch);
+      await storage.saveInt(
+        NotificationPollSlot.key(1001),
+        at.subtract(const Duration(seconds: 10)).millisecondsSinceEpoch,
+      );
       final outcomes = await tick(now: at);
       expect(outcomes[0], isA<BackgroundSyncDone>().having((e) => e.uid, 'uid', 1000));
       expect(
@@ -794,7 +810,11 @@ void main() {
       forum.holds['bob']!.complete();
       expect(
         await late.future,
-        isA<BackgroundSyncDone>().having((e) => (e.uid, e.named, e.latest != null), 'Bob, announced', (1001, true, true)),
+        isA<BackgroundSyncDone>().having((e) => (e.uid, e.named, e.latest != null), 'Bob, announced', (
+          1001,
+          true,
+          true,
+        )),
       );
     });
 
@@ -814,6 +834,321 @@ void main() {
       await settings.setValue(SettingsKeys.enableBackgroundMessageService, false);
       expect((await tick()).single, isA<BackgroundSyncDisabled>());
       expect(forum.requests, isEmpty);
+    });
+  });
+
+  group('in the app: the other accounts after the account in use (Android, Windows)', () {
+    Future<List<BackgroundSyncOutcome>> others({DateTime? now, Duration gap = Duration.zero}) =>
+        autoSyncOtherAccountsTick(storage: storage, repository: repository(), now: now ?? _nextTick(), gap: gap);
+
+    test('off: nothing; on: every other account, without the background service switch', () async {
+      await loggedIn(allAccounts: false);
+      expect(await others(), isEmpty);
+      expect(forum.requests, isEmpty);
+
+      await settings.setValue(SettingsKeys.backgroundSyncAllAccounts, true);
+      // Windows has no background service: its switch is off and plays no part.
+      await settings.setValue(SettingsKeys.enableBackgroundMessageService, false);
+      final at = _nextTick();
+      final outcomes = await others(now: at);
+      expect(forum.unexpected, isEmpty);
+      expect(
+        outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.username, e.named)),
+        [
+          (1001, 'Bob', true),
+          (1002, 'Carol', true),
+        ],
+        reason: 'the account in use is polled by the in-app sync itself',
+      );
+      expect(forum.tokens, [...List.filled(4, 'bob'), ...List.filled(4, 'carol')]);
+      expect(forum.seenForms.map((e) => (e.token, e.form['formhash'])), [
+        ('bob', _formhash(1001)),
+        ('carol', _formhash(1002)),
+      ]);
+      expect(await storage.getInt(NotificationPollSlot.key(1000)), isNull);
+      for (final uid in [1001, 1002]) {
+        expect(await storage.getInt(NotificationPollSlot.key(uid)), at.millisecondsSinceEpoch);
+        expect(await storedNotices(uid), [_noticeId(uid)]);
+      }
+    });
+
+    test('the slots are shared with the background service: whoever polls first, the other skips', () async {
+      await loggedIn(allAccounts: true);
+      final at = _nextTick();
+      // The background service polled everyone moments ago.
+      expect(await tick(now: at), hasLength(3));
+      forum.requests.clear();
+      final outcomes = await others(now: at.add(const Duration(seconds: 10)));
+      expect(
+        outcomes.map((e) => (e as BackgroundSyncSkipped).uid),
+        [1001, 1002],
+      );
+      expect(forum.requests, isEmpty, reason: 'never asked twice within the interval');
+      // And the other way round.
+      final later = at.add(const Duration(minutes: 1));
+      expect(await others(now: later), hasLength(2));
+      forum.requests.clear();
+      final service = await tick(now: later.add(const Duration(seconds: 5)));
+      expect(service[0], isA<BackgroundSyncDone>().having((e) => e.uid, 'uid', 1000));
+      expect(service.skip(1).map((e) => (e as BackgroundSyncSkipped).uid), [1001, 1002]);
+      expect(forum.tokens.toSet(), {'alice'});
+    });
+
+    test('an expired, failing or rate-limited account stays with itself; expired ones wait for a login', () async {
+      await loggedIn(allAccounts: true);
+      forum.all['bob'] = _loginAnswer;
+      var outcomes = await others();
+      expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
+        (1001, NotificationSyncResultNotAuthorized),
+        (1002, NotificationSyncResultSuccess),
+      ]);
+      expect(await expiredUids(), {1001});
+      expect(settings.currentSettings.loginUid, 1000, reason: 'nobody logged out');
+      forum
+        ..requests.clear()
+        ..all['carol'] = _busy;
+      outcomes = await others();
+      expect(outcomes.cast<BackgroundSyncDone>().map((e) => (e.uid, e.result.runtimeType)), [
+        (1002, NotificationSyncResultRateLimited),
+      ]);
+      expect(forum.of('bob'), isEmpty);
+    });
+
+    test('a pause before each account, the first one too: the account in use was just asked', () async {
+      await loggedIn(allAccounts: true);
+      const gap = Duration(milliseconds: 300);
+      final started = DateTime.now();
+      expect(await others(gap: gap), hasLength(2));
+      DateTime first(String token) => forum.requests.firstWhere((r) => r.token == token).at;
+      DateTime last(String token) => forum.requests.lastWhere((r) => r.token == token).at;
+      expect(first('bob').difference(started), greaterThanOrEqualTo(gap));
+      expect(first('carol').difference(last('bob')), greaterThanOrEqualTo(gap));
+    });
+
+    test('switched back to the account in use only during the round: it ends there', () async {
+      await loggedIn(allAccounts: true);
+      forum.holds['bob'] = Completer<void>();
+      final round = others();
+      while (forum.of('bob').isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await settings.setValue(SettingsKeys.backgroundSyncAllAccounts, false);
+      forum.holds['bob']!.complete();
+      final outcomes = await round;
+      expect(outcomes, hasLength(2));
+      expect(outcomes[0], isA<BackgroundSyncStale>());
+      expect(outcomes[1], isA<BackgroundSyncSkipped>());
+      expect(forum.of('carol'), isEmpty);
+    });
+
+    test('OtherAccountsAutoSync: one round at a time, each account announced with its name and reported', () async {
+      await loggedIn(allAccounts: true);
+      final announced = <BackgroundSyncDone>[];
+      final sync = OtherAccountsAutoSync(
+        storage: storage,
+        repository: repository(),
+        announce: (done) async => announced.add(done),
+        gap: Duration.zero,
+      );
+      final events = <Map<String, dynamic>?>[];
+      final sub = sync.synced.listen(events.add);
+      addTearDown(sub.cancel);
+      forum.holds['bob'] = Completer<void>();
+      final round = sync.poll(now: _nextTick());
+      while (forum.of('bob').isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(sync.isRunning, isTrue);
+      expect(await sync.poll(now: _nextTick()), isEmpty, reason: 'skipped while the previous round runs');
+      forum.holds['bob']!.complete();
+      expect(await round, hasLength(2));
+      expect(sync.isRunning, isFalse);
+      await pumpEventQueue();
+
+      final tr = await AppLocale.zhTw.build();
+      expect(announced.map((e) => e.uid), [1001, 1002]);
+      for (final done in announced) {
+        final content = localNotificationContentOf(
+          tr,
+          done.latest!,
+          account: LocalNoticeAccount(uid: done.uid, username: done.username, named: done.named),
+        );
+        expect(content.title, '[${done.username}] 新訊息', reason: 'a Windows toast names the account too');
+        expect(LocalNoticeKeys.parseOpenNotification(content.payload), (uid: done.uid));
+      }
+      expect(events, [
+        {'uid': 1001, 'notice': 1, 'personalMessage': 0, 'broadcastMessage': 0},
+        {'uid': 1002, 'notice': 1, 'personalMessage': 0, 'broadcastMessage': 0},
+      ], reason: 'the shape of the service, for the bridge that reloads the account switched to');
+      await sync.dispose();
+    });
+
+    test('the auto sync asks for the other accounts after its own poll, and never waits for them', () async {
+      await loggedIn(allAccounts: true);
+      // The in-app fetch of the account in use goes through the global client, with Alice's cookie.
+      getIt.registerFactory<NetClientProvider>(
+        () => NetClientProvider.buildNoCookie(
+          dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = forum,
+          cookie: CookieProvider(_alice, _jar(_alice)),
+        ),
+      );
+      final notifications = NotificationRepository(storageProvider: storage);
+      addTearDown(notifications.dispose);
+      final sync = OtherAccountsAutoSync(
+        storage: storage,
+        repository: repository(),
+        announce: (_) async {},
+        gap: Duration.zero,
+      );
+      late final AutoNotificationCubit auto;
+      final calls = <String>[];
+      auto = AutoNotificationCubit(
+        authenticationRepository: AuthenticationRepository(user: _alice),
+        notificationRepository: notifications,
+        storageProvider: storage,
+        afterPoll: () {
+          calls.add('after the poll, pending=${auto.isPending}');
+          unawaited(sync.poll());
+        },
+      );
+      addTearDown(() async {
+        auto.stop();
+        await auto.close();
+      });
+      forum
+        ..holds['alice'] = Completer<void>()
+        ..holds['bob'] = Completer<void>();
+      auto.start(const Duration(seconds: 1));
+      while (forum.of('alice').isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(auto.isPending, isTrue);
+      expect(calls, isEmpty, reason: 'the account in use first');
+      forum.holds['alice']!.complete();
+      while (forum.of('bob').isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(calls, ['after the poll, pending=false']);
+      expect(forum.tokens.first, 'alice');
+      // An account switch pauses the auto sync: with the other accounts still being polled it gets it at once.
+      expect(auto.pause('switch user'), isFalse, reason: 'not pending');
+      auto.stop();
+      forum.holds['bob']!.complete();
+      while (sync.isRunning) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
+      expect(await storedNotices(1001), [_noticeId(1001)]);
+      await sync.dispose();
+    });
+  });
+
+  group('the sync of all accounts the user asks for', () {
+    test("takes each account's poll: one polled moments ago shows what is stored, nobody is asked twice", () async {
+      await loggedIn(allAccounts: true);
+      final at = _nextTick();
+      // The background service polled Bob ten seconds ago and stored his notice.
+      final service = await tick(now: at.subtract(const Duration(seconds: 10)));
+      expect(service, hasLength(3));
+      await storage.saveInt(NotificationPollSlot.key(1000), 0);
+      await storage.saveInt(NotificationPollSlot.key(1002), 0);
+      forum.requests.clear();
+
+      final run = await repository()
+          .syncAll(accounts: _everyone, pollInterval: const Duration(seconds: 60), now: at)
+          .run();
+      final results = run.getOrElse((e) => fail('$e')).finished;
+      expect(results.map((e) => e.$1.uid), [1000, 1001, 1002]);
+      expect(
+        results[1].$2,
+        isA<NotificationSyncResultSuccess>().having((e) => e.recent, 'recent', isTrue).having(
+          (e) => (e.newNotice, e.unreadNotice),
+          'nothing new, the stored unread notice',
+          (0, 1),
+        ),
+      );
+      for (final i in [0, 2]) {
+        expect(results[i].$2, isA<NotificationSyncResultSuccess>().having((e) => e.recent, 'recent', isFalse));
+      }
+      expect(forum.of('bob'), isEmpty, reason: 'polled moments ago: the plugin would answer 429');
+      expect(forum.tokens.toSet(), {'alice', 'carol'});
+      expect(await storage.getInt(NotificationPollSlot.key(1000)), at.millisecondsSinceEpoch, reason: 'recorded');
+      expect(await storage.getInt(NotificationPollSlot.key(1002)), at.millisecondsSinceEpoch);
+
+      // The auto sync right after does not ask anybody again either.
+      forum.requests.clear();
+      final next = await tick(now: at.add(const Duration(seconds: 5)));
+      expect(next.map((e) => (e as BackgroundSyncSkipped).uid), [1000, 1001, 1002]);
+      expect(forum.requests, isEmpty);
+    });
+
+    test('a poll that brought nothing is given back; auto sync set to never: every account is fetched', () async {
+      await loggedIn(allAccounts: true);
+      forum.all['bob'] = _serverError;
+      final at = _nextTick();
+      await repository().syncAll(accounts: _everyone, pollInterval: const Duration(seconds: 60), now: at).run();
+      expect(await storage.getInt(NotificationPollSlot.key(1001)), 0, reason: 'the auto sync may take it after all');
+
+      forum
+        ..requests.clear()
+        ..all.remove('bob');
+      await settings.setValue(SettingsKeys.autoSyncNoticeSeconds, 0);
+      final cubit = NotificationSyncAllCubit(
+        repository: repository(),
+        storageProvider: storage,
+        authenticationRepository: AuthenticationRepository(user: _alice),
+        infoRepository: NotificationInfoRepository(),
+      );
+      await cubit.start();
+      expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'}, reason: 'nobody else polls: nothing to share');
+      await cubit.close();
+    });
+
+    test('the cubit asks with the auto sync interval: a second run right after asks nobody', () async {
+      await loggedIn(allAccounts: false);
+      final infos = NotificationInfoRepository();
+      addTearDown(infos.dispose);
+      final cubit = NotificationSyncAllCubit(
+        repository: repository(),
+        storageProvider: storage,
+        authenticationRepository: AuthenticationRepository(user: _alice),
+        infoRepository: infos,
+      );
+      addTearDown(cubit.close);
+      await cubit.start();
+      expect(forum.tokens.toSet(), {'alice', 'bob', 'carol'});
+      forum.requests.clear();
+      await cubit.start();
+      final finished = cubit.state as NotificationSyncAllStateFinished;
+      expect(finished.results.map((e) => (e.$2 as NotificationSyncResultSuccess).recent), [true, true, true]);
+      expect(forum.requests, isEmpty);
+    });
+
+    testWidgets('the progress page says the stored result is shown', (tester) async {
+      late String text;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: Builder(
+            builder: (context) {
+              text = NotificationSyncAllPage.message(
+                context,
+                const NotificationSyncResultSuccess(
+                  newNotice: 0,
+                  newPersonalMessage: 0,
+                  newBroadcastMessage: 0,
+                  unreadNotice: 1,
+                  unreadPersonalMessage: 0,
+                  unreadBroadcastMessage: 2,
+                  recent: true,
+                ),
+              );
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(text, t.noticePage.syncAllPage.user.recent(unreadNotice: 1, unreadPm: 0, unreadBm: 2));
+      expect(text, 'Synced moments ago, the stored result is shown; unread 1/0/2');
     });
   });
 
@@ -871,7 +1206,10 @@ void main() {
     ) async {
       final router = GoRouter(
         routes: [
-          GoRoute(path: '/', builder: (_, _) => const Scaffold(body: Center(child: Text('home')))),
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: Center(child: Text('home'))),
+          ),
           GoRoute(
             path: ScreenPaths.notice,
             name: ScreenPaths.notice,

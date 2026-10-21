@@ -164,9 +164,9 @@ enum SettingsKeys<T> implements Comparable<SettingsKeys<T>> {
   /// the app is in the background or was cleared (#80).
   enableBackgroundMessageService<bool>(name: 'enableBackgroundMessageService', type: bool, defaultValue: false),
 
-  /// Let the Android background message service poll every account saved on this device, not only the current one:
-  /// each with its own cookie and poll, its notifications naming the account. Off: the current account only, as
-  /// before.
+  /// Let the auto sync poll every account saved on this device, not only the current one: the in-app auto sync on
+  /// Android and Windows (also in the tray) and the Android background message service. Each account with its own
+  /// cookie and poll, its notifications naming the account. Off: the current account only, as before.
   backgroundSyncAllAccounts<bool>(name: 'backgroundSyncAllAccounts', type: bool, defaultValue: false),
 
   /// Enable operations for debugging.
