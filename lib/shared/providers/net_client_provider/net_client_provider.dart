@@ -97,29 +97,27 @@ extension _WithFormExt<T> on Dio {
 /// Instance should be unique when making requests.
 final class NetClientProvider with LoggerMixin {
   /// Constructor.
-  NetClientProvider._(Dio dio) : _dio = dio;
+  NetClientProvider._(Dio dio, [this._session]) : _client = dio;
 
   /// Build a [NetClientProvider] instance.
   ///
   /// ## Parameters
   ///
   /// * [userLoginInfo] is the account this client acts for, the current account by default. The client is bound to
-  ///   that account and to the session the cookie provider holds when the client first reads its cookies
-  ///   (`CookieProvider.generation`): once another account becomes current, or another session of the same account
-  ///   is loaded (a login with the password), pending requests of this client are dropped and their cookies are
-  ///   neither read nor saved, see [_IdentityGuard] and [_IdentityScopedStorage].
+  ///   that account: once another account becomes current, pending requests of this client are dropped and their
+  ///   cookies are neither read nor saved, see [_IdentityGuard] and [_IdentityScopedStorage]. Each request is also
+  ///   bound to the session of that account the cookie provider holds when it is sent (`CookieProvider.generation`):
+  ///   once another session of the account is loaded (a login with the password), the requests in flight are dropped
+  ///   the same way and the next ones send the new session ([_SessionCookies]).
   /// * Set [forceDesktop] to false when desire server response with a mobile
   ///   layout page.
   factory NetClientProvider.build({Dio? dio, UserLoginInfo? userLoginInfo, bool forceDesktop = true}) {
     final d = dio ?? getIt.get<SettingsRepository>().buildDefaultDio();
+    _SessionCookies? session;
     if (!isWeb) {
       talker.debug('build client with cookie');
       final cookie = getIt.get<CookieProvider>();
-      final identity = _Identity(cookie, userLoginInfo?.uid ?? cookie.userLoginInfo.uid);
-      final cookieJar = PersistCookieJar(ignoreExpires: true, storage: _IdentityScopedStorage(identity));
-      d.interceptors.add(_IdentityGuard(identity));
-      d.interceptors.add(_DropServerFlagCookies());
-      d.interceptors.add(CookieManager(cookieJar));
+      session = _SessionCookies(d, cookie, userLoginInfo?.uid ?? cookie.userLoginInfo.uid)..refresh();
       if (forceDesktop) {
         d.interceptors.add(_ForceDesktopLayoutInterceptor());
       }
@@ -132,7 +130,7 @@ final class NetClientProvider with LoggerMixin {
       d.transformer = DioBrotliTransformer();
     }
 
-    return NetClientProvider._(d);
+    return NetClientProvider._(d, session);
   }
 
   /// Build a [NetClientProvider] instance that does NOT load cookie.
@@ -162,7 +160,17 @@ final class NetClientProvider with LoggerMixin {
     return NetClientProvider._(d);
   }
 
-  final Dio _dio;
+  final Dio _client;
+
+  /// The cookie interceptors of a client of the global cookie ([NetClientProvider.build]), null otherwise.
+  final _SessionCookies? _session;
+
+  /// The client a request is sent with now, its cookie interceptors those of the session in use
+  /// ([_SessionCookies.refresh]). Read when the request is sent.
+  Dio get _dio {
+    _session?.refresh();
+    return _client;
+  }
 
   /// Make a GET request to [path].
   ///
@@ -248,11 +256,15 @@ final class NetClientProvider with LoggerMixin {
     Map<String, dynamic>? queryParameters,
     bool singleAttempt = false,
     bool tsdmAppJson = true,
-  }) => _dio.postWithForm(
-    tsdmAppJson ? withTsdmAppJsonWrite(path) : path,
-    data: data,
-    queryParameters: queryParameters,
-    singleAttempt: singleAttempt,
+  }) => AsyncEither(
+    () => _dio
+        .postWithForm(
+          tsdmAppJson ? withTsdmAppJsonWrite(path) : path,
+          data: data,
+          queryParameters: queryParameters,
+          singleAttempt: singleAttempt,
+        )
+        .run(),
   );
 
   /// Post [data] as JSON (`Content-Type: application/json`) to [path].
@@ -352,38 +364,73 @@ final class NetClientProvider with LoggerMixin {
   );
 }
 
-/// The account a client was built for, and the session generation of the shared [CookieProvider] its cookies were
-/// first read under.
-///
-/// Bound at the first read rather than when the client was built: the jar keeps what it read in memory, so a client
-/// that read the cookies of a session goes on sending them, while a client built earlier (a page keeps one) that
-/// reads them only after a new login of the same account sends the new session as any other client does.
+/// The account a client was built for and the session of it a request is bound to: the session generation of the
+/// shared [CookieProvider] when the request was sent.
 final class _Identity {
-  _Identity(this.provider, this.uid);
+  const _Identity(this.provider, this.uid, this.generation);
 
   final CookieProvider provider;
   final int? uid;
+  final int generation;
 
-  /// The session generation the client's cookies were read under, null before the first read.
+  /// Whether the provider still holds that session: neither another account nor another session of the same account
+  /// (a login with the password, the switch's check) was loaded since.
+  bool get current => provider.userLoginInfo.uid == uid && provider.generation == generation;
+}
+
+/// The cookie interceptors of a client of the global cookie ([_IdentityGuard], [CookieManager] with its jar on
+/// [_IdentityScopedStorage]), bound to one session of the client's account ([_Identity]).
+///
+/// The jar keeps the cookies it read in memory, so a set serves one session. Once the provider holds another session
+/// of the account (a login with the password, the switch's check), the next request of the client gets a set of that
+/// session with a jar of its own; the requests in flight keep theirs (dio takes the interceptors when a request
+/// starts), and their answers are dropped. A client a page or a repository keeps goes on working after a new login of
+/// its account, with the new session, as it did after a switch back to its account.
+final class _SessionCookies {
+  _SessionCookies(this._dio, this._provider, this._uid);
+
+  final Dio _dio;
+  final CookieProvider _provider;
+  final int? _uid;
+
+  /// The interceptors in place, of the session [_generation].
+  List<Interceptor> _installed = const [];
   int? _generation;
 
-  /// Bind the client to the session the provider holds now, at its first cookie read.
-  void bind() {
-    _generation ??= provider.generation;
+  /// Put the interceptors of the session the provider holds now in place: the first ones, or those replacing the
+  /// interceptors of a previous session of the same account. A client of another account than the one in use keeps
+  /// its interceptors, which drop its requests.
+  void refresh() {
+    final generation = _provider.generation;
+    if (_installed.isNotEmpty && (generation == _generation || _provider.userLoginInfo.uid != _uid)) {
+      return;
+    }
+    final identity = _Identity(_provider, _uid, generation);
+    final fresh = <Interceptor>[
+      _IdentityGuard(identity),
+      _DropServerFlagCookies(),
+      CookieManager(PersistCookieJar(ignoreExpires: true, storage: _IdentityScopedStorage(identity))),
+    ];
+    if (_installed.isEmpty) {
+      _dio.interceptors.addAll(fresh);
+    } else {
+      final at = _dio.interceptors.indexOf(_installed.first);
+      for (final (i, interceptor) in fresh.indexed) {
+        _dio.interceptors[at + i] = interceptor;
+      }
+    }
+    _installed = fresh;
+    _generation = generation;
   }
-
-  /// Whether the provider still holds the session of that account: neither another account nor another session of
-  /// the same account (a login with the password, the switch's check) was loaded since the client read its cookies.
-  bool get current => provider.userLoginInfo.uid == uid && (_generation ?? provider.generation) == provider.generation;
 }
 
 /// Cookie storage of one account's session.
 ///
-/// Reads and writes reach the shared [CookieProvider] only while it still holds the session of that account the
-/// client read its cookies under ([_Identity]). After a switch, a client built for the previous account neither sends
-/// its cookies nor saves the cookies of a late answer into the new account; after a new login of the same account, a
-/// client of the previous session does not write that session over the new one (any answer may carry a
-/// `Set-Cookie`, and the jar writes back every cookie of the host it loaded, the previous auth cookie included).
+/// Reads and writes reach the shared [CookieProvider] only while it still holds the session of that account the jar
+/// was made for ([_Identity]). After a switch, a client built for the previous account neither sends its cookies nor
+/// saves the cookies of a late answer into the new account; after a new login of the same account, a request of the
+/// previous session does not write that session over the new one (any answer may carry a `Set-Cookie`, and the jar
+/// writes back every cookie of the host it loaded, the previous auth cookie included).
 final class _IdentityScopedStorage with LoggerMixin implements Storage {
   _IdentityScopedStorage(this._identity);
 
@@ -397,14 +444,10 @@ final class _IdentityScopedStorage with LoggerMixin implements Storage {
   Future<void> init(bool persistSession, bool ignoreExpires) => _provider.init(persistSession, ignoreExpires);
 
   @override
-  Future<String?> read(String key) async {
-    _identity.bind();
-    return _current ? _provider.read(key) : null;
-  }
+  Future<String?> read(String key) async => _current ? _provider.read(key) : null;
 
   @override
   Future<void> write(String key, String value) async {
-    _identity.bind();
     if (!_current) {
       warning('drop cookie write of a client bound to a previous account or session');
       return;

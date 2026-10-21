@@ -128,10 +128,11 @@ final class CookieProvider with LoggerMixin implements Storage {
   /// Bumped whenever this provider starts holding another session: a stored row loaded ([loadCookieFromStorage],
   /// [loadCookieFromDatabase]), the cookies cleared ([clearUserInfoAndCookie]).
   ///
-  /// A client built on this provider (`NetClientProvider.build`) sends, reads and saves its cookies only while the
-  /// provider still holds the session it first read them under: after a new login of the same account (with the
-  /// password, or the switch's check) a request of the previous session answered late must not write that session
-  /// over the new one, here and in the stored row. The account alone ([userLoginInfo]) did not tell.
+  /// A request of a client built on this provider (`NetClientProvider.build`) reads and saves its cookies, and its
+  /// answer is taken, only while the provider still holds the session it was sent with: after a new login of the same
+  /// account (with the password, or the switch's check) a request of the previous session answered late must not
+  /// write that session over the new one, here and in the stored row. The account alone ([userLoginInfo]) did not
+  /// tell. The next requests of the client send the new session.
   int _generation = 0;
 
   /// The session generation of this provider, see [_generation].

@@ -77,19 +77,16 @@ final class PokemonRepository with LoggerMixin {
   ///
   /// One client is kept for the repository's life so its connection (and the cookie jar inside it) is reused: building
   /// one per request pays a TCP + TLS handshake every time (measured ≈0.45s to the forum host), and a page load makes
-  /// several requests in a row. The client carries that account's session, so another account, or another session
-  /// of the same account (a login with the password), drops it: it would refuse every request
-  /// (`NetClientProvider.build`).
+  /// several requests in a row. The client carries that account's cookies, so another account drops it.
   NetClientProvider? _client;
-  ({int? uid, int generation})? _clientSession;
+  int? _clientUid;
 
   NetClientProvider get _net {
-    final cookie = getIt.get<CookieProvider>();
-    final session = (uid: cookie.userLoginInfo.uid, generation: cookie.generation);
-    if (_client != null && _clientSession == session) {
+    final uid = getIt.get<CookieProvider>().userLoginInfo.uid;
+    if (_client != null && _clientUid == uid) {
       return _client!;
     }
-    _clientSession = session;
+    _clientUid = uid;
     return _client = getIt.get<NetClientProvider>();
   }
 

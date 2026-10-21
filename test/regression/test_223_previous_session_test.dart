@@ -24,6 +24,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' show ApplyInterceptor, QueryExecutor, QueryInterceptor;
 import 'package:drift/native.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 import 'package:tsdm_client/constants/url.dart';
@@ -33,6 +34,7 @@ import 'package:tsdm_client/features/authentication/repository/models/models.dar
 import 'package:tsdm_client/features/checkin/models/models.dart';
 import 'package:tsdm_client/features/checkin/repository/auto_checkin_repository.dart';
 import 'package:tsdm_client/features/homepage/bloc/homepage_bloc.dart';
+import 'package:tsdm_client/features/medal_title_tools/view/my_medals_page.dart';
 import 'package:tsdm_client/features/notification/models/models.dart';
 import 'package:tsdm_client/features/notification/repository/notification_repository.dart';
 import 'package:tsdm_client/features/notification/repository/notification_sync_all_repository.dart';
@@ -107,6 +109,24 @@ Map<String, dynamic> _homepageOf(UserLoginInfo user) => {
   'red_packet': null,
 };
 
+/// The `mymedals` answer of the forum's app API (plugin 1.5.0), as test_198 makes it.
+Map<String, dynamic> _myMedals() => {
+  'ok': 1,
+  'installed': 1,
+  'uid': 1000,
+  'medals': [
+    {'id': 11, 'name': 'Shown medal', 'image': '', 'hidden': 0, 'expiration': 0},
+    {'id': 12, 'name': 'Hidden medal', 'image': '', 'hidden': 1, 'expiration': 0},
+  ],
+  'preview_limit': 30,
+  'hide_warning': 'Hiding may lose medals.',
+  'log': {'page': 1, 'pages': 1, 'total': 0, 'items': <Object?>[]},
+  'hide_form': {
+    'url': 'plugin.php?id=dsu_medalCenter:memcp&action=sethide',
+    'fields': {'formhash': 'abcd1234', 'dsumcsubmit': '1'},
+  },
+};
+
 /// The forum of the two accounts and of their new logins: a request is answered for the account of its auth cookie
 /// (`fresh` is [freshAs]), as a guest for the tokens in [dead]. While [hold] is pending, requests of [held] wait.
 ///
@@ -118,9 +138,18 @@ final class _Forum implements HttpClientAdapter {
 
   final UserLoginInfo freshAs;
   final dead = <String>{};
-  final requests = <({String token, String path})>[];
+
+  /// Actions of the forum's app API answered to a live session, by name.
+  final api = <String, Map<String, dynamic>>{};
+  final requests = <({String token, String path, String? action})>[];
   String held = 'alice';
   Completer<void>? hold;
+
+  /// The tokens of the requests of the app API action [action] and of the posts, in order.
+  List<String> tokensOf(String action) => [
+    for (final r in requests)
+      if (r.action == action) r.token,
+  ];
 
   /// The tokens of the homepage requests, in order.
   List<String> get homepageTokens => [
@@ -135,15 +164,23 @@ final class _Forum implements HttpClientAdapter {
   Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? rs, Future<void>? cancel) async {
     final token = _tokenOf(options);
     final path = options.uri.path;
-    requests.add((token: token, path: path));
+    requests.add((
+      token: token,
+      path: path,
+      action: options.method == 'POST' ? 'POST' : options.uri.queryParameters['action'],
+    ));
     if (hold != null && !hold!.isCompleted && token == held) {
       await hold!.future;
     }
     final user = dead.contains(token) ? null : _userOf(token);
     final query = options.uri.queryParameters;
     if (query['id'] == 'tsdmapp:api') {
-      // Only the expired session is asked for in these tests.
-      return _json({'ok': 0, 'error': 'login'});
+      // The plugin's answer for an expired session; an action in [api] is answered to a live one.
+      final answer = api[query['action']];
+      return _json(user == null || answer == null ? {'ok': 0, 'error': 'login'} : answer);
+    }
+    if (options.method == 'POST' && query['id'] == 'dsu_medalCenter:memcp' && user != null) {
+      return _html('<div id="messagetext" class="alert_right"><p>操作成功</p></div>');
     }
     if (path.endsWith('forum.php')) {
       return user == null ? _html(_guestPage) : _json(_homepageOf(user));
@@ -320,6 +357,42 @@ void main() {
       expect(await storedToken(1000), 'fresh');
     });
 
+    test(
+      'a client kept by a page or a repository goes on with the new session; its request in flight is dropped',
+      () async {
+        final forum = _Forum()..api['mymedals'] = _myMedals();
+        appClientsAsk(forum);
+        final auth = authWith();
+        // The medal tools pages keep the client they were opened with.
+        final client = getIt.get<NetClientProvider>();
+        expect((await TsdmAppApi.ask(client, 'mymedals'))?['ok'], 1);
+        forum
+          ..held = 'alice'
+          ..hold = Completer<void>();
+        final inFlight = client.get(TsdmAppApi.url('mymedals')).run();
+        await _until(() => forum.tokensOf('mymedals').length == 2, reason: 'asked again with the previous session');
+        await loginWithPassword(auth, _alice);
+        // Asked again after the login, while the previous request is still on its way.
+        expect((await TsdmAppApi.ask(client, 'mymedals'))?['ok'], 1, reason: 'answered to the new session');
+        final posted = await client
+            .postForm(
+              '$baseUrl/plugin.php?id=dsu_medalCenter:memcp&action=sethide',
+              data: {'formhash': 'abcd1234'},
+            )
+            .run();
+        expect(posted.isRight(), isTrue, reason: '$posted');
+        forum.hold!.complete();
+        expect(
+          (await inFlight).getLeft().toNullable(),
+          isA<IdentityChangedException>(),
+          reason: 'the previous session',
+        );
+        expect(forum.tokensOf('mymedals'), ['alice', 'alice', 'fresh']);
+        expect(forum.tokensOf('POST'), ['fresh']);
+        expect((globalToken(), cachedToken(1000), await storedToken(1000)), ('fresh', 'fresh', 'fresh'));
+      },
+    );
+
     test('a client built for the new session works as before, its renewed cookies stored', () async {
       final forum = _Forum();
       appClientsAsk(forum);
@@ -439,7 +512,9 @@ void main() {
       await loginWithPassword(auth, _alice);
       expect(await expiredUids(), isEmpty, reason: 'the login cleared the mark');
       forum.hold!.complete();
-      expect((await polling).isLeft(), isTrue);
+      await polling;
+      expect(forum.tokensOf('notify'), ['alice'], reason: 'its answer dropped');
+      expect(forum.requests.skip(1).map((r) => r.token), everyElement('fresh'), reason: 'the rest of the fetch');
       expect(await expiredUids(), isEmpty, reason: 'the fresh login is not marked expired by the late answer');
       expect((globalToken(), await storedToken(1000)), ('fresh', 'fresh'));
     });
@@ -543,6 +618,45 @@ void main() {
     expect((await auth.switchUser(_bob).run()).isRight(), isTrue, reason: 'switched with his new login');
     expect(await expiredUids(), isEmpty);
     expect(auth.currentUser?.uid, 1001);
+  });
+
+  testWidgets('a page kept open while its account logs in again (my medals) goes on with the new login', (
+    tester,
+  ) async {
+    Future<void> settle() async {
+      for (var i = 0; i < 8; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    final forum = _Forum()..api['mymedals'] = _myMedals();
+    appClientsAsk(forum);
+    final auth = authWith();
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(TranslationProvider(child: const MaterialApp(home: MyMedalsPage())));
+    await settle();
+    expect(find.text('1 shown, 1 hidden'), findsOneWidget);
+    expect(forum.tokensOf('mymedals'), ['alice']);
+
+    // Its login expired: logged in again from the banner, back on the page, pulled to refresh.
+    await tester.runAsync(() => loginWithPassword(auth, _alice));
+    forum.api['mymedals'] = {
+      ..._myMedals(),
+      'medals': [
+        {'id': 11, 'name': 'Shown medal', 'image': '', 'hidden': 0, 'expiration': 0},
+        {'id': 12, 'name': 'Hidden medal', 'image': '', 'hidden': 0, 'expiration': 0},
+      ],
+    };
+    unawaited(tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show());
+    await settle();
+    expect(forum.tokensOf('mymedals'), ['alice', 'fresh'], reason: 'asked with the new login');
+    expect(find.text('2 shown, 0 hidden'), findsOneWidget, reason: 'its answer shown, no failure');
+    expect(await tester.runAsync(() => storedToken(1000)), 'fresh');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
   });
 
   group('logout', () {
