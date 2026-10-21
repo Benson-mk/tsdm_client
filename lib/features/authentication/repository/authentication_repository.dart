@@ -401,24 +401,31 @@ class AuthenticationRepository with LoggerMixin {
   /// it. Any other page without a logged user (maintenance, an unresolved interstitial) only leaves the authed state
   /// and keeps the saved login, it says nothing about the session.
   ///
-  /// [uid] is the account to log out, the account in use when this is called by default: a switch still running when
-  /// the logout was asked must not make it log out the account switched to. When the account in use is another one by
-  /// the time the logout runs, nothing is done ([IdentityChangedException]).
+  /// [uid] is the account to log out (the one a page shows), the account in use when this is called by default: a
+  /// switch still running when the logout was asked must not make it log out the account switched to. When the
+  /// account in use ([effectiveCurrentUid]) is another one, or none, by the time the logout runs, nothing is done
+  /// ([IdentityChangedException]).
+  ///
+  /// The account in use is logged out also before its stored session was verified ([currentUser] still null: an
+  /// offline start, a homepage that failed), as the manage accounts page offers: the forum is asked like for a
+  /// verified one, and a failed request is the caller's error instead of a success with nothing done.
   AsyncVoidEither logout({int? uid}) {
-    final target = uid ?? _authedUser?.uid;
+    final target = uid ?? effectiveCurrentUid;
     return AsyncVoidEither(() => _identityWrite(() => _logout(target)));
   }
 
   Future<Either<AppException, void>> _logout(int? target) async {
-    if (target == null || _authedUser == null) {
+    if (target == null) {
       return rightVoid();
     }
-    if (_authedUser!.uid != target) {
+    final current = effectiveCurrentUid;
+    if (current != target) {
       warning('logout of uid ${"$target".obscured(4)} asked, the account in use changed meanwhile: nothing done');
       return left(IdentityChangedException());
     }
+    final user = effectiveCurrentUser;
     final netClient = _currentUserClientFactory(
-      UserLoginInfo(username: _authedUser!.username, uid: _authedUser!.uid),
+      UserLoginInfo(username: user?.uid == target ? user?.username : null, uid: target),
     );
     final respEither = await netClient.get(_checkAuthUrl).run();
     if (respEither.isLeft()) {

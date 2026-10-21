@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:tsdm_client/exceptions/exceptions.dart';
 import 'package:tsdm_client/extensions/fp.dart';
 import 'package:tsdm_client/features/authentication/repository/authentication_repository.dart';
@@ -146,18 +147,25 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> with LoggerMixin {
   }
 
   Future<void> _onLogoutRequested(_Emitter emit) async {
-    // The account the page shows when the logout was asked: a switch finishing meanwhile must not log out the account
-    // switched to.
-    final logout = _authenticationRepository.logout(uid: _authenticationRepository.currentUser?.uid);
+    // The account the page shows, not the account in use: the page does not follow a switch (a tap on a notification
+    // of another account, the login expired banner or the tray opening the manage accounts page over it), and a
+    // switch finishing while the logout waits must not log out the account switched to either.
+    final shown = int.tryParse(state.userProfile?.uid ?? '');
+    if (shown == null) {
+      warning('logout asked without the profile of an account shown, nothing done');
+      return;
+    }
+    final logout = _authenticationRepository.logout(uid: shown);
     emit(state.copyWith(status: ProfileStatus.loggingOut));
-    await logout.match((e) {
-      if (e is IdentityChangedException) {
-        // Nobody logged out: the page follows the account in use by itself.
-        emit(state.copyWith(status: ProfileStatus.success));
-        return;
-      }
-      handle(e);
-      emit(state.copyWith(status: ProfileStatus.success, failedToLogoutReason: e));
-    }, (_) => emit(state.copyWith(status: ProfileStatus.needLogin))).run();
+    switch (await logout.run()) {
+      case Left(value: IdentityChangedException()):
+        // Nobody logged out: another account is in use than the page shows. Show the profile of that one.
+        await _onLoadRequested(emit);
+      case Left(:final value):
+        handle(value);
+        emit(state.copyWith(status: ProfileStatus.success, failedToLogoutReason: value));
+      case Right():
+        emit(state.copyWith(status: ProfileStatus.needLogin));
+    }
   }
 }
