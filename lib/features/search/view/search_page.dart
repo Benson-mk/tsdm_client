@@ -70,6 +70,11 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
   /// Run the search once the page is built, when opened with an author from a profile page.
   bool _searchOnBuild = false;
 
+  /// The author the page was opened with by name ([SearchPage.authorName]: a profile page, a "TA的主题" link naming
+  /// the member): searched by name while the author field still holds it, also when the name is all digits, which
+  /// the field otherwise takes as a uid.
+  String? _authorByName;
+
   @override
   void initState() {
     super.initState();
@@ -87,6 +92,9 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
       _ => null,
     };
     if (author != null) {
+      if (widget.authorName case final String name when name.isNotEmpty) {
+        _authorByName = name;
+      }
       setState(() {
         authorController.text = author;
         unlimitedAuthor = false;
@@ -257,11 +265,15 @@ class _SearchPageState extends State<SearchPage> with LoggerMixin {
     return null;
   }
 
-  /// Split the author field into the (uid, name) pair sent to the server: digits only is a uid, anything else a name.
+  /// Split the author field into the (uid, name) pair sent to the server: digits only is a uid, anything else a name;
+  /// the name the page was opened with ([_authorByName]) is a name whatever it looks like.
   (String uid, String name) _authorOf(String text) {
     final author = text.trim();
     if (author.isEmpty) {
       return ('0', '');
+    }
+    if (author == _authorByName?.trim()) {
+      return ('0', author);
     }
     if (int.tryParse(author) case final int uid when uid >= 0) {
       return ('$uid', '');

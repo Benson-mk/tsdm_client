@@ -45,9 +45,12 @@ import 'package:tsdm_client/features/my_thread/utils/my_thread_page_api.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_bloc.dart';
 import 'package:tsdm_client/features/notification/bloc/notification_state_cubit.dart';
 import 'package:tsdm_client/features/notification/repository/notification_info_repository.dart';
+import 'package:tsdm_client/features/poll/models/forum_poll.dart';
+import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
 import 'package:tsdm_client/features/profile/models/models.dart';
 import 'package:tsdm_client/features/profile/utils/profile_page_api.dart';
 import 'package:tsdm_client/features/search/utils/search_page_api.dart';
+import 'package:tsdm_client/features/search/view/search_page.dart';
 import 'package:tsdm_client/features/settings/bloc/settings_bloc.dart';
 import 'package:tsdm_client/features/settings/repositories/settings_repository.dart';
 import 'package:tsdm_client/features/special_thread/widgets/special_thread_card.dart';
@@ -197,6 +200,40 @@ final class _ThreadAdapter implements HttpClientAdapter {
         Headers.contentTypeHeader: [
           if (page == null) 'text/html; charset=utf-8' else 'application/json; charset=utf-8',
         ],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The forum's search: an empty result for every request, every request recorded.
+final class _SearchAdapter implements HttpClientAdapter {
+  final requests = <Uri>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options.uri);
+    return ResponseBody.fromString(
+      jsonEncode({
+        'ok': 1,
+        'type': 'search',
+        'schema': 6,
+        'uid': 0,
+        'timeoffset': 8,
+        'page': 1,
+        'pages': 1,
+        'count': 0,
+        'threads': <Object>[],
+      }),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json; charset=utf-8'],
       },
     );
   }
@@ -535,7 +572,7 @@ void main() {
         expect(_hasLink(tester, '这帖'), isTrue, reason: 'the link of the affirmative point');
         expect(_hasLink(tester, '理由'), isTrue, reason: "the link of the umpire's point");
         expect(find.text('观点见这帖第二行'), findsNothing, reason: 'not the plain text');
-        expect(find.textContaining('反方观点 plain', findRichText: true), findsWidgets);
+        expect(find.textContaining('反方观点 plain', findRichText: true), findsOneWidget);
         expect(find.textContaining(_tr.specialThread.debate.bestDebater(name: 'ag_low')), findsOneWidget);
       });
 
@@ -557,7 +594,7 @@ void main() {
       expect(asForum.postList.first.publishTime, _wall(2026, 9, 30, 18, 18, 46));
     });
 
-    test('the special blocks: the activity and the end of a debate as dates, the end of a poll as an instant', () {
+    test('the special blocks: the activity, the end of a debate and of a poll as dates', () {
       // 1790885730 is 2026-10-01 20:15:30 UTC.
       final activity =
           ThreadSpecial.fromApi({
@@ -576,9 +613,48 @@ void main() {
       expect(activity.applyList.single.dateline, _wall(2026, 10, 2, 5, 15, 30));
       final debate = ThreadSpecial.fromApi({'type': 'debate', 'endtime': 1790885730}, timeOffset: -5)! as DebateSpecial;
       expect(debate.endTime, _wall(2026, 10, 1, 15, 15, 30));
-      // The page prints the end of a poll as a countdown: the instant, shown in the device's zone.
-      final poll = ThreadSpecial.fromApi({'type': 'poll', 'expiration': 1790885730}, timeOffset: -5)! as PollSpecial;
+      // The end of a poll: the instant kept, the forum's clock shown; whether it ended is the forum's `expired`.
+      final poll =
+          ThreadSpecial.fromApi({'type': 'poll', 'expiration': 1790885730, 'expired': 0}, timeOffset: -5)!
+              as PollSpecial;
       expect(poll.expiration, DateTime.fromMillisecondsSinceEpoch(1790885730 * 1000));
+      expect(poll.expirationClock, _wall(2026, 10, 1, 15, 15, 30));
+      expect(
+        forumPollFromSpecial(poll, loggedIn: true).deadline,
+        _tr.specialThread.poll.deadline(time: '2026-10-01 15:15'),
+      );
+      final ended =
+          ThreadSpecial.fromApi({'type': 'poll', 'expiration': 1790885730, 'expired': 1}, timeOffset: -5)!
+              as PollSpecial;
+      expect(forumPollFromSpecial(ended, loggedIn: true).deadline, _tr.specialThread.poll.ended);
+    });
+
+    test("one page, one clock: a floor's time and the poll's end, whatever the device's zone", () {
+      // The poll ends one hour after its first floor was posted (the review's probe): on the page both are the
+      // forum's clock (+8 here, +12 below), so the end reads one hour after the floor, also on a device in New York.
+      for (final offset in [8, 12, -5]) {
+        final json = _json('special_v15_poll_single_before.json')..['timeoffset'] = offset;
+        final first = (json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((e) => e['first'] == 1);
+        final posted = (first['dateline'] as num).toInt();
+        json['special'] = {...(json['special'] as Map<String, dynamic>), 'expiration': posted + 3600, 'expired': 0};
+        final page = threadPageFromApi(json, 1);
+        final floor = page.postList.firstWhere((e) => e.postID == '${first['pid']}');
+        final poll = forumPollFromSpecial(page.special! as PollSpecial, loggedIn: true);
+        expect(floor.publishTime, tsdmAppWallClockTime(posted, offset), reason: 'offset $offset');
+        expect(
+          poll.deadline,
+          _tr.specialThread.poll.deadline(time: floor.publishTime!.add(const Duration(hours: 1)).yyyyMMDDHHMM()),
+          reason: 'offset $offset',
+        );
+      }
+    });
+
+    test("the poll read again after a vote takes the answer's timeoffset too", () {
+      final json = _json('special_v15_poll_single_before.json')..['timeoffset'] = 12;
+      // 1790885730 is 2026-10-01 20:15:30 UTC: 2026-10-02 08:15 at +12.
+      json['special'] = {...(json['special'] as Map<String, dynamic>), 'expiration': 1790885730, 'expired': 0};
+      final poll = PollRepository.pollOfApiAnswer(json, uid: (json['uid'] as num).toInt());
+      expect(poll.deadline, _tr.specialThread.poll.deadline(time: '2026-10-02 08:15'));
     });
 
     test("the thread page reads the special block's times with the answer's timeoffset", () {
@@ -940,6 +1016,67 @@ void main() {
       final profile = 'home.php?mod=space&uid=1103'.parseUrlToRoute()!;
       expect(profile.screenPath, ScreenPaths.profile);
       expect(profile.queryParameters, {'uid': '1103'});
+    });
+
+    group('the search it opens', () {
+      late AppDatabase db;
+      late SettingsRepository settings;
+      late _SearchAdapter adapter;
+
+      setUp(() async {
+        db = AppDatabase(NativeDatabase.memory());
+        final storage = StorageProvider(db, {}, {});
+        settings = SettingsRepository(storage);
+        adapter = _SearchAdapter();
+        getIt
+          ..registerSingleton<StorageProvider>(storage)
+          ..registerSingleton<SettingsRepository>(settings)
+          ..registerSingleton<NetErrorSaver>(NetErrorSaver())
+          ..registerSingleton<CookieProvider>(CookieProvider.buildEmpty())
+          ..registerFactory<CookieProvider>(CookieProvider.buildEmpty, instanceName: ServiceKeys.empty)
+          ..registerFactory<NetClientProvider>(
+            () => NetClientProvider.build(dio: Dio(BaseOptions(baseUrl: baseUrl))..httpClientAdapter = adapter),
+          );
+        await settings.init();
+      });
+      tearDown(() async {
+        await getIt.reset();
+        await settings.dispose();
+        await db.close();
+      });
+
+      /// The search the route of [url] opens: the query of the request it sends.
+      Future<Map<String, String>> searchOf(WidgetTester tester, String url) async {
+        final route = url.parseUrlToRoute()!;
+        expect(route.screenPath, ScreenPaths.search);
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (_, _) => SearchPage(
+                authorUid: route.queryParameters['authorUid'],
+                authorName: route.queryParameters['authorName'],
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(TranslationProvider(child: MaterialApp.router(routerConfig: router)));
+        await _settle(tester);
+        return adapter.requests.single.queryParameters;
+      }
+
+      testWidgets('a member named by digits only is searched by name, not as a uid', (tester) async {
+        final query = await searchOf(tester, 'home.php?mod=space&username=12345&do=thread&view=me');
+        expect(query['srchuname'], '12345');
+        expect(query.containsKey('srchuid'), isFalse);
+      });
+
+      testWidgets('a member named by uid is searched by uid', (tester) async {
+        final query = await searchOf(tester, 'home.php?mod=space&uid=1103&do=thread&view=me');
+        expect(query['srchuid'], '1103');
+        expect(query.containsKey('srchuname'), isFalse);
+      });
     });
   });
 

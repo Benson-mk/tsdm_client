@@ -16,16 +16,16 @@ sealed class ThreadSpecial {
   /// The special block of an answer's `special` [value] with the answer's [formHash] and [viewerUid] (`uid`, 0 for a
   /// guest); null when there is none or its `type` is not one of the five.
   ///
-  /// [timeOffset] is the answer's `timeoffset`: the times the page prints as dates (the activity's time and deadline,
-  /// an application's time, the end of a debate) are the forum's wall clock with it, as the page prints them,
-  /// whatever the device's zone; the end of a poll, which the page prints as a countdown, stays the real instant.
+  /// [timeOffset] is the answer's `timeoffset`: the times the app shows as dates (the end of a poll, the activity's
+  /// time and deadline, an application's time, the end of a debate) are the forum's wall clock with it, as the page
+  /// prints them and as the floors' times are shown, whatever the device's zone.
   static ThreadSpecial? fromApi(Object? value, {String formHash = '', int viewerUid = 0, num timeOffset = 8}) {
     if (value is! Map<String, dynamic>) {
       return null;
     }
     final uid = viewerUid > 0 ? viewerUid : null;
     return switch (value['type']) {
-      'poll' => PollSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
+      'poll' => PollSpecial._fromApi(value, formHash: formHash, viewerUid: uid, timeOffset: timeOffset),
       'trade' => TradeSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
       'reward' => RewardSpecial._fromApi(value, formHash: formHash, viewerUid: uid),
       'activity' => ActivitySpecial._fromApi(value, formHash: formHash, viewerUid: uid, timeOffset: timeOffset),
@@ -397,9 +397,15 @@ final class PollSpecial extends ThreadSpecial {
     required this.votersUrl,
     required this.choices,
     required this.form,
+    this.expirationClock,
   });
 
-  factory PollSpecial._fromApi(Map<String, dynamic> m, {required String formHash, required int? viewerUid}) {
+  factory PollSpecial._fromApi(
+    Map<String, dynamic> m, {
+    required String formHash,
+    required int? viewerUid,
+    required num timeOffset,
+  }) {
     final form = m['form'];
     return PollSpecial(
       formHash: formHash,
@@ -410,6 +416,7 @@ final class PollSpecial extends ThreadSpecial {
       overt: _apiFlag(m['overt']),
       voters: _apiInt(m['voters']),
       expiration: _apiTime(m['expiration']),
+      expirationClock: _apiWallClock(m['expiration'], timeOffset),
       expired: _apiFlag(m['expired']),
       resultsVisible: _apiFlag(m['results_visible']),
       afterResult: _apiFlag(m['after_result']),
@@ -464,8 +471,12 @@ final class PollSpecial extends ThreadSpecial {
   /// Number of voters.
   final int voters;
 
-  /// End of the vote; null when it never ends.
+  /// End of the vote, the real instant; null when it never ends. Whether it ended is the forum's [expired].
   final DateTime? expiration;
+
+  /// End of the vote as the forum's wall clock (`timeoffset`), the date the card shows, on the same clock as the times
+  /// of the floors; null when it never ends.
+  final DateTime? expirationClock;
 
   /// The vote has ended.
   final bool expired;

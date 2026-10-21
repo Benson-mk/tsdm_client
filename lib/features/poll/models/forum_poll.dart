@@ -184,8 +184,8 @@ ForumPoll parseForumPoll(uh.Document document, {required bool loggedIn}) {
 /// The same [ForumPoll] [parseForumPoll] reads from `form#poll`, from the fields instead of the form: the choices in
 /// the forum's order with their number, the results only when the account may see them (`votes`/`percent` null
 /// until a vote of a poll showing its results after one), the limit of a multiple choice poll (`maxchoices`, the
-/// number of choices when the forum names none), the summary, the end and the public vote notice in the app's
-/// words. It is open for votes ([PollAvailability.available]) only when the forum says the account may vote
+/// number of choices when the forum names none), the summary, the end (the forum's wall clock,
+/// [PollSpecial.expirationClock], as the floors' times) and the public vote notice in the app's words. It is open for votes ([PollAvailability.available]) only when the forum says the account may vote
 /// (`can_vote`) and gives the form, whose action is the forum's `votepoll` (sent with `inajax=1`, as the page's
 /// ajaxpost); otherwise `why` tells it: voted, closed (also an archived thread), no permission. A form the app does
 /// not recognize fails closed ([PollAvailability.unsupported]).
@@ -208,7 +208,8 @@ ForumPoll forumPollFromSpecial(PollSpecial special, {required bool loggedIn}) {
     tr.voters(count: special.voters),
     if (special.afterResult) tr.afterResult,
   ].join(tr.separator);
-  final expiration = special.expiration;
+  // The end as the forum's clock, as the floors' times are shown; whether it ended is the forum's `expired`.
+  final expiration = special.expirationClock ?? special.expiration;
   final deadline = special.expired
       ? tr.ended
       : (expiration == null ? '' : tr.deadline(time: expiration.yyyyMMDDHHMM()));
