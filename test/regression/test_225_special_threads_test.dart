@@ -43,6 +43,8 @@ import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/shared/providers/cookie_provider/cookie_provider.dart';
 import 'package:tsdm_client/shared/providers/image_cache_provider/image_cache_provider.dart';
 import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider.dart';
+import 'package:tsdm_client/shared/providers/net_client_provider/net_client_provider_android.dart'
+    show singleAttemptHttpRequestKey;
 import 'package:tsdm_client/shared/providers/net_client_provider/net_error_saver.dart';
 import 'package:tsdm_client/shared/providers/providers.dart';
 import 'package:tsdm_client/shared/providers/storage_provider/models/database/database.dart';
@@ -77,6 +79,14 @@ T _special<T extends ThreadSpecial>(String name) => _page(name).special! as T;
 /// The first floor of the answer [json], as the answer gives it.
 Map<String, dynamic> _firstFloor(Map<String, dynamic> json) =>
     (json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((p) => p['first'] == 1);
+
+/// The fixture `special_v15_[name].json` as plugin 2.8.0 answered before it told the side taken on every debate page
+/// (`reply.stand`): only the first page's block tells it then (`special.reply_stand`).
+Map<String, dynamic> _withoutReplyStand(String name) {
+  final json = _json(name);
+  (json['reply'] as Map<String, dynamic>).remove('stand');
+  return json;
+}
 
 /// The thread id of the fixture [name].
 int _tid(String name) => (_json(name)['thread'] as Map<String, dynamic>)['tid'] as int;
@@ -465,7 +475,7 @@ void main() {
 
     test('debate: both sides, the verdict, the account vote, the umpire', () {
       final open = _special<DebateSpecial>('debate_open_member');
-      expect((open.affirmPoint, open.negaPoint), ('正方觀點 AFF_222088', '反方觀點 NEG_222088'));
+      expect((open.affirmPoint, open.negaPoint), ('正方觀點 AFF_925316', '反方觀點 NEG_925316'));
       expect((open.affirmVotes, open.negaVotes, open.affirmDebaters, open.negaDebaters), (1, 0, 1, 1));
       expect(open.affirmAvatars.single.username, 'ag_low');
       expect(open.negaAvatars.single.avatar, 'https://www.tsdm39.com/data/avatar/noavatar.svg');
@@ -479,7 +489,7 @@ void main() {
         (result.result?.winner, result.result?.umpirePoint, result.result?.bestDebater),
         (
           1,
-          '正方勝 UMPIRE_222088',
+          '正方勝 UMPIRE_925316',
           'ag_low',
         ),
       );
@@ -804,18 +814,18 @@ void main() {
       final tid = _tid('debate_open_member');
       String url(int pid) => 'https://www.tsdm39.com/forum.php?mod=misc&action=debatevote&tid=$tid&pid=$pid&inajax=1';
       final posts = _page('debate_open_member').postList;
-      expect(posts.map((e) => e.debateVoteRequest?.url), [null, url(5828), url(5829), null], reason: 'neutral: none');
+      expect(posts.map((e) => e.debateVoteRequest?.url), [null, url(6298), url(6299), null], reason: 'neutral: none');
       final support = posts[1].debateVoteRequest!;
       expect((support.method, support.viewerUid), (SpecialRequestMethod.get, 35));
       expect(support.doneKeys, {'debate_poll_succeed'});
       expect(support.fields, isEmpty);
       // The block names the same action.
-      expect((_page('debate_open_member').special! as DebateSpecial).votePostRequest(5828)!.url, url(5828));
+      expect((_page('debate_open_member').special! as DebateSpecial).votePostRequest(6298)!.url, url(6298));
 
       // A guest, one's own floor, an ended debate, a closed thread: none.
       expect(_page('debate_open_guest').postList.every((e) => e.debateVoteRequest == null), isTrue);
       final own = _json('debate_open_member')..['uid'] = 31;
-      expect(threadPageFromApi(own, 1).postList.map((e) => e.debateVoteRequest?.url), [null, null, url(5829), null]);
+      expect(threadPageFromApi(own, 1).postList.map((e) => e.debateVoteRequest?.url), [null, null, url(6299), null]);
       expect(_page('debate_ended_result').postList.every((e) => e.debateVoteRequest == null), isTrue);
       final closed = _json('debate_open_member');
       (closed['thread'] as Map<String, dynamic>)['closed'] = 1;
@@ -826,7 +836,7 @@ void main() {
       final otherTid = _tid('debate_no_first_floor');
       expect(
         other.debateVoteRequest!.url,
-        'https://www.tsdm39.com/forum.php?mod=misc&action=debatevote&tid=$otherTid&pid=5828&inajax=1',
+        'https://www.tsdm39.com/forum.php?mod=misc&action=debatevote&tid=$otherTid&pid=6298&inajax=1',
       );
       // Not a debate: none.
       for (final name in ['reward_resolved', 'poll_single_before', 'activity_open_member']) {
@@ -843,15 +853,18 @@ void main() {
       );
       expect(debate.replyStand, 0);
       expect(debate.replySides, [0, 1, 2]);
-      expect((page.replyParameters!.debate, page.replyParameters!.debateStand), (true, null));
+      // The first page tells "none taken yet" (0), which nothing carried over may override.
+      expect((page.replyParameters!.debate, page.replyParameters!.debateStand), (true, 0));
 
-      final taken = _json('debate_open_member');
+      // An answer before `reply.stand`: the first page's block tells the side taken.
+      final taken = _withoutReplyStand('debate_open_member');
       (taken['special'] as Map<String, dynamic>)['reply_stand'] = 2;
       final takenPage = threadPageFromApi(taken, 1);
       expect((takenPage.special! as DebateSpecial).replySides, [2]);
       expect(takenPage.replyParameters!.debateStand, 2);
-      // Another page tells nothing of it: the side known from the first page is kept, for the same thread only.
-      final next = _page('debate_no_first_floor').replyParameters!;
+      // Another page of such an answer tells nothing of it: the side known from the first page is kept, for the same
+      // thread only.
+      final next = threadPageFromApi(_withoutReplyStand('debate_no_first_floor'), 1).replyParameters!;
       expect((next.debate, next.debateStand), (true, null));
       expect(withKnownDebateStand(next, takenPage.replyParameters)?.debateStand, 2);
       expect(withKnownDebateStand(next, next.copyWith(tid: '1', debateStand: 1))?.debateStand, isNull);
@@ -893,7 +906,7 @@ void main() {
       final floor = await repository
           .replyToPost(
             replyParameters: parameters,
-            replyAction: 'forum.php?mod=post&action=reply&fid=2&tid=${parameters.tid}&repquote=5828&extra=&page=1',
+            replyAction: 'forum.php?mod=post&action=reply&fid=2&tid=${parameters.tid}&repquote=6298&extra=&page=1',
             replyMessage: 'hi',
             stand: 2,
           )
@@ -920,7 +933,7 @@ void main() {
         ('reward_bestanswer_action', _page('reward_open_author').postList[1].bestAnswerRequest!.doneKeys, '最佳答案设置成功'),
         ('debate_vote_action', debate.voteRequest(1)!.doneKeys, '投票成功'),
         // A floor's support is the same action and answer (`debate_poll_succeed`).
-        ('debate_vote_action', debate.votePostRequest(5828)!.doneKeys, '投票成功'),
+        ('debate_vote_action', debate.votePostRequest(6298)!.doneKeys, '投票成功'),
       ]) {
         final outcome = specialActionOutcomeOf(_json(name), doneKeys: keys);
         expect(outcome, isA<SpecialActionDone>(), reason: name);
@@ -960,18 +973,48 @@ void main() {
     test('a refusal the forum answers with its success hook (a link to go on to) is refused', () {
       // debatevote.php refuses one's own floor, a second support and an ended debate with a link back to the thread:
       // Discuz then calls the AJAX success hook (`alert_info`), which the plugin passes as `ok` 1.
-      final support = _special<DebateSpecial>('debate_open_member').votePostRequest(5828)!;
+      final support = _special<DebateSpecial>('debate_open_member').votePostRequest(6298)!;
       for (final (key, message) in [
         ('debate_poll_myself', '抱歉，您不能给自己投票'),
-        ('debate_poll_voted', '您已投过票'),
         ('debate_poll_end', '抱歉，投票已结束，不能再投票'),
       ]) {
         final answer = {..._json('debate_vote_action'), 'message': message, 'message_key': key, 'alert': 'info'};
         expect(tsdmAppWriteResultOf(answer)!.succeeded, isTrue, reason: 'the plugin calls it ok');
-        final outcome = specialActionOutcomeOf(answer, doneKeys: support.doneKeys);
+        final outcome = specialActionOutcomeOf(
+          answer,
+          doneKeys: support.doneKeys,
+          alreadyKeys: support.alreadyKeys,
+        );
         expect(outcome, isA<SpecialActionRefused>(), reason: key);
         expect((outcome as SpecialActionRefused).message, message);
       }
+      // "Voted already" is told as done, in the forum's words, both as the success hook (a floor's support) and as
+      // the error hook (the vote for a side): a vote the transport sent twice, or a page read before the vote.
+      final vote = _special<DebateSpecial>('debate_open_member').voteRequest(1)!;
+      for (final (request, answer) in [
+        (
+          support,
+          {..._json('debate_vote_action'), 'message': '您已投过票', 'message_key': 'debate_poll_voted', 'alert': 'info'},
+        ),
+        (
+          vote,
+          {
+            ..._json('debate_vote_action'),
+            'ok': 0,
+            'message': '您已投过票',
+            'message_key': 'debate_poll_voted',
+            'alert': 'error',
+          },
+        ),
+      ]) {
+        expect(request.alreadyKeys, {'debate_poll_voted'});
+        final outcome = specialActionOutcomeOf(answer, doneKeys: request.doneKeys, alreadyKeys: request.alreadyKeys);
+        expect(outcome, isA<SpecialActionDone>());
+        expect((outcome as SpecialActionDone).message, '您已投过票');
+      }
+      // Not for the other actions.
+      final best = _page('reward_open_author').postList[1].bestAnswerRequest!;
+      expect(best.alreadyKeys, isEmpty);
       // A success the forum shows as one, whatever its key; plain text without a key tells nothing.
       expect(
         specialActionOutcomeOf({..._json('debate_vote_action'), 'message_key': 'other_succeed'}, doneKeys: const {}),
@@ -1080,6 +1123,247 @@ void main() {
         expect(cubit.adoptSpecial(_special('poll_single_before')), isFalse);
         expect(cubit.adoptSpecial(_special('poll_multi_mod')), isTrue);
       });
+    });
+  });
+
+  group('H. the review', () {
+    test('H1: the side of a debate is never carried to another account; the first page tells "none" as 0', () {
+      final a = _withoutReplyStand('debate_open_member');
+      (a['special'] as Map<String, dynamic>)['reply_stand'] = 1;
+      final pageA = threadPageFromApi(a, 1);
+      expect((pageA.replyParameters!.debateStand, pageA.replyParameters!.viewerUid), (1, 35));
+
+      // Account B (uid 31) reloads the same first page: it took no side, and nothing overrides that.
+      final b = _json('debate_open_member')..['uid'] = 31;
+      final pageB = threadPageFromApi(b, 1);
+      expect(pageB.replyParameters!.debateStand, 0);
+      expect(withKnownDebateStand(pageB.replyParameters, pageA.replyParameters)?.debateStand, 0);
+
+      // Another page tells nothing (an answer without `reply.stand`): A's side stays A's.
+      final bNext = _withoutReplyStand('debate_no_first_floor')..['uid'] = 31;
+      final nextB = threadPageFromApi(bNext, 2).replyParameters!;
+      expect((nextB.debateStand, nextB.viewerUid), (null, 31));
+      expect(withKnownDebateStand(nextB, pageA.replyParameters)?.debateStand, isNull);
+      final nextA = threadPageFromApi(_withoutReplyStand('debate_no_first_floor'), 2).replyParameters!;
+      expect(withKnownDebateStand(nextA, pageA.replyParameters)?.debateStand, 1, reason: 'the same account');
+      // "None taken" is not carried: the account may have replied on a side since.
+      expect(withKnownDebateStand(nextA, pageB.replyParameters!.copyWith(viewerUid: 35))?.debateStand, isNull);
+      // A guest page carries nothing.
+      expect(withKnownDebateStand(nextA.copyWith(viewerUid: null), pageA.replyParameters)?.debateStand, isNull);
+    });
+
+    test('M2: `reply.stand` on every debate page is the side taken, first page or not', () {
+      // Page 2 of a debate (no block): ag_low argued on the affirmative side, ag_low2 never replied.
+      final argued = _page('debate_p2_argued');
+      expect((argued.currentPage, argued.special), (2, null));
+      expect(
+        (argued.replyParameters!.debate, argued.replyParameters!.debateStand, argued.replyParameters!.viewerUid),
+        (
+          true,
+          1,
+          31,
+        ),
+      );
+      final fresh = _page('debate_p2_new').replyParameters!;
+      expect((fresh.debateStand, fresh.viewerUid), (0, 35));
+      // Told on the page: nothing is carried over it, whatever an earlier page of the same account said.
+      expect(withKnownDebateStand(fresh, fresh.copyWith(debateStand: 2)), same(fresh));
+      // The first page tells it too, and it wins over the block's `reply_stand`.
+      final first = _json('debate_open_member');
+      (first['special'] as Map<String, dynamic>)['reply_stand'] = 2;
+      expect(threadPageFromApi(first, 1).replyParameters!.debateStand, 0);
+      // Not a debate: the key is absent, nothing.
+      final reward = _json('reward_resolved');
+      expect((reward['reply'] as Map<String, dynamic>).containsKey('stand'), isFalse);
+      expect(threadPageFromApi(reward, 1).replyParameters!.debateStand, isNull);
+
+      // The support of a floor's side on such a page: the forum's per-floor link, not on one's own floor.
+      final tid = _tid('debate_p2_new');
+      expect(
+        _page('debate_p2_new').postList.map((e) => e.debateVoteRequest?.url),
+        [null, null, 'https://www.tsdm39.com/forum.php?mod=misc&action=debatevote&tid=$tid&pid=6316&inajax=1'],
+      );
+      expect(argued.postList.every((e) => e.debateVoteRequest == null), isTrue, reason: "ag_low's own floor");
+    });
+
+    String firstBody(Map<String, dynamic> json) =>
+        (json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((p) => p['first'] == 1)['body_html'] as String;
+    String firstPid(Map<String, dynamic> json) =>
+        '${(json['posts'] as List).cast<Map<String, dynamic>>().firstWhere((p) => p['first'] == 1)['pid']}';
+
+    test('H2: html left unclosed inside a block never takes the content with it: the floor stays as it was', () {
+      // A plugin hook's unclosed div inside the activity's details.
+      final activity = _json('activity_open_member');
+      final hooked = firstBody(activity).replaceFirst('<div class="spi">', '<div class="spi"><div class="hookx">');
+      expect(
+        bodyHtmlWithoutSpecialBlock(hooked, _special('activity_open_member'), pid: firstPid(activity)),
+        hooked,
+      );
+      // An [align=center] in the umpire's point is a <div align> the forum leaves open.
+      final debate = _json('debate_ended_result');
+      final aligned = firstBody(debate).replaceFirst(
+        '<strong>正方勝</strong> UMPIRE_925316',
+        '<div align="center"><strong>正方勝</strong> UMPIRE_925316',
+      );
+      expect(bodyHtmlWithoutSpecialBlock(aligned, _special('debate_ended_result'), pid: firstPid(debate)), aligned);
+      // Through the page as well: the content is shown, beside the card.
+      final page = _json('debate_ended_result');
+      (page['posts'] as List).cast<Map<String, dynamic>>().firstWhere((p) => p['first'] == 1)['body_html'] = aligned;
+      expect(threadPageFromApi(page, 1).postList.first.data, contains('D2_BODY_925316'));
+    });
+
+    test('H2: emoji and CRLF before the block: offsets kept, the block cut, the rest as it was', () {
+      final json = _json('debate_open_member');
+      final body = firstBody(json).replaceFirst('辯論 D1_BODY', '😀😀\r\n辯論\r D1_BODY');
+      final out = bodyHtmlWithoutSpecialBlock(body, _special('debate_open_member'), pid: firstPid(json));
+      expect(out, isNot(body));
+      expect(out, contains('😀😀\r\n辯論\r D1_BODY'));
+      for (final mark in ['class="ds"', 'class="dr"', 'class="dtm"']) {
+        expect(out, isNot(contains(mark)));
+      }
+      expect(out, endsWith(body.substring(body.indexOf('<div id="comment_'))));
+    });
+
+    test("low: only the template's own scripts and blocks go: other plugins' blocks, a pollplus notice stay", () {
+      // A plugin's own top level script and block beside the poll, and pollplus's notice inside the form.
+      final poll = _json('poll_single_before');
+      final pid = firstPid(poll);
+      final body = firstBody(poll)
+          .replaceFirst(
+            '<form id="poll"',
+            '<script type="text/javascript">var otherPlugin = 1;</script>\n<form id="poll"',
+          )
+          .replaceFirst('<div class="pinf">', '<div class="pollplus_tip">投票结果锁定中</div><div class="pinf">')
+          .replaceFirst('<div id="comment_', '<div class="locked">OTHER_LOCK</div><div id="comment_');
+      final out = bodyHtmlWithoutSpecialBlock(body, _special('poll_single_before'), pid: pid);
+      expect(out, isNot(contains('id="poll"')));
+      expect(out, contains('<div class="pollplus_tip">投票结果锁定中</div>'));
+      expect(out, contains('var otherPlugin = 1;'), reason: 'not the script the template prints before its form');
+      expect(out, contains('OTHER_LOCK'));
+      // The template's script right before the form goes (the multiple choice limit).
+      final multi = _json('poll_multi_hidden');
+      final multiOut = bodyHtmlWithoutSpecialBlock(
+        firstBody(multi),
+        _special('poll_multi_hidden'),
+        pid: firstPid(multi),
+      );
+      expect(multiOut, isNot(contains('max_obj')));
+      expect(multiOut, isNot(contains('<script')));
+
+      // A trade thread with goods keeps a div.locked; only the "本柜台无商品" of one without goods goes.
+      final trade = _special<TradeSpecial>('trade_author');
+      final lock = [
+        '<div class="pcbs"><table><tr><td class="t_f" id="postmessage_9">x</td></tr></table>',
+        '<div class="locked">本柜台无商品</div></div>',
+      ].join();
+      expect(bodyHtmlWithoutSpecialBlock(lock, trade, pid: '9'), contains('本柜台无商品'));
+      expect(bodyHtmlWithoutSpecialBlock(lock, _special('trade_authorid_filter'), pid: '9'), isNot(contains('本柜台')));
+      // An activity's other plugin block styled like the lists, without their table, stays.
+      final activity = _json('activity_open_member');
+      final other = firstBody(activity).replaceFirst(
+        '<div id="comment_',
+        '<div class="ptm pbm xs1">PLUGIN_LIST</div><div id="comment_',
+      );
+      expect(
+        bodyHtmlWithoutSpecialBlock(other, _special('activity_open_member'), pid: firstPid(activity)),
+        contains('PLUGIN_LIST'),
+      );
+    });
+
+    test(
+      'M1: a choice field the forum prints itself (no choices: gender, birthday…) sends the application to the web',
+      () {
+        final json = _json('activity_open_member');
+        final apply = (json['special'] as Map<String, dynamic>)['apply'] as Map<String, dynamic>;
+        (apply['inputs'] as List).insert(2, {
+          'name': 'gender',
+          'title': '性别',
+          'type': 'select',
+          'required': 1,
+          'value': '1',
+          'choices': <Object>[],
+          'html': '<select name="gender"><option value="1">男</option></select>',
+        });
+        final activity = threadPageFromApi(json, 1).special! as ActivitySpecial;
+        expect(activity.apply!.inputs[2].drawn, isFalse);
+        expect(activity.applyNeedsWeb, isTrue);
+        expect(activity.applyRequest({}), isNull);
+        for (final type in ['radio', 'checkbox']) {
+          expect(
+            const SpecialFormInput(
+              name: 'x',
+              title: '',
+              type: 'x',
+              required: false,
+              value: '',
+              choices: [],
+              html: '',
+            ).drawn,
+            isFalse,
+          );
+          expect(
+            SpecialFormInput(
+              name: 'x',
+              title: '',
+              type: type,
+              required: false,
+              value: '',
+              choices: const [],
+              html: '',
+            ).drawn,
+            isFalse,
+            reason: type,
+          );
+        }
+      },
+    );
+
+    test('low: the debate vote GET is sent once (no transport retry, no redirect)', () async {
+      getIt.registerSingleton<NetErrorSaver>(NetErrorSaver());
+      addTearDown(getIt.reset);
+      final adapter = _RecordingAdapter(_json('debate_vote_action'));
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+      final repository = SpecialThreadRepository.network(
+        NetClientProvider.buildNoCookie(dio: dio, cookie: CookieProvider.buildEmpty()),
+      );
+      await repository.submit(_special<DebateSpecial>('debate_open_member').voteRequest(1)!);
+      await repository.submit(_page('debate_open_member').postList[1].debateVoteRequest!);
+      for (final request in adapter.requests) {
+        expect(request.method, 'GET');
+        expect(request.extra[singleAttemptHttpRequestKey], isTrue);
+        expect(request.followRedirects, isFalse);
+      }
+    });
+
+    test('low: the thread author accepts an answer on the other pages too, with the forum form of that page', () {
+      final json = _json('reward_open_author')
+        ..['special'] = null
+        ..['page'] = 2;
+      final tid = _tid('reward_open_author');
+      final posts = threadPageFromApi(json, 2).postList;
+      expect(posts.map((e) => e.bestAnswerRequest?.url), [
+        null,
+        'https://www.tsdm39.com/forum.php?mod=misc&action=bestanswer&tid=$tid&pid=5801&from=&bestanswersubmit=yes',
+        'https://www.tsdm39.com/forum.php?mod=misc&action=bestanswer&tid=$tid&pid=5802&from=&bestanswersubmit=yes',
+      ]);
+      expect(posts[1].bestAnswerRequest!.fields, {
+        'formhash': 'f1f2f3f4',
+        'optgroup': '',
+        'operation': '',
+        'listextra': 'page%3D2',
+        'page': '2',
+      });
+      // Not for a member, a resolved bounty, an anonymous floor or one's own floor.
+      final member = _json('reward_open_member')..['special'] = null;
+      expect(threadPageFromApi(member, 2).postList.every((e) => e.bestAnswerRequest == null), isTrue);
+      final resolved = _json('reward_open_author')..['special'] = null;
+      (resolved['thread'] as Map<String, dynamic>)['price'] = -2;
+      expect(threadPageFromApi(resolved, 2).postList.every((e) => e.bestAnswerRequest == null), isTrue);
+      final anonymous = _json('reward_open_author')..['special'] = null;
+      ((anonymous['posts'] as List)[1] as Map<String, dynamic>)['anonymous'] = 1;
+      ((anonymous['posts'] as List)[2] as Map<String, dynamic>)['authorid'] = 35;
+      expect(threadPageFromApi(anonymous, 2).postList.every((e) => e.bestAnswerRequest == null), isTrue);
     });
   });
 
@@ -1238,23 +1522,23 @@ void main() {
 
     testWidgets('debate: both sides, the verdict, voting asks first, a refusal stays in the card', (tester) async {
       final tr = t.specialThread.debate;
-      await pump(tester, SpecialThreadCard(_special('debate_ended_result'), pid: '5831', onReload: () {}));
+      await pump(tester, SpecialThreadCard(_special('debate_ended_result'), pid: '6301', onReload: () {}));
       expect(find.text(tr.winnerAffirm), findsOneWidget);
-      expect(find.textContaining('正方勝 UMPIRE_222088'), findsOneWidget);
-      expect(find.text('正方觀點 AFF_222088'), findsOneWidget);
+      expect(find.textContaining('正方勝 UMPIRE_925316'), findsOneWidget);
+      expect(find.text('正方觀點 AFF_925316'), findsOneWidget);
       expect(find.text(tr.voteFor(side: tr.affirm)), findsNothing, reason: 'ended');
 
       final refusing = _FakeSpecialRepository({
         ..._json('debate_vote_action'),
         'ok': 0,
-        'message': '您已经投过票了',
-        'message_key': 'debate_poll_voted',
+        'message': '抱歉，投票已结束，不能再投票',
+        'message_key': 'debate_poll_end',
         'alert': 'error',
       });
       var reloads = 0;
       await pump(
         tester,
-        SpecialThreadCard(_special('debate_open_member'), pid: '5827', onReload: () => reloads++),
+        SpecialThreadCard(_special('debate_open_member'), pid: '6297', onReload: () => reloads++),
         repository: refusing.repository,
       );
       expect(find.text(tr.votes(count: 1)), findsOneWidget);
@@ -1262,13 +1546,13 @@ void main() {
       await tester.tap(find.text(tr.voteFor(side: tr.nega)));
       await confirm(tester);
       expect(refusing.sent.single.url, contains('&stand=2&inajax=1'));
-      expect(find.text('您已经投过票了'), findsOneWidget);
+      expect(find.text('抱歉，投票已结束，不能再投票'), findsOneWidget);
       expect(reloads, 0);
 
       final done = _FakeSpecialRepository(_json('debate_vote_action'));
       await pump(
         tester,
-        SpecialThreadCard(_special('debate_open_member'), pid: '5827', onReload: () => reloads++),
+        SpecialThreadCard(_special('debate_open_member'), pid: '6297', onReload: () => reloads++),
         repository: done.repository,
       );
       await tester.tap(find.text(tr.voteFor(side: tr.affirm)));
@@ -1276,7 +1560,7 @@ void main() {
       expect(done.sent.single.method, SpecialRequestMethod.get);
       expect(reloads, 1);
 
-      await pump(tester, SpecialThreadCard(_special('debate_umpire_voted'), pid: '5827', onReload: () {}));
+      await pump(tester, SpecialThreadCard(_special('debate_umpire_voted'), pid: '6297', onReload: () {}));
       expect(find.text(tr.umpireAction), findsOneWidget);
       expect(find.text(tr.voteFor(side: tr.affirm)), findsNothing, reason: 'voted already');
     });
@@ -1356,7 +1640,7 @@ void main() {
       final joined = <int>[];
       await pump(
         tester,
-        SpecialThreadCard(_special('debate_open_member'), pid: '5827', onReload: () {}, onJoinDebate: joined.add),
+        SpecialThreadCard(_special('debate_open_member'), pid: '6297', onReload: () {}, onJoinDebate: joined.add),
       );
       await tester.tap(find.text(tr.join(side: tr.nega)));
       await tester.tap(find.text(tr.join(side: tr.affirm)));
@@ -1366,7 +1650,7 @@ void main() {
       (taken['special'] as Map<String, dynamic>)['reply_stand'] = 1;
       await pump(
         tester,
-        SpecialThreadCard(threadPageFromApi(taken, 1).special!, pid: '5827', onReload: () {}, onJoinDebate: joined.add),
+        SpecialThreadCard(threadPageFromApi(taken, 1).special!, pid: '6297', onReload: () {}, onJoinDebate: joined.add),
       );
       expect(find.text(tr.join(side: tr.affirm)), findsOneWidget);
       expect(find.text(tr.join(side: tr.nega)), findsNothing);
@@ -1377,7 +1661,7 @@ void main() {
         ('debate_open_guest', joined.add),
         ('debate_open_member', null),
       ]) {
-        await pump(tester, SpecialThreadCard(_special(name), pid: '5827', onReload: () {}, onJoinDebate: join));
+        await pump(tester, SpecialThreadCard(_special(name), pid: '6297', onReload: () {}, onJoinDebate: join));
         expect(find.text(tr.join(side: tr.affirm)), findsNothing, reason: name);
       }
     });
@@ -1412,8 +1696,8 @@ void main() {
 
       final refusing = _FakeSpecialRepository({
         ..._json('debate_vote_action'),
-        'message': '您已投过票',
-        'message_key': 'debate_poll_voted',
+        'message': '抱歉，您不能给自己投票',
+        'message_key': 'debate_poll_myself',
         'alert': 'info',
       });
       await pump(tester, SpecialFloorBadges(floor, onReload: () => reloads++), repository: refusing.repository);
@@ -1421,6 +1705,18 @@ void main() {
       await confirm(tester);
       expect(refusing.sent, hasLength(1));
       expect(reloads, 1, reason: 'refused: nothing to reload');
+
+      // Supported already (the request went out twice, or the page is old): the page is read again.
+      final already = _FakeSpecialRepository({
+        ..._json('debate_vote_action'),
+        'message': '您已投过票',
+        'message_key': 'debate_poll_voted',
+        'alert': 'info',
+      });
+      await pump(tester, SpecialFloorBadges(floor, onReload: () => reloads++), repository: already.repository);
+      await tester.tap(find.text(tr.support));
+      await confirm(tester);
+      expect(reloads, 2);
 
       // Without a thread page: the badge only.
       await pump(tester, SpecialFloorBadges(floor));
@@ -1444,6 +1740,85 @@ void main() {
         author.votersUrl,
         'https://www.tsdm39.com/forum.php?mod=misc&action=viewvote&tid=${_tid('poll_single_author')}',
       );
+    });
+    testWidgets('review: the hidden answer says why; an application the app cannot fill goes to the browser', (
+      tester,
+    ) async {
+      final tr = t.specialThread;
+      for (final (name, text) in [
+        ('reward_best_banned', tr.reward.hiddenBanned),
+        ('reward_best_password', tr.reward.hiddenPassword),
+        ('reward_resolved_hide_excerpt', tr.reward.hiddenHide),
+        ('reward_resolved_hiddenreply_locked', tr.reward.hiddenLocked),
+      ]) {
+        await pump(tester, SpecialThreadCard(_special(name), pid: '1'));
+        expect(find.text(text), findsOneWidget, reason: name);
+      }
+
+      final json = _json('activity_open_member');
+      final apply = (json['special'] as Map<String, dynamic>)['apply'] as Map<String, dynamic>;
+      (apply['inputs'] as List).insert(2, {
+        'name': 'birthday',
+        'title': '生日',
+        'type': 'select',
+        'required': 1,
+        'value': '',
+        'choices': <Object>[],
+        'html': '',
+      });
+      await pump(
+        tester,
+        SpecialThreadCard(
+          threadPageFromApi(json, 1).special!,
+          pid: '5824',
+          onReload: () {},
+          webUrl: 'https://www.tsdm39.com/forum.php?mod=viewthread&tid=1',
+        ),
+      );
+      expect(find.text(tr.activity.needsWeb), findsOneWidget);
+      expect(find.text(tr.activity.applyOnWeb), findsOneWidget);
+      expect(find.text(tr.activity.join), findsNothing);
+      // The avatars asked of the (offline) forum end.
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('review: the side a page does not tell is offered with a note; check boxes prefilled from a, b', (
+      tester,
+    ) async {
+      final tr = t.specialThread.debate;
+      await pump(tester, DebateStandSelector(value: 0, unknown: true, onChanged: (_) {}));
+      expect(find.text(tr.sideKeptNote), findsOneWidget);
+      await pump(tester, DebateStandSelector(value: 0, onChanged: (_) {}));
+      expect(find.text(tr.sideKeptNote), findsNothing);
+
+      await pump(
+        tester,
+        const SpecialFormDialog(
+          title: 'x',
+          icon: Icons.add,
+          submitLabel: 'ok',
+          inputs: [
+            SpecialFormInput(
+              name: 'hobby',
+              title: '愛好',
+              type: 'checkbox',
+              required: false,
+              value: 'a,c',
+              choices: [
+                SpecialFormChoice(value: 'a', label: 'A'),
+                SpecialFormChoice(value: 'b', label: 'B'),
+                SpecialFormChoice(value: 'c', label: 'C'),
+              ],
+              html: '',
+            ),
+          ],
+        ),
+      );
+      expect(tester.widgetList<CheckboxListTile>(find.byType(CheckboxListTile)).map((e) => e.value), [
+        true,
+        false,
+        true,
+      ]);
     });
   });
 

@@ -58,7 +58,8 @@ object HttpClient {
         return wantsImage || headers.keys.any { it.equals("X-Pm-Formhash", ignoreCase = true) }
     }
 
-    suspend fun get(url: String, headers: HashMap<String, String>): Response {
+    // A GET that writes (the forum's AJAX menus, a debate vote) is never replayed either: singleAttempt.
+    suspend fun get(url: String, headers: HashMap<String, String>, singleAttempt: Boolean = false): Response {
         val request = Request.Builder()
             .url(url)
             .headers(Headers.headersOf(*headers.toList().flatMap { listOf(it.first, it.second) }.toTypedArray()))
@@ -67,7 +68,7 @@ object HttpClient {
 
         return withContext(Dispatchers.IO) {
             try {
-                pick(needsMoreTime(url, headers), false).newCall(request).execute()
+                pick(needsMoreTime(url, headers), singleAttempt).newCall(request).execute()
             } catch (e: Exception) {
                 throw e
             }

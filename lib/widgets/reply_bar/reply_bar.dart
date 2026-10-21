@@ -568,7 +568,8 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
     if (parameters == null || !parameters.debate) {
       return null;
     }
-    return parameters.debateStand ?? widget.controller._debateStand ?? 0;
+    final taken = parameters.debateStand;
+    return taken == 1 || taken == 2 ? taken : (widget.controller._debateStand ?? 0);
   }
 
   /// The side of the next debate reply was chosen elsewhere ([ReplyBarController.debateStand]).
@@ -587,7 +588,8 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
     return Padding(
       padding: edgeInsetsL12T8R12,
       child: DebateStandSelector(
-        fixed: parameters.debateStand,
+        fixed: parameters.debateStand == 1 || parameters.debateStand == 2 ? parameters.debateStand : null,
+        unknown: parameters.debateStand == null,
         value: widget.controller._debateStand ?? 0,
         onChanged: (stand) => setState(() => widget.controller._debateStand = stand),
       ),

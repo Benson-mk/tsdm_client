@@ -38,12 +38,16 @@ final class SpecialActionUnknown extends SpecialActionOutcome {
 /// The outcome of the forum's answer [data] to an action ([specialOutcomeOfResult]); a `page` (the forum printed
 /// something else) and an answer without a result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]) tell
 /// nothing.
-SpecialActionOutcome specialActionOutcomeOf(Object? data, {required Set<String> doneKeys}) {
+SpecialActionOutcome specialActionOutcomeOf(
+  Object? data, {
+  required Set<String> doneKeys,
+  Set<String> alreadyKeys = const {},
+}) {
   final result = tsdmAppWriteResultOf(data);
   if (result == null || result.kind == TsdmAppWriteKind.page) {
     return const SpecialActionUnknown();
   }
-  return specialOutcomeOfResult(result, doneKeys: doneKeys);
+  return specialOutcomeOfResult(result, doneKeys: doneKeys, alreadyKeys: alreadyKeys);
 }
 
 /// The outcome of the forum's [result] (a `handle`, `message` or `redirect`) of an action done with one of the
@@ -55,8 +59,18 @@ SpecialActionOutcome specialActionOutcomeOf(Object? data, {required Set<String> 
 /// redirect). The forum also goes on to the thread with some refusals (`debate_poll_voted`, `debate_poll_myself`:
 /// the AJAX success hook with a link, `alert` info), which the plugin passes as `ok` 1: another key is refused with
 /// the forum's message. Plain text without a key tells nothing.
-SpecialActionOutcome specialOutcomeOfResult(TsdmAppWriteResult result, {required Set<String> doneKeys}) {
+///
+/// A key of [alreadyKeys] (`debate_poll_voted`) is done as well, with the forum's words: the action was done before,
+/// by a request the transport sent twice or from a page read before it; the page read again shows it.
+SpecialActionOutcome specialOutcomeOfResult(
+  TsdmAppWriteResult result, {
+  required Set<String> doneKeys,
+  Set<String> alreadyKeys = const {},
+}) {
   final refused = SpecialActionRefused(result.reason.isEmpty ? t.specialThread.refused : result.reason);
+  if (alreadyKeys.contains(result.messageKey) && !result.login) {
+    return SpecialActionDone(result.message.isEmpty ? t.specialThread.already : result.message);
+  }
   if (!result.succeeded) {
     return refused;
   }
@@ -81,7 +95,8 @@ final class SpecialThreadRepository {
     send: (request) async {
       final call = switch (request.method) {
         SpecialRequestMethod.post => client.postForm(request.url, data: request.fields, singleAttempt: true),
-        SpecialRequestMethod.get => client.get(withTsdmAppJsonWrite(request.url)),
+        // A write all the same: sent once, never replayed by the transport.
+        SpecialRequestMethod.get => client.get(withTsdmAppJsonWrite(request.url), singleAttempt: true),
       };
       return switch (await call.run()) {
         Right(:final value) => value.data,
@@ -102,6 +117,6 @@ final class SpecialThreadRepository {
       talker.warning('special thread action failed: $request: $e');
       return const SpecialActionUnknown();
     }
-    return specialActionOutcomeOf(data, doneKeys: request.doneKeys);
+    return specialActionOutcomeOf(data, doneKeys: request.doneKeys, alreadyKeys: request.alreadyKeys);
   }
 }

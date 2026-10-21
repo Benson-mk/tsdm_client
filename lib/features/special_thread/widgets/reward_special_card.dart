@@ -108,7 +108,16 @@ class _RewardCard extends StatelessWidget {
                           children: [
                             Text(tr.hiddenContent, style: textTheme.titleSmall),
                             Text(
-                              best.excerptReason == 'locked' ? tr.hiddenLocked : tr.hiddenOther,
+                              switch (best.excerptReason) {
+                                'locked' => tr.hiddenLocked,
+                                'hide' => tr.hiddenHide,
+                                'password' => tr.hiddenPassword,
+                                'banned' => tr.hiddenBanned,
+                                'moderate' => tr.hiddenModerate,
+                                'json' || 'imgcontent' => tr.hiddenFormat,
+                                'spoofed' => tr.hiddenSpoofed,
+                                _ => tr.hiddenOther,
+                              },
                               style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
                             ),
                           ],

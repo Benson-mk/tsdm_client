@@ -2459,13 +2459,19 @@
       "anonymous": "匿名",
       "hiddenContent": "隱藏內容",
       "hiddenLocked": "此帖的回覆僅作者可見。",
-      "hiddenOther": "最佳答案含有隱藏內容，請到該樓查看。",
+      "hiddenOther": "最佳答案的內容不顯示，請到該樓查看。",
       "jumpToFloor": "跳到該樓",
       "setBestHint": "在回答的樓層點「設為最佳答案」即可採納。",
       "setBest": "設為最佳答案",
       "setBestConfirmTitle": "設為最佳答案",
       "setBestConfirm": "要採納這一樓為最佳答案嗎？懸賞會付給該樓作者，設定後不能更改。",
-      "badge": "最佳答案"
+      "badge": "最佳答案",
+      "hiddenHide": "最佳答案含有隱藏內容，請到該樓查看。",
+      "hiddenPassword": "最佳答案是密碼帖，請到該樓查看。",
+      "hiddenBanned": "最佳答案的作者已被禁言，內容不顯示。",
+      "hiddenModerate": "最佳答案仍在審核中。",
+      "hiddenFormat": "App 無法摘錄這則答案，請到該樓查看。",
+      "hiddenSpoofed": "最佳答案那一樓的內容無法顯示。"
     },
     "activity": {
       "title": "活動",
@@ -2507,7 +2513,8 @@
       "required": "必填",
       "payValue": "支付金額（元）",
       "needsWeb": "這個活動的報名表有 App 無法填寫的欄位，請在網頁上報名。",
-      "fillRequired": "請先填寫必填欄位。"
+      "fillRequired": "請先填寫必填欄位。",
+      "applyOnWeb": "在瀏覽器報名"
     },
     "debate": {
       "title": "辯論",
@@ -2536,7 +2543,8 @@
       "fixedSide": "你的觀點是${side}（與你第一次發言相同）",
       "support": "支持",
       "supportConfirmTitle": "支持這一樓",
-      "supportConfirm": "要支持這一樓的觀點嗎？每一樓只能支持一次。"
+      "supportConfirm": "要支持這一樓的觀點嗎？每一樓只能支持一次。",
+      "sideKeptNote": "若你已在某一方發言，論壇會沿用那一方。"
     },
     "trade": {
       "title": "商品",
@@ -2553,6 +2561,7 @@
       "manage": "商品排序",
       "add": "添加商品",
       "openHint": "購買、數量與運費在瀏覽器的商品頁辦理。"
-    }
+    },
+    "already": "之前已經完成。"
   }
 }

@@ -57,6 +57,7 @@ final class SpecialRequest {
     required this.fields,
     required this.viewerUid,
     required this.doneKeys,
+    this.alreadyKeys = const {},
   });
 
   /// GET or POST.
@@ -70,6 +71,10 @@ final class SpecialRequest {
 
   /// The account the form belongs to (the page's), null for a guest.
   final int? viewerUid;
+
+  /// The forum's language keys saying the action was done already (`debate_poll_voted`): a request the transport
+  /// sent twice, or a page read before the action, is told as done, with the forum's words, not as a refusal.
+  final Set<String> alreadyKeys;
 
   /// The forum's language keys of a done action (`reward_completion`, `debate_poll_succeed`…). The forum goes on to
   /// a page with some refusals too (`debate_poll_voted` with a link is the AJAX success hook, `alert` info), so a
@@ -226,7 +231,10 @@ final class SpecialFormInput {
   final String html;
 
   /// The app draws this field ([drawnTypes]).
-  bool get drawn => drawnTypes.contains(type);
+  ///
+  /// A select, radio or check box field without choices is not: the forum's `profile_setting()` prints some fields
+  /// (gender, birthday, birth and living place) with choices of its own, given only in [html].
+  bool get drawn => drawnTypes.contains(type) && (type == 'text' || type == 'textarea' || choices.isNotEmpty);
 }
 
 /// A form of the forum: `action`, `method`, the hidden `fields` (the form hash is the page's) and the `inputs` to fill.
@@ -778,20 +786,10 @@ final class RewardSpecial extends ThreadSpecial {
   /// The request accepting floor [pid] as the answer; null when the account may not accept that floor.
   SpecialRequest? bestAnswerRequest(int pid) {
     final form = setBest;
-    if (!canSetBest || form == null || form.method != 'POST' || !form.pids.contains(pid) || formHash.isEmpty) {
+    if (!canSetBest || form == null || !form.pids.contains(pid)) {
       return null;
     }
-    final url = _specialActionUrl(form.actionTemplate.replaceAll('{pid}', '$pid'), 'bestanswer');
-    if (url == null || Uri.parse(url).queryParameters['pid'] != '$pid') {
-      return null;
-    }
-    return SpecialRequest(
-      method: SpecialRequestMethod.post,
-      url: url,
-      fields: {'formhash': formHash, ...form.fields},
-      viewerUid: viewerUid,
-      doneKeys: const {'reward_completion'},
-    );
+    return rewardBestAnswerRequest(form, pid, formHash: formHash, viewerUid: viewerUid);
   }
 }
 
@@ -1264,6 +1262,7 @@ final class DebateSpecial extends ThreadSpecial {
       fields: const {},
       viewerUid: viewerUid,
       doneKeys: const {'debate_poll_succeed'},
+      alreadyKeys: const {'debate_poll_voted'},
     );
   }
 }
@@ -1289,5 +1288,31 @@ SpecialRequest? debateVotePostRequest(SpecialActionTemplate? template, int pid, 
     fields: const {},
     viewerUid: viewerUid,
     doneKeys: const {'debate_poll_succeed'},
+    alreadyKeys: const {'debate_poll_voted'},
+  );
+}
+
+/// Accepting floor [pid] as the answer of a bounty with the form [form] (the page's `form#modactions` posted to
+/// `bestanswer`, `{pid}`), for the account [viewerUid] with the page's [formHash]; null without a form the app
+/// recognizes or a form hash.
+SpecialRequest? rewardBestAnswerRequest(
+  RewardSetBest form,
+  int pid, {
+  required String formHash,
+  required int? viewerUid,
+}) {
+  if (form.method != 'POST' || pid <= 0 || formHash.isEmpty) {
+    return null;
+  }
+  final url = _specialActionUrl(form.actionTemplate.replaceAll('{pid}', '$pid'), 'bestanswer');
+  if (url == null || Uri.parse(url).queryParameters['pid'] != '$pid') {
+    return null;
+  }
+  return SpecialRequest(
+    method: SpecialRequestMethod.post,
+    url: url,
+    fields: {'formhash': formHash, ...form.fields},
+    viewerUid: viewerUid,
+    doneKeys: const {'reward_completion'},
   );
 }

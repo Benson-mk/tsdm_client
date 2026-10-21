@@ -15,6 +15,7 @@ class ReplyParameters with ReplyParametersMappable {
     required this.subject,
     this.debate = false,
     this.debateStand,
+    this.viewerUid,
   });
 
   /// Forum id.
@@ -36,7 +37,12 @@ class ReplyParameters with ReplyParametersMappable {
   /// reply forms ask while the account took none.
   final bool debate;
 
-  /// The side the account took in the debate with its first reply (1 or 2), which the forum keeps for every later
-  /// reply; null while it took none or the page does not tell (plugin 2.8.0, `special.reply_stand`, first page only).
+  /// The side the account took in the debate with its first reply, as the forum tells it: 1 or 2 (the forum keeps it
+  /// for every later reply), 0 none taken yet; null when the page does not tell (plugin 2.8.0: `reply.stand` on every
+  /// debate page, or `special.reply_stand` on the first page only before it).
   final int? debateStand;
+
+  /// The account the page was served to (the answer's `uid`), null for a guest or a page that does not say: the side
+  /// of a debate belongs to it ([debateStand]).
+  final int? viewerUid;
 }

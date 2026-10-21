@@ -2459,13 +2459,19 @@
       "anonymous": "Anonymous",
       "hiddenContent": "Hidden content",
       "hiddenLocked": "Replies in this thread are shown to their authors only.",
-      "hiddenOther": "The answer has hidden content; read it on its floor.",
+      "hiddenOther": "The answer's content is not shown; read it on its floor.",
       "jumpToFloor": "Go to the floor",
       "setBestHint": "Accept an answer with “Set as best answer” on its floor.",
       "setBest": "Set as best answer",
       "setBestConfirmTitle": "Set as best answer",
       "setBestConfirm": "Accept this floor as the best answer? The bounty goes to its author and the choice cannot be changed.",
-      "badge": "Best answer"
+      "badge": "Best answer",
+      "hiddenHide": "The answer has hidden content; read it on its floor.",
+      "hiddenPassword": "The answer is password protected; read it on its floor.",
+      "hiddenBanned": "The answer's author is banned; its content is not shown.",
+      "hiddenModerate": "The answer is waiting for moderation.",
+      "hiddenFormat": "The app cannot quote this answer; read it on its floor.",
+      "hiddenSpoofed": "The answer's floor cannot be shown."
     },
     "activity": {
       "title": "Activity",
@@ -2507,7 +2513,8 @@
       "required": "Required",
       "payValue": "Amount (yuan)",
       "needsWeb": "This application asks for fields the app cannot fill. Apply on the web page.",
-      "fillRequired": "Fill in the required fields first."
+      "fillRequired": "Fill in the required fields first.",
+      "applyOnWeb": "Apply in the browser"
     },
     "debate": {
       "title": "Debate",
@@ -2536,7 +2543,8 @@
       "fixedSide": "You reply on the $side side, as with your first reply",
       "support": "Support",
       "supportConfirmTitle": "Support this floor",
-      "supportConfirm": "Support this floor's side? A floor can only be supported once."
+      "supportConfirm": "Support this floor's side? A floor can only be supported once.",
+      "sideKeptNote": "If you already replied on a side, the forum keeps that side."
     },
     "trade": {
       "title": "Goods",
@@ -2553,6 +2561,7 @@
       "manage": "Sort goods",
       "add": "Add goods",
       "openHint": "Buying, quantity and shipping are on the goods page in the browser."
-    }
+    },
+    "already": "Done already."
   }
 }

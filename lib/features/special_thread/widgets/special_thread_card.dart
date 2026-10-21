@@ -42,7 +42,14 @@ part 'trade_special_card.dart';
 /// itself as before.
 class SpecialThreadCard extends StatelessWidget {
   /// Constructor.
-  const SpecialThreadCard(this.special, {required this.pid, this.onReload, this.onJoinDebate, super.key});
+  const SpecialThreadCard(
+    this.special, {
+    required this.pid,
+    this.onReload,
+    this.onJoinDebate,
+    this.webUrl,
+    super.key,
+  });
 
   /// The block.
   final ThreadSpecial special;
@@ -56,6 +63,9 @@ class SpecialThreadCard extends StatelessWidget {
   /// Reply on side `stand` of the debate (the reply bar with the side chosen); null where the account cannot reply.
   final void Function(int stand)? onJoinDebate;
 
+  /// The thread on the web page (the first floor's share link), for what the app cannot do itself.
+  final String? webUrl;
+
   /// Whether the card goes above the floor's content: the web page prints the bounty and the activity details before
   /// the content, the poll, the goods and the debate's sides after it.
   static bool aboveContent(ThreadSpecial special) => special is RewardSpecial || special is ActivitySpecial;
@@ -65,7 +75,7 @@ class SpecialThreadCard extends StatelessWidget {
     final PollSpecial poll => PollCard(pid, fromSpecial: poll, onVoted: onReload),
     final TradeSpecial trade => _TradeCard(trade),
     final RewardSpecial reward => _RewardCard(reward),
-    final ActivitySpecial activity => _ActivityCard(activity, onReload: onReload),
+    final ActivitySpecial activity => _ActivityCard(activity, onReload: onReload, webUrl: webUrl),
     final DebateSpecial debate => _DebateCard(debate, onReload: onReload, onJoin: onJoinDebate),
   };
 }

@@ -117,37 +117,50 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
 
   // The placeholder a rush thread prints for a deleted floor (`deleted` 1: "无效楼层，该帖已经被删除", no author, no
   // content) is left out, as the page parser leaves out a floor without an author.
-  final postList = _list(json['posts'])
-      .where((p) => _int(p['deleted']) != 1)
-      .map(
-        (p) => _withSpecial(
-          Post.fromApi(
-            p,
-            tid: tid ?? '',
-            fid: fid ?? 0,
-            viewerUid: uid,
-            page: currentPage,
-            pay: pay,
-            draft: draft,
-            codes: json['codes'],
-            smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
-            threadSpecial: _int(thread['special']),
-          ),
-          special,
-          first: _int(p['first']) == 1,
-        ),
-      )
-      .map(
-        (post) => _withDebateVote(
-          post,
-          special,
-          tid: tidValue,
-          viewerUid: uid,
-          debate: _int(thread['special']) == 5,
-          closed: _int(thread['closed']) != 0,
-        ),
-      )
-      .toList();
+  final bestAnswerForm = special == null ? _rewardBestAnswerFormOf(thread, viewerUid: uid, page: currentPage) : null;
+  final postList = _list(json['posts']).where((p) => _int(p['deleted']) != 1).map((p) {
+    final first = _int(p['first']) == 1;
+    var post = Post.fromApi(
+      p,
+      tid: tid ?? '',
+      fid: fid ?? 0,
+      viewerUid: uid,
+      page: currentPage,
+      pay: pay,
+      draft: draft,
+      codes: json['codes'],
+      smiliesVersion: json['smilies_version'] is String ? json['smilies_version'] as String : null,
+      threadSpecial: _int(thread['special']),
+    );
+    post = _withSpecial(post, special, first: first);
+    post = _withDebateVote(
+      post,
+      special,
+      tid: tidValue,
+      viewerUid: uid,
+      debate: _int(thread['special']) == 5,
+      closed: _int(thread['closed']) != 0,
+    );
+    // A page without the bounty's block (another page than the first): the thread's author accepts on the floors the
+    // forum's own form takes ([_rewardBestAnswerFormOf]).
+    if (bestAnswerForm != null &&
+        !first &&
+        _int(p['invisible']) == 0 &&
+        _int(p['anonymous']) == 0 &&
+        _int(p['authorid']) > 0 &&
+        _int(p['authorid']) != uid) {
+      final request = rewardBestAnswerRequest(
+        bestAnswerForm,
+        _int(p['pid']),
+        formHash: _text(json['formhash']),
+        viewerUid: uid,
+      );
+      if (request != null) {
+        post = post.copyWith(bestAnswerRequest: request);
+      }
+    }
+    return post;
+  }).toList();
 
   final typeId = _int(thread['typeid']);
   final typeName = _text(thread['typename']);
@@ -162,7 +175,8 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
           formHash: formHash,
           subject: _text(reply['subject']),
           debate: _int(thread['special']) == 5,
-          debateStand: special is DebateSpecial && special.replyStand != 0 ? special.replyStand : null,
+          debateStand: _int(thread['special']) == 5 ? _debateStandOf(reply, special) : null,
+          viewerUid: uid > 0 ? uid : null,
         )
       : null;
 
@@ -270,6 +284,28 @@ Post _withDebateVote(
   return request == null ? post : post.copyWith(debateVoteRequest: request);
 }
 
+/// The forum's "设为最佳答案" form for the floors of an open bounty of the account in use ([viewerUid]), on a page
+/// without the bounty's block (plugin 2.8.0 gives `set_best` with the first floor only): the thread's author of a
+/// bounty not resolved yet (`thread.price` above 0) posts the page's `form#modactions` (`optgroup`, `operation`,
+/// `listextra`, `page` of page [page]) to `bestanswer` for a floor, as on the first page. Null otherwise; a moderator
+/// accepting an old bounty does it on the first page or the web page, the forum refusing anything else anyway.
+RewardSetBest? _rewardBestAnswerFormOf(Map<String, dynamic> thread, {required int viewerUid, required int page}) {
+  final tid = _int(thread['tid']);
+  if (_int(thread['special']) != 3 ||
+      _int(thread['price']) <= 0 ||
+      viewerUid <= 0 ||
+      _int(thread['authorid']) != viewerUid ||
+      tid <= 0) {
+    return null;
+  }
+  return RewardSetBest(
+    actionTemplate: 'forum.php?mod=misc&action=bestanswer&tid=$tid&pid={pid}&from=&bestanswersubmit=yes',
+    method: 'POST',
+    fields: {'optgroup': '', 'operation': '', 'listextra': 'page%3D$page', 'page': '$page'},
+    pids: const [],
+  );
+}
+
 /// The forum's "支持" link of a floor of debate [tid] (`viewthread_node`), as plugin 2.8.0 gives it in `vote_post`.
 SpecialActionTemplate _debateVotePostOf(int tid) => SpecialActionTemplate(
   actionTemplate: 'forum.php?mod=misc&action=debatevote&tid=$tid&pid={pid}',
@@ -277,15 +313,36 @@ SpecialActionTemplate _debateVotePostOf(int tid) => SpecialActionTemplate(
   fields: const {'inajax': '1'},
 );
 
+/// The side of the debate the account took, as the page tells it: `reply.stand` (the forum's `firststand` on every
+/// debate page, 0 none taken), or on the first page of an answer without it `special.reply_stand` (0 none taken
+/// too); null when the page does not tell (another page of an answer without `reply.stand`).
+int? _debateStandOf(Map<String, dynamic> reply, ThreadSpecial? special) {
+  if (reply['stand'] is num) {
+    final stand = _int(reply['stand']);
+    return stand == 1 || stand == 2 ? stand : 0;
+  }
+  return special is DebateSpecial ? special.replyStand : null;
+}
+
 /// The reply parameters of a page just read ([next]) keeping the side of a debate the account took that an earlier
-/// page of the same thread told ([previous]): only the first page tells it (plugin 2.8.0, `special.reply_stand`), and
-/// the forum keeps it for every reply, so the reply bar keeps showing it on the other pages.
+/// page of the same thread told ([previous]), when this page does not tell it ([ReplyParameters.debateStand] null:
+/// an answer without `reply.stand`, past the first page).
+///
+/// Only a side taken (1 or 2) is kept, which the forum keeps for every later reply; "none taken yet" is not, the
+/// account may have replied on a side since. Only for the same account ([ReplyParameters.viewerUid]): the side of one
+/// account sent with another's reply would bind that one to it for good.
 ReplyParameters? withKnownDebateStand(ReplyParameters? next, ReplyParameters? previous) {
-  if (next == null || !next.debate || next.debateStand != null || previous?.tid != next.tid) {
+  if (next == null ||
+      previous == null ||
+      !next.debate ||
+      next.debateStand != null ||
+      previous.tid != next.tid ||
+      next.viewerUid == null ||
+      previous.viewerUid != next.viewerUid) {
     return next;
   }
-  final stand = previous?.debateStand;
-  return stand == null ? next : next.copyWith(debateStand: stand);
+  final stand = previous.debateStand;
+  return stand == 1 || stand == 2 ? next.copyWith(debateStand: stand) : next;
 }
 
 /// The account a structured answer [json] ([threadApiAnswerOf]) was served to: its `uid`, null for a guest (0) and

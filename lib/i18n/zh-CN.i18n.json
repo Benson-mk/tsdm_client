@@ -2459,13 +2459,19 @@
       "anonymous": "匿名",
       "hiddenContent": "隐藏内容",
       "hiddenLocked": "此帖的回复仅作者可见。",
-      "hiddenOther": "最佳答案含有隐藏内容，请到该楼查看。",
+      "hiddenOther": "最佳答案的内容不显示，请到该楼查看。",
       "jumpToFloor": "跳到该楼",
       "setBestHint": "在回答的楼层点「设为最佳答案」即可采纳。",
       "setBest": "设为最佳答案",
       "setBestConfirmTitle": "设为最佳答案",
       "setBestConfirm": "要采纳这一楼为最佳答案吗？悬赏会付给该楼作者，设定后不能更改。",
-      "badge": "最佳答案"
+      "badge": "最佳答案",
+      "hiddenHide": "最佳答案含有隐藏内容，请到该楼查看。",
+      "hiddenPassword": "最佳答案是密码帖，请到该楼查看。",
+      "hiddenBanned": "最佳答案的作者已被禁言，内容不显示。",
+      "hiddenModerate": "最佳答案仍在审核中。",
+      "hiddenFormat": "App 无法摘录这则答案，请到该楼查看。",
+      "hiddenSpoofed": "最佳答案那一楼的内容无法显示。"
     },
     "activity": {
       "title": "活动",
@@ -2507,7 +2513,8 @@
       "required": "必填",
       "payValue": "支付金额（元）",
       "needsWeb": "这个活动的报名表有 App 无法填写的栏位，请在网页上报名。",
-      "fillRequired": "请先填写必填栏位。"
+      "fillRequired": "请先填写必填栏位。",
+      "applyOnWeb": "在浏览器报名"
     },
     "debate": {
       "title": "辩论",
@@ -2536,7 +2543,8 @@
       "fixedSide": "你的观点是${side}（与你第一次发言相同）",
       "support": "支持",
       "supportConfirmTitle": "支持这一楼",
-      "supportConfirm": "要支持这一楼的观点吗？每一楼只能支持一次。"
+      "supportConfirm": "要支持这一楼的观点吗？每一楼只能支持一次。",
+      "sideKeptNote": "若你已在某一方发言，论坛会沿用那一方。"
     },
     "trade": {
       "title": "商品",
@@ -2553,6 +2561,7 @@
       "manage": "商品排序",
       "add": "添加商品",
       "openHint": "购买、数量与运费在浏览器的商品页办理。"
-    }
+    },
+    "already": "之前已经完成。"
   }
 }

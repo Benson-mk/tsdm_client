@@ -73,7 +73,8 @@ class _SpecialFormDialogState extends State<SpecialFormDialog> {
         case 'select' || 'radio':
           _choices[input.name] = input.choices.any((c) => c.value == input.value) ? input.value : null;
         case 'checkbox':
-          final values = input.value.split(RegExp(r'[\n\r]+')).map((e) => e.trim()).toSet();
+          // The forum keeps several values as one text joined by commas (`implode(',')`).
+          final values = input.value.split(RegExp(r'[,\n\r]+')).map((e) => e.trim()).toSet();
           _checks[input.name] = {
             for (final c in input.choices)
               if (values.contains(c.value)) c.value,

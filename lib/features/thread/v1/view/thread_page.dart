@@ -202,6 +202,8 @@ class _ThreadPageState extends State<ThreadPage> with SingleTickerProviderStateM
   /// one. A page asking to log in reloads as well: the new account may see the thread. A load still pending for the
   /// previous account (opening, refresh, jump, load more) is superseded by the reload and dropped (see [ThreadBloc]).
   void _reloadForAccount() {
+    // The side chosen for a debate reply was the previous account's choice.
+    _replyBarController.debateStand = null;
     final bloc = _threadBloc;
     if (!mounted || bloc == null || bloc.isClosed) {
       return;

@@ -4,10 +4,13 @@ part of 'special_thread_card.dart';
 /// field it asks drawn by [showSpecialFormDialog]; a form with a field the app cannot draw goes to the web page),
 /// cancelling with a reason, managing (the web page), and the applicants the page shows.
 class _ActivityCard extends StatefulWidget {
-  const _ActivityCard(this.activity, {required this.onReload});
+  const _ActivityCard(this.activity, {required this.onReload, required this.webUrl});
 
   final ActivitySpecial activity;
   final VoidCallback? onReload;
+
+  /// The thread on the web page, for an application the app cannot fill.
+  final String? webUrl;
 
   @override
   State<_ActivityCard> createState() => _ActivityCardState();
@@ -182,6 +185,12 @@ class _ActivityCardState extends State<_ActivityCard> with _SpecialActions {
                     onPressed: _busy ? null : _apply,
                     icon: const Icon(Icons.how_to_reg_outlined),
                     label: Text(a.applyMode == 'complete' ? tr.complete : tr.join),
+                  ),
+                if (a.canApply && a.applyNeedsWeb && widget.webUrl != null)
+                  FilledButton.tonalIcon(
+                    onPressed: () async => _openInBrowser(context, widget.webUrl!),
+                    icon: const Icon(Icons.open_in_browser_outlined),
+                    label: Text(tr.applyOnWeb),
                   ),
                 if (a.canCancel && a.cancel != null)
                   OutlinedButton.icon(

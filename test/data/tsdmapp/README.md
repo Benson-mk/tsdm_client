@@ -66,7 +66,8 @@ floors; bounties open (the author, a member, a guest) and resolved, the accepted
 (replies only the author sees, `[hide]`, `[password]`, a banned author) or seen by the author or a moderator,
 anonymous; activities open, applied, accepted, asked to complete, closed, with credit enough or not, seen by the
 author and a guest; debates open (a member, a guest, the umpire), voted, ended with the umpire's verdict, without an
-end time, without the first floor) are copied from the plugin's 2.8.0 contract samples and scrubbed the same way (host,
+end time, without the first floor, page 2 for a member who argued on a side and for one who never replied, with the
+side taken in `reply.stand`) are copied from the plugin's 2.8.0 contract samples and scrubbed the same way (host,
 name, `formhash`, `reply.posttime` → `1700000000`, `thread.views` → `100`); only the cases the tests use are kept.
 `special_v15_*_action.json` are the results (`type: result`, plugin 2.6.0) of the real actions of the same run: a poll
 vote, an activity application and its cancel, a best answer and a debate vote;
