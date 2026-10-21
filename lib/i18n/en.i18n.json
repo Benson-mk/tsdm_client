@@ -1567,8 +1567,7 @@
     "loginRequired": "Sign in to vote.",
     "denied": "Your account cannot vote in this poll.",
     "unsupported": "This poll format cannot be voted on in the app. Open it in your browser.",
-    "unconfirmed": "The vote could not be confirmed. Check the refreshed forum state before trying again.",
-    "refused": "The forum did not accept the vote."
+    "unconfirmed": "The vote could not be confirmed. Check the refreshed forum state before trying again."
   },
   "pollCard": {
     "title": "Poll",
@@ -2448,7 +2447,8 @@
       "separator": ", ",
       "ended": "The poll has ended",
       "deadline": "Ends at $time",
-      "overt": "Others can see what you vote for."
+      "overt": "Others can see what you vote for.",
+      "viewVoters": "View voters"
     },
     "reward": {
       "title": "Bounty",
@@ -2529,7 +2529,14 @@
       "umpirePoint": "Umpire's view",
       "bestDebater": "Best debater: $name",
       "umpireAction": "Umpire",
-      "standVotes": "$count supporters"
+      "standVotes": "$count supporters",
+      "join": "Join the $side side",
+      "joinHint": "Replying on the $side side",
+      "replySide": "Your side",
+      "fixedSide": "You reply on the $side side, as with your first reply",
+      "support": "Support",
+      "supportConfirmTitle": "Support this floor",
+      "supportConfirm": "Support this floor's side? A floor can only be supported once."
     },
     "trade": {
       "title": "Goods",

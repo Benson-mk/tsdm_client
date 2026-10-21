@@ -35,21 +35,38 @@ final class SpecialActionUnknown extends SpecialActionOutcome {
   const SpecialActionUnknown();
 }
 
-/// The outcome of the forum's answer [data] to an action, from the result of its app API (plugin 2.6.0,
-/// [tsdmAppWriteResultOf]): a `handle`, `message` or `redirect` the forum calls a success (`ok` 1, not the login
-/// prompt: the poll's `thread_poll_succeed` redirect, the activity's `activity_completion` handler and
-/// `activity_cancel_success` page, the bounty's `reward_completion` note, the debate's `debate_poll_succeed`) is done,
-/// with the forum's message; any other is refused with [TsdmAppWriteResult.reason] (`reward_cant_operate`, the login
-/// prompt…). A `page` (the forum printed something else) and an answer without a result tell nothing.
-SpecialActionOutcome specialActionOutcomeOf(Object? data) {
+/// The outcome of the forum's answer [data] to an action ([specialOutcomeOfResult]); a `page` (the forum printed
+/// something else) and an answer without a result of the forum's app API (plugin 2.6.0, [tsdmAppWriteResultOf]) tell
+/// nothing.
+SpecialActionOutcome specialActionOutcomeOf(Object? data, {required Set<String> doneKeys}) {
   final result = tsdmAppWriteResultOf(data);
   if (result == null || result.kind == TsdmAppWriteKind.page) {
     return const SpecialActionUnknown();
   }
-  if (result.succeeded) {
+  return specialOutcomeOfResult(result, doneKeys: doneKeys);
+}
+
+/// The outcome of the forum's [result] (a `handle`, `message` or `redirect`) of an action done with one of the
+/// language keys [doneKeys] (the poll's `thread_poll_succeed`, the activity's `activity_completion` and
+/// `activity_cancel_success`, the bounty's `reward_completion`, the debate's `debate_poll_succeed`).
+///
+/// Refused when the forum says so (not `ok`, or the login prompt), with [TsdmAppWriteResult.reason]. Done when it
+/// answered one of [doneKeys], showed its message as a success (`alert` right), or went on without a message (a
+/// redirect). The forum also goes on to the thread with some refusals (`debate_poll_voted`, `debate_poll_myself`:
+/// the AJAX success hook with a link, `alert` info), which the plugin passes as `ok` 1: another key is refused with
+/// the forum's message. Plain text without a key tells nothing.
+SpecialActionOutcome specialOutcomeOfResult(TsdmAppWriteResult result, {required Set<String> doneKeys}) {
+  final refused = SpecialActionRefused(result.reason.isEmpty ? t.specialThread.refused : result.reason);
+  if (!result.succeeded) {
+    return refused;
+  }
+  final key = result.messageKey;
+  if (doneKeys.contains(key) ||
+      result.alert == 'right' ||
+      (key.isEmpty && result.message.isEmpty && result.kind == TsdmAppWriteKind.redirect)) {
     return SpecialActionDone(result.message);
   }
-  return SpecialActionRefused(result.reason.isEmpty ? t.specialThread.refused : result.reason);
+  return key.isEmpty ? const SpecialActionUnknown() : refused;
 }
 
 /// Sends the actions of the special blocks of a thread (plugin 2.8.0): the forms the forum's own page sends, with the
@@ -85,6 +102,6 @@ final class SpecialThreadRepository {
       talker.warning('special thread action failed: $request: $e');
       return const SpecialActionUnknown();
     }
-    return specialActionOutcomeOf(data);
+    return specialActionOutcomeOf(data, doneKeys: request.doneKeys);
   }
 }

@@ -47,10 +47,17 @@ enum SpecialRequestMethod {
 }
 
 /// One action of a special block, the way the forum's own page sends it: [url] on the forum's host (without the
-/// result parameter, which the transport adds) and the [fields] of the form, its form hash included.
+/// result parameter, which the transport adds) and the [fields] of the form, its form hash included; [doneKeys] are
+/// the language keys the forum says it did it with.
 final class SpecialRequest {
   /// Constructor.
-  const SpecialRequest({required this.method, required this.url, required this.fields, required this.viewerUid});
+  const SpecialRequest({
+    required this.method,
+    required this.url,
+    required this.fields,
+    required this.viewerUid,
+    required this.doneKeys,
+  });
 
   /// GET or POST.
   final SpecialRequestMethod method;
@@ -63,6 +70,11 @@ final class SpecialRequest {
 
   /// The account the form belongs to (the page's), null for a guest.
   final int? viewerUid;
+
+  /// The forum's language keys of a done action (`reward_completion`, `debate_poll_succeed`…). The forum goes on to
+  /// a page with some refusals too (`debate_poll_voted` with a link is the AJAX success hook, `alert` info), so a
+  /// result is only done with one of these, or shown as a success (`alert` right).
+  final Set<String> doneKeys;
 
   @override
   String toString() => 'SpecialRequest(${method.name} $url $fields)';
@@ -778,6 +790,7 @@ final class RewardSpecial extends ThreadSpecial {
       url: url,
       fields: {'formhash': formHash, ...form.fields},
       viewerUid: viewerUid,
+      doneKeys: const {'reward_completion'},
     );
   }
 }
@@ -1036,6 +1049,7 @@ final class ActivitySpecial extends ThreadSpecial {
       url: '$url&inajax=1',
       fields: fields,
       viewerUid: viewerUid,
+      doneKeys: const {'activity_completion'},
     );
   }
 
@@ -1058,6 +1072,7 @@ final class ActivitySpecial extends ThreadSpecial {
         for (final input in form.inputs) input.name: input.name == 'message' ? message : input.value,
       },
       viewerUid: viewerUid,
+      doneKeys: const {'activity_cancel_success'},
     );
   }
 }
@@ -1119,6 +1134,9 @@ final class DebateSpecial extends ThreadSpecial {
     required this.vote,
     required this.canUmpire,
     required this.umpireUrl,
+    this.votePost,
+    this.joinTemplate = '',
+    this.replyStand = 0,
   });
 
   factory DebateSpecial._fromApi(Map<String, dynamic> m, {required String formHash, required int? viewerUid}) {
@@ -1153,6 +1171,9 @@ final class DebateSpecial extends ThreadSpecial {
       vote: SpecialActionTemplate.fromApi(m['vote']),
       canUmpire: _apiFlag(m['can_umpire']),
       umpireUrl: _specialPageUrl(m['umpire_url']),
+      votePost: SpecialActionTemplate.fromApi(m['vote_post']),
+      joinTemplate: _apiText(m['join_template']),
+      replyStand: const {1, 2}.contains(_apiInt(m['reply_stand'])) ? _apiInt(m['reply_stand']) : 0,
     );
   }
 
@@ -1207,6 +1228,22 @@ final class DebateSpecial extends ThreadSpecial {
   /// The page to do it (absolute).
   final String? umpireUrl;
 
+  /// The support of a floor's side (the page's "支持 N" on each floor), `{pid}`; a GET like [vote].
+  final SpecialActionTemplate? votePost;
+
+  /// The reply joining a side (the page's "加入"), `{stand}`: the forum takes the side as the reply's `stand`.
+  final String joinTemplate;
+
+  /// The side the account took with its first reply (1 affirmative, 2 negative; the forum keeps every later reply on
+  /// it); 0 when it took none, or the forum did not tell (the fast reply is off or the thread closed).
+  final int replyStand;
+
+  /// The sides the account may still reply on: the one it took, or any (0 neutral, 1, 2) while it took none.
+  List<int> get replySides => replyStand == 0 ? const [0, 1, 2] : [replyStand];
+
+  /// Supporting the side of floor [pid] ([votePost]); null when there is no such action.
+  SpecialRequest? votePostRequest(int pid) => debateVotePostRequest(votePost, pid, viewerUid: viewerUid);
+
   /// The vote for side [stand] (1 affirmative, 2 negative), a GET as the page's ajaxmenu sends it (no form hash, the
   /// forum asks none); null when the account may not vote.
   SpecialRequest? voteRequest(int stand) {
@@ -1226,6 +1263,31 @@ final class DebateSpecial extends ThreadSpecial {
       url: query.isEmpty ? url : '$url&$query',
       fields: const {},
       viewerUid: viewerUid,
+      doneKeys: const {'debate_poll_succeed'},
     );
   }
+}
+
+/// The support of the side of floor [pid] of a debate with [template] (`vote_post`, `…&pid={pid}`, a GET with its
+/// fields in the query as the page's ajaxmenu sends it, no form hash), for the account [viewerUid]; null without a
+/// template the app recognizes, or for a guest. The forum refuses one's own floor (`debate_poll_myself`), a second
+/// support (`debate_poll_voted`), an ended debate and a closed thread with its message.
+SpecialRequest? debateVotePostRequest(SpecialActionTemplate? template, int pid, {required int? viewerUid}) {
+  if (template == null || template.method != 'GET' || pid <= 0 || viewerUid == null) {
+    return null;
+  }
+  final url = _specialActionUrl(template.actionTemplate.replaceAll('{pid}', '$pid'), 'debatevote');
+  if (url == null || Uri.parse(url).queryParameters['pid'] != '$pid') {
+    return null;
+  }
+  final query = template.fields.entries
+      .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+      .join('&');
+  return SpecialRequest(
+    method: SpecialRequestMethod.get,
+    url: query.isEmpty ? url : '$url&$query',
+    fields: const {},
+    viewerUid: viewerUid,
+    doneKeys: const {'debate_poll_succeed'},
+  );
 }

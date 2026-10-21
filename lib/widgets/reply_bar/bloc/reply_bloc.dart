@@ -107,6 +107,7 @@ class ReplyBloc extends Bloc<ReplyEvent, ReplyState> with LoggerMixin {
           replyParameters: event.replyParameters,
           replyAction: event.replyAction,
           replyMessage: event.replyMessage,
+          stand: event.stand,
         )
         .run();
     if (ret.isLeft()) {
@@ -122,7 +123,7 @@ class ReplyBloc extends Bloc<ReplyEvent, ReplyState> with LoggerMixin {
   Future<void> _onReplyToThreadRequested(ReplyToThreadRequested event, _Emit emit) async {
     emit(state.copyWith(status: ReplyStatus.loading));
     final ret = await _replyRepository
-        .replyToThread(replyParameters: event.replyParameters, replyMessage: event.replyMessage)
+        .replyToThread(replyParameters: event.replyParameters, replyMessage: event.replyMessage, stand: event.stand)
         .run();
     if (ret.isLeft()) {
       final err = ret.unwrapErr();

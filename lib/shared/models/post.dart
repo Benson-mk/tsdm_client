@@ -76,6 +76,7 @@ class Post with PostMappable {
     this.best = false,
     this.special,
     this.bestAnswerRequest,
+    this.debateVoteRequest,
   });
 
   /// Build a [Post] from a floor [p] of a structured thread page answer of the forum's app API (plugin 2.1.0,
@@ -411,6 +412,10 @@ class Post with PostMappable {
 
   /// Accepting this floor as the answer of the bounty, when the account may (the thread's author, plugin 2.8.0).
   final SpecialRequest? bestAnswerRequest;
+
+  /// Supporting this floor's side in a debate (the page's "支持 N"), for an account that is not its author (plugin
+  /// 2.8.0).
+  final SpecialRequest? debateVoteRequest;
 
   /// Build [Post] from [element] that has attribute id "post_$postID".
   ///

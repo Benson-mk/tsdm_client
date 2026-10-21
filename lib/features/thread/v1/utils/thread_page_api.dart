@@ -137,6 +137,16 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
           first: _int(p['first']) == 1,
         ),
       )
+      .map(
+        (post) => _withDebateVote(
+          post,
+          special,
+          tid: tidValue,
+          viewerUid: uid,
+          debate: _int(thread['special']) == 5,
+          closed: _int(thread['closed']) != 0,
+        ),
+      )
       .toList();
 
   final typeId = _int(thread['typeid']);
@@ -151,6 +161,8 @@ ThreadPageInfo threadPageFromApi(Map<String, dynamic> json, int pageNumber) {
           postTime: reply['posttime'] is String ? _text(reply['posttime']) : null,
           formHash: formHash,
           subject: _text(reply['subject']),
+          debate: _int(thread['special']) == 5,
+          debateStand: special is DebateSpecial && special.replyStand != 0 ? special.replyStand : null,
         )
       : null;
 
@@ -231,6 +243,49 @@ Post _withSpecial(Post post, ThreadSpecial? special, {required bool first}) {
     }
   }
   return post;
+}
+
+/// [post] with the support of its side in a [debate] ([Post.debateVoteRequest]): the page prints "支持 N" on every
+/// floor taking a side; the app offers it to an account that is not the floor's author ([viewerUid], none for a
+/// guest), in a thread not [closed] and a debate not ended, the forum refusing anything else anyway. The action is
+/// the block's `vote_post`; a page without the block (another page than the first, only one author's floors) has the
+/// forum's own link of the floor ([_debateVotePostOf]), the same action.
+Post _withDebateVote(
+  Post post,
+  ThreadSpecial? special, {
+  required int tid,
+  required int viewerUid,
+  required bool debate,
+  required bool closed,
+}) {
+  if (!debate || closed || viewerUid <= 0 || (post.stand != 1 && post.stand != 2) || post.author.uid == '$viewerUid') {
+    return post;
+  }
+  final template = switch (special) {
+    final DebateSpecial block => block.ended ? null : block.votePost,
+    null => tid > 0 ? _debateVotePostOf(tid) : null,
+    _ => null,
+  };
+  final request = debateVotePostRequest(template, int.tryParse(post.postID) ?? 0, viewerUid: viewerUid);
+  return request == null ? post : post.copyWith(debateVoteRequest: request);
+}
+
+/// The forum's "支持" link of a floor of debate [tid] (`viewthread_node`), as plugin 2.8.0 gives it in `vote_post`.
+SpecialActionTemplate _debateVotePostOf(int tid) => SpecialActionTemplate(
+  actionTemplate: 'forum.php?mod=misc&action=debatevote&tid=$tid&pid={pid}',
+  method: 'GET',
+  fields: const {'inajax': '1'},
+);
+
+/// The reply parameters of a page just read ([next]) keeping the side of a debate the account took that an earlier
+/// page of the same thread told ([previous]): only the first page tells it (plugin 2.8.0, `special.reply_stand`), and
+/// the forum keeps it for every reply, so the reply bar keeps showing it on the other pages.
+ReplyParameters? withKnownDebateStand(ReplyParameters? next, ReplyParameters? previous) {
+  if (next == null || !next.debate || next.debateStand != null || previous?.tid != next.tid) {
+    return next;
+  }
+  final stand = previous?.debateStand;
+  return stand == null ? next : next.copyWith(debateStand: stand);
 }
 
 /// The account a structured answer [json] ([threadApiAnswerOf]) was served to: its `uid`, null for a guest (0) and

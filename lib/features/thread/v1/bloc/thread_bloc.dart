@@ -6,6 +6,7 @@ import 'package:tsdm_client/features/forum/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/models/models.dart';
 import 'package:tsdm_client/features/thread/v1/repository/thread_repository.dart';
 import 'package:tsdm_client/features/thread/v1/utils/parse_thread_document.dart';
+import 'package:tsdm_client/features/thread/v1/utils/thread_page_api.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:tsdm_client/utils/logger.dart';
 import 'package:tsdm_client/widgets/card/post_card/post_medal_menu_info.dart';
@@ -310,7 +311,7 @@ class ThreadBloc extends Bloc<ThreadEvent, ThreadState> with LoggerMixin {
       // or for another account, GitHub #184 follow-up) would ask for no thread at all.
       tid: info.tid ?? state.tid,
       pid: state.pid,
-      replyParameters: info.replyParameters,
+      replyParameters: withKnownDebateStand(info.replyParameters, state.replyParameters),
       status: ThreadStatus.success,
       title: info.title ?? state.title,
       fid: info.fid,

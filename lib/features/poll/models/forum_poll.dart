@@ -55,6 +55,7 @@ final class ForumPoll {
     this.maxChoices,
     this.action,
     this.formHash,
+    this.votersUrl,
   });
 
   /// Current permission/state.
@@ -80,6 +81,10 @@ final class ForumPoll {
 
   /// CSRF token from the same page/session.
   final String? formHash;
+
+  /// The forum's page of the voters (plugin 2.8.0, `voters_url`), when the forum links it for the account; opened in
+  /// the browser.
+  final String? votersUrl;
 
   /// Whether [ids] is a valid selection for this exact form.
   bool accepts(Set<String> ids) =>
@@ -236,5 +241,6 @@ ForumPoll forumPollFromSpecial(PollSpecial special, {required bool loggedIn}) {
     maxChoices: maximum,
     action: valid ? action : null,
     formHash: special.formHash.isEmpty ? null : special.formHash,
+    votersUrl: special.canViewVoters ? special.votersUrl : null,
   );
 }

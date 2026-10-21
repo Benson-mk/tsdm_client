@@ -1,13 +1,15 @@
 part of 'special_thread_card.dart';
 
 /// The debate: the verdict when the umpire gave one, both sides with their point, votes, debaters and the side the
-/// account voted for, the share of the votes, voting (a GET, as the page's ajaxmenu), the end time and the umpire;
-/// the umpire's tools open the web page.
+/// account voted for, the share of the votes, voting (a GET, as the page's ajaxmenu), joining a side (the reply bar
+/// with the side, [onJoin]: only the side the account took once it replied on one), the end time and the umpire; the
+/// umpire's tools open the web page.
 class _DebateCard extends StatefulWidget {
-  const _DebateCard(this.debate, {required this.onReload});
+  const _DebateCard(this.debate, {required this.onReload, required this.onJoin});
 
   final DebateSpecial debate;
   final VoidCallback? onReload;
+  final void Function(int stand)? onJoin;
 
   @override
   State<_DebateCard> createState() => _DebateCardState();
@@ -43,6 +45,8 @@ class _DebateCardState extends State<_DebateCard> with _SpecialActions {
     final color = affirm ? colorScheme.primary : colorScheme.error;
     final avatars = affirm ? d.affirmAvatars : d.negaAvatars;
     final canVote = widget.onReload != null && d.voteRequest(stand) != null;
+    // The page's "加入": a reply on this side, while the debate runs; the forum keeps the side of a first reply.
+    final canJoin = widget.onJoin != null && d.viewerUid != null && !d.ended && d.replySides.contains(stand);
     return AppInsetBlock(
       color: colorScheme.surfaceContainerHigh,
       child: Column(
@@ -93,12 +97,25 @@ class _DebateCardState extends State<_DebateCard> with _SpecialActions {
               ],
             ),
           ],
-          if (canVote) ...[
+          if (canVote || canJoin) ...[
             sizedBoxW8H8,
-            FilledButton.tonalIcon(
-              onPressed: _busy ? null : () async => _vote(stand),
-              icon: const Icon(Icons.how_to_vote_outlined),
-              label: Text(tr.voteFor(side: affirm ? tr.affirm : tr.nega)),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (canVote)
+                  FilledButton.tonalIcon(
+                    onPressed: _busy ? null : () async => _vote(stand),
+                    icon: const Icon(Icons.how_to_vote_outlined),
+                    label: Text(tr.voteFor(side: affirm ? tr.affirm : tr.nega)),
+                  ),
+                if (canJoin)
+                  OutlinedButton.icon(
+                    onPressed: () => widget.onJoin!(stand),
+                    icon: const Icon(Icons.add_comment_outlined),
+                    label: Text(tr.join(side: affirm ? tr.affirm : tr.nega)),
+                  ),
+              ],
             ),
           ],
         ],

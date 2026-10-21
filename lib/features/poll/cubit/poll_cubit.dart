@@ -2,8 +2,8 @@ import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tsdm_client/features/poll/models/forum_poll.dart';
 import 'package:tsdm_client/features/poll/repository/poll_repository.dart';
+import 'package:tsdm_client/features/special_thread/repository/special_thread_repository.dart';
 import 'package:tsdm_client/features/tsdmapp/tsdmapp_api.dart';
-import 'package:tsdm_client/i18n/strings.g.dart';
 import 'package:tsdm_client/shared/models/models.dart';
 import 'package:universal_html/parsing.dart';
 
@@ -213,15 +213,17 @@ class PollCubit extends Cubit<PollState> {
     // thread page where there is one, a refusal is shown with the forum's words and the poll read again.
     String? refusal;
     if (result != null && result.kind != TsdmAppWriteKind.page) {
-      if (result.succeeded && onVoted != null) {
-        _awaitsReload = true;
-        onVoted!();
-        return;
-      }
-      if (!result.succeeded) {
-        refusal = result.reason.isEmpty ? t.pollVoting.refused : result.reason;
-        // The forum said no: the vote was not counted.
-        _votesSent.remove((snapshot.uid!, url));
+      switch (specialOutcomeOfResult(result, doneKeys: const {'thread_poll_succeed'})) {
+        case SpecialActionDone() when onVoted != null:
+          _awaitsReload = true;
+          onVoted!();
+          return;
+        case SpecialActionRefused(:final message):
+          refusal = message;
+          // The forum said no: the vote was not counted.
+          _votesSent.remove((snapshot.uid!, url));
+        case SpecialActionDone() || SpecialActionUnknown():
+          break;
       }
     }
     try {

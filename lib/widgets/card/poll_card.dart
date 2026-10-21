@@ -404,6 +404,12 @@ class _PollCardState extends State<PollCard> {
                   ),
                 if (poll?.availability == PollAvailability.loginRequired)
                   TextButton(onPressed: _login, child: Text(tr.loginRequired)),
+                if (poll?.votersUrl case final voters?)
+                  TextButton.icon(
+                    icon: const Icon(Icons.groups_outlined),
+                    label: Text(context.t.specialThread.poll.viewVoters),
+                    onPressed: () async => context.dispatchAsUrl(voters, external: true),
+                  ),
                 TextButton.icon(
                   onPressed: state.busy ? null : _cubit.load,
                   icon: const Icon(Icons.refresh),

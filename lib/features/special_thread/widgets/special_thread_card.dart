@@ -42,7 +42,7 @@ part 'trade_special_card.dart';
 /// itself as before.
 class SpecialThreadCard extends StatelessWidget {
   /// Constructor.
-  const SpecialThreadCard(this.special, {required this.pid, this.onReload, super.key});
+  const SpecialThreadCard(this.special, {required this.pid, this.onReload, this.onJoinDebate, super.key});
 
   /// The block.
   final ThreadSpecial special;
@@ -52,6 +52,9 @@ class SpecialThreadCard extends StatelessWidget {
 
   /// Reload the thread page after an action the forum did (or may have done).
   final VoidCallback? onReload;
+
+  /// Reply on side `stand` of the debate (the reply bar with the side chosen); null where the account cannot reply.
+  final void Function(int stand)? onJoinDebate;
 
   /// Whether the card goes above the floor's content: the web page prints the bounty and the activity details before
   /// the content, the poll, the goods and the debate's sides after it.
@@ -63,7 +66,7 @@ class SpecialThreadCard extends StatelessWidget {
     final TradeSpecial trade => _TradeCard(trade),
     final RewardSpecial reward => _RewardCard(reward),
     final ActivitySpecial activity => _ActivityCard(activity, onReload: onReload),
-    final DebateSpecial debate => _DebateCard(debate, onReload: onReload),
+    final DebateSpecial debate => _DebateCard(debate, onReload: onReload, onJoin: onJoinDebate),
   };
 }
 
@@ -181,24 +184,56 @@ class _SpecialBestAnswerButtonState extends State<SpecialBestAnswerButton> with 
 }
 
 /// What the page prints in a floor's header for a special thread: the accepted answer of a bounty ([Post.best]),
-/// the floor's side in a debate ([Post.stand]) with its supporters ([Post.standVotes]).
-class SpecialFloorBadges extends StatelessWidget {
+/// the floor's side in a debate ([Post.stand]) with its supporters ([Post.standVotes]), and the page's "支持" of that
+/// side ([Post.debateVoteRequest]: asks first, sends the forum's GET, reloads the thread page through [onReload]; none
+/// without a thread page above).
+class SpecialFloorBadges extends StatefulWidget {
   /// Constructor.
-  const SpecialFloorBadges(this.post, {super.key});
+  const SpecialFloorBadges(this.post, {this.onReload, super.key});
 
   /// The floor.
   final Post post;
+
+  /// Reload the thread page after supporting the floor's side.
+  final VoidCallback? onReload;
 
   /// Whether [post] has any badge.
   static bool any(Post post) => post.best || post.stand != null;
 
   @override
+  State<SpecialFloorBadges> createState() => _SpecialFloorBadgesState();
+}
+
+class _SpecialFloorBadgesState extends State<SpecialFloorBadges> with _SpecialActions {
+  @override
+  VoidCallback? get _reload => widget.onReload;
+
+  Future<void> _support(SpecialRequest request) async {
+    final tr = context.t.specialThread.debate;
+    final confirmed = await showQuestionDialog(
+      context: context,
+      title: tr.supportConfirmTitle,
+      message: tr.supportConfirm,
+    );
+    if (!mounted || !(confirmed ?? false)) {
+      return;
+    }
+    await _run(request);
+    if (mounted && _refusal != null) {
+      showSnackBar(context: context, message: _refusal!);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tr = context.t.specialThread;
     final colorScheme = Theme.of(context).colorScheme;
+    final post = widget.post;
+    final support = widget.onReload == null ? null : post.debateVoteRequest;
     return Wrap(
       spacing: 6,
       runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (post.best) _Badge(icon: Icons.verified, label: tr.reward.badge, color: colorScheme.tertiary),
         if (post.stand case final stand?)
@@ -221,6 +256,22 @@ class SpecialFloorBadges extends StatelessWidget {
               2 => colorScheme.error,
               _ => colorScheme.outline,
             },
+          ),
+        if (support != null)
+          SizedBox(
+            height: 28,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _busy ? null : () async => _support(support),
+              icon: _busy
+                  ? const SizedBox(width: 14, height: 14, child: CircularIndicator())
+                  : const Icon(Icons.thumb_up_alt_outlined, size: 16),
+              label: Text(tr.debate.support),
+            ),
           ),
       ],
     );

@@ -1567,8 +1567,7 @@
     "loginRequired": "登录后才能投票。",
     "denied": "当前帐号没有此投票的权限。",
     "unsupported": "此投票格式暂不支持在 App 内提交，请用浏览器打开。",
-    "unconfirmed": "未能确认投票结果，请先查看刷新后的论坛状态，再决定是否重试。",
-    "refused": "论坛没有接受这次投票。"
+    "unconfirmed": "未能确认投票结果，请先查看刷新后的论坛状态，再决定是否重试。"
   },
   "pollCard": {
     "title": "投票",
@@ -2448,7 +2447,8 @@
       "separator": "，",
       "ended": "投票已经结束",
       "deadline": "投票截止：$time",
-      "overt": "其他人可看到您的投票项目。"
+      "overt": "其他人可看到您的投票项目。",
+      "viewVoters": "查看投票参与人"
     },
     "reward": {
       "title": "悬赏",
@@ -2529,7 +2529,14 @@
       "umpirePoint": "裁判观点",
       "bestDebater": "最佳辩手：$name",
       "umpireAction": "裁判操作",
-      "standVotes": "支持 $count"
+      "standVotes": "支持 $count",
+      "join": "加入${side}",
+      "joinHint": "以${side}身份发言",
+      "replySide": "发言观点",
+      "fixedSide": "你的观点是${side}（与你第一次发言相同）",
+      "support": "支持",
+      "supportConfirmTitle": "支持这一楼",
+      "supportConfirm": "要支持这一楼的观点吗？每一楼只能支持一次。"
     },
     "trade": {
       "title": "商品",

@@ -31,6 +31,7 @@ import 'package:tsdm_client/utils/platform.dart';
 import 'package:tsdm_client/widgets/app_surface.dart';
 import 'package:tsdm_client/widgets/heroes.dart';
 import 'package:tsdm_client/widgets/reply_bar/bloc/reply_bloc.dart';
+import 'package:tsdm_client/widgets/reply_bar/debate_stand_selector.dart';
 import 'package:tsdm_client/widgets/reply_bar/models/reply_types.dart';
 
 enum _BottomPanelType { none, keyboard, toolbar }
@@ -451,6 +452,8 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
       _hintText = null;
       _replyAction = null;
     });
+    // The side chosen for a debate reply goes with it (the forum keeps the side of the first reply anyway).
+    widget.controller._debateStand = null;
     // Clear saved hint text in controller so text not restore
     // when next time opens.
     widget.controller._hintText = null;
@@ -483,7 +486,11 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
       return;
     }
     context.read<ReplyBloc>().add(
-      ReplyToThreadRequested(replyParameters: _replyParameters!, replyMessage: _replyRichController.toForumBBCode()),
+      ReplyToThreadRequested(
+        replyParameters: _replyParameters!,
+        replyMessage: _replyRichController.toForumBBCode(),
+        stand: _stand,
+      ),
     );
   }
 
@@ -505,6 +512,7 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
         replyParameters: _replyParameters!,
         replyAction: _replyAction!,
         replyMessage: _replyRichController.toForumBBCode(), // data,
+        stand: _stand,
       ),
     );
   }
@@ -550,6 +558,39 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
         'message': _replyRichController.toForumBBCode(),
         'messageappend': widget.chatSendTarget!.messageAppend,
       }),
+    );
+  }
+
+  /// The side a reply takes in a debate ([ReplyParameters.debate]): the side the account took with its first reply,
+  /// or the one chosen above the editor (neutral by default); null for any other thread.
+  int? get _stand {
+    final parameters = _replyParameters;
+    if (parameters == null || !parameters.debate) {
+      return null;
+    }
+    return parameters.debateStand ?? widget.controller._debateStand ?? 0;
+  }
+
+  /// The side of the next debate reply was chosen elsewhere ([ReplyBarController.debateStand]).
+  void _debateStandChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// The side of a debate reply, above the editor ([DebateStandSelector]); nothing for any other thread.
+  Widget _buildDebateStandRow(BuildContext context) {
+    final parameters = _replyParameters;
+    if (parameters == null || !parameters.debate || _closed || !_hasLogin) {
+      return sizedBoxEmpty;
+    }
+    return Padding(
+      padding: edgeInsetsL12T8R12,
+      child: DebateStandSelector(
+        fixed: parameters.debateStand,
+        value: widget.controller._debateStand ?? 0,
+        onChanged: (stand) => setState(() => widget.controller._debateStand = stand),
+      ),
     );
   }
 
@@ -772,6 +813,8 @@ final class _ReplyBarState extends State<_ReplyBar> with LoggerMixin {
       children: [
         // Reply hint row.
         Padding(padding: horizontal, child: _buildHintTextRow(context)),
+        // The side of a debate reply.
+        Padding(padding: horizontal, child: _buildDebateStandRow(context)),
 
         // Editor.
         Flexible(
@@ -1089,6 +1132,19 @@ final class ReplyBarController with LoggerMixin {
   String? _replyAction;
   bool? _closed;
   String? _hintText;
+
+  /// The side chosen for a debate reply (0 neutral, 1 affirmative, 2 negative), kept across editors until a reply
+  /// is sent; null when none was chosen (neutral).
+  int? _debateStand;
+
+  /// The side chosen for a debate reply, see [ReplyParameters.debate].
+  int? get debateStand => _debateStand;
+
+  /// Choose the side of the next debate reply (the debate card's "加入正方／反方").
+  set debateStand(int? stand) {
+    _debateStand = stand;
+    _state?._debateStandChanged();
+  }
 
   // Internal _bind setter.
   // ignore: avoid_setters_without_getters

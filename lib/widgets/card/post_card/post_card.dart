@@ -89,7 +89,7 @@ enum _PostCardActions {
 /// Usually inside a ThreadPage.
 class PostCard extends StatefulWidget {
   /// Constructor.
-  const PostCard(this.post, {this.replyCallback, this.onEdited, super.key});
+  const PostCard(this.post, {this.replyCallback, this.onEdited, this.onJoinDebate, super.key});
 
   /// [Post] model to show.
   final Post post;
@@ -100,6 +100,9 @@ class PostCard extends StatefulWidget {
 
   /// Called after a successful edit, before reloading, so the thread can retain this floor as its scroll target.
   final VoidCallback? onEdited;
+
+  /// Reply on side `stand` of a debate thread (the debate card's "加入正方／反方"); null where the account cannot reply.
+  final void Function(int stand)? onJoinDebate;
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -231,7 +234,10 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
                 ),
                 // What the page prints in the floor's header of a special thread: the accepted answer of a bounty, the
                 // floor's side in a debate (plugin 2.8.0).
-                if (SpecialFloorBadges.any(widget.post)) ...[sizedBoxW4H4, SpecialFloorBadges(widget.post)],
+                if (SpecialFloorBadges.any(widget.post)) ...[
+                  sizedBoxW4H4,
+                  SpecialFloorBadges(widget.post, onReload: _specialReload(context)),
+                ],
                 // Badges the forum renders in this floor's author column: the user group badge and the secondary title
                 // of this author. Nothing about the current account is used here. They wrap below each other on narrow
                 // windows instead of being squeezed, the secondary title keeps its 184:100 ratio.
@@ -556,13 +562,23 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin,
         // The special block of the thread (plugin 2.8.0), where the web page prints it: the bounty and the activity
         // before the content, the poll, the goods and the debate after it. Its html is cut out of the content.
         if (widget.post.special case final special? when SpecialThreadCard.aboveContent(special))
-          SpecialThreadCard(special, pid: widget.post.postID, onReload: _specialReload(context)),
+          SpecialThreadCard(
+            special,
+            pid: widget.post.postID,
+            onReload: _specialReload(context),
+            onJoinDebate: widget.onJoinDebate,
+          ),
         _buildPostBody(context),
         // 红包 if any.
         if (widget.post.locked.isNotEmpty) ...widget.post.locked.where((e) => e.isValid()).map(LockedCard.new),
         if (widget.post.special case final special?) ...[
           if (!SpecialThreadCard.aboveContent(special))
-            SpecialThreadCard(special, pid: widget.post.postID, onReload: _specialReload(context)),
+            SpecialThreadCard(
+              special,
+              pid: widget.post.postID,
+              onReload: _specialReload(context),
+              onJoinDebate: widget.onJoinDebate,
+            ),
         ] else if (widget.post.poll case final poll?)
           PollCard(widget.post.postID, fromPage: poll),
         if (widget.post.packetUrl != null) ...[
